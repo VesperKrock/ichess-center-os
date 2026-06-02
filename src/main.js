@@ -700,6 +700,21 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-student-sort]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const sortBy = button.dataset.studentSort
+
+      studentFilters = {
+        ...studentFilters,
+        sortBy,
+        sortDirection:
+          studentFilters.sortBy === sortBy && studentFilters.sortDirection === 'asc' ? 'desc' : 'asc',
+      }
+      render()
+    })
+  })
+
   document.querySelector('[data-student-action="open-create"]')?.addEventListener('click', () => {
     studentFormState = createEmptyStudentFormState()
     render()

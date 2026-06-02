@@ -28,6 +28,8 @@ export const initialStudentFilters = {
   query: '',
   status: 'all',
   level: 'all',
+  sortBy: '',
+  sortDirection: 'asc',
   selectedStudentId: null,
 }
 
@@ -166,11 +168,11 @@ export function renderStudentModule(students, filters, formState) {
             <table class="student-table">
               <thead>
                 <tr>
-                  <th>Học viên</th>
+                  <th>${renderSortableHeader('Học viên', 'student', filters)}</th>
                   <th>Phụ huynh</th>
                   <th>SĐT</th>
                   <th>Trạng thái</th>
-                  <th>Level</th>
+                  <th>${renderSortableHeader('Level', 'level', filters)}</th>
                   <th>Elo</th>
                   <th>Trường học</th>
                   <th>Giáo viên phụ trách</th>
@@ -199,10 +201,11 @@ export function getFilteredStudents(students = sampleStudents, filters) {
     students = sampleStudents
   }
 
-  const normalizedQuery = normalizeText(filters.query)
-  const queryDigits = String(filters.query).replace(/\D/g, '')
+  const activeFilters = { ...initialStudentFilters, ...filters }
+  const normalizedQuery = normalizeText(activeFilters.query)
+  const queryDigits = String(activeFilters.query).replace(/\D/g, '')
 
-  return students.filter((student) => {
+  const filteredStudents = students.filter((student) => {
     const matchesQuery =
       !normalizedQuery ||
       [
@@ -212,11 +215,15 @@ export function getFilteredStudents(students = sampleStudents, filters) {
       ].some((value) => normalizeText(value).includes(normalizedQuery)) ||
       (queryDigits && String(student.parentPhone).replace(/\D/g, '').includes(queryDigits))
 
-    const matchesStatus = filters.status === 'all' || student.currentStatus === filters.status
-    const matchesLevel = filters.level === 'all' || getLevelLabel(student.level) === filters.level
+    const matchesStatus =
+      activeFilters.status === 'all' || student.currentStatus === activeFilters.status
+    const matchesLevel =
+      activeFilters.level === 'all' || getLevelLabel(student.level) === activeFilters.level
 
     return matchesQuery && matchesStatus && matchesLevel
   })
+
+  return sortStudents(filteredStudents, activeFilters)
 }
 
 export function validateStudentForm(values) {
@@ -496,6 +503,83 @@ function renderOption(value, label, selectedValue) {
   }>${label}</option>`
 }
 
+function renderSortableHeader(label, sortBy, filters) {
+  const isActive = filters.sortBy === sortBy
+  const direction = isActive ? filters.sortDirection : ''
+  const symbol = isActive ? (direction === 'desc' ? '↓' : '↑') : '⇅'
+  const directionLabel = isActive
+    ? direction === 'desc'
+      ? 'giảm dần'
+      : 'tăng dần'
+    : 'chưa sắp xếp'
+
+  return `
+    <span class="student-sort-header">
+      <span>${label}</span>
+      <button
+        class="student-sort-button ${isActive ? 'active' : ''}"
+        type="button"
+        data-student-sort="${sortBy}"
+        aria-label="Sắp xếp ${label} ${directionLabel}"
+      >
+        ${symbol}
+      </button>
+    </span>
+  `
+}
+
+function sortStudents(students, filters) {
+  const sortBy = filters.sortBy
+
+  if (!sortBy) {
+    return students
+  }
+
+  const direction = filters.sortDirection === 'desc' ? -1 : 1
+
+  return [...students].sort((firstStudent, secondStudent) => {
+    if (sortBy === 'level') {
+      return (
+        compareStudentLevels(firstStudent, secondStudent) * direction ||
+        compareStudentsByName(firstStudent, secondStudent)
+      )
+    }
+
+    if (sortBy === 'student') {
+      return compareStudentsByName(firstStudent, secondStudent) * direction
+    }
+
+    return 0
+  })
+}
+
+function compareStudentsByName(firstStudent, secondStudent) {
+  return (
+    compareText(getFinalName(firstStudent.fullName), getFinalName(secondStudent.fullName)) ||
+    compareText(firstStudent.fullName, secondStudent.fullName) ||
+    compareStudentLevels(firstStudent, secondStudent)
+  )
+}
+
+function compareStudentLevels(firstStudent, secondStudent) {
+  const firstLevel = getLevelNumber(firstStudent.level) ?? Number.MAX_SAFE_INTEGER
+  const secondLevel = getLevelNumber(secondStudent.level) ?? Number.MAX_SAFE_INTEGER
+
+  return firstLevel - secondLevel
+}
+
+function getFinalName(fullName) {
+  const nameParts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean)
+
+  return nameParts.at(-1) ?? ''
+}
+
+function compareText(firstValue, secondValue) {
+  return String(firstValue ?? '').localeCompare(String(secondValue ?? ''), 'vi', {
+    sensitivity: 'base',
+  })
+}
+
 function renderStudentRow(student) {
   const hasCareNote = hasRealCareNote(student)
 
@@ -587,14 +671,19 @@ function getLevelLabel(level) {
 }
 
 function getLevelNumber(level) {
-  const levelMap = {
-    'Nhập môn': 'Level 1',
-    'Cơ bản': 'Level 2',
-    'Trung cấp': 'Level 3',
-    'Nâng cao': 'Level 4',
+  const legacyLevelMap = {
+    'nhap mon': 1,
+    'co ban': 2,
+    'trung cap': 3,
+    'nang cao': 4,
   }
-  const mappedLevel = levelMap[level]
-  const levelText = String(mappedLevel ?? level ?? '').trim()
+  const levelText = String(level ?? '').trim()
+  const legacyLevelNumber = legacyLevelMap[normalizeText(levelText)]
+
+  if (legacyLevelNumber) {
+    return legacyLevelNumber
+  }
+
   const levelMatch = levelText.match(/\d+/)
   const levelNumber = levelMatch ? Number(levelMatch[0]) : null
 
