@@ -638,7 +638,11 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-window-id]').forEach((windowElement) => {
-    windowElement.addEventListener('pointerdown', () => {
+    windowElement.addEventListener('pointerdown', (event) => {
+      if (event.target.closest('[data-student-detail-action]')) {
+        return
+      }
+
       focusWindow(windowElement.dataset.windowId)
       const focusedWindow = openWindows.find((item) => item.id === windowElement.dataset.windowId)
 
@@ -722,15 +726,29 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-student-detail-action]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('pointerdown', (event) => {
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+    })
+
+    button.addEventListener('mousedown', (event) => {
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+    })
+
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      event.stopImmediatePropagation()
       const { studentDetailAction, studentId } = button.dataset
 
       if (studentDetailAction === 'open-care-notes') {
-        openStudentSubWindow(studentId, 'student-care-notes')
+        setTimeout(() => openStudentSubWindow(studentId, 'student-care-notes'), 0)
+        return
       }
 
       if (studentDetailAction === 'open-learning') {
-        openStudentSubWindow(studentId, 'student-learning')
+        setTimeout(() => openStudentSubWindow(studentId, 'student-learning'), 0)
+        return
       }
 
       if (studentDetailAction === 'clear-avatar') {
