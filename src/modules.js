@@ -3,7 +3,7 @@ export const modules = [
     id: 'hoc-vien',
     name: 'Học viên',
     shortDescription: 'Quản lý hồ sơ học viên và theo dõi trạng thái học tập tại cơ sở.',
-    status: 'planned',
+    status: 'in-progress',
     plannedFeatures: [
       'Xem danh sách học viên',
       'Tìm kiếm học viên',

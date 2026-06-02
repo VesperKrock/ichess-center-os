@@ -2,10 +2,22 @@ import './styles.css'
 import { modules } from './modules.js'
 import {
   getDesktopModuleOrder,
+  getStoredStudents,
   getViewMode,
   saveDesktopModuleOrder,
+  saveStoredStudents,
   saveViewMode,
 } from './storage.js'
+import { sampleStudents } from './student-data.js'
+import { getStudentDetailWindowTitle, renderStudentDetail } from './student-detail.js'
+import {
+  buildStudentFromForm,
+  createEditStudentFormState,
+  createEmptyStudentFormState,
+  initialStudentFilters,
+  renderStudentModule,
+  validateStudentForm,
+} from './student-module.js'
 
 const app = document.querySelector('#app')
 
@@ -19,6 +31,9 @@ let desktopModuleOrder = getDesktopModuleOrder(modules.map((moduleItem) => modul
 let shortcutDragState = null
 let suppressNextModuleClick = false
 let shortcutDocumentDragBound = false
+let studentFilters = { ...initialStudentFilters }
+let students = getStoredStudents(sampleStudents)
+let studentFormState = null
 
 function render() {
   app.innerHTML = `
@@ -75,9 +90,9 @@ function getOrderedModules() {
 }
 
 function renderModuleWindow(windowItem) {
-  const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
+  const title = getWindowTitle(windowItem)
 
-  if (!moduleItem || windowItem.minimized) {
+  if (!title || windowItem.minimized) {
     return ''
   }
 
@@ -97,28 +112,61 @@ function renderModuleWindow(windowItem) {
       aria-labelledby="${windowItem.id}-title"
     >
       <div class="window-titlebar" data-drag-window-id="${windowItem.id}">
-        <h2 id="${windowItem.id}-title">${moduleItem.name}</h2>
+        <h2 id="${windowItem.id}-title">${title}</h2>
         <div class="window-controls">
-          <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${moduleItem.name}">-</button>
-          <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${moduleItem.name}">□</button>
-          <button type="button" data-window-action="close" data-window-id="${windowItem.id}" aria-label="Đóng ${moduleItem.name}">X</button>
+          <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${title}">-</button>
+          <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${title}">□</button>
+          <button type="button" data-window-action="close" data-window-id="${windowItem.id}" aria-label="Đóng ${title}">X</button>
         </div>
       </div>
       <div class="window-body">
-        <div class="room-heading">
-          <p class="room-description">${moduleItem.shortDescription}</p>
-          <span class="status-badge">${getStatusLabel(moduleItem.status)}</span>
-        </div>
-        <p class="phase-note">
-          Module này đang ở giai đoạn khung. Nội dung nghiệp vụ sẽ được bổ sung ở phase sau.
-        </p>
-        <div class="room-grid">
-          ${renderPlannedList('Chức năng dự kiến', moduleItem.plannedFeatures)}
-          ${renderPlannedList('Dữ liệu dự kiến', moduleItem.plannedData)}
-        </div>
+        ${renderWindowBody(windowItem)}
       </div>
     </section>
   `
+}
+
+function renderWindowBody(windowItem) {
+  if (windowItem.type === 'student-detail') {
+    return renderStudentDetail(getStudentById(windowItem.studentId))
+  }
+
+  const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
+
+  if (!moduleItem) {
+    return ''
+  }
+
+  if (moduleItem.id === 'hoc-vien') {
+    return renderStudentModule(students, studentFilters, studentFormState)
+  }
+
+  return `
+    <div class="room-heading">
+      <p class="room-description">${moduleItem.shortDescription}</p>
+      <span class="status-badge">${getStatusLabel(moduleItem.status)}</span>
+    </div>
+    <p class="phase-note">
+      Module này đang ở giai đoạn khung. Nội dung nghiệp vụ sẽ được bổ sung ở phase sau.
+    </p>
+    <div class="room-grid">
+      ${renderPlannedList('Chức năng dự kiến', moduleItem.plannedFeatures)}
+      ${renderPlannedList('Dữ liệu dự kiến', moduleItem.plannedData)}
+    </div>
+  `
+}
+
+function getWindowTitle(windowItem) {
+  if (windowItem.type === 'student-detail') {
+    return getStudentDetailWindowTitle(getStudentById(windowItem.studentId))
+  }
+
+  const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
+  return moduleItem?.name
+}
+
+function getStudentById(studentId) {
+  return students.find((student) => student.id === studentId)
 }
 
 function renderPlannedList(title, items) {
@@ -137,9 +185,9 @@ function renderTaskbar() {
   const overflowWindows = openWindows.slice(4)
   const windowButtons = visibleWindows
     .map((windowItem) => {
-      const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
+      const title = getWindowTitle(windowItem)
 
-      if (!moduleItem) {
+      if (!title) {
         return ''
       }
 
@@ -149,7 +197,7 @@ function renderTaskbar() {
           type="button"
           data-taskbar-window-id="${windowItem.id}"
         >
-          ${moduleItem.name}
+          ${title}
         </button>
       `
     })
@@ -217,9 +265,9 @@ function renderTaskbar() {
 function renderWindowOverflowMenu(overflowWindows) {
   const windowItems = overflowWindows
     .map((windowItem) => {
-      const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
+      const title = getWindowTitle(windowItem)
 
-      if (!moduleItem) {
+      if (!title) {
         return ''
       }
 
@@ -229,7 +277,7 @@ function renderWindowOverflowMenu(overflowWindows) {
           type="button"
           data-taskbar-window-id="${windowItem.id}"
         >
-          ${moduleItem.name}
+          ${title}
         </button>
       `
     })
@@ -299,6 +347,78 @@ function openModuleWindow(moduleId) {
   nextWindowNumber += 1
   isStartMenuOpen = false
   isWindowOverflowOpen = false
+  render()
+}
+
+function openStudentDetailWindow(studentId) {
+  const existingWindow = openWindows.find(
+    (windowItem) => windowItem.type === 'student-detail' && windowItem.studentId === studentId,
+  )
+
+  if (existingWindow) {
+    focusWindow(existingWindow.id)
+    isStartMenuOpen = false
+    isWindowOverflowOpen = false
+    render()
+    return
+  }
+
+  const offset = (openWindows.length % 7) * 28
+
+  openWindows.push({
+    id: `window-${nextWindowNumber}`,
+    type: 'student-detail',
+    studentId,
+    x: 120 + offset,
+    y: 70 + offset,
+    width: 820,
+    height: 560,
+    zIndex: ++topZIndex,
+    minimized: false,
+    maximized: false,
+    restoreBounds: null,
+  })
+  nextWindowNumber += 1
+  isStartMenuOpen = false
+  isWindowOverflowOpen = false
+  render()
+}
+
+function openStudentEditForm(studentId) {
+  const student = getStudentById(studentId)
+
+  if (!student) {
+    return
+  }
+
+  if (!openWindows.some((windowItem) => windowItem.moduleId === 'hoc-vien')) {
+    const offset = (openWindows.length % 7) * 28
+    openWindows.push({
+      id: `window-${nextWindowNumber}`,
+      moduleId: 'hoc-vien',
+      x: 72 + offset,
+      y: 42 + offset,
+      width: 760,
+      height: 520,
+      zIndex: ++topZIndex,
+      minimized: false,
+      maximized: false,
+      restoreBounds: null,
+    })
+    nextWindowNumber += 1
+  }
+
+  const studentWindow = openWindows.find((windowItem) => windowItem.moduleId === 'hoc-vien')
+  studentFormState = createEditStudentFormState(student)
+  studentFilters = {
+    ...studentFilters,
+    selectedStudentId: student.id,
+  }
+
+  if (studentWindow) {
+    focusWindow(studentWindow.id)
+  }
+
   render()
 }
 
@@ -445,6 +565,142 @@ function bindEvents() {
       isStartMenuOpen = false
       isWindowOverflowOpen = false
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-student-filter]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const filterName = control.dataset.studentFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      studentFilters = {
+        ...studentFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(`[data-student-filter="${filterName}"]`)
+      nextControl?.focus()
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelector('[data-student-action="open-create"]')?.addEventListener('click', () => {
+    studentFormState = createEmptyStudentFormState()
+    render()
+  })
+
+  document.querySelectorAll('[data-student-action="open-edit"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const student = students.find((item) => item.id === button.dataset.studentEditId)
+
+      if (!student) {
+        return
+      }
+
+      studentFormState = createEditStudentFormState(student)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-student-action="edit-from-detail"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openStudentEditForm(button.dataset.studentEditId)
+    })
+  })
+
+  document.querySelectorAll('[data-student-form-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      studentFormState = {
+        ...studentFormState,
+        values: {
+          ...studentFormState.values,
+          [control.dataset.studentFormField]: control.value,
+        },
+        errors: {
+          ...studentFormState.errors,
+          [control.dataset.studentFormField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-student-action="use-default-avatar"]')?.addEventListener('click', () => {
+    studentFormState = {
+      ...studentFormState,
+      values: {
+        ...studentFormState.values,
+        avatarUrl: '',
+      },
+    }
+    render()
+  })
+
+  document.querySelector('[data-student-action="cancel-form"]')?.addEventListener('click', () => {
+    studentFormState = null
+    render()
+  })
+
+  document.querySelector('[data-student-action="save-form"]')?.addEventListener('click', () => {
+    const errors = validateStudentForm(studentFormState.values)
+
+    if (Object.keys(errors).length) {
+      studentFormState = {
+        ...studentFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    if (studentFormState.mode === 'edit') {
+      const existingStudent = students.find((student) => student.id === studentFormState.studentId)
+      const updatedStudent = buildStudentFromForm(studentFormState.values, existingStudent)
+      students = students.map((student) =>
+        student.id === updatedStudent.id ? updatedStudent : student,
+      )
+      studentFilters = {
+        ...studentFilters,
+        selectedStudentId: updatedStudent.id,
+      }
+    } else {
+      const newStudent = buildStudentFromForm(studentFormState.values)
+      students = [newStudent, ...students]
+      studentFilters = {
+        ...studentFilters,
+        selectedStudentId: newStudent.id,
+      }
+    }
+
+    saveStoredStudents(students)
+    studentFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-student-id]').forEach((row) => {
+    row.addEventListener('click', () => {
+      studentFilters = {
+        ...studentFilters,
+        selectedStudentId: row.dataset.studentId,
+      }
+      openStudentDetailWindow(row.dataset.studentId)
+    })
+
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      event.preventDefault()
+      studentFilters = {
+        ...studentFilters,
+        selectedStudentId: row.dataset.studentId,
+      }
+      openStudentDetailWindow(row.dataset.studentId)
     })
   })
 
