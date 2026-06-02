@@ -9,12 +9,22 @@ import {
   saveViewMode,
 } from './storage.js'
 import { sampleStudents } from './student-data.js'
-import { getStudentDetailWindowTitle, renderStudentDetail } from './student-detail.js'
+import {
+  emptyCareNoteDraft,
+  getStudentCareNotesWindowTitle,
+  getStudentDetailWindowTitle,
+  getStudentLearningWindowTitle,
+  renderStudentCareNotes,
+  renderStudentDetail,
+  renderStudentLearningResult,
+} from './student-detail.js'
 import {
   buildStudentFromForm,
   createEditStudentFormState,
   createEmptyStudentFormState,
+  formatStudentPhoneNumber,
   initialStudentFilters,
+  isStudentFormReady,
   renderStudentModule,
   validateStudentForm,
 } from './student-module.js'
@@ -34,6 +44,7 @@ let shortcutDocumentDragBound = false
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
 let studentFormState = null
+let careNoteDrafts = {}
 
 function render() {
   app.innerHTML = `
@@ -81,7 +92,10 @@ function renderDashboard() {
 }
 
 function renderOpenWindows() {
-  return openWindows.map((windowItem) => renderModuleWindow(windowItem)).join('')
+  return [...openWindows]
+    .sort((firstWindow, secondWindow) => firstWindow.zIndex - secondWindow.zIndex)
+    .map((windowItem) => renderModuleWindow(windowItem))
+    .join('')
 }
 
 function getOrderedModules() {
@@ -131,6 +145,17 @@ function renderWindowBody(windowItem) {
     return renderStudentDetail(getStudentById(windowItem.studentId))
   }
 
+  if (windowItem.type === 'student-care-notes') {
+    return renderStudentCareNotes(
+      getStudentById(windowItem.studentId),
+      careNoteDrafts[windowItem.studentId] ?? emptyCareNoteDraft,
+    )
+  }
+
+  if (windowItem.type === 'student-learning') {
+    return renderStudentLearningResult(getStudentById(windowItem.studentId))
+  }
+
   const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
 
   if (!moduleItem) {
@@ -161,12 +186,26 @@ function getWindowTitle(windowItem) {
     return getStudentDetailWindowTitle(getStudentById(windowItem.studentId))
   }
 
+  if (windowItem.type === 'student-care-notes') {
+    return getStudentCareNotesWindowTitle(getStudentById(windowItem.studentId))
+  }
+
+  if (windowItem.type === 'student-learning') {
+    return getStudentLearningWindowTitle(getStudentById(windowItem.studentId))
+  }
+
   const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
   return moduleItem?.name
 }
 
 function getStudentById(studentId) {
   return students.find((student) => student.id === studentId)
+}
+
+function getLatestCareNoteContent(careNotes) {
+  return [...(careNotes ?? [])].sort(
+    (firstNote, secondNote) => new Date(secondNote.createdAt) - new Date(firstNote.createdAt),
+  )[0]?.content ?? ''
 }
 
 function renderPlannedList(title, items) {
@@ -183,6 +222,7 @@ function renderPlannedList(title, items) {
 function renderTaskbar() {
   const visibleWindows = openWindows.slice(0, 4)
   const overflowWindows = openWindows.slice(4)
+  const activeWindowId = getActiveWindowId()
   const windowButtons = visibleWindows
     .map((windowItem) => {
       const title = getWindowTitle(windowItem)
@@ -193,7 +233,7 @@ function renderTaskbar() {
 
       return `
         <button
-          class="taskbar-window ${windowItem.minimized ? 'minimized' : ''}"
+          class="taskbar-window ${windowItem.minimized ? 'minimized' : ''} ${windowItem.id === activeWindowId ? 'active' : ''}"
           type="button"
           data-taskbar-window-id="${windowItem.id}"
         >
@@ -257,12 +297,12 @@ function renderTaskbar() {
         <time class="taskbar-clock" id="taskbar-clock" aria-label="Ngày giờ hiện tại"></time>
       </div>
       ${isStartMenuOpen ? renderStartMenu() : ''}
-      ${isWindowOverflowOpen ? renderWindowOverflowMenu(overflowWindows) : ''}
+      ${isWindowOverflowOpen ? renderWindowOverflowMenu(overflowWindows, activeWindowId) : ''}
     </footer>
   `
 }
 
-function renderWindowOverflowMenu(overflowWindows) {
+function renderWindowOverflowMenu(overflowWindows, activeWindowId) {
   const windowItems = overflowWindows
     .map((windowItem) => {
       const title = getWindowTitle(windowItem)
@@ -273,7 +313,7 @@ function renderWindowOverflowMenu(overflowWindows) {
 
       return `
         <button
-          class="${windowItem.minimized ? 'minimized' : ''}"
+          class="${windowItem.minimized ? 'minimized' : ''} ${windowItem.id === activeWindowId ? 'active' : ''}"
           type="button"
           data-taskbar-window-id="${windowItem.id}"
         >
@@ -289,6 +329,16 @@ function renderWindowOverflowMenu(overflowWindows) {
       ${windowItems}
     </nav>
   `
+}
+
+function getActiveWindowId() {
+  return openWindows
+    .filter((windowItem) => !windowItem.minimized)
+    .reduce(
+      (activeWindow, windowItem) =>
+        !activeWindow || windowItem.zIndex > activeWindow.zIndex ? windowItem : activeWindow,
+      null,
+    )?.id
 }
 
 function renderStartMenu() {
@@ -341,8 +391,13 @@ function openModuleWindow(moduleId) {
     height: 520,
     zIndex: ++topZIndex,
     minimized: false,
-    maximized: false,
-    restoreBounds: null,
+    maximized: true,
+    restoreBounds: {
+      x: 72 + offset,
+      y: 42 + offset,
+      width: 760,
+      height: 520,
+    },
   })
   nextWindowNumber += 1
   isStartMenuOpen = false
@@ -375,10 +430,56 @@ function openStudentDetailWindow(studentId) {
     height: 560,
     zIndex: ++topZIndex,
     minimized: false,
-    maximized: false,
-    restoreBounds: null,
+    maximized: true,
+    restoreBounds: {
+      x: 120 + offset,
+      y: 70 + offset,
+      width: 820,
+      height: 560,
+    },
   })
   nextWindowNumber += 1
+  isStartMenuOpen = false
+  isWindowOverflowOpen = false
+  render()
+}
+
+function openStudentSubWindow(studentId, type) {
+  const existingWindow = openWindows.find(
+    (windowItem) => windowItem.type === type && windowItem.studentId === studentId,
+  )
+
+  if (existingWindow) {
+    focusWindow(existingWindow.id)
+    isStartMenuOpen = false
+    isWindowOverflowOpen = false
+    render()
+    return
+  }
+
+  const offset = (openWindows.length % 7) * 28
+  const nextWindowId = `window-${nextWindowNumber}`
+
+  openWindows.push({
+    id: nextWindowId,
+    type,
+    studentId,
+    x: 132 + offset,
+    y: 78 + offset,
+    width: type === 'student-care-notes' ? 920 : 820,
+    height: 560,
+    zIndex: ++topZIndex,
+    minimized: false,
+    maximized: true,
+    restoreBounds: {
+      x: 132 + offset,
+      y: 78 + offset,
+      width: type === 'student-care-notes' ? 920 : 820,
+      height: 560,
+    },
+  })
+  nextWindowNumber += 1
+  focusWindow(nextWindowId)
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   render()
@@ -402,8 +503,13 @@ function openStudentEditForm(studentId) {
       height: 520,
       zIndex: ++topZIndex,
       minimized: false,
-      maximized: false,
-      restoreBounds: null,
+      maximized: true,
+      restoreBounds: {
+        x: 72 + offset,
+        y: 42 + offset,
+        width: 760,
+        height: 520,
+      },
     })
     nextWindowNumber += 1
   }
@@ -423,9 +529,11 @@ function openStudentEditForm(studentId) {
 }
 
 function focusWindow(windowId) {
+  const nextZIndex = ++topZIndex
+
   openWindows = openWindows.map((windowItem) =>
     windowItem.id === windowId
-      ? { ...windowItem, minimized: false, zIndex: ++topZIndex }
+      ? { ...windowItem, minimized: false, zIndex: nextZIndex }
       : windowItem,
   )
 }
@@ -613,19 +721,276 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-student-detail-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const { studentDetailAction, studentId } = button.dataset
+
+      if (studentDetailAction === 'open-care-notes') {
+        openStudentSubWindow(studentId, 'student-care-notes')
+      }
+
+      if (studentDetailAction === 'open-learning') {
+        openStudentSubWindow(studentId, 'student-learning')
+      }
+
+      if (studentDetailAction === 'clear-avatar') {
+        const student = getStudentById(studentId)
+
+        if (!student?.avatarUrl) {
+          return
+        }
+
+        students = students.map((item) =>
+          item.id === studentId
+            ? {
+                ...item,
+                avatarUrl: '',
+                updatedAt: new Date().toISOString(),
+              }
+            : item,
+        )
+        saveStoredStudents(students)
+        render()
+      }
+    })
+  })
+
   document.querySelectorAll('[data-student-form-field]').forEach((control) => {
     control.addEventListener('input', () => {
+      let nextValue = control.value
+
+      if (control.dataset.studentFormField === 'parentBirthYear') {
+        nextValue = nextValue.replace(/\D/g, '').slice(0, 4)
+        control.value = nextValue
+      }
+
       studentFormState = {
         ...studentFormState,
         values: {
           ...studentFormState.values,
-          [control.dataset.studentFormField]: control.value,
+          [control.dataset.studentFormField]: nextValue,
         },
         errors: {
           ...studentFormState.errors,
           [control.dataset.studentFormField]: undefined,
         },
       }
+      updateStudentFormSaveButton()
+    })
+
+    control.addEventListener('blur', () => {
+      const fieldName = control.dataset.studentFormField
+
+      if (fieldName === 'parentPhone') {
+        control.value = formatStudentPhoneNumber(control.value)
+      }
+
+      studentFormState = {
+        ...studentFormState,
+        values: {
+          ...studentFormState.values,
+          [fieldName]: control.value,
+        },
+        errors: validateStudentForm({
+          ...studentFormState.values,
+          [fieldName]: control.value,
+        }),
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-student-form-step]').forEach((button) => {
+    button.addEventListener('click', () => {
+      studentFormState = {
+        ...studentFormState,
+        step: Number(button.dataset.studentFormStep),
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-student-parent-note-suggestion]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const suggestion = button.dataset.studentParentNoteSuggestion
+      const currentNotes = studentFormState.values.parentNotes.trim()
+      const nextNotes = currentNotes ? `${currentNotes}\n${suggestion}` : suggestion
+
+      studentFormState = {
+        ...studentFormState,
+        values: {
+          ...studentFormState.values,
+          parentNotes: nextNotes,
+        },
+        errors: {
+          ...studentFormState.errors,
+          parentNotes: undefined,
+        },
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-care-note-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const studentId = control.dataset.careNoteStudentId
+      careNoteDrafts = {
+        ...careNoteDrafts,
+        [studentId]: {
+          ...(careNoteDrafts[studentId] ?? emptyCareNoteDraft),
+          [control.dataset.careNoteField]: control.value,
+          error: '',
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-care-note-suggestion]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const studentId = button.dataset.careNoteStudentId
+      const currentDraft = careNoteDrafts[studentId] ?? emptyCareNoteDraft
+      const suggestion = button.dataset.careNoteSuggestion
+      const nextContent = currentDraft.content
+        ? `${currentDraft.content}\n${suggestion}`
+        : suggestion
+
+      careNoteDrafts = {
+        ...careNoteDrafts,
+        [studentId]: {
+          ...currentDraft,
+          content: nextContent,
+          error: '',
+        },
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-care-note-action="clear"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const { careNoteStudentId } = button.dataset
+      careNoteDrafts = {
+        ...careNoteDrafts,
+        [careNoteStudentId]: { ...emptyCareNoteDraft },
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-care-note-action="edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const { careNoteStudentId, careNoteId } = button.dataset
+      const student = getStudentById(careNoteStudentId)
+      const note = student?.careNotes?.find((item) => item.id === careNoteId)
+
+      if (!note) {
+        return
+      }
+
+      careNoteDrafts = {
+        ...careNoteDrafts,
+        [careNoteStudentId]: {
+          content: note.content ?? '',
+          tag: note.tags?.[0] ?? '',
+          error: '',
+          editingNoteId: note.id,
+        },
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-care-note-action="delete"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const { careNoteStudentId, careNoteId } = button.dataset
+
+      if (!window.confirm('Xóa ghi chú chăm sóc này?')) {
+        return
+      }
+
+      students = students.map((student) => {
+        if (student.id !== careNoteStudentId) {
+          return student
+        }
+
+        const nextCareNotes = (student.careNotes ?? []).filter((note) => note.id !== careNoteId)
+        const latestCareNote = getLatestCareNoteContent(nextCareNotes)
+
+        return {
+          ...student,
+          careNotes: nextCareNotes,
+          latestCareNote,
+          updatedAt: new Date().toISOString(),
+        }
+      })
+      saveStoredStudents(students)
+      careNoteDrafts = {
+        ...careNoteDrafts,
+        [careNoteStudentId]: { ...emptyCareNoteDraft },
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-care-note-action="save"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const studentId = button.dataset.careNoteStudentId
+      const currentDraft = careNoteDrafts[studentId] ?? emptyCareNoteDraft
+      const content = currentDraft.content.trim()
+
+      if (!content) {
+        careNoteDrafts = {
+          ...careNoteDrafts,
+          [studentId]: {
+            ...currentDraft,
+            error: 'Nội dung ghi chú không được để trống.',
+          },
+        }
+        render()
+        return
+      }
+
+      students = students.map((student) => {
+        if (student.id !== studentId) {
+          return student
+        }
+
+        const currentCareNotes = student.careNotes ?? []
+        const nextCareNotes = currentDraft.editingNoteId
+          ? currentCareNotes.map((note) =>
+              note.id === currentDraft.editingNoteId
+                ? {
+                    ...note,
+                    content,
+                    tags: currentDraft.tag.trim() ? [currentDraft.tag.trim()] : [],
+                    updatedAt: new Date().toISOString(),
+                  }
+                : note,
+            )
+          : [
+              {
+                id: `note_${Date.now()}`,
+                createdAt: new Date().toISOString(),
+                author: 'Admin DreamHome',
+                content,
+                tags: currentDraft.tag.trim() ? [currentDraft.tag.trim()] : [],
+              },
+              ...currentCareNotes,
+            ]
+
+        return {
+          ...student,
+          careNotes: nextCareNotes,
+          latestCareNote: getLatestCareNoteContent(nextCareNotes),
+          updatedAt: new Date().toISOString(),
+        }
+      })
+      saveStoredStudents(students)
+      careNoteDrafts = {
+        ...careNoteDrafts,
+        [studentId]: { ...emptyCareNoteDraft },
+      }
+      render()
     })
   })
 
@@ -646,6 +1011,15 @@ function bindEvents() {
   })
 
   document.querySelector('[data-student-action="save-form"]')?.addEventListener('click', () => {
+    if (!isStudentFormReady(studentFormState.values)) {
+      studentFormState = {
+        ...studentFormState,
+        errors: validateStudentForm(studentFormState.values),
+      }
+      render()
+      return
+    }
+
     const errors = validateStudentForm(studentFormState.values)
 
     if (Object.keys(errors).length) {
@@ -814,6 +1188,16 @@ function moveShortcutBefore(draggedId, targetId) {
   desktopModuleOrder = orderWithoutDragged
   saveDesktopModuleOrder(desktopModuleOrder)
   render()
+}
+
+function updateStudentFormSaveButton() {
+  const saveButton = document.querySelector('[data-student-action="save-form"]')
+
+  if (!saveButton || !studentFormState) {
+    return
+  }
+
+  saveButton.disabled = !isStudentFormReady(studentFormState.values)
 }
 
 function bindWindowDragging() {

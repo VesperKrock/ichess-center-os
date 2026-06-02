@@ -1,7 +1,28 @@
-import { botMilestones, sampleStudents, studentLevels, studentStatuses } from './student-data.js'
+import { botMilestones, sampleStudents, studentStatuses } from './student-data.js'
 
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
+const levelFilterOptions = Array.from({ length: 15 }, (_, index) => `Level ${index + 1}`)
+const levelSelectOptions = Array.from({ length: 15 }, (_, index) => ({
+  value: String(index + 1),
+  label: `Level ${index + 1}`,
+}))
+const schoolLevelOptions = ['Mẫu giáo', 'Cấp 1', 'Cấp 2', 'Cấp 3', 'Cao đẳng/Đại học', 'Khác']
+const genderOptions = [
+  { value: '', label: 'Chưa cập nhật' },
+  { value: 'male', label: 'Nam' },
+  { value: 'female', label: 'Nữ' },
+]
+const parentNoteSuggestions = [
+  'Phụ huynh muốn đổi lịch học',
+  'Cần nhắc học phí',
+  'Phụ huynh cần tư vấn lộ trình',
+  'Bé cần học bù',
+  'Cần gọi lại phụ huynh',
+  'Phụ huynh phản hồi tích cực',
+  'Cần gửi bài luyện thêm',
+  'Phụ huynh muốn theo dõi tiến độ sát hơn',
+]
 
 export const initialStudentFilters = {
   query: '',
@@ -15,6 +36,8 @@ export const emptyStudentFormValues = {
   birthDate: '',
   avatarUrl: '',
   schoolName: '',
+  schoolLevel: 'Khác',
+  gender: '',
   hometown: '',
   hobbies: '',
   nationality: 'Việt Nam',
@@ -23,7 +46,7 @@ export const emptyStudentFormValues = {
   parentPhone: '',
   parentJob: '',
   parentArea: '',
-  level: 'Nhập môn',
+  level: '1',
   testScore: '',
   highestBotMilestone: 'Chưa có',
   personality: '',
@@ -35,15 +58,16 @@ export const emptyStudentFormValues = {
 const requiredFields = {
   fullName: 'Họ và tên học viên',
   birthDate: 'Ngày tháng năm sinh',
-  schoolName: 'Học sinh trường nào',
+  schoolName: 'Tên trường',
   parentName: 'Họ và tên phụ huynh',
   parentPhone: 'Số điện thoại phụ huynh',
-  level: 'Cấp độ',
+  level: 'Level',
 }
 
 export function createEmptyStudentFormState() {
   return {
     mode: 'create',
+    step: 1,
     studentId: null,
     values: { ...emptyStudentFormValues },
     errors: {},
@@ -53,22 +77,25 @@ export function createEmptyStudentFormState() {
 export function createEditStudentFormState(student) {
   return {
     mode: 'edit',
+    step: 1,
     studentId: student.id,
     values: {
       fullName: student.fullName ?? '',
       birthDate: student.birthDate ?? '',
       avatarUrl: student.avatarUrl ?? '',
       schoolName: student.schoolName ?? '',
+      schoolLevel: student.schoolLevel ?? getSchoolLevelFromName(student.schoolName),
+      gender: student.gender ?? '',
       hometown: student.hometown ?? '',
       hobbies: student.hobbies ?? '',
       nationality: student.nationality ?? '',
       parentName: student.parentName ?? '',
-      parentBirthYear: student.parentBirthYear ?? '',
-      parentPhone: student.parentPhone ?? '',
+      parentBirthYear: student.parentBirthYear ? String(student.parentBirthYear) : '',
+      parentPhone: formatPhoneNumber(student.parentPhone ?? ''),
       parentJob: student.parentJob ?? '',
       parentArea: student.parentArea ?? '',
-      level: student.level ?? 'Nhập môn',
-      testScore: student.testScore ?? '',
+      level: String(getLevelNumber(student.level) ?? 1),
+      testScore: getTestScoreForForm(student.testScore),
       highestBotMilestone: student.highestBotMilestone ?? 'Chưa có',
       personality: student.personality ?? '',
       currentStatus: student.currentStatus ?? 'Đang theo học',
@@ -81,55 +108,57 @@ export function createEditStudentFormState(student) {
 
 export function renderStudentModule(students, filters, formState) {
   const filteredStudents = getFilteredStudents(students, filters)
-  const selectedStudent = students.find((student) => student.id === filters.selectedStudentId)
   const stats = getStudentStats(students)
 
   return `
     <section class="student-module ${formState ? 'form-open' : ''}" aria-labelledby="student-module-title">
       <div class="student-module-content">
-        <div class="student-module-header">
-          <div>
-            <h3 id="student-module-title">Học viên</h3>
-            <p>Quản lý danh sách học viên tại cơ sở DreamHome.</p>
+        <h3 class="sr-only" id="student-module-title">Học viên</h3>
+        <div class="student-overview" aria-label="Tìm kiếm, lọc và thống kê học viên">
+          <div class="student-top-row">
+            <label class="student-search-field">
+              <span>Tìm kiếm</span>
+              <input
+                type="search"
+                value="${escapeAttribute(filters.query)}"
+                placeholder="Tên học viên, phụ huynh, số điện thoại, trường học"
+                data-student-filter="query"
+              />
+            </label>
+            <button class="student-add-button" type="button" data-student-action="open-create">
+              + Thêm học viên
+            </button>
           </div>
-          <button class="student-add-button" type="button" data-student-action="open-create">
-            + Thêm học viên
-          </button>
-        </div>
 
-        <div class="student-stats" aria-label="Thống kê nhanh học viên">
-          ${renderStatCard('Tổng học viên', stats.total)}
-          ${renderStatCard('Đang theo học', stats.active)}
-          ${renderStatCard('Bảo lưu', stats.paused)}
-          ${renderStatCard('Ngưng học', stats.stopped)}
-        </div>
-
-        <div class="student-toolbar">
-          <label>
-            <span>Tìm kiếm</span>
-            <input
-              type="search"
-              value="${escapeAttribute(filters.query)}"
-              placeholder="Tên học viên, phụ huynh, số điện thoại, trường học"
-              data-student-filter="query"
-            />
-          </label>
-          <label>
-            <span>Trạng thái</span>
-            <select data-student-filter="status">
-              ${renderOption('all', 'Tất cả trạng thái', filters.status)}
-              ${studentStatuses
-                .map((status) => renderOption(status, status, filters.status))
-                .join('')}
-            </select>
-          </label>
-          <label>
-            <span>Cấp độ</span>
-            <select data-student-filter="level">
-              ${renderOption('all', 'Tất cả cấp độ', filters.level)}
-              ${studentLevels.map((level) => renderOption(level, level, filters.level)).join('')}
-            </select>
-          </label>
+          <div class="student-bottom-row">
+            <div class="student-filter-row">
+              <label>
+                <span>Trạng thái</span>
+                <select data-student-filter="status">
+                  ${renderOption('all', 'Tất cả trạng thái', filters.status)}
+                  ${studentStatuses
+                    .map((status) => renderOption(status, status, filters.status))
+                    .join('')}
+                </select>
+              </label>
+              <label>
+                <span>Level</span>
+                <select data-student-filter="level">
+                  ${renderOption('all', 'Tất cả level', filters.level)}
+                  ${levelFilterOptions
+                    .map((level) => renderOption(level, level, filters.level))
+                    .join('')}
+                </select>
+              </label>
+            </div>
+            <div class="student-stats">
+              ${renderStatCard('Tổng', stats.total)}
+              ${renderStatCard('Đang học', stats.active)}
+              ${renderStatCard('Bảo lưu', stats.paused)}
+              ${renderStatCard('Ngưng', stats.stopped)}
+              ${renderStatCard('Có ghi chú', stats.withNotes, 'note')}
+            </div>
+          </div>
         </div>
 
         <div class="student-content-grid">
@@ -141,11 +170,11 @@ export function renderStudentModule(students, filters, formState) {
                   <th>Phụ huynh</th>
                   <th>SĐT</th>
                   <th>Trạng thái</th>
-                  <th>Cấp độ</th>
-                  <th>Mốc bot</th>
+                  <th>Level</th>
+                  <th>Elo</th>
                   <th>Trường học</th>
-                  <th>Ghi chú gần nhất</th>
-                  <th>Thao tác</th>
+                  <th>Giáo viên phụ trách</th>
+                  <th>Ghi chú</th>
                 </tr>
               </thead>
               <tbody>
@@ -157,9 +186,6 @@ export function renderStudentModule(students, filters, formState) {
               </tbody>
             </table>
           </div>
-          <aside class="student-quick-panel" aria-label="Đọc nhanh học viên">
-            ${selectedStudent ? renderSelectedStudent(selectedStudent) : renderDetailPlaceholder()}
-          </aside>
         </div>
       </div>
       ${formState ? renderStudentForm(formState) : ''}
@@ -187,28 +213,73 @@ export function getFilteredStudents(students = sampleStudents, filters) {
       (queryDigits && String(student.parentPhone).replace(/\D/g, '').includes(queryDigits))
 
     const matchesStatus = filters.status === 'all' || student.currentStatus === filters.status
-    const matchesLevel = filters.level === 'all' || student.level === filters.level
+    const matchesLevel = filters.level === 'all' || getLevelLabel(student.level) === filters.level
 
     return matchesQuery && matchesStatus && matchesLevel
   })
 }
 
 export function validateStudentForm(values) {
-  return Object.entries(requiredFields).reduce((errors, [field, label]) => {
+  const errors = Object.entries(requiredFields).reduce((currentErrors, [field, label]) => {
     if (!String(values[field] ?? '').trim()) {
-      errors[field] = `${label} là bắt buộc.`
+      currentErrors[field] = `${label} là bắt buộc.`
     }
 
-    return errors
+    return currentErrors
   }, {})
+
+  const parentPhoneDigits = String(values.parentPhone ?? '').replace(/\D/g, '')
+
+  if (values.parentPhone && parentPhoneDigits.length !== 10) {
+    errors.parentPhone = 'Số điện thoại phụ huynh cần đủ 10 chữ số.'
+  }
+
+  const parentBirthYear = String(values.parentBirthYear ?? '').trim()
+  const currentYear = new Date().getFullYear()
+
+  if (parentBirthYear) {
+    const year = Number(parentBirthYear)
+
+    if (!/^\d{4}$/.test(parentBirthYear) || year < 1950 || year > currentYear) {
+      errors.parentBirthYear = `Năm sinh phụ huynh cần từ 1950 đến ${currentYear}.`
+    }
+  }
+
+  const testScore = String(values.testScore ?? '').trim()
+
+  if (testScore) {
+    const normalizedTestScore = testScore.replace(',', '.')
+    const numericScore = Number(normalizedTestScore)
+
+    if (
+      !/^(?:\d+|\d+\.5)$/.test(normalizedTestScore) ||
+      numericScore < 0 ||
+      numericScore > 10
+    ) {
+      errors.testScore = 'Điểm bài thi cần từ 0 đến 10 và theo bước 0.5.'
+    }
+  }
+
+  return errors
+}
+
+export function isStudentFormReady(values) {
+  return Object.keys(validateStudentForm(values)).length === 0
+}
+
+export function formatStudentPhoneNumber(value) {
+  return formatPhoneNumber(value)
 }
 
 export function buildStudentFromForm(values, existingStudent = null) {
   const now = new Date().toISOString()
   const normalizedValues = {
     ...values,
+    avatarUrl: values.avatarUrl || existingStudent?.avatarUrl || '',
+    level: getLevelNumber(values.level) ?? values.level,
     parentBirthYear: values.parentBirthYear ? Number(values.parentBirthYear) : '',
-    testScore: values.testScore ? Number(values.testScore) : '',
+    parentPhone: formatPhoneNumber(values.parentPhone),
+    testScore: values.testScore ? Number(String(values.testScore).replace(',', '.')) : '',
     latestCareNote: values.parentNotes || 'Chưa có ghi chú chăm sóc.',
   }
 
@@ -224,6 +295,8 @@ export function buildStudentFromForm(values, existingStudent = null) {
 function renderStudentForm(formState) {
   const isEdit = formState.mode === 'edit'
   const title = isEdit ? 'Sửa học viên' : 'Thêm học viên'
+  const currentStep = formState.step ?? 1
+  const isReadyToSave = isStudentFormReady(formState.values)
 
   return `
     <div class="student-form-backdrop" aria-hidden="true"></div>
@@ -231,85 +304,147 @@ function renderStudentForm(formState) {
       <div class="student-form-header">
         <div>
           <h4>${title}</h4>
-          <p>${isEdit ? 'Cập nhật thông tin học viên đã chọn.' : 'Nhập thông tin học viên mới.'}</p>
+          <div class="student-form-steps" aria-label="Các bước nhập học viên">
+            <button class="${currentStep === 1 ? 'active' : ''}" type="button" data-student-form-step="1">
+              1. Thông tin học viên
+            </button>
+            <button class="${currentStep === 2 ? 'active' : ''}" type="button" data-student-form-step="2">
+              2. Phụ huynh / chăm sóc
+            </button>
+          </div>
+        </div>
+        <div class="student-form-header-actions">
+          <button
+            class="student-save-button"
+            type="button"
+            data-student-action="save-form"
+            ${isReadyToSave ? '' : 'disabled'}
+          >
+            ${isEdit ? 'Lưu thay đổi' : 'Lưu học viên'}
+          </button>
+          <button class="student-danger-button" type="button" data-student-action="cancel-form">
+            ${isEdit ? 'Hủy sửa' : 'Hủy thêm'}
+          </button>
         </div>
       </div>
       ${
-        Object.keys(formState.errors).length
-          ? `<div class="student-form-errors">${Object.values(formState.errors)
-              .map((error) => `<p>${error}</p>`)
-              .join('')}</div>`
-          : ''
+        isReadyToSave
+          ? ''
+          : '<p class="student-form-hint">Cần nhập đủ các mục có dấu * để lưu.</p>'
       }
-      <div class="student-form-grid">
-        ${renderFormSection('A. Thông tin học viên', [
-          renderField('fullName', 'Họ và tên học viên *', formState, 'text'),
-          renderField('birthDate', 'Ngày tháng năm sinh *', formState, 'date'),
-          renderField('avatarUrl', 'Ảnh đại diện URL', formState, 'url'),
-          `<button class="student-secondary-button" type="button" data-student-action="use-default-avatar">Dùng ảnh mặc định</button>`,
-          renderField('schoolName', 'Học sinh trường nào *', formState, 'text'),
-          renderField('hometown', 'Quê quán', formState, 'text'),
-          renderField('hobbies', 'Sở thích', formState, 'text'),
-          renderField('nationality', 'Quốc tịch', formState, 'text'),
-        ])}
-        ${renderFormSection('B. Thông tin phụ huynh', [
-          renderField('parentName', 'Họ và tên phụ huynh *', formState, 'text'),
-          renderField('parentBirthYear', 'Năm sinh phụ huynh', formState, 'number'),
-          renderField('parentPhone', 'Số điện thoại phụ huynh *', formState, 'tel'),
-          renderField('parentJob', 'Nghề nghiệp', formState, 'text'),
-          renderField('parentArea', 'Khu vực sinh sống', formState, 'text'),
-        ])}
-        ${renderFormSection('C. Trạng thái học', [
-          renderSelectField('level', 'Cấp độ *', formState, studentLevels),
-          renderField('testScore', 'Điểm bài thi', formState, 'number'),
-          renderSelectField('highestBotMilestone', 'Mốc bot đã vượt qua', formState, botMilestones),
-          renderTextareaField('personality', 'Tính cách học viên', formState),
-        ])}
-        ${renderFormSection('D. Chăm sóc / ghi chú ban đầu', [
-          renderSelectField('currentStatus', 'Trạng thái hiện tại', formState, studentStatuses),
-          renderTextareaField('achievements', 'Thành tích học viên đạt được', formState),
-          renderTextareaField('parentNotes', 'Thông tin đã trao đổi / lưu ý từ phụ huynh', formState),
-        ])}
+      <div class="student-form-scroll">
+        <div class="student-form-grid">
+          ${
+            currentStep === 1
+              ? `
+                ${renderFormSection('A. Thông tin học viên', [
+                  renderField('fullName', 'Họ và tên học viên *', formState, 'text', {
+                    className: 'span-full',
+                  }),
+                  renderField('birthDate', 'Ngày sinh *', formState, 'date'),
+                  renderSelectField('gender', 'Giới tính', formState, genderOptions),
+                  renderField('schoolName', 'Tên trường *', formState, 'text', {
+                    placeholder: 'Ví dụ: Sao Mai, Cao Thắng, Lê Quý Đôn',
+                  }),
+                  renderSelectField('schoolLevel', 'Bậc học', formState, schoolLevelOptions),
+                  renderField('hometown', 'Tỉnh/thành phố', formState, 'text', {
+                    placeholder: 'Ví dụ: TP.HCM, Bình Dương, Đồng Nai',
+                  }),
+                  renderField('nationality', 'Quốc tịch', formState, 'text'),
+                ])}
+                ${renderFormSection('C. Trạng thái học', [
+                  renderSelectField('level', 'Level *', formState, levelSelectOptions),
+                  renderSelectField('highestBotMilestone', 'Mốc bot đã vượt qua', formState, botMilestones),
+                  renderTextareaField('personality', 'Tính cách học viên', formState, {
+                    className: 'span-full',
+                  }),
+                  renderField('hobbies', 'Sở thích', formState, 'text'),
+                  renderField('testScore', 'Điểm bài thi', formState, 'number', {
+                    placeholder: '0-10, không bắt buộc',
+                    min: '0',
+                    max: '10',
+                    step: '0.5',
+                  }),
+                ])}
+              `
+              : `
+                ${renderFormSection('B. Thông tin phụ huynh', [
+                  renderField('parentName', 'Họ và tên phụ huynh *', formState, 'text'),
+                  renderField('parentBirthYear', 'Năm sinh phụ huynh', formState, 'text', {
+                    inputmode: 'numeric',
+                    maxlength: '4',
+                    placeholder: `Từ 1950 đến ${new Date().getFullYear()}`,
+                  }),
+                  renderField('parentPhone', 'Số điện thoại phụ huynh *', formState, 'tel', {
+                    placeholder: '0901 001 001',
+                  }),
+                  renderField('parentJob', 'Nghề nghiệp', formState, 'text'),
+                  renderField('parentArea', 'Khu vực sinh sống', formState, 'text'),
+                ])}
+                ${renderFormSection('D. Chăm sóc / ghi chú ban đầu', [
+                  renderSelectField('currentStatus', 'Trạng thái hiện tại', formState, studentStatuses),
+                  renderTextareaField('achievements', 'Thành tích học viên đạt được', formState, {
+                    className: 'span-full',
+                  }),
+                  renderTextareaField('parentNotes', 'Thông tin đã trao đổi / lưu ý từ phụ huynh', formState, {
+                    className: 'span-full',
+                    after: renderParentNoteSuggestions(),
+                  }),
+                ])}
+              `
+          }
+        </div>
       </div>
       <div class="student-form-actions">
-        <button class="student-save-button" type="button" data-student-action="save-form">
-          ${isEdit ? 'Lưu thay đổi' : 'Lưu học viên'}
-        </button>
-        <button class="student-secondary-button" type="button" data-student-action="cancel-form">
-          ${isEdit ? 'Hủy sửa' : 'Hủy thêm'}
-        </button>
+        ${
+          currentStep === 1
+            ? '<span></span><button class="student-secondary-button student-step-button" type="button" data-student-form-step="2">Thông tin phụ huynh →</button>'
+            : '<button class="student-secondary-button student-step-button" type="button" data-student-form-step="1">← Thông tin học viên</button><span></span>'
+        }
       </div>
     </section>
   `
 }
 
 function renderFormSection(title, fields) {
+  const cleanTitle = title.replace(/^[A-D]\.\s*/, '')
+
   return `
     <fieldset class="student-form-section">
-      <legend>${title}</legend>
+      <legend>${cleanTitle}</legend>
       ${fields.join('')}
     </fieldset>
   `
 }
 
-function renderField(name, label, formState, type) {
+function renderField(name, label, formState, type, options = {}) {
   return `
-    <label class="${formState.errors[name] ? 'has-error' : ''}">
+    <label class="${[formState.errors[name] ? 'has-error' : '', options.className ?? '']
+      .filter(Boolean)
+      .join(' ')}">
       <span>${label}</span>
       <input
         type="${type}"
         value="${escapeAttribute(formState.values[name] ?? '')}"
         data-student-form-field="${name}"
+        ${options.placeholder ? `placeholder="${escapeAttribute(options.placeholder)}"` : ''}
+        ${options.inputmode ? `inputmode="${options.inputmode}"` : ''}
+        ${options.maxlength ? `maxlength="${options.maxlength}"` : ''}
+        ${options.min ? `min="${options.min}"` : ''}
+        ${options.max ? `max="${options.max}"` : ''}
+        ${options.step ? `step="${options.step}"` : ''}
       />
+      ${formState.errors[name] ? `<small>${formState.errors[name]}</small>` : ''}
     </label>
   `
 }
 
-function renderTextareaField(name, label, formState) {
+function renderTextareaField(name, label, formState, options = {}) {
   return `
-    <label>
+    <label class="${options.className ?? ''}">
       <span>${label}</span>
       <textarea data-student-form-field="${name}">${formState.values[name] ?? ''}</textarea>
+      ${options.after ?? ''}
     </label>
   `
 }
@@ -319,15 +454,36 @@ function renderSelectField(name, label, formState, options) {
     <label class="${formState.errors[name] ? 'has-error' : ''}">
       <span>${label}</span>
       <select data-student-form-field="${name}">
-        ${options.map((option) => renderOption(option, option, formState.values[name])).join('')}
+        ${options.map((option) => {
+          const value = typeof option === 'object' ? option.value : option
+          const optionLabel = typeof option === 'object' ? option.label : option
+          return renderOption(value, optionLabel, formState.values[name])
+        }).join('')}
       </select>
+      ${formState.errors[name] ? `<small>${formState.errors[name]}</small>` : ''}
     </label>
   `
 }
 
-function renderStatCard(label, value) {
+function renderParentNoteSuggestions() {
   return `
-    <div class="student-stat-card">
+    <div class="student-parent-note-suggestions" aria-label="Gợi ý nhanh lưu ý phụ huynh">
+      ${parentNoteSuggestions
+        .map(
+          (suggestion) => `
+            <button type="button" data-student-parent-note-suggestion="${escapeAttribute(suggestion)}">
+              ${suggestion}
+            </button>
+          `,
+        )
+        .join('')}
+    </div>
+  `
+}
+
+function renderStatCard(label, value, tone = '') {
+  return `
+    <div class="student-stat-card ${tone ? `is-${tone}` : ''}">
       <span>${label}</span>
       <strong>${value}</strong>
     </div>
@@ -336,33 +492,35 @@ function renderStatCard(label, value) {
 
 function renderOption(value, label, selectedValue) {
   return `<option value="${escapeAttribute(value)}" ${
-    value === selectedValue ? 'selected' : ''
+    String(value) === String(selectedValue) ? 'selected' : ''
   }>${label}</option>`
 }
 
 function renderStudentRow(student) {
+  const hasCareNote = hasRealCareNote(student)
+
   return `
     <tr class="student-row" data-student-id="${student.id}" tabindex="0">
       <td>
         <div class="student-person">
           ${renderStudentAvatar(student)}
           <div>
-            <strong>${student.fullName}</strong>
+            <strong title="${escapeAttribute(student.fullName)}">${getShortName(student.fullName)}</strong>
             <span>${formatBirthDate(student.birthDate)}</span>
           </div>
         </div>
       </td>
-      <td>${student.parentName}</td>
+      <td title="${escapeAttribute(student.parentName)}">${getShortName(student.parentName)}</td>
       <td class="student-phone">${formatPhoneNumber(student.parentPhone)}</td>
       <td><span class="student-status">${student.currentStatus}</span></td>
-      <td>${student.level}</td>
-      <td>${student.highestBotMilestone}</td>
-      <td>${student.schoolName}</td>
-      <td><span class="student-note-cell">${student.latestCareNote}</span></td>
+      <td>${getLevelLabel(student.level)}</td>
+      <td>${student.elo ?? '—'}</td>
+      <td title="${escapeAttribute(student.schoolName)}">${getShortSchoolName(student.schoolName)}</td>
+      <td title="${escapeAttribute(student.mainTeacherName ?? '')}">${student.mainTeacherName || '—'}</td>
       <td>
-        <button class="student-row-action" type="button" data-student-action="open-edit" data-student-edit-id="${student.id}">
-          Sửa
-        </button>
+        ${hasCareNote
+          ? `<button class="student-note-badge has-note" type="button" title="${escapeAttribute(getLatestCareNoteText(student))}">Có ghi chú</button>`
+          : '<span class="student-note-badge is-empty">Không</span>'}
       </td>
     </tr>
   `
@@ -380,36 +538,6 @@ function renderStudentAvatar(student) {
   `
 }
 
-function renderSelectedStudent(student) {
-  return `
-    <div class="quick-panel-header">
-      ${renderStudentAvatar(student)}
-      <div>
-        <h4>${student.fullName}</h4>
-        <p>${student.currentStatus} · ${student.level}</p>
-      </div>
-    </div>
-    <dl>
-      <div><dt>Trường</dt><dd>${student.schoolName}</dd></div>
-      <div><dt>Phụ huynh</dt><dd>${student.parentName}</dd></div>
-      <div><dt>Điện thoại</dt><dd>${formatPhoneNumber(student.parentPhone)}</dd></div>
-      <div><dt>Điểm bài thi</dt><dd>${student.testScore}</dd></div>
-      <div><dt>Tính cách</dt><dd>${student.personality}</dd></div>
-      <div><dt>Thành tích</dt><dd>${student.achievements}</dd></div>
-      <div><dt>Lưu ý phụ huynh</dt><dd>${student.parentNotes}</dd></div>
-    </dl>
-    <p class="student-detail-note">Chi tiết học viên sẽ được bổ sung ở Module 1C.</p>
-  `
-}
-
-function renderDetailPlaceholder() {
-  return `
-    <h4>Đọc nhanh</h4>
-    <p>Chọn một học viên trong danh sách để xem thông tin tóm tắt.</p>
-    <p class="student-detail-note">Chi tiết học viên sẽ được bổ sung ở Module 1C.</p>
-  `
-}
-
 function renderEmptyState() {
   return `
     <tr>
@@ -420,12 +548,135 @@ function renderEmptyState() {
   `
 }
 
+function getLatestCareNoteText(student) {
+  const latestCareNote = [...(student.careNotes ?? [])].sort(
+    (firstNote, secondNote) => new Date(secondNote.createdAt) - new Date(firstNote.createdAt),
+  )[0]
+
+  return latestCareNote?.content || student.latestCareNote || 'Chưa có ghi chú'
+}
+
+function hasRealCareNote(student) {
+  const latestCareNote = getLatestCareNoteText(student).trim()
+  const normalizedLatestCareNote = normalizeText(latestCareNote)
+
+  return Boolean(
+    (student.careNotes ?? []).length ||
+      (latestCareNote && !normalizedLatestCareNote.includes('chua co ghi chu')),
+  )
+}
+
+function getShortName(value) {
+  const parts = String(value ?? '').trim().split(/\s+/).filter(Boolean)
+
+  if (parts.length <= 2) {
+    return parts.join(' ')
+  }
+
+  return parts.slice(-2).join(' ')
+}
+
+function getLevelLabel(level) {
+  const levelNumber = getLevelNumber(level)
+
+  if (levelNumber) {
+    return `Level ${levelNumber}`
+  }
+
+  return level ?? '—'
+}
+
+function getLevelNumber(level) {
+  const levelMap = {
+    'Nhập môn': 'Level 1',
+    'Cơ bản': 'Level 2',
+    'Trung cấp': 'Level 3',
+    'Nâng cao': 'Level 4',
+  }
+  const mappedLevel = levelMap[level]
+  const levelText = String(mappedLevel ?? level ?? '').trim()
+  const levelMatch = levelText.match(/\d+/)
+  const levelNumber = levelMatch ? Number(levelMatch[0]) : null
+
+  return levelNumber && levelNumber >= 1 && levelNumber <= 15 ? levelNumber : null
+}
+
+function getShortSchoolName(value) {
+  const schoolName = String(value ?? '').trim()
+
+  if (!schoolName) {
+    return '—'
+  }
+
+  const normalizedSchoolName = normalizeText(schoolName)
+  let shortName = schoolName
+  let levelLabel = ''
+
+  if (normalizedSchoolName.includes('thpt')) {
+    shortName = schoolName.replace(/trường\s*/i, '').replace(/thpt\s*/i, '').trim()
+    levelLabel = 'Cấp 3'
+  } else if (normalizedSchoolName.includes('thcs')) {
+    shortName = schoolName.replace(/trường\s*/i, '').replace(/thcs\s*/i, '').trim()
+    levelLabel = 'Cấp 2'
+  } else if (normalizedSchoolName.includes('tieu hoc')) {
+    shortName = schoolName.replace(/trường\s*/i, '').replace(/tiểu học\s*/i, '').trim()
+    levelLabel = 'Cấp 1'
+  }
+
+  return levelLabel ? `${shortName} (${levelLabel})` : schoolName
+}
+
+function getSchoolLevelFromName(value) {
+  const normalizedSchoolName = normalizeText(value)
+
+  if (normalizedSchoolName.includes('mau giao')) {
+    return 'Mẫu giáo'
+  }
+
+  if (normalizedSchoolName.includes('tieu hoc')) {
+    return 'Cấp 1'
+  }
+
+  if (normalizedSchoolName.includes('thcs')) {
+    return 'Cấp 2'
+  }
+
+  if (normalizedSchoolName.includes('thpt')) {
+    return 'Cấp 3'
+  }
+
+  return 'Khác'
+}
+
+function getTestScoreForForm(value) {
+  if (value === '' || value === null || value === undefined) {
+    return ''
+  }
+
+  const score = Number(String(value).replace(',', '.'))
+
+  if (!Number.isFinite(score)) {
+    return ''
+  }
+
+  if (score <= 10) {
+    return String(score)
+  }
+
+  if (score <= 100) {
+    return String(Math.round((score / 10) * 2) / 2)
+  }
+
+  return ''
+}
+
 function getStudentStats(students) {
   return {
     total: students.length,
     active: countByStatus(students, 'Đang theo học'),
     paused: countByStatus(students, 'Bảo lưu'),
     stopped: countByStatus(students, 'Ngưng học'),
+    withNotes: students.filter(hasRealCareNote).length,
   }
 }
 

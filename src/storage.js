@@ -39,16 +39,50 @@ export function getStoredStudents(defaultStudents) {
     const storedStudents = JSON.parse(localStorage.getItem(STUDENTS_KEY))
 
     if (Array.isArray(storedStudents)) {
-      return storedStudents
+      const migratedStudents = normalizeStudents(storedStudents)
+      saveStoredStudents(migratedStudents)
+      return migratedStudents
     }
   } catch {
     localStorage.removeItem(STUDENTS_KEY)
   }
 
-  saveStoredStudents(defaultStudents)
-  return defaultStudents
+  const migratedDefaultStudents = normalizeStudents(defaultStudents)
+  saveStoredStudents(migratedDefaultStudents)
+  return migratedDefaultStudents
 }
 
 export function saveStoredStudents(students) {
-  localStorage.setItem(STUDENTS_KEY, JSON.stringify(students))
+  localStorage.setItem(STUDENTS_KEY, JSON.stringify(normalizeStudents(students)))
+}
+
+function normalizeStudents(students) {
+  return students.map((student) => {
+    if (Array.isArray(student.careNotes)) {
+      return student
+    }
+
+    const legacyNote = String(student.latestCareNote ?? '').trim()
+    const hasRealLegacyNote =
+      legacyNote &&
+      legacyNote !== 'Chưa có ghi chú chăm sóc.' &&
+      !legacyNote.toLowerCase().includes('chưa có ghi chú')
+
+    return {
+      ...student,
+      careNotes: hasRealLegacyNote
+        ? [
+            {
+              id: `note_legacy_${student.id}`,
+              createdAt: student.updatedAt
+                ? new Date(student.updatedAt).toISOString()
+                : new Date().toISOString(),
+              author: 'Admin DreamHome',
+              content: legacyNote,
+              tags: [],
+            },
+          ]
+        : [],
+    }
+  })
 }

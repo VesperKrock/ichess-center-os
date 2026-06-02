@@ -1,22 +1,54 @@
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
 
+export const careNoteSuggestions = [
+  'Phụ huynh cần được nhắc học phí',
+  'Phụ huynh muốn đổi lịch học',
+  'Học viên nghỉ nhiều buổi',
+  'Học viên tiến bộ tốt',
+  'Cần theo sát thái độ học',
+  'Cần gửi bài luyện thêm',
+  'Cần gọi lại phụ huynh',
+  'Đã trao đổi với phụ huynh',
+  'Cần xếp lịch học bù',
+  'Phụ huynh phản hồi tích cực',
+]
+
+export const emptyCareNoteDraft = {
+  content: '',
+  tag: '',
+  error: '',
+  editingNoteId: '',
+}
+
 export function renderStudentDetail(student) {
   if (!student) {
-    return `
-      <section class="student-detail">
-        <p class="student-detail-empty">Không tìm thấy hồ sơ học viên.</p>
-      </section>
-    `
+    return renderStudentNotFound()
   }
 
+  const careNotes = getSortedCareNotes(student)
+  const latestCareNote = careNotes[0]
+
   return `
-    <section class="student-detail" aria-label="Chi tiết hồ sơ học viên">
+    <section class="student-detail student-detail-overview" aria-label="Hồ sơ tổng quan học viên">
       <div class="student-detail-hero">
-        ${renderStudentAvatar(student)}
-        <div>
+        <div class="student-avatar-stack">
+          ${renderStudentAvatar(student)}
+          <button
+            class="student-avatar-clear"
+            type="button"
+            data-student-detail-action="clear-avatar"
+            data-student-id="${student.id}"
+            ${student.avatarUrl ? '' : 'disabled'}
+          >
+            Xóa avatar
+          </button>
+        </div>
+        <div class="student-detail-hero-main">
           <h3>${student.fullName}</h3>
-          <p>${student.currentStatus} · ${student.level}</p>
+          <p>${displayValue(student.currentStatus)} · ${getLevelLabel(student.level)} · Mốc bot: ${displayValue(student.highestBotMilestone)}</p>
+          <p>${formatBirthDate(student.birthDate)} · ${formatAgeLabel(student.birthDate)} · ${getGenderLabel(student.gender)}</p>
+          <p>Trường: ${getSchoolLabel(student)} · PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(student.parentPhone))}</p>
         </div>
         <button
           class="student-detail-edit"
@@ -28,53 +60,152 @@ export function renderStudentDetail(student) {
         </button>
       </div>
 
-      <div class="student-detail-grid">
-        ${renderSection('A. Thông tin học viên', [
+      <div class="student-overview-grid">
+        ${renderOverviewTile('Thông tin học viên', [
           ['Họ và tên', student.fullName],
           ['Ngày sinh', formatBirthDate(student.birthDate)],
-          ['Tuổi', `${getAge(student.birthDate)} tuổi`],
-          ['Trường học', student.schoolName],
-          ['Quê quán', student.hometown],
+          ['Tuổi', formatAgeLabel(student.birthDate)],
+          ['Giới tính', getGenderLabel(student.gender)],
+          ['Trường', getSchoolLabel(student)],
+          ['Tỉnh/TP', student.hometown],
           ['Sở thích', student.hobbies],
           ['Quốc tịch', student.nationality],
         ])}
-        ${renderSection('B. Thông tin phụ huynh', [
-          ['Họ và tên phụ huynh', student.parentName],
+        ${renderOverviewTile('Phụ huynh / Liên hệ', [
+          ['Phụ huynh', student.parentName],
+          ['SĐT', formatPhoneNumber(student.parentPhone)],
           ['Năm sinh / tuổi', formatParentAge(student.parentBirthYear)],
-          ['Số điện thoại', formatPhoneNumber(student.parentPhone)],
           ['Nghề nghiệp', student.parentJob],
-          ['Khu vực sinh sống', student.parentArea],
+          ['Khu vực', student.parentArea],
         ])}
-        ${renderSection('C. Trạng thái học', [
-          ['Cấp độ', student.level],
-          ['Điểm bài thi', student.testScore || 'Chưa có'],
-          ['Mốc bot đã vượt qua', student.highestBotMilestone],
-          ['Tính cách học viên', student.personality],
+        ${renderOverviewTile('Trạng thái học', [
+          ['Level', getLevelLabel(student.level)],
+          ['Điểm bài thi', formatTestScore(student.testScore)],
+          ['Mốc bot', student.highestBotMilestone],
+          ['Tính cách', student.personality],
+          ['GV phụ trách', student.mainTeacherName],
+        ])}
+        ${renderOverviewTile(
+          'Chăm sóc',
+          [
+            ['Trạng thái', student.currentStatus],
+            ['Số ghi chú', `${careNotes.length}`],
+            ['Ghi chú mới nhất', summarizeText(latestCareNote?.content)],
+            ['Thành tích', summarizeText(student.achievements)],
+            ['Lưu ý phụ huynh', summarizeText(student.parentNotes)],
+          ],
+          `<button type="button" class="student-detail-open-button" data-student-detail-action="open-care-notes" data-student-id="${student.id}">Mở chi tiết</button>`,
+        )}
+        ${renderOverviewTile(
+          'Kết quả học tập',
+          [
+            ['Level hiện tại', getLevelLabel(student.level)],
+            ['Điểm gần nhất', formatTestScore(student.testScore)],
+            ['Mốc bot', student.highestBotMilestone],
+            ['Nhận xét GV', 'Sẽ cập nhật sau'],
+            ['Kế hoạch học tập', 'Sẽ cập nhật sau'],
+          ],
+          `<button type="button" class="student-detail-open-button" data-student-detail-action="open-learning" data-student-id="${student.id}">Mở chi tiết</button>`,
+        )}
+        ${renderOverviewTile('Tự động sau', [
           ['Chuyên cần', 'Tự động cập nhật sau'],
           ['Ca học chính', 'Tự động cập nhật sau'],
-        ])}
-        ${renderSection('D. Chăm sóc / ghi chú', [
-          ['Trạng thái hiện tại', student.currentStatus],
-          ['Số khóa tái đăng ký', 'Tự động cập nhật sau'],
+          ['Tái đăng ký', 'Tự động cập nhật sau'],
           ['Tình trạng thu phí', 'Tự động cập nhật sau'],
-          ['Thành tích học viên đạt được', student.achievements],
-          ['Trao đổi / lưu ý từ phụ huynh', student.parentNotes],
-          ['Ghi chú gần nhất', student.latestCareNote],
         ])}
       </div>
+    </section>
+  `
+}
 
-      <section class="student-detail-future">
-        <h4>E. Kết quả học tập</h4>
-        <p>
-          Kết quả học tập sẽ được bổ sung ở giai đoạn Giáo viên/Báo cáo phụ huynh.
-        </p>
-        <ul>
-          <li>Cấp độ học hiện tại</li>
-          <li>Điểm số bài kiểm tra</li>
-          <li>Mốc bot đã vượt qua</li>
-          <li>Nhận xét của giáo viên</li>
-          <li>Kế hoạch học tập tiếp theo</li>
-        </ul>
+export function renderStudentCareNotes(student, careNoteDraft = emptyCareNoteDraft) {
+  if (!student) {
+    return renderStudentNotFound()
+  }
+
+  const isEditing = Boolean(careNoteDraft.editingNoteId)
+
+  return `
+    <section class="student-care-notes student-care-window" aria-label="Chăm sóc và ghi chú học viên">
+      <div class="student-care-layout">
+        <div class="student-care-history-panel">
+          <h4>Lịch sử ghi chú chăm sóc</h4>
+          ${renderCareNoteHistory(student)}
+        </div>
+        <div class="student-care-form">
+          <h4>${isEditing ? 'Sửa ghi chú chăm sóc' : 'Thêm ghi chú chăm sóc'}</h4>
+          <label>
+            <span>Tag / chủ đề</span>
+            <input
+              type="text"
+              value="${escapeAttribute(careNoteDraft.tag ?? '')}"
+              data-care-note-field="tag"
+              data-care-note-student-id="${student.id}"
+              placeholder="Ví dụ: Lịch học, Học phí"
+            />
+          </label>
+          <label>
+            <span>Nội dung ghi chú</span>
+            <textarea
+              data-care-note-field="content"
+              data-care-note-student-id="${student.id}"
+              placeholder="Nhập nội dung đã trao đổi hoặc việc cần theo dõi..."
+            >${careNoteDraft.content ?? ''}</textarea>
+          </label>
+          ${
+            careNoteDraft.error
+              ? `<p class="care-note-error">${careNoteDraft.error}</p>`
+              : ''
+          }
+          <div class="care-note-suggestions" aria-label="Gợi ý nhanh ghi chú">
+            ${careNoteSuggestions
+              .slice(0, 8)
+              .map(
+                (suggestion) => `
+                  <button type="button" data-care-note-suggestion="${escapeAttribute(suggestion)}" data-care-note-student-id="${student.id}">
+                    ${suggestion}
+                  </button>
+                `,
+              )
+              .join('')}
+          </div>
+          <div class="care-note-actions">
+            <button type="button" data-care-note-action="save" data-care-note-student-id="${student.id}">
+              ${isEditing ? 'Lưu thay đổi' : 'Lưu ghi chú'}
+            </button>
+            <button type="button" data-care-note-action="clear" data-care-note-student-id="${student.id}">
+              ${isEditing ? 'Hủy sửa' : 'Hủy nhập'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  `
+}
+
+export function renderStudentLearningResult(student) {
+  if (!student) {
+    return renderStudentNotFound()
+  }
+
+  return `
+    <section class="student-learning-window" aria-label="Kết quả học tập học viên">
+      <div class="student-learning-stats">
+        ${renderLearningStat('Level hiện tại', getLevelLabel(student.level))}
+        ${renderLearningStat('Điểm gần nhất', formatTestScore(student.testScore))}
+        ${renderLearningStat('Mốc bot', displayValue(student.highestBotMilestone))}
+      </div>
+      <section class="student-learning-panel">
+        <h4>Biểu đồ tiến bộ</h4>
+        <p>Chưa có dữ liệu học tập thật. Giáo viên sẽ cập nhật ở phase sau.</p>
+      </section>
+      <section class="student-learning-panel">
+        <h4>Nhận xét giáo viên</h4>
+        <p>Sẽ cập nhật sau.</p>
+      </section>
+      <section class="student-learning-panel">
+        <h4>Kế hoạch học tập tiếp theo</h4>
+        <p>Sẽ cập nhật sau.</p>
       </section>
     </section>
   `
@@ -84,17 +215,36 @@ export function getStudentDetailWindowTitle(student) {
   return student ? `Hồ sơ học viên - ${student.fullName}` : 'Hồ sơ học viên'
 }
 
-function renderSection(title, rows) {
+export function getStudentCareNotesWindowTitle(student) {
+  return student ? `Chăm sóc / Ghi chú - ${student.fullName}` : 'Chăm sóc / Ghi chú'
+}
+
+export function getStudentLearningWindowTitle(student) {
+  return student ? `Kết quả học tập - ${student.fullName}` : 'Kết quả học tập'
+}
+
+function renderStudentNotFound() {
   return `
-    <section class="student-detail-section">
-      <h4>${title}</h4>
+    <section class="student-detail">
+      <p class="student-detail-empty">Không tìm thấy hồ sơ học viên.</p>
+    </section>
+  `
+}
+
+function renderOverviewTile(title, rows, action = '') {
+  return `
+    <section class="student-overview-tile">
+      <div class="student-overview-tile-header">
+        <h4>${title}</h4>
+        ${action ? `<div class="student-overview-actions">${action}</div>` : ''}
+      </div>
       <dl>
         ${rows
           .map(
             ([label, value]) => `
               <div>
                 <dt>${label}</dt>
-                <dd>${value || 'Chưa có'}</dd>
+                <dd>${displayValue(value)}</dd>
               </div>
             `,
           )
@@ -102,6 +252,62 @@ function renderSection(title, rows) {
       </dl>
     </section>
   `
+}
+
+function renderLearningStat(label, value) {
+  return `
+    <div class="student-learning-stat">
+      <span>${label}</span>
+      <strong>${displayValue(value)}</strong>
+    </div>
+  `
+}
+
+function renderCareNoteHistory(student) {
+  const careNotes = getSortedCareNotes(student)
+
+  if (!careNotes.length) {
+    return `<p class="care-note-empty">Chưa có ghi chú chăm sóc.</p>`
+  }
+
+  return `
+    <div class="care-note-list">
+      ${careNotes
+        .map(
+          (note) => `
+            <article class="care-note-item">
+              <div>
+                <strong>${note.author || 'Admin DreamHome'}</strong>
+                <time datetime="${note.createdAt}">${formatDateTime(note.createdAt)}</time>
+              </div>
+              <p>${note.content}</p>
+              ${
+                note.tags?.length
+                  ? `<div class="care-note-tags">${note.tags
+                      .map((tag) => `<span>${tag}</span>`)
+                      .join('')}</div>`
+                  : ''
+              }
+              <div class="care-note-item-actions">
+                <button type="button" data-care-note-action="edit" data-care-note-student-id="${student.id}" data-care-note-id="${note.id}">
+                  Sửa
+                </button>
+                <button type="button" data-care-note-action="delete" data-care-note-student-id="${student.id}" data-care-note-id="${note.id}">
+                  Xóa
+                </button>
+              </div>
+            </article>
+          `,
+        )
+        .join('')}
+    </div>
+  `
+}
+
+function getSortedCareNotes(student) {
+  return [...(student.careNotes ?? [])].sort(
+    (firstNote, secondNote) => new Date(secondNote.createdAt) - new Date(firstNote.createdAt),
+  )
 }
 
 function renderStudentAvatar(student) {
@@ -116,7 +322,49 @@ function renderStudentAvatar(student) {
   `
 }
 
+function displayValue(value) {
+  const text = String(value ?? '').trim()
+  return text && !text.toLowerCase().includes('chưa có') ? text : '—'
+}
+
+function getGenderLabel(value) {
+  const genderLabels = {
+    male: 'Nam',
+    female: 'Nữ',
+  }
+
+  return genderLabels[value] ?? 'Chưa cập nhật giới tính'
+}
+
+function getLevelLabel(level) {
+  const levelMap = {
+    'Nhập môn': 'Level 1',
+    'Cơ bản': 'Level 2',
+    'Trung cấp': 'Level 3',
+    'Nâng cao': 'Level 4',
+  }
+  const levelText = String(levelMap[level] ?? level ?? '').trim()
+  const levelMatch = levelText.match(/\d+/)
+
+  return levelMatch ? `Level ${Number(levelMatch[0])}` : displayValue(levelText)
+}
+
+function getSchoolLabel(student) {
+  const schoolName = displayValue(student.schoolName)
+  const schoolLevel = displayValue(student.schoolLevel)
+
+  if (schoolName === '—') {
+    return schoolLevel === '—' ? '—' : schoolLevel
+  }
+
+  return schoolLevel === '—' ? schoolName : `${schoolName} (${schoolLevel})`
+}
+
 function formatBirthDate(value) {
+  if (!value) {
+    return '—'
+  }
+
   const birthDate = new Date(value)
   const day = String(birthDate.getDate()).padStart(2, '0')
   const month = String(birthDate.getMonth() + 1).padStart(2, '0')
@@ -125,6 +373,10 @@ function formatBirthDate(value) {
 }
 
 function getAge(value) {
+  if (!value) {
+    return null
+  }
+
   const birthDate = new Date(value)
   const today = new Date()
   let age = today.getFullYear() - birthDate.getFullYear()
@@ -137,9 +389,14 @@ function getAge(value) {
   return age
 }
 
+function formatAgeLabel(value) {
+  const age = getAge(value)
+  return Number.isFinite(age) ? `${age} tuổi` : '—'
+}
+
 function formatParentAge(parentBirthYear) {
   if (!parentBirthYear) {
-    return 'Chưa có'
+    return '—'
   }
 
   const age = new Date().getFullYear() - Number(parentBirthYear)
@@ -154,4 +411,37 @@ function formatPhoneNumber(value) {
   }
 
   return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+}
+
+function summarizeText(value, maxLength = 110) {
+  const text = displayValue(value)
+
+  if (text === '—' || text.length <= maxLength) {
+    return text
+  }
+
+  return `${text.slice(0, maxLength).trim()}...`
+}
+
+function formatTestScore(value) {
+  if (value === '' || value === null || value === undefined) {
+    return '—'
+  }
+
+  const score = Number(String(value).replace(',', '.'))
+  return Number.isFinite(score) ? `${score}/10` : '—'
+}
+
+function formatDateTime(value) {
+  return new Date(value).toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function escapeAttribute(value) {
+  return String(value).replace(/"/g, '&quot;')
 }
