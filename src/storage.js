@@ -2,6 +2,8 @@ const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
 const STUDENTS_KEY = 'ichessCenterOS.students.dreamhome'
 const VALID_VIEW_MODES = ['grid', 'list']
+const LEGACY_SAMPLE_TEACHER_NAMES = ['Thầy Thắng', 'Cô Vân', 'Thầy Hải']
+const UNASSIGNED_TEACHER_NAME = 'Chưa phân công'
 
 export function getViewMode() {
   const savedMode = localStorage.getItem(VIEW_MODE_KEY)
@@ -58,8 +60,13 @@ export function saveStoredStudents(students) {
 
 function normalizeStudents(students) {
   return students.map((student) => {
+    const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
+
     if (Array.isArray(student.careNotes)) {
-      return student
+      return {
+        ...student,
+        mainTeacherName,
+      }
     }
 
     const legacyNote = String(student.latestCareNote ?? '').trim()
@@ -70,6 +77,7 @@ function normalizeStudents(students) {
 
     return {
       ...student,
+      mainTeacherName,
       careNotes: hasRealLegacyNote
         ? [
             {
@@ -85,4 +93,10 @@ function normalizeStudents(students) {
         : [],
     }
   })
+}
+
+function normalizeStudentTeacherName(mainTeacherName) {
+  return LEGACY_SAMPLE_TEACHER_NAMES.includes(mainTeacherName)
+    ? UNASSIGNED_TEACHER_NAME
+    : mainTeacherName
 }
