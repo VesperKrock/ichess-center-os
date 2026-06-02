@@ -1,14 +1,22 @@
 import './styles.css'
 import { modules } from './modules.js'
 import {
+  getDeletedNotificationIds,
   getDesktopModuleOrder,
+  getStoredNotifications,
   getStoredStudents,
+  getStoredTuition,
   getViewMode,
+  saveDeletedNotificationIds,
   saveDesktopModuleOrder,
+  saveStoredNotifications,
   saveStoredStudents,
+  saveStoredTuition,
   saveViewMode,
 } from './storage.js'
+import { createSampleNotifications } from './notifications.js'
 import { sampleStudents } from './student-data.js'
+import { createSampleTuitionRecords } from './tuition-data.js'
 import {
   emptyCareNoteDraft,
   getStudentCareNotesWindowTitle,
@@ -28,12 +36,29 @@ import {
   renderStudentModule,
   validateStudentForm,
 } from './student-module.js'
+import {
+  buildTuitionRows,
+  createEditTuitionFormState,
+  createEmptyTuitionFormState,
+  createPaymentFormState,
+  createRenewTuitionFormState,
+  createTuitionWarningNotification,
+  initialTuitionFilters,
+  normalizePaymentFormValues,
+  normalizeTuitionFormValues,
+  renderTuitionModule,
+  validatePaymentForm,
+  validateRenewTuitionForm,
+  validateTuitionForm,
+} from './tuition-module.js'
 
 const app = document.querySelector('#app')
 
 let currentViewMode = getViewMode()
 let isStartMenuOpen = false
 let isWindowOverflowOpen = false
+let isNotificationCenterOpen = false
+let notificationPanelPosition = { right: 12, bottom: 56 }
 let openWindows = []
 let nextWindowNumber = 1
 let topZIndex = 20
@@ -41,9 +66,18 @@ let desktopModuleOrder = getDesktopModuleOrder(modules.map((moduleItem) => modul
 let shortcutDragState = null
 let suppressNextModuleClick = false
 let shortcutDocumentDragBound = false
+let notificationOutsidePointerBound = false
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
+let tuitionRecords = getStoredTuition(createSampleTuitionRecords(students))
+let notifications = getStoredNotifications(createSampleNotifications())
+let deletedNotificationIds = getDeletedNotificationIds()
+notifications = syncTuitionNotifications(notifications)
 let studentFormState = null
+let tuitionFilters = { ...initialTuitionFilters }
+let tuitionFormState = null
+let tuitionPaymentFormState = null
+let tuitionDetailState = null
 let careNoteDrafts = {}
 
 function render() {
@@ -56,6 +90,7 @@ function render() {
         </div>
       </main>
       ${renderTaskbar()}
+      ${renderSystemOverlay()}
     </div>
   `
 
@@ -166,6 +201,17 @@ function renderWindowBody(windowItem) {
     return renderStudentModule(students, studentFilters, studentFormState)
   }
 
+  if (moduleItem.id === 'hoc-phi') {
+    return renderTuitionModule(
+      students,
+      tuitionRecords,
+      tuitionFilters,
+      tuitionFormState,
+      tuitionPaymentFormState,
+      tuitionDetailState,
+    )
+  }
+
   return `
     <div class="room-heading">
       <p class="room-description">${moduleItem.shortDescription}</p>
@@ -223,6 +269,7 @@ function renderTaskbar() {
   const visibleWindows = openWindows.slice(0, 4)
   const overflowWindows = openWindows.slice(4)
   const activeWindowId = getActiveWindowId()
+  const unreadCount = getUnreadNotificationCount()
   const windowButtons = visibleWindows
     .map((windowItem) => {
       const title = getWindowTitle(windowItem)
@@ -295,10 +342,112 @@ function renderTaskbar() {
           </button>
         </div>
         <time class="taskbar-clock" id="taskbar-clock" aria-label="Ngày giờ hiện tại"></time>
+        <button
+          class="notification-bell ${isNotificationCenterOpen ? 'active' : ''}"
+          type="button"
+          data-action="toggle-notifications"
+          aria-expanded="${isNotificationCenterOpen}"
+          aria-controls="notification-center"
+          aria-label="Thông báo, ${unreadCount} chưa đọc"
+        >
+          <span class="notification-bell-icon" aria-hidden="true">🔔</span>
+          ${
+            unreadCount
+              ? `<span class="notification-badge">${unreadCount}</span>`
+              : '<span class="notification-badge empty">0</span>'
+          }
+        </button>
       </div>
       ${isStartMenuOpen ? renderStartMenu() : ''}
       ${isWindowOverflowOpen ? renderWindowOverflowMenu(overflowWindows, activeWindowId) : ''}
     </footer>
+  `
+}
+
+function renderSystemOverlay() {
+  if (!isNotificationCenterOpen) {
+    return '<div class="system-overlay-root" id="system-overlay-root"></div>'
+  }
+
+  return `
+    <div class="system-overlay-root active" id="system-overlay-root">
+      ${renderNotificationCenter(getUnreadNotificationCount())}
+    </div>
+  `
+}
+
+function renderNotificationCenter(unreadCount) {
+  const readCount = notifications.length - unreadCount
+  const notificationItems = notifications
+    .map(
+      (notification) => `
+        <article
+          class="notification-item ${notification.read ? 'read' : 'unread'} level-${notification.level}"
+          data-notification-id="${notification.id}"
+          tabindex="0"
+          aria-label="${escapeHtml(notification.title)}"
+        >
+          <div class="notification-item-header">
+            <strong>${escapeHtml(notification.title)}</strong>
+            <span class="notification-state">${notification.read ? 'Đã đọc' : 'Chưa đọc'}</span>
+          </div>
+          <p>${escapeHtml(notification.message)}</p>
+          <div class="notification-meta">
+            <span>${escapeHtml(getNotificationSourceLabel(notification.sourceModule))}</span>
+            <time datetime="${notification.createdAt}">${formatNotificationTime(notification.createdAt)}</time>
+          </div>
+          ${
+            notification.read
+              ? ''
+              : `
+                <button
+                  class="notification-read-button"
+                  type="button"
+                  data-notification-action="mark-read"
+                  data-notification-id="${notification.id}"
+                >
+                  Đánh dấu đã đọc
+                </button>
+              `
+          }
+        </article>
+      `,
+    )
+    .join('')
+
+  return `
+    <section
+      class="notification-center"
+      id="notification-center"
+      style="--notification-panel-right: ${notificationPanelPosition.right}px; --notification-panel-bottom: ${notificationPanelPosition.bottom}px;"
+      aria-label="Thông báo"
+    >
+      <div class="notification-center-header">
+        <div>
+          <h2>Thông báo</h2>
+          <p>${unreadCount} chưa đọc</p>
+        </div>
+        <div class="notification-center-actions">
+          <button
+            type="button"
+            data-notification-action="mark-all-read"
+            ${unreadCount ? '' : 'disabled'}
+          >
+            Đánh dấu tất cả đã đọc
+          </button>
+          <button
+            type="button"
+            data-notification-action="clear-read"
+            ${readCount ? '' : 'disabled'}
+          >
+            Xóa đã đọc
+          </button>
+        </div>
+      </div>
+      <div class="notification-list">
+        ${notificationItems || '<p class="notification-empty">Chưa có thông báo.</p>'}
+      </div>
+    </section>
   `
 }
 
@@ -376,6 +525,7 @@ function openModuleWindow(moduleId) {
     focusWindow(existingWindow.id)
     isStartMenuOpen = false
     isWindowOverflowOpen = false
+    isNotificationCenterOpen = false
     render()
     return
   }
@@ -402,6 +552,7 @@ function openModuleWindow(moduleId) {
   nextWindowNumber += 1
   isStartMenuOpen = false
   isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
   render()
 }
 
@@ -414,6 +565,7 @@ function openStudentDetailWindow(studentId) {
     focusWindow(existingWindow.id)
     isStartMenuOpen = false
     isWindowOverflowOpen = false
+    isNotificationCenterOpen = false
     render()
     return
   }
@@ -441,6 +593,7 @@ function openStudentDetailWindow(studentId) {
   nextWindowNumber += 1
   isStartMenuOpen = false
   isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
   render()
 }
 
@@ -453,6 +606,7 @@ function openStudentSubWindow(studentId, type) {
     focusWindow(existingWindow.id)
     isStartMenuOpen = false
     isWindowOverflowOpen = false
+    isNotificationCenterOpen = false
     render()
     return
   }
@@ -482,6 +636,7 @@ function openStudentSubWindow(studentId, type) {
   focusWindow(nextWindowId)
   isStartMenuOpen = false
   isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
   render()
 }
 
@@ -586,6 +741,7 @@ function showDesktop() {
   openWindows = openWindows.map((windowItem) => ({ ...windowItem, minimized: true }))
   isStartMenuOpen = false
   isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
   render()
 }
 
@@ -600,12 +756,15 @@ function getStatusLabel(status) {
 }
 
 function bindEvents() {
+  bindNotificationOutsidePointer()
+
   document.querySelectorAll('[data-view-mode]').forEach((button) => {
     button.addEventListener('click', () => {
       currentViewMode = button.dataset.viewMode
       saveViewMode(currentViewMode)
       isStartMenuOpen = false
       isWindowOverflowOpen = false
+      isNotificationCenterOpen = false
       render()
     })
   })
@@ -624,12 +783,22 @@ function bindEvents() {
   document.querySelector('[data-action="toggle-start"]')?.addEventListener('click', () => {
     isStartMenuOpen = !isStartMenuOpen
     isWindowOverflowOpen = false
+    isNotificationCenterOpen = false
     render()
   })
 
   document.querySelector('[data-action="toggle-window-overflow"]')?.addEventListener('click', () => {
     isWindowOverflowOpen = !isWindowOverflowOpen
     isStartMenuOpen = false
+    isNotificationCenterOpen = false
+    render()
+  })
+
+  document.querySelector('[data-action="toggle-notifications"]')?.addEventListener('click', (event) => {
+    notificationPanelPosition = getNotificationPanelPosition(event.currentTarget)
+    isNotificationCenterOpen = !isNotificationCenterOpen
+    isStartMenuOpen = false
+    isWindowOverflowOpen = false
     render()
   })
 
@@ -676,8 +845,358 @@ function bindEvents() {
       focusWindow(button.dataset.taskbarWindowId)
       isStartMenuOpen = false
       isWindowOverflowOpen = false
+      isNotificationCenterOpen = false
       render()
     })
+  })
+
+  document.querySelectorAll('[data-notification-id]').forEach((notificationElement) => {
+    notificationElement.addEventListener('click', (event) => {
+      if (event.target.closest('[data-notification-action]')) {
+        return
+      }
+
+      markNotificationRead(notificationElement.dataset.notificationId)
+    })
+
+    notificationElement.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      event.preventDefault()
+      markNotificationRead(notificationElement.dataset.notificationId)
+    })
+  })
+
+  document.querySelectorAll('[data-notification-action="mark-read"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      markNotificationRead(button.dataset.notificationId)
+    })
+  })
+
+  document.querySelector('[data-notification-action="mark-all-read"]')?.addEventListener('click', () => {
+    notifications = notifications.map((notification) => ({ ...notification, read: true }))
+    saveStoredNotifications(notifications)
+    render()
+  })
+
+  document.querySelector('[data-notification-action="clear-read"]')?.addEventListener('click', () => {
+    const readNotificationIds = notifications
+      .filter((notification) => notification.read)
+      .map((notification) => notification.id)
+    deletedNotificationIds = Array.from(new Set([...deletedNotificationIds, ...readNotificationIds]))
+    saveDeletedNotificationIds(deletedNotificationIds)
+    notifications = notifications.filter((notification) => !notification.read)
+    saveStoredNotifications(notifications)
+    render()
+  })
+
+  document.querySelectorAll('[data-tuition-filter]').forEach((control) => {
+    control.addEventListener('input', () => {
+      tuitionFilters = {
+        ...tuitionFilters,
+        [control.dataset.tuitionFilter]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(
+        `[data-tuition-filter="${control.dataset.tuitionFilter}"]`,
+      )
+      nextControl?.focus()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="open-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const student = students.find((item) => item.id === button.dataset.tuitionStudentId)
+
+      if (!student) {
+        return
+      }
+
+      const tuitionRecord = tuitionRecords.find((record) => record.studentId === student.id)
+      tuitionFormState = tuitionRecord
+        ? createEditTuitionFormState(student, tuitionRecord)
+        : createEmptyTuitionFormState(student)
+      tuitionPaymentFormState = null
+      tuitionDetailState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-row-student-id]').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      if (
+        event.target.closest('[data-tuition-action="open-debt"]') ||
+        event.target.closest('[data-tuition-action="open-detail"]')
+      ) {
+        return
+      }
+
+      openTuitionPackageForm(row.dataset.tuitionRowStudentId)
+    })
+
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      if (
+        event.target.closest('[data-tuition-action="open-debt"]') ||
+        event.target.closest('[data-tuition-action="open-detail"]')
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      openTuitionPackageForm(row.dataset.tuitionRowStudentId)
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="open-payment"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const student = students.find((item) => item.id === button.dataset.tuitionStudentId)
+      const tuitionRecord = tuitionRecords.find((record) => record.studentId === button.dataset.tuitionStudentId)
+
+      if (!student || !tuitionRecord) {
+        return
+      }
+
+      tuitionPaymentFormState = createPaymentFormState(student, tuitionRecord)
+      tuitionFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="open-debt"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const student = students.find((item) => item.id === button.dataset.tuitionStudentId)
+      const tuitionRecord = tuitionRecords.find((record) => record.studentId === button.dataset.tuitionStudentId)
+
+      if (!student || !tuitionRecord) {
+        return
+      }
+
+      const debtAmount = Math.max(0, tuitionRecord.totalAmount - tuitionRecord.paidAmount)
+      tuitionPaymentFormState = createPaymentFormState(
+        student,
+        tuitionRecord,
+        debtAmount > 0 ? 'collect' : 'history',
+      )
+      tuitionFormState = null
+      tuitionDetailState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="open-detail"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      tuitionDetailState = {
+        studentId: button.dataset.tuitionStudentId,
+      }
+      tuitionFormState = null
+      tuitionPaymentFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      tuitionFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-payment-action="cancel-payment"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      tuitionPaymentFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-detail-action="close-detail"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      tuitionDetailState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-package-suggestion]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!tuitionFormState) {
+        return
+      }
+
+      const totalSessions = button.dataset.tuitionPackageSuggestion
+      tuitionFormState = {
+        ...tuitionFormState,
+        values: {
+          ...tuitionFormState.values,
+          packageName: `Gói ${totalSessions} buổi`,
+          totalSessions,
+        },
+        errors: {
+          ...tuitionFormState.errors,
+          packageName: undefined,
+          totalSessions: undefined,
+        },
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-tuition-action="open-renew"]')?.addEventListener('click', (event) => {
+    const tuitionRecord = tuitionRecords.find((record) => record.id === event.currentTarget.dataset.tuitionId)
+    const student = tuitionRecord
+      ? students.find((item) => item.id === tuitionRecord.studentId)
+      : null
+
+    if (!student || !tuitionRecord) {
+      return
+    }
+
+    tuitionFormState = createRenewTuitionFormState(student, tuitionRecord)
+    tuitionPaymentFormState = null
+    tuitionDetailState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-tuition-form-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!tuitionFormState) {
+        return
+      }
+
+      tuitionFormState = {
+        ...tuitionFormState,
+        values: {
+          ...tuitionFormState.values,
+          [control.dataset.tuitionFormField]: control.value,
+        },
+        errors: {
+          ...tuitionFormState.errors,
+          [control.dataset.tuitionFormField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-tuition-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!tuitionFormState) {
+      return
+    }
+
+    const errors = tuitionFormState.mode === 'renew'
+      ? validateRenewTuitionForm(tuitionFormState.values)
+      : validateTuitionForm(tuitionFormState.values)
+
+    if (Object.keys(errors).length) {
+      tuitionFormState = {
+        ...tuitionFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const normalizedValues = normalizeTuitionFormValues(tuitionFormState.values)
+    const currentRecord = tuitionRecords.find((record) => record.id === tuitionFormState.tuitionId)
+    const nextRecord = tuitionFormState.mode === 'renew' && currentRecord
+      ? createRenewedTuitionRecord(currentRecord, normalizedValues)
+      : {
+          id: tuitionFormState.tuitionId || `tuition-${tuitionFormState.studentId}-${Date.now()}`,
+          studentId: tuitionFormState.studentId,
+          ...normalizedValues,
+          payments: currentRecord?.payments ?? [],
+          currentTermNumber: currentRecord?.currentTermNumber ?? 1,
+          currentTermId:
+            currentRecord?.currentTermId ??
+            `term-${tuitionFormState.tuitionId || tuitionFormState.studentId}-${Date.now()}`,
+          startedAt: currentRecord?.startedAt ?? new Date().toISOString(),
+          termHistory: currentRecord?.termHistory ?? [],
+        }
+
+    tuitionRecords = tuitionFormState.mode === 'edit' || tuitionFormState.mode === 'renew'
+      ? tuitionRecords.map((record) => (record.id === nextRecord.id ? nextRecord : record))
+      : [nextRecord, ...tuitionRecords]
+    saveStoredTuition(tuitionRecords)
+    notifications = syncTuitionNotifications(notifications)
+    tuitionFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-tuition-payment-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!tuitionPaymentFormState) {
+        return
+      }
+
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        values: {
+          ...tuitionPaymentFormState.values,
+          [control.dataset.tuitionPaymentField]: control.value,
+        },
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          [control.dataset.tuitionPaymentField]: undefined,
+        },
+      }
+
+      if (control.dataset.tuitionPaymentField === 'amount') {
+        render()
+        const nextControl = document.querySelector('[data-tuition-payment-field="amount"]')
+        nextControl?.focus()
+      }
+    })
+  })
+
+  document.querySelector('[data-tuition-payment-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!tuitionPaymentFormState) {
+      return
+    }
+
+    const errors = validatePaymentForm(tuitionPaymentFormState.values)
+
+    if (Object.keys(errors).length) {
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const normalizedPayment = normalizePaymentFormValues(tuitionPaymentFormState.values)
+    const paymentRecord = {
+      id: `payment-${tuitionPaymentFormState.tuitionId}-${Date.now()}`,
+      ...normalizedPayment,
+      createdAt: new Date().toISOString(),
+    }
+
+    tuitionRecords = tuitionRecords.map((record) => {
+      if (record.id !== tuitionPaymentFormState.tuitionId) {
+        return record
+      }
+
+      return {
+        ...record,
+        paidAmount: record.paidAmount + normalizedPayment.amount,
+        payments: [paymentRecord, ...(record.payments ?? [])],
+      }
+    })
+    saveStoredTuition(tuitionRecords)
+    notifications = syncTuitionNotifications(notifications)
+    tuitionPaymentFormState = null
+    render()
   })
 
   document.querySelectorAll('[data-student-filter]').forEach((control) => {
@@ -1113,6 +1632,203 @@ function bindEvents() {
 
   bindWindowDragging()
   bindShortcutDragging()
+}
+
+function openTuitionPackageForm(studentId) {
+  const student = students.find((item) => item.id === studentId)
+
+  if (!student) {
+    return
+  }
+
+  const tuitionRecord = tuitionRecords.find((record) => record.studentId === student.id)
+  tuitionFormState = tuitionRecord
+    ? createEditTuitionFormState(student, tuitionRecord)
+    : createEmptyTuitionFormState(student)
+  tuitionPaymentFormState = null
+  tuitionDetailState = null
+  render()
+}
+
+function createRenewedTuitionRecord(currentRecord, normalizedValues) {
+  const renewedAt = new Date().toISOString()
+  const currentTermNumber = currentRecord.currentTermNumber || 1
+  const nextTermNumber = currentTermNumber + 1
+  const currentDebtAmount = Math.max(0, currentRecord.totalAmount - currentRecord.paidAmount)
+  const archivedStatus =
+    currentRecord.usedSessions >= currentRecord.totalSessions && currentDebtAmount === 0
+      ? 'completed'
+      : 'archived'
+  const currentTermSnapshot = {
+    id: currentRecord.currentTermId || `term-${currentRecord.id}-${currentTermNumber}`,
+    termNumber: currentTermNumber,
+    packageName: currentRecord.packageName,
+    totalSessions: currentRecord.totalSessions,
+    usedSessions: currentRecord.usedSessions,
+    totalAmount: currentRecord.totalAmount,
+    paidAmount: currentRecord.paidAmount,
+    dueDate: currentRecord.dueDate,
+    note: currentRecord.note,
+    status: archivedStatus,
+    startedAt: currentRecord.startedAt || '',
+    endedAt: renewedAt,
+    payments: currentRecord.payments ?? [],
+  }
+  const nextTermId = `term-${currentRecord.id}-${nextTermNumber}-${Date.now()}`
+  const initialPayment = normalizedValues.paidAmount > 0
+    ? {
+        id: `payment-${nextTermId}-initial`,
+        amount: normalizedValues.paidAmount,
+        paidAt: renewedAt.slice(0, 10),
+        method: 'cash',
+        collectorName: 'Admin DreamHome',
+        note: 'Đóng ban đầu khi tạo kỳ mới.',
+        createdAt: renewedAt,
+      }
+    : null
+
+  return {
+    ...currentRecord,
+    ...normalizedValues,
+    currentTermNumber: nextTermNumber,
+    currentTermId: nextTermId,
+    startedAt: renewedAt,
+    payments: initialPayment ? [initialPayment] : [],
+    termHistory: [...(currentRecord.termHistory ?? []), currentTermSnapshot],
+  }
+}
+
+function bindNotificationOutsidePointer() {
+  if (notificationOutsidePointerBound) {
+    return
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!isNotificationCenterOpen) {
+      return
+    }
+
+    const target = event.target
+
+    if (
+      target.closest?.('.notification-center') ||
+      target.closest?.('[data-action="toggle-notifications"]')
+    ) {
+      return
+    }
+
+    isNotificationCenterOpen = false
+    render()
+  })
+  notificationOutsidePointerBound = true
+}
+
+function getNotificationPanelPosition(bellButton) {
+  const bellRect = bellButton.getBoundingClientRect()
+  const panelWidth = Math.min(420, Math.max(320, window.innerWidth - 24))
+  const right = Math.max(12, window.innerWidth - bellRect.right)
+  const maxRight = Math.max(12, window.innerWidth - panelWidth - 12)
+  const bottom = Math.max(56, window.innerHeight - bellRect.top + 8)
+
+  return {
+    right: Math.min(right, maxRight),
+    bottom,
+  }
+}
+
+function getUnreadNotificationCount() {
+  return notifications.filter((notification) => !notification.read).length
+}
+
+function syncTuitionNotifications(currentNotifications) {
+  const deletedIds = new Set(deletedNotificationIds)
+  const candidateTuitionNotifications = buildTuitionRows(students, tuitionRecords)
+    .map((row) => createTuitionWarningNotification(row))
+    .filter(Boolean)
+  const currentTuitionWarningIds = new Set(candidateTuitionNotifications.map((notification) => notification.id))
+  const retainedNotifications = currentNotifications.filter(
+    (notification) =>
+      !String(notification.id).startsWith('tuition-warning-') ||
+      currentTuitionWarningIds.has(notification.id),
+  )
+  const existingNotificationIds = new Set(retainedNotifications.map((notification) => notification.id))
+  const tuitionNotifications = candidateTuitionNotifications
+    .filter(
+      (notification) =>
+        notification &&
+        !existingNotificationIds.has(notification.id) &&
+        !deletedIds.has(notification.id),
+    )
+
+  if (!tuitionNotifications.length && retainedNotifications.length === currentNotifications.length) {
+    return currentNotifications
+  }
+
+  const nextNotifications = [...tuitionNotifications, ...retainedNotifications]
+  saveStoredNotifications(nextNotifications)
+  return nextNotifications
+}
+
+function markNotificationRead(notificationId) {
+  const targetNotification = notifications.find((notification) => notification.id === notificationId)
+
+  if (!targetNotification || targetNotification.read) {
+    return
+  }
+
+  notifications = notifications.map((notification) =>
+    notification.id === notificationId ? { ...notification, read: true } : notification,
+  )
+  saveStoredNotifications(notifications)
+  render()
+}
+
+function getNotificationSourceLabel(sourceModule) {
+  const sourceLabels = {
+    system: 'Hệ thống',
+    'hoc-phi': 'Học phí',
+    'hoc-vien': 'Học viên demo',
+    schedule: 'Lịch học demo',
+    inventory: 'Kho demo',
+    report: 'Báo cáo demo',
+  }
+
+  return sourceLabels[sourceModule] ?? sourceModule
+}
+
+function formatNotificationTime(createdAt) {
+  const createdDate = new Date(createdAt)
+  const elapsedMs = Date.now() - createdDate.getTime()
+  const elapsedMinutes = Math.max(0, Math.floor(elapsedMs / 60000))
+
+  if (elapsedMinutes < 1) {
+    return 'Vừa xong'
+  }
+
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes} phút trước`
+  }
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60)
+
+  if (elapsedHours < 24) {
+    return `${elapsedHours} giờ trước`
+  }
+
+  return createdDate.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
 }
 
 function bindShortcutDragging() {

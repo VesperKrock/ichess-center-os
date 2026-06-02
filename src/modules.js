@@ -94,7 +94,7 @@ export const modules = [
     id: 'hoc-phi',
     name: 'Học phí',
     shortDescription: 'Theo dõi học phí, gói học, số buổi và tình trạng thanh toán.',
-    status: 'planned',
+    status: 'in-progress',
     plannedFeatures: [
       'Theo dõi gói học/khóa học',
       'Theo dõi số buổi',
