@@ -7,6 +7,8 @@ const DELETED_NOTIFICATION_IDS_KEY = 'ichessCenterOS.notifications.deletedIds.dr
 const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
 const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
+const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
+const CASHBOOK_RECONCILIATIONS_KEY = 'ichessCenterOS.cashbookReconciliations.dreamhome'
 const CURRENT_NOTIFICATIONS_VERSION = '1A.1'
 const VALID_VIEW_MODES = ['grid', 'list']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
@@ -190,6 +192,51 @@ export function saveStoredCashflowCategories(categories) {
   )
 }
 
+export function getStoredCashbookSettings(defaultSettings) {
+  try {
+    const storedSettings = JSON.parse(localStorage.getItem(CASHBOOK_SETTINGS_KEY))
+
+    if (storedSettings && typeof storedSettings === 'object') {
+      const normalizedSettings = normalizeCashbookSettings(storedSettings, defaultSettings)
+      saveStoredCashbookSettings(normalizedSettings)
+      return normalizedSettings
+    }
+  } catch {
+    localStorage.removeItem(CASHBOOK_SETTINGS_KEY)
+  }
+
+  return normalizeCashbookSettings(defaultSettings, defaultSettings)
+}
+
+export function saveStoredCashbookSettings(settings) {
+  localStorage.setItem(CASHBOOK_SETTINGS_KEY, JSON.stringify(normalizeCashbookSettings(settings)))
+}
+
+export function getStoredCashbookReconciliations(defaultReconciliations = []) {
+  try {
+    const storedReconciliations = JSON.parse(
+      localStorage.getItem(CASHBOOK_RECONCILIATIONS_KEY),
+    )
+
+    if (Array.isArray(storedReconciliations)) {
+      const normalizedReconciliations = normalizeCashbookReconciliations(storedReconciliations)
+      saveStoredCashbookReconciliations(normalizedReconciliations)
+      return normalizedReconciliations
+    }
+  } catch {
+    localStorage.removeItem(CASHBOOK_RECONCILIATIONS_KEY)
+  }
+
+  return normalizeCashbookReconciliations(defaultReconciliations)
+}
+
+export function saveStoredCashbookReconciliations(reconciliations) {
+  localStorage.setItem(
+    CASHBOOK_RECONCILIATIONS_KEY,
+    JSON.stringify(normalizeCashbookReconciliations(reconciliations)),
+  )
+}
+
 function normalizeStudents(students) {
   return students.map((student) => {
     const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
@@ -365,6 +412,70 @@ function normalizeCashflowCategories(categories) {
   })
 }
 
+function normalizeCashbookSettings(settings = {}, fallbackSettings = {}) {
+  const openingDate = isValidDateString(settings.openingDate)
+    ? String(settings.openingDate)
+    : isValidDateString(fallbackSettings.openingDate)
+      ? String(fallbackSettings.openingDate)
+      : new Date().toISOString().slice(0, 10)
+
+  return {
+    openingBalance: Math.max(0, normalizeMoneyNumber(settings.openingBalance)),
+    openingDate,
+    updatedAt: settings.updatedAt ? normalizeDateTime(settings.updatedAt) : '',
+    updatedBy: String(settings.updatedBy || fallbackSettings.updatedBy || 'Admin'),
+    isConfigured: Boolean(settings.isConfigured),
+  }
+}
+
+function normalizeCashbookReconciliations(reconciliations) {
+  const reconciliationsByDate = new Map()
+
+  reconciliations
+    .filter((reconciliation) => reconciliation && typeof reconciliation === 'object')
+    .forEach((reconciliation, index) => {
+      if (!isValidDateString(reconciliation.date)) {
+        return
+      }
+
+      const systemClosingBalance = normalizeMoneyNumber(reconciliation.systemClosingBalance)
+      const actualCash = normalizeMoneyNumber(reconciliation.actualCash)
+      const difference =
+        Number.isFinite(Number(reconciliation.difference))
+          ? Number(reconciliation.difference)
+          : actualCash - systemClosingBalance
+      const status =
+        reconciliation.status === 'matched' || reconciliation.status === 'mismatched'
+          ? reconciliation.status
+          : difference === 0
+            ? 'matched'
+            : 'mismatched'
+      const checkedAt = reconciliation.checkedAt
+        ? normalizeDateTime(reconciliation.checkedAt)
+        : new Date().toISOString()
+
+      reconciliationsByDate.set(String(reconciliation.date), {
+        id: String(reconciliation.id || `cashbook-reconciliation-${index + 1}`),
+        date: String(reconciliation.date),
+        systemClosingBalance,
+        actualCash,
+        difference,
+        status,
+        checkedBy: String(reconciliation.checkedBy || 'Admin'),
+        note: String(reconciliation.note || ''),
+        checkedAt,
+        updatedAt: reconciliation.updatedAt ? normalizeDateTime(reconciliation.updatedAt) : checkedAt,
+        isClosed: Boolean(reconciliation.isClosed),
+        closedAt: reconciliation.closedAt ? normalizeDateTime(reconciliation.closedAt) : null,
+        closedBy: reconciliation.closedBy ? String(reconciliation.closedBy) : null,
+      })
+    })
+
+  return Array.from(reconciliationsByDate.values()).sort((firstItem, secondItem) =>
+    secondItem.date.localeCompare(firstItem.date),
+  )
+}
+
 function normalizeTuitionTermHistory(termHistory) {
   if (!Array.isArray(termHistory)) {
     return []
@@ -414,6 +525,15 @@ function normalizeMoneyNumber(value) {
   const numberValue =
     typeof value === 'string' ? Number(value.replace(/[^\d]/g, '')) : Number(value)
   return Number.isFinite(numberValue) ? numberValue : 0
+}
+
+function isValidDateString(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ''))) {
+    return false
+  }
+
+  const dateValue = new Date(value)
+  return !Number.isNaN(dateValue.getTime()) && dateValue.toISOString().slice(0, 10) === value
 }
 
 function normalizeNumber(value) {

@@ -1518,6 +1518,1021 @@ h3 {
   text-align: center;
 }
 
+.window-body:has(.cashbook-module) {
+  overflow: hidden;
+}
+
+.cashbook-module {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  color: #d8e2ef;
+}
+
+.cashbook-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 40px;
+}
+
+.cashbook-toolbar h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.08rem;
+}
+
+.cashbook-phase-note {
+  margin: 5px 0 0;
+  color: #9fb1c7;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.cashbook-date-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.cashbook-date-actions label {
+  display: block;
+}
+
+.cashbook-date-actions span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.cashbook-date-actions input,
+.cashbook-date-actions button {
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #f4f7fb;
+  background: #101923;
+  font: inherit;
+}
+
+.cashbook-date-actions input {
+  width: 146px;
+  color-scheme: dark;
+}
+
+.cashbook-date-actions button {
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.cashbook-date-actions input:hover,
+.cashbook-date-actions input:focus,
+.cashbook-date-actions button:hover,
+.cashbook-date-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.cashbook-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.cashbook-stat-card {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashbook-stat-card span {
+  display: block;
+  min-height: 1.8em;
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+}
+
+.cashbook-stat-card strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-stat-card.is-income {
+  border-color: rgba(82, 209, 139, 0.22);
+  background: rgba(82, 209, 139, 0.06);
+}
+
+.cashbook-stat-card.is-income strong {
+  color: #8de0b1;
+}
+
+.cashbook-stat-card.is-expense {
+  border-color: rgba(242, 116, 116, 0.22);
+  background: rgba(242, 116, 116, 0.06);
+}
+
+.cashbook-stat-card.is-expense strong {
+  color: #ffb29e;
+}
+
+.cashbook-stat-card.is-neutral strong {
+  color: #d8e2ef;
+}
+
+.cashbook-phase-note {
+  margin: -2px 0 0;
+}
+
+.cashbook-settings-summary {
+  display: block;
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.82rem;
+}
+
+.cashbook-settings-summary.is-warning {
+  border-color: rgba(240, 180, 91, 0.24);
+  background: rgba(154, 96, 18, 0.075);
+}
+
+.cashbook-settings-summary div {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.cashbook-settings-summary > div > span,
+.cashbook-settings-field span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashbook-settings-summary strong {
+  display: inline;
+  margin-top: 0;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-settings-summary p {
+  min-width: 0;
+  margin: 0;
+  color: #d8e2ef;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-settings-summary.is-warning p {
+  color: #ffe4b8;
+}
+
+.cashbook-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(4, 8, 13, 0.62);
+}
+
+.cashbook-settings-panel {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: min(620px, 100%);
+  max-height: min(86vh, 620px);
+  overflow: auto;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  background: #101923;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  scrollbar-color: rgba(118, 164, 231, 0.48) rgba(255, 255, 255, 0.045);
+  scrollbar-width: thin;
+}
+
+.cashbook-settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  background: #101821;
+}
+
+.cashbook-settings-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.cashbook-settings-header p {
+  margin: 4px 0 0;
+  color: #9fb1c7;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.cashbook-settings-header button,
+.cashbook-settings-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.cashbook-settings-header button:hover,
+.cashbook-settings-header button:focus-visible,
+.cashbook-settings-actions button:hover,
+.cashbook-settings-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.78);
+  outline: none;
+}
+
+.cashbook-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.cashbook-settings-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cashbook-settings-field input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #f4f7fb;
+  background: #121a24;
+  font: inherit;
+}
+
+.cashbook-settings-field input[type='date'] {
+  color-scheme: dark;
+}
+
+.cashbook-settings-field input:hover,
+.cashbook-settings-field input:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.cashbook-settings-field small,
+.cashbook-settings-errors {
+  color: #ffb8b8;
+  font-size: 0.8rem;
+}
+
+.cashbook-settings-errors {
+  margin: 0 12px 8px;
+  border: 1px solid rgba(255, 132, 132, 0.32);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(120, 26, 26, 0.16);
+}
+
+.cashbook-settings-errors p {
+  margin: 0;
+}
+
+.cashbook-settings-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 12px;
+  background: #101821;
+}
+
+.cashbook-settings-actions button:last-child {
+  border-color: rgba(118, 164, 231, 0.55);
+  background: #1f5d99;
+}
+
+.cashbook-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  flex: 0 0 auto;
+  align-items: stretch;
+}
+
+.cashbook-reconciliation-card {
+  display: grid;
+  gap: 9px;
+  align-content: start;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashbook-reconciliation-card.is-pending {
+  border-color: rgba(240, 180, 91, 0.3);
+  background: rgba(154, 96, 18, 0.1);
+}
+
+.cashbook-reconciliation-card.is-matched {
+  border-color: rgba(82, 209, 139, 0.24);
+  background: rgba(82, 209, 139, 0.055);
+}
+
+.cashbook-reconciliation-card.is-mismatched {
+  border-color: rgba(242, 116, 116, 0.28);
+  background: rgba(120, 26, 26, 0.11);
+}
+
+.cashbook-reconciliation-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cashbook-reconciliation-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.98rem;
+}
+
+.cashbook-reconciliation-header p {
+  margin: 3px 0 0;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.cashbook-reconciliation-status {
+  flex: 0 0 auto;
+  border: 1px solid rgba(180, 202, 232, 0.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.cashbook-reconciliation-status.is-pending {
+  border-color: rgba(240, 180, 91, 0.42);
+  color: #ffe4b8;
+  background: rgba(154, 96, 18, 0.18);
+}
+
+.cashbook-reconciliation-status.is-matched {
+  border-color: rgba(82, 209, 139, 0.42);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.cashbook-reconciliation-status.is-mismatched {
+  border-color: rgba(242, 116, 116, 0.42);
+  color: #ffb29e;
+  background: rgba(242, 116, 116, 0.1);
+}
+
+.cashbook-closed-badge,
+.cashbook-close-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(118, 164, 231, 0.42);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #b8d7ff;
+  background: rgba(118, 164, 231, 0.12);
+  font-size: 0.76rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cashbook-close-state {
+  padding: 3px 7px;
+  color: #c8d4e3;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.cashbook-close-state.is-closed {
+  border-color: rgba(118, 164, 231, 0.42);
+  color: #b8d7ff;
+  background: rgba(118, 164, 231, 0.12);
+}
+
+.cashbook-reconciliation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 10px;
+}
+
+.cashbook-reconciliation-grid div {
+  min-width: 0;
+}
+
+.cashbook-reconciliation-grid span,
+.cashbook-reconciliation-field span,
+.cashbook-reconciliation-preview span {
+  display: block;
+  color: #9fb1c7;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashbook-reconciliation-grid strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-reconciliation-grid .is-positive,
+.cashbook-reconciliation-preview .is-positive {
+  color: #8de0b1;
+}
+
+.cashbook-reconciliation-grid .is-negative,
+.cashbook-reconciliation-preview .is-negative {
+  color: #ffb29e;
+}
+
+.cashbook-reconciliation-grid .is-zero,
+.cashbook-reconciliation-preview .is-zero {
+  color: #d8e2ef;
+}
+
+.cashbook-reconciliation-warning {
+  margin: 0;
+  color: #ffe4b8;
+  font-size: 0.82rem;
+}
+
+.cashbook-reconciliation-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cashbook-reconciliation-card-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(118, 164, 231, 0.55);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #ffffff;
+  background: #1f5d99;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.cashbook-reconciliation-card-actions button:hover,
+.cashbook-reconciliation-card-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.86);
+  outline: none;
+}
+
+.cashbook-history {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cashbook-history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cashbook-history-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.98rem;
+}
+
+.cashbook-history-header p,
+.cashbook-history-empty {
+  margin: 3px 0 0;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.cashbook-history-empty {
+  display: grid;
+  gap: 4px;
+  min-height: 92px;
+  align-content: center;
+  border: 1px dashed rgba(160, 184, 214, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(8, 12, 18, 0.34);
+}
+
+.cashbook-history-empty strong {
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.cashbook-history-empty p {
+  margin: 0;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.cashbook-history-list {
+  display: grid;
+  max-height: 246px;
+  gap: 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-color: rgba(118, 164, 231, 0.48) rgba(255, 255, 255, 0.045);
+  scrollbar-width: thin;
+}
+
+.cashbook-history-item {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 8px;
+  padding: 7px;
+  color: #d8e2ef;
+  background: rgba(8, 12, 18, 0.62);
+  cursor: pointer;
+  text-align: left;
+}
+
+.cashbook-history-item:hover,
+.cashbook-history-item:focus-visible,
+.cashbook-history-item.is-selected {
+  border-color: rgba(118, 164, 231, 0.6);
+  outline: none;
+  background: rgba(118, 164, 231, 0.08);
+}
+
+.cashbook-history-item.has-warning {
+  border-color: rgba(240, 180, 91, 0.28);
+}
+
+.cashbook-history-item span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-history-topline,
+.cashbook-history-values,
+.cashbook-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cashbook-history-topline {
+  justify-content: space-between;
+}
+
+.cashbook-history-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cashbook-history-values span {
+  display: grid;
+  gap: 2px;
+}
+
+.cashbook-history-values small {
+  color: #9fb1c7;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashbook-history-values strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-history-meta {
+  color: #9fb1c7;
+  font-weight: 800;
+  justify-content: space-between;
+}
+
+.cashbook-history-note {
+  color: #c8d4e3;
+}
+
+.cashbook-history-date {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.cashbook-history-warning {
+  color: #ffe4b8;
+  font-weight: 800;
+}
+
+.cashbook-transactions {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cashbook-transactions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cashbook-transactions-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.96rem;
+}
+
+.cashbook-transactions-header span {
+  color: #9fb1c7;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.cashbook-reconciliation-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(4, 8, 13, 0.62);
+}
+
+.cashbook-reconciliation-panel {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto auto;
+  width: min(700px, 100%);
+  max-height: min(86vh, 680px);
+  overflow: auto;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  background: #101923;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  scrollbar-color: rgba(118, 164, 231, 0.48) rgba(255, 255, 255, 0.045);
+  scrollbar-width: thin;
+}
+
+.cashbook-reconciliation-form-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  background: #101821;
+}
+
+.cashbook-reconciliation-form-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.cashbook-reconciliation-form-header p {
+  margin: 4px 0 0;
+  color: #9fb1c7;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.cashbook-reconciliation-form-header button,
+.cashbook-reconciliation-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.cashbook-reconciliation-form-header button:hover,
+.cashbook-reconciliation-form-header button:focus-visible,
+.cashbook-reconciliation-actions button:hover,
+.cashbook-reconciliation-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.78);
+  outline: none;
+}
+
+.cashbook-reconciliation-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.cashbook-reconciliation-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cashbook-reconciliation-field.span-full {
+  grid-column: 1 / -1;
+}
+
+.cashbook-reconciliation-field input,
+.cashbook-reconciliation-field textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #f4f7fb;
+  background: #121a24;
+  font: inherit;
+}
+
+.cashbook-reconciliation-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.cashbook-reconciliation-field input:hover,
+.cashbook-reconciliation-field input:focus,
+.cashbook-reconciliation-field textarea:hover,
+.cashbook-reconciliation-field textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.cashbook-reconciliation-field.is-readonly {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashbook-reconciliation-field.is-readonly strong {
+  overflow: hidden;
+  color: #ffffff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-reconciliation-field small {
+  color: #ffb8b8;
+  font-size: 0.8rem;
+}
+
+.cashbook-reconciliation-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 12px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashbook-reconciliation-preview strong {
+  flex: 0 0 auto;
+  font-size: 0.94rem;
+}
+
+.cashbook-reconciliation-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 12px;
+  background: #101821;
+}
+
+.cashbook-reconciliation-actions button:last-child {
+  border-color: rgba(118, 164, 231, 0.55);
+  background: #1f5d99;
+}
+
+.cashbook-table-wrap {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(8, 12, 18, 0.78);
+  scrollbar-color: rgba(118, 164, 231, 0.48) rgba(255, 255, 255, 0.045);
+  scrollbar-width: thin;
+}
+
+.cashbook-table-wrap::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cashbook-table-wrap::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.cashbook-table-wrap::-webkit-scrollbar-thumb {
+  border: 2px solid #101923;
+  border-radius: 999px;
+  background: rgba(118, 164, 231, 0.48);
+}
+
+.cashbook-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cashbook-table th:nth-child(1) {
+  width: 86px;
+}
+
+.cashbook-table th:nth-child(2) {
+  width: 62px;
+}
+
+.cashbook-table th:nth-child(3) {
+  width: 120px;
+}
+
+.cashbook-table th:nth-child(4) {
+  width: 20%;
+}
+
+.cashbook-table th:nth-child(5) {
+  width: 96px;
+}
+
+.cashbook-table th:nth-child(6) {
+  width: 118px;
+}
+
+.cashbook-table th:nth-child(7) {
+  width: 96px;
+}
+
+.cashbook-table th,
+.cashbook-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  padding: 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cashbook-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #9fb1c7;
+  background: #111821;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.cashbook-table td {
+  overflow: hidden;
+  color: #d8e2ef;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashbook-type-badge,
+.cashbook-source-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cashbook-type-badge {
+  min-width: 40px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+}
+
+.cashbook-type-badge.is-income {
+  border: 1px solid rgba(82, 209, 139, 0.42);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.cashbook-type-badge.is-expense {
+  border: 1px solid rgba(242, 116, 116, 0.42);
+  color: #ffb29e;
+  background: rgba(242, 116, 116, 0.1);
+}
+
+.cashbook-amount {
+  font-weight: 900;
+}
+
+.cashbook-amount.is-income {
+  color: #8de0b1;
+}
+
+.cashbook-amount.is-expense {
+  color: #ffb29e;
+}
+
+.cashbook-source-badge {
+  max-width: 82px;
+  margin-right: 5px;
+  border: 1px solid rgba(118, 164, 231, 0.42);
+  padding: 2px 6px;
+  color: #b8d7ff;
+  background: rgba(118, 164, 231, 0.1);
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
+.cashbook-empty {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #9fb1c7;
+  background: rgba(8, 12, 18, 0.78);
+  font-weight: 800;
+}
+
 .cashflow-form-backdrop {
   position: absolute;
   inset: 44px 0 0;
@@ -3351,8 +4366,82 @@ h3 {
     .tuition-form-grid,
     .tuition-payment-summary,
     .tuition-term-summary,
-    .tuition-detail-overview {
+    .tuition-detail-overview,
+    .cashbook-stats,
+    .cashbook-settings-summary,
+    .cashbook-settings-grid,
+    .cashbook-reconciliation-grid,
+    .cashbook-reconciliation-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cashbook-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cashbook-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .cashbook-settings-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cashbook-reconciliation-header,
+  .cashbook-reconciliation-preview {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cashbook-reconciliation-card-actions,
+  .cashbook-reconciliation-card-actions button {
+    width: 100%;
+  }
+
+  .cashbook-history-item {
+    grid-template-columns: 1fr;
+  }
+
+  .cashbook-date-actions {
+    align-items: stretch;
+    flex-direction: column;
+    white-space: normal;
+  }
+
+  .cashbook-date-actions input,
+  .cashbook-date-actions button {
+    width: 100%;
+  }
+
+  .cashbook-table th,
+  .cashbook-table td {
+    padding: 7px 5px;
+    font-size: 0.72rem;
+  }
+
+  .cashbook-table th:nth-child(1) {
+    width: 68px;
+  }
+
+  .cashbook-table th:nth-child(2) {
+    width: 50px;
+  }
+
+  .cashbook-table th:nth-child(3) {
+    width: 82px;
+  }
+
+  .cashbook-table th:nth-child(5),
+  .cashbook-table td:nth-child(5),
+  .cashbook-table th:nth-child(7),
+  .cashbook-table td:nth-child(7) {
+    display: none;
+  }
+
+  .cashbook-table th:nth-child(6) {
+    width: 92px;
   }
 
   .student-detail-hero {

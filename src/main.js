@@ -5,6 +5,8 @@ import {
   getDesktopModuleOrder,
   getStoredCashflow,
   getStoredCashflowCategories,
+  getStoredCashbookReconciliations,
+  getStoredCashbookSettings,
   getStoredNotifications,
   getStoredStudents,
   getStoredTuition,
@@ -13,12 +15,27 @@ import {
   saveDesktopModuleOrder,
   saveStoredCashflow,
   saveStoredCashflowCategories,
+  saveStoredCashbookReconciliations,
+  saveStoredCashbookSettings,
   saveStoredNotifications,
   saveStoredStudents,
   saveStoredTuition,
   saveViewMode,
 } from './storage.js'
 import { sampleCashflowCategories, sampleCashflowTransactions } from './cashflow-data.js'
+import {
+  buildCashbookReconciliationFromForm,
+  buildCashbookSettingsFromForm,
+  closeCashbookReconciliation,
+  createCashbookReconciliationFormState,
+  createCashbookSettingsFormState,
+  createDefaultCashbookSettings,
+  getCashbookBalanceStats,
+  getDefaultCashbookDate,
+  renderCashbookModule,
+  validateCashbookReconciliationForm,
+  validateCashbookSettingsForm,
+} from './cashbook-module.js'
 import {
   buildCashflowTransactionFromForm,
   buildCashflowCategoryFromForm,
@@ -103,6 +120,11 @@ let cashflowFilters = { ...initialCashflowFilters }
 let cashflowFormState = null
 let isCashflowCategoryPanelOpen = false
 let cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
+let cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
+let cashbookSettings = getStoredCashbookSettings(createDefaultCashbookSettings(cashflowTransactions))
+let cashbookSettingsFormState = null
+let cashbookReconciliations = getStoredCashbookReconciliations()
+let cashbookReconciliationFormState = null
 let careNoteDrafts = {}
 
 function render() {
@@ -245,6 +267,17 @@ function renderWindowBody(windowItem) {
       cashflowCategories,
       isCashflowCategoryPanelOpen,
       cashflowCategoryFormState,
+    )
+  }
+
+  if (moduleItem.id === 'so-quy') {
+    return renderCashbookModule(
+      cashflowTransactions,
+      cashbookSelectedDate,
+      cashbookSettings,
+      cashbookSettingsFormState,
+      cashbookReconciliations,
+      cashbookReconciliationFormState,
     )
   }
 
@@ -972,6 +1005,20 @@ function getStatusLabel(status) {
   return statusLabels[status] ?? status
 }
 
+function getActiveCashbookDate() {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(cashbookSelectedDate ?? ''))
+    ? cashbookSelectedDate
+    : getDefaultCashbookDate(cashflowTransactions)
+}
+
+function getActiveCashbookSystemClosingBalance() {
+  return getCashbookBalanceStats(
+    cashflowTransactions,
+    getActiveCashbookDate(),
+    cashbookSettings,
+  ).closingBalance
+}
+
 function bindEvents() {
   bindNotificationOutsidePointer()
 
@@ -1144,6 +1191,204 @@ function bindEvents() {
       }
     })
   })
+
+  document.querySelector('[data-cashbook-date]')?.addEventListener('input', (event) => {
+    cashbookSelectedDate = event.currentTarget.value
+    render()
+  })
+
+  document.querySelector('[data-cashbook-action="today"]')?.addEventListener('click', () => {
+    cashbookSelectedDate = new Date().toISOString().slice(0, 10)
+    render()
+  })
+
+  document.querySelector('[data-cashbook-action="open-settings"]')?.addEventListener('click', () => {
+    cashbookSettingsFormState = createCashbookSettingsFormState(cashbookSettings)
+    render()
+  })
+
+  document.querySelectorAll('[data-cashbook-action="cancel-settings"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      cashbookSettingsFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-cashbook-settings-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!cashbookSettingsFormState) {
+        return
+      }
+
+      cashbookSettingsFormState = {
+        ...cashbookSettingsFormState,
+        values: {
+          ...cashbookSettingsFormState.values,
+          [control.dataset.cashbookSettingsField]: control.value,
+        },
+        errors: {
+          ...cashbookSettingsFormState.errors,
+          [control.dataset.cashbookSettingsField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-cashbook-settings-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!cashbookSettingsFormState) {
+      return
+    }
+
+    const errors = validateCashbookSettingsForm(cashbookSettingsFormState.values)
+
+    if (Object.keys(errors).length) {
+      cashbookSettingsFormState = {
+        ...cashbookSettingsFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    cashbookSettings = buildCashbookSettingsFromForm(
+      cashbookSettingsFormState.values,
+      cashbookSettings,
+    )
+    saveStoredCashbookSettings(cashbookSettings)
+    cashbookSettingsFormState = null
+    render()
+  })
+
+  document.querySelector('[data-cashbook-action="open-reconciliation"]')?.addEventListener(
+    'click',
+    () => {
+      const activeDate = getActiveCashbookDate()
+      const currentReconciliation = cashbookReconciliations.find(
+        (reconciliation) => reconciliation.date === activeDate,
+      )
+
+      cashbookReconciliationFormState = createCashbookReconciliationFormState(
+        currentReconciliation,
+        activeDate,
+        getActiveCashbookSystemClosingBalance(),
+      )
+      render()
+    },
+  )
+
+  document.querySelector('[data-cashbook-action="close-day"]')?.addEventListener('click', () => {
+    const activeDate = getActiveCashbookDate()
+    const currentReconciliation = cashbookReconciliations.find(
+      (reconciliation) => reconciliation.date === activeDate,
+    )
+
+    if (!currentReconciliation || currentReconciliation.isClosed) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      'Bạn muốn đánh dấu ngày này là đã chốt sổ? Phase này chỉ khóa nhẹ/cảnh báo, chưa khóa cứng giao dịch.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    const closedReconciliation = closeCashbookReconciliation(
+      currentReconciliation,
+      currentReconciliation.checkedBy || 'Admin',
+    )
+    cashbookReconciliations = [
+      closedReconciliation,
+      ...cashbookReconciliations.filter(
+        (reconciliation) => reconciliation.date !== closedReconciliation.date,
+      ),
+    ]
+    saveStoredCashbookReconciliations(cashbookReconciliations)
+    render()
+  })
+
+  document.querySelectorAll('[data-cashbook-history-date]').forEach((button) => {
+    button.addEventListener('click', () => {
+      cashbookSelectedDate = button.dataset.cashbookHistoryDate
+      cashbookSettingsFormState = null
+      cashbookReconciliationFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-cashbook-action="cancel-reconciliation"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      cashbookReconciliationFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-cashbook-reconciliation-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!cashbookReconciliationFormState) {
+        return
+      }
+
+      cashbookReconciliationFormState = {
+        ...cashbookReconciliationFormState,
+        values: {
+          ...cashbookReconciliationFormState.values,
+          [control.dataset.cashbookReconciliationField]: control.value,
+        },
+        errors: {
+          ...cashbookReconciliationFormState.errors,
+          [control.dataset.cashbookReconciliationField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-cashbook-reconciliation-form]')?.addEventListener(
+    'submit',
+    (event) => {
+      event.preventDefault()
+
+      if (!cashbookReconciliationFormState) {
+        return
+      }
+
+      const errors = validateCashbookReconciliationForm(cashbookReconciliationFormState.values)
+
+      if (Object.keys(errors).length) {
+        cashbookReconciliationFormState = {
+          ...cashbookReconciliationFormState,
+          errors,
+        }
+        render()
+        return
+      }
+
+      const existingReconciliation = cashbookReconciliations.find(
+        (reconciliation) =>
+          reconciliation.date === cashbookReconciliationFormState.values.date,
+      )
+      const nextReconciliation = buildCashbookReconciliationFromForm(
+        {
+          ...cashbookReconciliationFormState.values,
+          systemClosingBalance: getActiveCashbookSystemClosingBalance(),
+        },
+        existingReconciliation,
+      )
+
+      cashbookReconciliations = [
+        nextReconciliation,
+        ...cashbookReconciliations.filter(
+          (reconciliation) => reconciliation.date !== nextReconciliation.date,
+        ),
+      ]
+      saveStoredCashbookReconciliations(cashbookReconciliations)
+      cashbookReconciliationFormState = null
+      render()
+    },
+  )
 
   document.querySelector('[data-cashflow-action="open-create"]')?.addEventListener('click', () => {
     cashflowFormState = createEmptyCashflowFormStateWithCategories(cashflowCategories)
