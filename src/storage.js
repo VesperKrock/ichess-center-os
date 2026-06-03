@@ -5,6 +5,8 @@ const NOTIFICATIONS_KEY = 'ichessCenterOS.notifications.dreamhome'
 const NOTIFICATIONS_VERSION_KEY = 'ichessCenterOS.notifications.version.dreamhome'
 const DELETED_NOTIFICATION_IDS_KEY = 'ichessCenterOS.notifications.deletedIds.dreamhome'
 const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
+const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
+const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
 const CURRENT_NOTIFICATIONS_VERSION = '1A.1'
 const VALID_VIEW_MODES = ['grid', 'list']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
@@ -141,14 +143,63 @@ export function saveStoredTuition(tuitionRecords) {
   localStorage.setItem(TUITION_KEY, JSON.stringify(normalizeTuitionRecords(tuitionRecords)))
 }
 
+export function getStoredCashflow(defaultTransactions) {
+  try {
+    const storedTransactions = JSON.parse(localStorage.getItem(CASHFLOW_KEY))
+
+    if (Array.isArray(storedTransactions)) {
+      const normalizedTransactions = normalizeCashflowTransactions(storedTransactions)
+      saveStoredCashflow(normalizedTransactions)
+      return normalizedTransactions
+    }
+  } catch {
+    localStorage.removeItem(CASHFLOW_KEY)
+  }
+
+  const normalizedDefaultTransactions = normalizeCashflowTransactions(defaultTransactions)
+  saveStoredCashflow(normalizedDefaultTransactions)
+  return normalizedDefaultTransactions
+}
+
+export function saveStoredCashflow(transactions) {
+  localStorage.setItem(CASHFLOW_KEY, JSON.stringify(normalizeCashflowTransactions(transactions)))
+}
+
+export function getStoredCashflowCategories(defaultCategories) {
+  try {
+    const storedCategories = JSON.parse(localStorage.getItem(CASHFLOW_CATEGORIES_KEY))
+
+    if (Array.isArray(storedCategories)) {
+      const normalizedCategories = normalizeCashflowCategories(storedCategories)
+      saveStoredCashflowCategories(normalizedCategories)
+      return normalizedCategories
+    }
+  } catch {
+    localStorage.removeItem(CASHFLOW_CATEGORIES_KEY)
+  }
+
+  const normalizedDefaultCategories = normalizeCashflowCategories(defaultCategories)
+  saveStoredCashflowCategories(normalizedDefaultCategories)
+  return normalizedDefaultCategories
+}
+
+export function saveStoredCashflowCategories(categories) {
+  localStorage.setItem(
+    CASHFLOW_CATEGORIES_KEY,
+    JSON.stringify(normalizeCashflowCategories(categories)),
+  )
+}
+
 function normalizeStudents(students) {
   return students.map((student) => {
     const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
+    const deletionState = normalizeStudentDeletionState(student)
 
     if (Array.isArray(student.careNotes)) {
       return {
         ...student,
         mainTeacherName,
+        ...deletionState,
       }
     }
 
@@ -161,6 +212,7 @@ function normalizeStudents(students) {
     return {
       ...student,
       mainTeacherName,
+      ...deletionState,
       careNotes: hasRealLegacyNote
         ? [
             {
@@ -176,6 +228,14 @@ function normalizeStudents(students) {
         : [],
     }
   })
+}
+
+function normalizeStudentDeletionState(student) {
+  // Future approval flow can replace this with deleteRequestedAt/deleteApprovedBy metadata.
+  return {
+    isDeleted: Boolean(student.isDeleted),
+    deletedAt: student.isDeleted ? student.deletedAt || '' : '',
+  }
 }
 
 function normalizeStudentTeacherName(mainTeacherName) {
@@ -246,6 +306,7 @@ function normalizeTuitionRecords(tuitionRecords) {
       totalSessions: normalizeNumber(record.totalSessions),
       usedSessions: normalizeNumber(record.usedSessions),
       totalAmount: normalizeNumber(record.totalAmount),
+      discountAmount: normalizeNumber(record.discountAmount),
       paidAmount: normalizeNumber(record.paidAmount),
       dueDate: record.dueDate ? String(record.dueDate) : '',
       note: String(record.note || ''),
@@ -259,6 +320,49 @@ function normalizeTuitionRecords(tuitionRecords) {
       termHistory: normalizeTuitionTermHistory(record.termHistory),
     }))
     .filter((record) => record.studentId)
+}
+
+function normalizeCashflowTransactions(transactions) {
+  return transactions.map((transaction, index) => ({
+    id: String(transaction.id || `cashflow-${String(index + 1).padStart(3, '0')}`),
+    type: transaction.type === 'expense' ? 'expense' : 'income',
+    category: String(transaction.category || 'Khác'),
+    amount: normalizeMoneyNumber(transaction.amount),
+    transactionDate: transaction.transactionDate ? String(transaction.transactionDate) : '',
+    method: String(transaction.method || 'Khác'),
+    personName: String(transaction.personName || ''),
+    recordedBy: String(transaction.recordedBy || 'Admin DreamHome'),
+    note: String(transaction.note || ''),
+    sourceModule: String(transaction.sourceModule || 'manual'),
+    sourceType: String(transaction.sourceType || ''),
+    sourcePaymentId: String(transaction.sourcePaymentId || ''),
+    sourceTuitionId: String(transaction.sourceTuitionId || ''),
+    sourceStudentId: String(transaction.sourceStudentId || ''),
+    sourceTermId: String(transaction.sourceTermId || ''),
+    createdAt: transaction.createdAt || new Date().toISOString(),
+    updatedAt: transaction.updatedAt || transaction.createdAt || new Date().toISOString(),
+  }))
+}
+
+function normalizeCashflowCategories(categories) {
+  return categories.map((category, index) => {
+    const categoryName = typeof category === 'string' ? category : category.name
+    const categoryType = typeof category === 'string' ? 'both' : category.type
+    const now = new Date().toISOString()
+
+    return {
+      id: String(
+        typeof category === 'string'
+          ? `cash-cat-${index + 1}`
+          : category.id || `cash-cat-${index + 1}`,
+      ),
+      name: String(categoryName || 'Khác'),
+      type: ['income', 'expense', 'both'].includes(categoryType) ? categoryType : 'both',
+      isArchived: Boolean(typeof category === 'string' ? false : category.isArchived),
+      createdAt: typeof category === 'string' ? now : category.createdAt || now,
+      updatedAt: typeof category === 'string' ? now : category.updatedAt || now,
+    }
+  })
 }
 
 function normalizeTuitionTermHistory(termHistory) {
@@ -275,6 +379,7 @@ function normalizeTuitionTermHistory(termHistory) {
       totalSessions: normalizeNumber(term.totalSessions),
       usedSessions: normalizeNumber(term.usedSessions),
       totalAmount: normalizeNumber(term.totalAmount),
+      discountAmount: normalizeNumber(term.discountAmount),
       paidAmount: normalizeNumber(term.paidAmount),
       dueDate: term.dueDate ? String(term.dueDate) : '',
       note: String(term.note || ''),
@@ -303,6 +408,12 @@ function normalizeTuitionPayments(payments) {
         ? normalizeDateTime(payment.createdAt)
         : new Date().toISOString(),
     }))
+}
+
+function normalizeMoneyNumber(value) {
+  const numberValue =
+    typeof value === 'string' ? Number(value.replace(/[^\d]/g, '')) : Number(value)
+  return Number.isFinite(numberValue) ? numberValue : 0
 }
 
 function normalizeNumber(value) {

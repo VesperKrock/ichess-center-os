@@ -3,17 +3,35 @@ import { modules } from './modules.js'
 import {
   getDeletedNotificationIds,
   getDesktopModuleOrder,
+  getStoredCashflow,
+  getStoredCashflowCategories,
   getStoredNotifications,
   getStoredStudents,
   getStoredTuition,
   getViewMode,
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
+  saveStoredCashflow,
+  saveStoredCashflowCategories,
   saveStoredNotifications,
   saveStoredStudents,
   saveStoredTuition,
   saveViewMode,
 } from './storage.js'
+import { sampleCashflowCategories, sampleCashflowTransactions } from './cashflow-data.js'
+import {
+  buildCashflowTransactionFromForm,
+  buildCashflowCategoryFromForm,
+  createEditCashflowCategoryFormState,
+  createEditCashflowFormState,
+  createEmptyCashflowCategoryFormState,
+  createEmptyCashflowFormStateWithCategories,
+  getDefaultCategoryNameForType,
+  initialCashflowFilters,
+  renderCashflowModule,
+  validateCashflowCategoryForm,
+  validateCashflowForm,
+} from './cashflow-module.js'
 import { createSampleNotifications } from './notifications.js'
 import { sampleStudents } from './student-data.js'
 import { createSampleTuitionRecords } from './tuition-data.js'
@@ -43,6 +61,7 @@ import {
   createPaymentFormState,
   createRenewTuitionFormState,
   createTuitionWarningNotification,
+  getTuitionDebtAmount,
   initialTuitionFilters,
   normalizePaymentFormValues,
   normalizeTuitionFormValues,
@@ -78,6 +97,12 @@ let tuitionFilters = { ...initialTuitionFilters }
 let tuitionFormState = null
 let tuitionPaymentFormState = null
 let tuitionDetailState = null
+let cashflowTransactions = getStoredCashflow(sampleCashflowTransactions)
+let cashflowCategories = getStoredCashflowCategories(sampleCashflowCategories)
+let cashflowFilters = { ...initialCashflowFilters }
+let cashflowFormState = null
+let isCashflowCategoryPanelOpen = false
+let cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
 let careNoteDrafts = {}
 
 function render() {
@@ -177,7 +202,7 @@ function renderModuleWindow(windowItem) {
 
 function renderWindowBody(windowItem) {
   if (windowItem.type === 'student-detail') {
-    return renderStudentDetail(getStudentById(windowItem.studentId))
+    return renderStudentDetailWithDeleteAction(getStudentById(windowItem.studentId))
   }
 
   if (windowItem.type === 'student-care-notes') {
@@ -212,6 +237,17 @@ function renderWindowBody(windowItem) {
     )
   }
 
+  if (moduleItem.id === 'thu-chi') {
+    return renderCashflowModule(
+      cashflowTransactions,
+      cashflowFilters,
+      cashflowFormState,
+      cashflowCategories,
+      isCashflowCategoryPanelOpen,
+      cashflowCategoryFormState,
+    )
+  }
+
   return `
     <div class="room-heading">
       <p class="room-description">${moduleItem.shortDescription}</p>
@@ -225,6 +261,30 @@ function renderWindowBody(windowItem) {
       ${renderPlannedList('Dữ liệu dự kiến', moduleItem.plannedData)}
     </div>
   `
+}
+
+function renderStudentDetailWithDeleteAction(student) {
+  const detailHtml = renderStudentDetail(student)
+
+  if (!student || student.isDeleted) {
+    return detailHtml
+  }
+
+  const deleteAction = `
+    <button
+      class="student-detail-delete-button"
+      type="button"
+      data-student-detail-action="soft-delete"
+      data-student-id="${student.id}"
+    >
+      Xóa hồ sơ
+    </button>
+  `
+
+  return detailHtml.replace('</button>\n      </div>\n\n      <div class="student-overview-grid">', `</button>${deleteAction}
+      </div>
+
+      <div class="student-overview-grid">`)
 }
 
 function getWindowTitle(windowItem) {
@@ -683,6 +743,110 @@ function openStudentEditForm(studentId) {
   render()
 }
 
+function openCashflowEditForm(transactionId) {
+  const transaction = cashflowTransactions.find((item) => item.id === transactionId)
+
+  if (!transaction) {
+    return
+  }
+
+  cashflowFormState = createEditCashflowFormState(transaction)
+  render()
+}
+
+function syncTuitionPaymentToCashflow(payment, tuitionRecord, student) {
+  if (!payment?.id || !tuitionRecord || !student) {
+    return
+  }
+
+  const hasSyncedTransaction = cashflowTransactions.some(
+    (transaction) =>
+      transaction.sourceModule === 'hoc-phi' && transaction.sourcePaymentId === payment.id,
+  )
+
+  if (hasSyncedTransaction) {
+    return
+  }
+
+  ensureTuitionCashflowCategory()
+
+  const transaction = {
+    id: `cashflow-from-tuition-${payment.id}`,
+    type: 'income',
+    category: 'Học phí',
+    amount: Number(payment.amount || 0),
+    transactionDate: payment.paidAt,
+    method: getCashflowMethodFromTuitionPayment(payment.method),
+    personName: getTuitionPaymentPersonName(student),
+    recordedBy: payment.collectorName || 'Admin DreamHome',
+    note: payment.note
+      ? `Thu học phí: ${payment.note}`
+      : `Thu học phí ${student.fullName}`,
+    sourceModule: 'hoc-phi',
+    sourceType: 'tuition-payment',
+    sourcePaymentId: payment.id,
+    sourceTuitionId: tuitionRecord.id,
+    sourceStudentId: student.id,
+    sourceTermId: tuitionRecord.currentTermId || '',
+    createdAt: payment.createdAt || new Date().toISOString(),
+  }
+
+  cashflowTransactions = [transaction, ...cashflowTransactions]
+  saveStoredCashflow(cashflowTransactions)
+}
+
+function ensureTuitionCashflowCategory() {
+  const tuitionCategory = cashflowCategories.find((category) => category.name === 'Học phí')
+
+  if (tuitionCategory && !tuitionCategory.isArchived && tuitionCategory.type === 'income') {
+    return
+  }
+
+  if (tuitionCategory) {
+    cashflowCategories = cashflowCategories.map((category) =>
+      category.id === tuitionCategory.id
+        ? {
+            ...category,
+            type: category.type === 'expense' ? 'both' : category.type,
+            isArchived: false,
+            updatedAt: new Date().toISOString(),
+          }
+        : category,
+    )
+  } else {
+    const now = new Date().toISOString()
+    cashflowCategories = [
+      {
+        id: `cash-cat-hoc-phi-${Date.now()}`,
+        name: 'Học phí',
+        type: 'income',
+        isArchived: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...cashflowCategories,
+    ]
+  }
+
+  saveStoredCashflowCategories(cashflowCategories)
+}
+
+function getCashflowMethodFromTuitionPayment(method) {
+  const methodLabels = {
+    cash: 'Tiền mặt',
+    transfer: 'Chuyển khoản',
+    other: 'Khác',
+  }
+
+  return methodLabels[method] ?? 'Khác'
+}
+
+function getTuitionPaymentPersonName(student) {
+  const parentName = String(student.parentName || '').trim()
+
+  return parentName ? `${student.fullName} / ${parentName}` : student.fullName
+}
+
 function focusWindow(windowId) {
   const nextZIndex = ++topZIndex
 
@@ -734,6 +898,59 @@ function toggleMaximizeWindow(windowId) {
 
 function closeWindow(windowId) {
   openWindows = openWindows.filter((windowItem) => windowItem.id !== windowId)
+  render()
+}
+
+function softDeleteStudent(studentId) {
+  const student = getStudentById(studentId)
+
+  if (!student || student.isDeleted) {
+    return
+  }
+
+  const confirmed = window.confirm(
+    'Bạn có chắc muốn xóa hồ sơ học viên này khỏi danh sách chính không?\nDữ liệu sẽ được tạm ẩn, chưa xóa vĩnh viễn.',
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  const deletedAt = new Date().toISOString()
+
+  students = students.map((item) =>
+    item.id === studentId
+      ? {
+          ...item,
+          isDeleted: true,
+          deletedAt,
+          updatedAt: deletedAt,
+        }
+      : item,
+  )
+
+  studentFilters = {
+    ...studentFilters,
+    selectedStudentId:
+      studentFilters.selectedStudentId === studentId ? null : studentFilters.selectedStudentId,
+  }
+
+  if (studentFormState?.studentId === studentId) {
+    studentFormState = null
+  }
+
+  // Phase 1X only hides the student profile. Tuition, payments, termHistory and notifications stay untouched.
+  openWindows = openWindows.filter(
+    (windowItem) =>
+      !(
+        windowItem.studentId === studentId &&
+        ['student-detail', 'student-care-notes', 'student-learning'].includes(windowItem.type)
+      ),
+  )
+  saveStoredStudents(students)
+  isStartMenuOpen = false
+  isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
   render()
 }
 
@@ -908,6 +1125,291 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-cashflow-filter]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const filterName = control.dataset.cashflowFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      cashflowFilters = {
+        ...cashflowFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(`[data-cashflow-filter="${filterName}"]`)
+      nextControl?.focus()
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelector('[data-cashflow-action="open-create"]')?.addEventListener('click', () => {
+    cashflowFormState = createEmptyCashflowFormStateWithCategories(cashflowCategories)
+    render()
+  })
+
+  document.querySelector('[data-cashflow-action="open-categories"]')?.addEventListener('click', () => {
+    isCashflowCategoryPanelOpen = true
+    cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
+    render()
+  })
+
+  document.querySelectorAll('[data-cashflow-transaction-id]').forEach((row) => {
+    row.addEventListener('click', () => {
+      openCashflowEditForm(row.dataset.cashflowTransactionId)
+    })
+
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      event.preventDefault()
+      openCashflowEditForm(row.dataset.cashflowTransactionId)
+    })
+  })
+
+  document.querySelectorAll('[data-cashflow-form-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!cashflowFormState) {
+        return
+      }
+
+      cashflowFormState = {
+        ...cashflowFormState,
+        values: {
+          ...cashflowFormState.values,
+          [control.dataset.cashflowFormField]: control.value,
+        },
+        errors: {
+          ...cashflowFormState.errors,
+          [control.dataset.cashflowFormField]: undefined,
+        },
+      }
+
+      if (control.dataset.cashflowFormField === 'type' && cashflowFormState.mode === 'create') {
+        cashflowFormState = {
+          ...cashflowFormState,
+          values: {
+            ...cashflowFormState.values,
+            category: getDefaultCategoryNameForType(cashflowCategories, control.value),
+          },
+        }
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-cashflow-category-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      cashflowCategoryFormState = {
+        ...cashflowCategoryFormState,
+        values: {
+          ...cashflowCategoryFormState.values,
+          [control.dataset.cashflowCategoryField]: control.value,
+        },
+        errors: {
+          ...cashflowCategoryFormState.errors,
+          [control.dataset.cashflowCategoryField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-cashflow-category-action="close"]')?.addEventListener('click', () => {
+    isCashflowCategoryPanelOpen = false
+    cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
+    render()
+  })
+
+  document.querySelector('[data-cashflow-category-action="reset-form"]')?.addEventListener(
+    'click',
+    () => {
+      cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
+      render()
+    },
+  )
+
+  document.querySelectorAll('[data-cashflow-category-action="edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const category = cashflowCategories.find(
+        (item) => item.id === button.dataset.cashflowCategoryId,
+      )
+
+      if (!category) {
+        return
+      }
+
+      cashflowCategoryFormState = createEditCashflowCategoryFormState(category)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-cashflow-category-action="archive"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const category = cashflowCategories.find(
+        (item) => item.id === button.dataset.cashflowCategoryId,
+      )
+
+      if (!category || category.isArchived) {
+        return
+      }
+
+      cashflowCategories = cashflowCategories.map((item) =>
+        item.id === category.id
+          ? {
+              ...item,
+              isArchived: true,
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      )
+      saveStoredCashflowCategories(cashflowCategories)
+
+      if (cashflowFormState?.values.category === category.name && cashflowFormState.mode === 'create') {
+        cashflowFormState = {
+          ...cashflowFormState,
+          values: {
+            ...cashflowFormState.values,
+            category: getDefaultCategoryNameForType(
+              cashflowCategories,
+              cashflowFormState.values.type,
+            ),
+          },
+        }
+      }
+
+      render()
+    })
+  })
+
+  document.querySelector('[data-cashflow-category-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    const errors = validateCashflowCategoryForm(
+      cashflowCategoryFormState.values,
+      cashflowCategories,
+      cashflowCategoryFormState.categoryId,
+    )
+
+    if (Object.keys(errors).length) {
+      cashflowCategoryFormState = {
+        ...cashflowCategoryFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const existingCategory = cashflowCategories.find(
+      (category) => category.id === cashflowCategoryFormState.categoryId,
+    )
+    const oldCategoryName = existingCategory?.name
+    const nextCategory = buildCashflowCategoryFromForm(
+      cashflowCategoryFormState.values,
+      existingCategory,
+    )
+
+    cashflowCategories =
+      cashflowCategoryFormState.mode === 'edit'
+        ? cashflowCategories.map((category) =>
+            category.id === nextCategory.id ? nextCategory : category,
+          )
+        : [nextCategory, ...cashflowCategories]
+
+    if (oldCategoryName && oldCategoryName !== nextCategory.name) {
+      cashflowTransactions = cashflowTransactions.map((transaction) =>
+        transaction.category === oldCategoryName
+          ? {
+              ...transaction,
+              category: nextCategory.name,
+              updatedAt: new Date().toISOString(),
+            }
+          : transaction,
+      )
+      saveStoredCashflow(cashflowTransactions)
+
+      if (cashflowFilters.category === oldCategoryName) {
+        cashflowFilters = {
+          ...cashflowFilters,
+          category: nextCategory.name,
+        }
+      }
+    }
+
+    saveStoredCashflowCategories(cashflowCategories)
+    cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
+    render()
+  })
+
+  document.querySelectorAll('[data-cashflow-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      cashflowFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-cashflow-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!cashflowFormState) {
+      return
+    }
+
+    const errors = validateCashflowForm(cashflowFormState.values)
+
+    if (Object.keys(errors).length) {
+      cashflowFormState = {
+        ...cashflowFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const existingTransaction = cashflowTransactions.find(
+      (transaction) => transaction.id === cashflowFormState.transactionId,
+    )
+    const nextTransaction = buildCashflowTransactionFromForm(
+      cashflowFormState.values,
+      existingTransaction,
+    )
+
+    cashflowTransactions =
+      cashflowFormState.mode === 'edit'
+        ? cashflowTransactions.map((transaction) =>
+            transaction.id === nextTransaction.id ? nextTransaction : transaction,
+          )
+        : [nextTransaction, ...cashflowTransactions]
+    saveStoredCashflow(cashflowTransactions)
+    cashflowFormState = null
+    render()
+  })
+
+  document.querySelector('[data-cashflow-action="delete-transaction"]')?.addEventListener(
+    'click',
+    () => {
+      if (!cashflowFormState?.transactionId) {
+        return
+      }
+
+      const confirmed = window.confirm('Bạn có chắc muốn xóa giao dịch này không?')
+
+      if (!confirmed) {
+        return
+      }
+
+      // Prototype 3B allows hard delete. A later audit phase can switch this to soft delete.
+      cashflowTransactions = cashflowTransactions.filter(
+        (transaction) => transaction.id !== cashflowFormState.transactionId,
+      )
+      saveStoredCashflow(cashflowTransactions)
+      cashflowFormState = null
+      render()
+    },
+  )
+
   document.querySelectorAll('[data-tuition-action="open-form"]').forEach((button) => {
     button.addEventListener('click', () => {
       const student = students.find((item) => item.id === button.dataset.tuitionStudentId)
@@ -980,7 +1482,7 @@ function bindEvents() {
         return
       }
 
-      const debtAmount = Math.max(0, tuitionRecord.totalAmount - tuitionRecord.paidAmount)
+      const debtAmount = getTuitionDebtAmount(tuitionRecord)
       tuitionPaymentFormState = createPaymentFormState(
         student,
         tuitionRecord,
@@ -1126,6 +1628,14 @@ function bindEvents() {
       ? tuitionRecords.map((record) => (record.id === nextRecord.id ? nextRecord : record))
       : [nextRecord, ...tuitionRecords]
     saveStoredTuition(tuitionRecords)
+    if (tuitionFormState.mode === 'renew') {
+      const student = students.find((item) => item.id === nextRecord.studentId)
+      const newPayments = nextRecord.payments ?? []
+
+      newPayments.forEach((payment) => {
+        syncTuitionPaymentToCashflow(payment, nextRecord, student)
+      })
+    }
     notifications = syncTuitionNotifications(notifications)
     tuitionFormState = null
     render()
@@ -1181,19 +1691,27 @@ function bindEvents() {
       ...normalizedPayment,
       createdAt: new Date().toISOString(),
     }
+    let updatedTuitionRecord = null
 
     tuitionRecords = tuitionRecords.map((record) => {
       if (record.id !== tuitionPaymentFormState.tuitionId) {
         return record
       }
 
-      return {
+      updatedTuitionRecord = {
         ...record,
         paidAmount: record.paidAmount + normalizedPayment.amount,
         payments: [paymentRecord, ...(record.payments ?? [])],
       }
+
+      return updatedTuitionRecord
     })
     saveStoredTuition(tuitionRecords)
+    syncTuitionPaymentToCashflow(
+      paymentRecord,
+      updatedTuitionRecord,
+      students.find((student) => student.id === tuitionPaymentFormState.studentId),
+    )
     notifications = syncTuitionNotifications(notifications)
     tuitionPaymentFormState = null
     render()
@@ -1282,6 +1800,11 @@ function bindEvents() {
 
       if (studentDetailAction === 'open-learning') {
         setTimeout(() => openStudentSubWindow(studentId, 'student-learning'), 0)
+        return
+      }
+
+      if (studentDetailAction === 'soft-delete') {
+        softDeleteStudent(studentId)
         return
       }
 
@@ -1654,7 +2177,7 @@ function createRenewedTuitionRecord(currentRecord, normalizedValues) {
   const renewedAt = new Date().toISOString()
   const currentTermNumber = currentRecord.currentTermNumber || 1
   const nextTermNumber = currentTermNumber + 1
-  const currentDebtAmount = Math.max(0, currentRecord.totalAmount - currentRecord.paidAmount)
+  const currentDebtAmount = getTuitionDebtAmount(currentRecord)
   const archivedStatus =
     currentRecord.usedSessions >= currentRecord.totalSessions && currentDebtAmount === 0
       ? 'completed'
@@ -1666,6 +2189,7 @@ function createRenewedTuitionRecord(currentRecord, normalizedValues) {
     totalSessions: currentRecord.totalSessions,
     usedSessions: currentRecord.usedSessions,
     totalAmount: currentRecord.totalAmount,
+    discountAmount: currentRecord.discountAmount || 0,
     paidAmount: currentRecord.paidAmount,
     dueDate: currentRecord.dueDate,
     note: currentRecord.note,

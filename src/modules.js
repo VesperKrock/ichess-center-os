@@ -112,8 +112,8 @@ export const modules = [
   {
     id: 'thu-chi',
     name: 'Thu chi',
-    shortDescription: 'Chuẩn bị khung ghi nhận các khoản thu, khoản chi và tổng hợp theo ngày.',
-    status: 'planned',
+    shortDescription: 'Ghi nhận khoản thu, khoản chi và tổng hợp giao dịch theo ngày.',
+    status: 'in-progress',
     plannedFeatures: [
       'Ghi nhận khoản thu',
       'Ghi nhận khoản chi',

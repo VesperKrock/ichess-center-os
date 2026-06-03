@@ -109,8 +109,9 @@ export function createEditStudentFormState(student) {
 }
 
 export function renderStudentModule(students, filters, formState) {
+  const visibleStudents = getVisibleStudents(students)
   const filteredStudents = getFilteredStudents(students, filters)
-  const stats = getStudentStats(students)
+  const stats = getStudentStats(visibleStudents)
 
   return `
     <section class="student-module ${formState ? 'form-open' : ''}" aria-labelledby="student-module-title">
@@ -205,7 +206,7 @@ export function getFilteredStudents(students = sampleStudents, filters) {
   const normalizedQuery = normalizeText(activeFilters.query)
   const queryDigits = String(activeFilters.query).replace(/\D/g, '')
 
-  const filteredStudents = students.filter((student) => {
+  const filteredStudents = getVisibleStudents(students).filter((student) => {
     const matchesQuery =
       !normalizedQuery ||
       [
@@ -224,6 +225,10 @@ export function getFilteredStudents(students = sampleStudents, filters) {
   })
 
   return sortStudents(filteredStudents, activeFilters)
+}
+
+export function getVisibleStudents(students = sampleStudents) {
+  return students.filter((student) => !student.isDeleted)
 }
 
 export function validateStudentForm(values) {
@@ -294,6 +299,7 @@ export function buildStudentFromForm(values, existingStudent = null) {
     id: existingStudent?.id ?? `stu-${Date.now()}`,
     ...existingStudent,
     ...normalizedValues,
+    isDeleted: existingStudent?.isDeleted ?? false,
     createdAt: existingStudent?.createdAt ?? now,
     updatedAt: now,
   }

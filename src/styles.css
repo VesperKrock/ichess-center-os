@@ -1162,6 +1162,25 @@ h3 {
   outline: none;
 }
 
+.student-detail-delete-button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(242, 116, 116, 0.38);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #ffd8d8;
+  background: rgba(242, 116, 116, 0.08);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.student-detail-delete-button:hover,
+.student-detail-delete-button:focus-visible {
+  border-color: rgba(242, 116, 116, 0.72);
+  outline: none;
+  background: rgba(242, 116, 116, 0.14);
+}
+
 .student-overview-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1174,6 +1193,619 @@ h3 {
   border-radius: 8px;
   padding: 10px 11px;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.cashflow-module {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  color: #d8e2ef;
+}
+
+.cashflow-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) auto minmax(420px, 1.6fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.cashflow-toolbar h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.05rem;
+}
+
+.cashflow-toolbar p {
+  margin: 5px 0 0;
+  color: #9fb1c7;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.cashflow-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cashflow-add-button,
+.cashflow-category-button {
+  min-height: 36px;
+  border: 1px solid rgba(118, 164, 231, 0.58);
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: #ffffff;
+  background: #1f5d99;
+  cursor: pointer;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cashflow-add-button:hover,
+.cashflow-add-button:focus-visible,
+.cashflow-category-button:hover,
+.cashflow-category-button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.9);
+  outline: none;
+}
+
+.cashflow-category-button {
+  border-color: rgba(160, 184, 214, 0.24);
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.cashflow-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) minmax(98px, 0.6fr) minmax(150px, 1fr) minmax(138px, 0.75fr);
+  gap: 8px;
+}
+
+.cashflow-filter-grid label,
+.cashflow-search-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cashflow-filter-grid span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashflow-filter-grid input,
+.cashflow-filter-grid select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #f4f7fb;
+  background: #101923;
+  font: inherit;
+}
+
+.cashflow-filter-grid input:hover,
+.cashflow-filter-grid select:hover,
+.cashflow-filter-grid input:focus,
+.cashflow-filter-grid select:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.cashflow-filter-grid option {
+  color: #f4f7fb;
+  background: #101923;
+}
+
+.cashflow-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cashflow-stat-chip {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashflow-stat-chip span {
+  display: block;
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashflow-stat-chip strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashflow-stat-chip.is-income strong {
+  color: #8de0b1;
+}
+
+.cashflow-stat-chip.is-expense strong {
+  color: #ffb29e;
+}
+
+.cashflow-table-wrap {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(8, 12, 18, 0.78);
+}
+
+.cashflow-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cashflow-table th:nth-child(1) {
+  width: 88px;
+}
+
+.cashflow-table th:nth-child(2) {
+  width: 68px;
+}
+
+.cashflow-table th:nth-child(3) {
+  width: 128px;
+}
+
+.cashflow-table th:nth-child(4) {
+  width: 20%;
+}
+
+.cashflow-table th:nth-child(5) {
+  width: 104px;
+}
+
+.cashflow-table th:nth-child(6) {
+  width: 122px;
+}
+
+.cashflow-table th:nth-child(7) {
+  width: 112px;
+}
+
+.cashflow-table th:nth-child(5),
+.cashflow-table td:nth-child(5),
+.cashflow-table th:nth-child(7),
+.cashflow-table td:nth-child(7) {
+  white-space: nowrap;
+}
+
+.cashflow-table th,
+.cashflow-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  padding: 8px 9px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cashflow-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #9fb1c7;
+  background: #111821;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.cashflow-table td {
+  overflow: hidden;
+  color: #d8e2ef;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashflow-table-wrap,
+.cashflow-form-panel,
+.cashflow-category-panel,
+.cashflow-category-list {
+  scrollbar-color: rgba(118, 164, 231, 0.48) rgba(255, 255, 255, 0.045);
+  scrollbar-width: thin;
+}
+
+.cashflow-table-wrap::-webkit-scrollbar,
+.cashflow-form-panel::-webkit-scrollbar,
+.cashflow-category-panel::-webkit-scrollbar,
+.cashflow-category-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cashflow-table-wrap::-webkit-scrollbar-track,
+.cashflow-form-panel::-webkit-scrollbar-track,
+.cashflow-category-panel::-webkit-scrollbar-track,
+.cashflow-category-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.cashflow-table-wrap::-webkit-scrollbar-thumb,
+.cashflow-form-panel::-webkit-scrollbar-thumb,
+.cashflow-category-panel::-webkit-scrollbar-thumb,
+.cashflow-category-list::-webkit-scrollbar-thumb {
+  border: 2px solid #101923;
+  border-radius: 999px;
+  background: rgba(118, 164, 231, 0.48);
+}
+
+.cashflow-row {
+  cursor: pointer;
+}
+
+.cashflow-row:hover,
+.cashflow-row:focus {
+  outline: 1px solid rgba(118, 164, 231, 0.42);
+  background: rgba(118, 164, 231, 0.075);
+}
+
+.cashflow-type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.cashflow-type-badge.is-income {
+  border: 1px solid rgba(82, 209, 139, 0.42);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.cashflow-type-badge.is-expense {
+  border: 1px solid rgba(242, 116, 116, 0.42);
+  color: #ffb29e;
+  background: rgba(242, 116, 116, 0.1);
+}
+
+.cashflow-amount {
+  font-weight: 900;
+}
+
+.cashflow-amount.is-income {
+  color: #8de0b1;
+}
+
+.cashflow-amount.is-expense {
+  color: #ffb29e;
+}
+
+.cashflow-source-badge {
+  display: inline-flex;
+  max-width: 88px;
+  align-items: center;
+  margin-right: 5px;
+  border: 1px solid rgba(118, 164, 231, 0.42);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #b8d7ff;
+  background: rgba(118, 164, 231, 0.1);
+  font-size: 0.72rem;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+.cashflow-empty {
+  padding: 18px;
+  color: #9fb1c7;
+  text-align: center;
+}
+
+.cashflow-form-backdrop {
+  position: absolute;
+  inset: 44px 0 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(4, 8, 13, 0.62);
+}
+
+.cashflow-form-panel,
+.cashflow-category-panel {
+  display: grid;
+  width: min(840px, 100%);
+  max-height: min(86vh, 720px);
+  overflow: auto;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  padding: 0;
+  background: #101923;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.46);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.cashflow-category-panel {
+  width: min(860px, 100%);
+}
+
+.cashflow-form-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 10px;
+}
+
+.cashflow-form-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.cashflow-form-header p {
+  margin: 4px 0 0;
+  color: #9fb1c7;
+  font-size: 0.84rem;
+}
+
+.cashflow-form-header button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 6px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.cashflow-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 10px;
+  overflow: visible;
+  padding: 0 14px;
+}
+
+.cashflow-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cashflow-field-wide {
+  grid-column: 1 / -1;
+}
+
+.cashflow-field span {
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashflow-field input,
+.cashflow-field select,
+.cashflow-field textarea {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #f4f7fb;
+  background: #0b121b;
+  font: inherit;
+}
+
+.cashflow-field textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.cashflow-field input:focus,
+.cashflow-field select:focus,
+.cashflow-field textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.cashflow-field option {
+  color: #f4f7fb;
+  background: #101923;
+}
+
+.cashflow-field small,
+.cashflow-form-errors {
+  color: #ffb29e;
+  font-size: 0.78rem;
+}
+
+.cashflow-form-errors {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(242, 116, 116, 0.3);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: rgba(242, 116, 116, 0.08);
+}
+
+.cashflow-form-panel > .cashflow-form-errors {
+  margin: 0 14px;
+}
+
+.cashflow-form-errors p {
+  margin: 0;
+}
+
+.cashflow-form-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  padding: 10px 14px 14px;
+  background: rgba(16, 25, 35, 0.96);
+}
+
+.cashflow-form-actions > div {
+  display: flex;
+  gap: 8px;
+}
+
+.cashflow-form-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.cashflow-form-actions button:hover,
+.cashflow-form-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.cashflow-form-actions .cashflow-save-button {
+  border-color: rgba(118, 164, 231, 0.58);
+  color: #ffffff;
+  background: #1f5d99;
+}
+
+.cashflow-form-actions .cashflow-delete-button {
+  border-color: rgba(242, 116, 116, 0.38);
+  color: #ffd8d8;
+  background: rgba(242, 116, 116, 0.08);
+}
+
+.cashflow-category-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(360px, 1.35fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 0 14px 14px;
+}
+
+.cashflow-category-form {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashflow-category-form h5 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.cashflow-category-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cashflow-category-form-actions button,
+.cashflow-category-item button {
+  min-height: 30px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.cashflow-category-form-actions .cashflow-save-button {
+  border-color: rgba(118, 164, 231, 0.58);
+  color: #ffffff;
+  background: #1f5d99;
+}
+
+.cashflow-category-list {
+  display: grid;
+  max-height: min(54vh, 430px);
+  overflow-y: auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cashflow-category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashflow-category-item.is-archived {
+  opacity: 0.72;
+}
+
+.cashflow-category-item > div:first-child {
+  min-width: 0;
+}
+
+.cashflow-category-item strong {
+  display: block;
+  overflow: hidden;
+  color: #ffffff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashflow-category-item span {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashflow-category-item > div:last-child {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.cashflow-category-item button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
 }
 
 .student-overview-tile-header {
@@ -1635,42 +2267,50 @@ h3 {
 }
 
 .tuition-table th:nth-child(1) {
-  width: 12%;
+  width: 10%;
 }
 
 .tuition-table th:nth-child(2) {
-  width: 14%;
+  width: 11%;
 }
 
 .tuition-table th:nth-child(3) {
-  width: 13%;
+  width: 11%;
 }
 
 .tuition-table th:nth-child(4) {
-  width: 11%;
+  width: 9%;
 }
 
 .tuition-table th:nth-child(5) {
-  width: 15%;
+  width: 10%;
 }
 
 .tuition-table th:nth-child(6) {
-  width: 12%;
+  width: 9%;
 }
 
 .tuition-table th:nth-child(7) {
-  width: 11%;
+  width: 10%;
 }
 
 .tuition-table th:nth-child(8) {
-  width: 12%;
+  width: 10%;
+}
+
+.tuition-table th:nth-child(9) {
+  width: 10%;
+}
+
+.tuition-table th:nth-child(10) {
+  width: 10%;
 }
 
 .tuition-table th,
 .tuition-table td {
   border-bottom: 1px solid rgba(255, 255, 255, 0.075);
   min-width: 0;
-  padding: 9px 10px;
+  padding: 8px 7px;
   text-align: left;
   vertical-align: middle;
 }
@@ -1678,7 +2318,7 @@ h3 {
 .tuition-table td {
   overflow: hidden;
   color: #d8e2ef;
-  font-size: 0.875rem;
+  font-size: 0.82rem;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1703,10 +2343,10 @@ h3 {
 }
 
 .tuition-term-chip {
-  display: block;
-  margin-top: 3px;
+  display: inline;
+  margin-left: 2px;
   color: #9fb1c7;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 800;
 }
 
@@ -1768,7 +2408,7 @@ h3 {
   z-index: 1;
   color: #9fb1c7;
   background: #111821;
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
 }
 
