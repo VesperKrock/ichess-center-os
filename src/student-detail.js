@@ -21,13 +21,14 @@ export const emptyCareNoteDraft = {
   editingNoteId: '',
 }
 
-export function renderStudentDetail(student) {
+export function renderStudentDetail(student, teachers = []) {
   if (!student) {
     return renderStudentNotFound()
   }
 
   const careNotes = getSortedCareNotes(student)
   const latestCareNote = careNotes[0]
+  const assignedTeacherLabel = getAssignedTeacherLabel(student, teachers)
 
   return `
     <section class="student-detail student-detail-overview" aria-label="Hồ sơ tổng quan học viên">
@@ -83,7 +84,7 @@ export function renderStudentDetail(student) {
           ['Điểm bài thi', formatTestScore(student.testScore)],
           ['Mốc bot', student.highestBotMilestone],
           ['Tính cách', student.personality],
-          ['GV phụ trách', student.mainTeacherName],
+          ['GV phụ trách', assignedTeacherLabel],
         ])}
         ${renderOverviewTile(
           'Chăm sóc',
@@ -302,6 +303,33 @@ function renderCareNoteHistory(student) {
         .join('')}
     </div>
   `
+}
+
+function getAssignedTeacherLabel(student, teachers = []) {
+  const assignedTeacherId = String(student?.assignedTeacherId ?? '').trim()
+
+  if (!assignedTeacherId) {
+    return 'Chưa phân công'
+  }
+
+  const teacher = teachers.find((item) => String(item?.id ?? '') === assignedTeacherId)
+
+  if (!teacher) {
+    return 'Không tìm thấy giáo viên'
+  }
+
+  const teacherName = String(teacher.displayName || teacher.fullName || 'Giáo viên').trim()
+  return `${teacherName} - ${getTeacherStatusLabel(teacher.status)}`
+}
+
+function getTeacherStatusLabel(status) {
+  const statusLabels = {
+    active: 'Đang dạy',
+    paused: 'Tạm nghỉ',
+    inactive: 'Ngừng dạy',
+  }
+
+  return statusLabels[status] ?? 'Chưa cập nhật'
 }
 
 function getSortedCareNotes(student) {

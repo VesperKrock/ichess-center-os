@@ -37,6 +37,7 @@ export const emptyStudentFormValues = {
   fullName: '',
   birthDate: '',
   avatarUrl: '',
+  assignedTeacherId: '',
   schoolName: '',
   schoolLevel: 'Khác',
   gender: '',
@@ -85,6 +86,7 @@ export function createEditStudentFormState(student) {
       fullName: student.fullName ?? '',
       birthDate: student.birthDate ?? '',
       avatarUrl: student.avatarUrl ?? '',
+      assignedTeacherId: student.assignedTeacherId ?? '',
       schoolName: student.schoolName ?? '',
       schoolLevel: student.schoolLevel ?? getSchoolLevelFromName(student.schoolName),
       gender: student.gender ?? '',
@@ -108,9 +110,9 @@ export function createEditStudentFormState(student) {
   }
 }
 
-export function renderStudentModule(students, filters, formState) {
+export function renderStudentModule(students, filters, formState, teachers = []) {
   const visibleStudents = getVisibleStudents(students)
-  const filteredStudents = getFilteredStudents(students, filters)
+  const filteredStudents = getFilteredStudents(students, filters, teachers)
   const stats = getStudentStats(visibleStudents)
 
   return `
@@ -183,7 +185,7 @@ export function renderStudentModule(students, filters, formState) {
               <tbody>
                 ${
                   filteredStudents.length
-                    ? filteredStudents.map(renderStudentRow).join('')
+                    ? filteredStudents.map((student) => renderStudentRow(student, teachers)).join('')
                     : renderEmptyState()
                 }
               </tbody>
@@ -191,12 +193,12 @@ export function renderStudentModule(students, filters, formState) {
           </div>
         </div>
       </div>
-      ${formState ? renderStudentForm(formState) : ''}
+      ${formState ? renderStudentForm(formState, teachers) : ''}
     </section>
   `
 }
 
-export function getFilteredStudents(students = sampleStudents, filters) {
+export function getFilteredStudents(students = sampleStudents, filters, teachers = []) {
   if (!Array.isArray(students)) {
     filters = students
     students = sampleStudents
@@ -206,13 +208,16 @@ export function getFilteredStudents(students = sampleStudents, filters) {
   const normalizedQuery = normalizeText(activeFilters.query)
   const queryDigits = String(activeFilters.query).replace(/\D/g, '')
 
+  const teacherLookup = createTeacherLookup(teachers)
   const filteredStudents = getVisibleStudents(students).filter((student) => {
+    const assignedTeacher = teacherLookup.get(String(student.assignedTeacherId ?? ''))
     const matchesQuery =
       !normalizedQuery ||
       [
         student.fullName,
         student.parentName,
         student.schoolName,
+        getTeacherDisplayName(assignedTeacher),
       ].some((value) => normalizeText(value).includes(normalizedQuery)) ||
       (queryDigits && String(student.parentPhone).replace(/\D/g, '').includes(queryDigits))
 
@@ -288,6 +293,7 @@ export function buildStudentFromForm(values, existingStudent = null) {
   const normalizedValues = {
     ...values,
     avatarUrl: values.avatarUrl || existingStudent?.avatarUrl || '',
+    assignedTeacherId: normalizeAssignedTeacherId(values.assignedTeacherId),
     level: getLevelNumber(values.level) ?? values.level,
     parentBirthYear: values.parentBirthYear ? Number(values.parentBirthYear) : '',
     parentPhone: formatPhoneNumber(values.parentPhone),
@@ -305,7 +311,7 @@ export function buildStudentFromForm(values, existingStudent = null) {
   }
 }
 
-function renderStudentForm(formState) {
+function renderStudentForm(formState, teachers = []) {
   const isEdit = formState.mode === 'edit'
   const title = isEdit ? 'Sửa học viên' : 'Thêm học viên'
   const currentStep = formState.step ?? 1
@@ -368,6 +374,12 @@ function renderStudentForm(formState) {
                 ${renderFormSection('C. Trạng thái học', [
                   renderSelectField('level', 'Level *', formState, levelSelectOptions),
                   renderSelectField('highestBotMilestone', 'Mốc bot đã vượt qua', formState, botMilestones),
+                  renderSelectField(
+                    'assignedTeacherId',
+                    'Giáo viên phụ trách',
+                    formState,
+                    getTeacherSelectOptions(teachers),
+                  ),
                   renderTextareaField('personality', 'Tính cách học viên', formState, {
                     className: 'span-full',
                   }),
@@ -506,7 +518,7 @@ function renderStatCard(label, value, tone = '') {
 function renderOption(value, label, selectedValue) {
   return `<option value="${escapeAttribute(value)}" ${
     String(value) === String(selectedValue) ? 'selected' : ''
-  }>${label}</option>`
+  }>${escapeHtml(label)}</option>`
 }
 
 function renderSortableHeader(label, sortBy, filters) {
@@ -586,7 +598,7 @@ function compareText(firstValue, secondValue) {
   })
 }
 
-function renderStudentRow(student) {
+function renderStudentRow(student, teachers = []) {
   const hasCareNote = hasRealCareNote(student)
 
   return `
@@ -606,7 +618,7 @@ function renderStudentRow(student) {
       <td>${getLevelLabel(student.level)}</td>
       <td>${student.elo ?? '—'}</td>
       <td title="${escapeAttribute(student.schoolName)}">${getShortSchoolName(student.schoolName)}</td>
-      <td title="${escapeAttribute(student.mainTeacherName ?? '')}">${student.mainTeacherName || '—'}</td>
+      <td>${renderStudentTeacherCell(student, teachers)}</td>
       <td>
         ${hasCareNote
           ? `<button class="student-note-badge has-note" type="button" title="${escapeAttribute(getLatestCareNoteText(student))}">Có ghi chú</button>`
@@ -614,6 +626,98 @@ function renderStudentRow(student) {
       </td>
     </tr>
   `
+}
+
+function renderStudentTeacherCell(student, teachers = []) {
+  const assignedTeacherId = normalizeAssignedTeacherId(student.assignedTeacherId)
+
+  if (!assignedTeacherId) {
+    return '<span class="student-teacher-empty">Chưa phân công</span>'
+  }
+
+  const teacher = createTeacherLookup(teachers).get(assignedTeacherId)
+
+  if (!teacher) {
+    return `
+      <div class="student-teacher-cell student-teacher-missing" title="Không tìm thấy giáo viên">
+        <span class="student-teacher-name">Không tìm thấy</span>
+        <span class="student-teacher-warning">Kiểm tra lại</span>
+      </div>
+    `
+  }
+
+  const teacherName = getTeacherDisplayName(teacher)
+
+  return `
+    <div class="student-teacher-cell" title="${escapeAttribute(getTeacherOptionLabel(teacher))}">
+      <span class="student-teacher-name">${escapeHtml(teacherName)}</span>
+      ${
+        teacher.status === 'inactive'
+          ? '<span class="student-teacher-warning">Ngừng dạy</span>'
+          : ''
+      }
+    </div>
+  `
+}
+
+function getTeacherSelectOptions(teachers = []) {
+  return [
+    { value: '', label: 'Chưa phân công' },
+    ...teachers
+      .filter((teacher) => teacher && teacher.id)
+      .map((teacher) => ({
+        value: teacher.id,
+        label: getTeacherOptionLabel(teacher),
+      })),
+  ]
+}
+
+function getTeacherOptionLabel(teacher) {
+  const teacherName = getTeacherDisplayName(teacher) || 'Giáo viên'
+  const statusLabel = getTeacherStatusLabel(teacher.status)
+
+  if (teacher.status === 'inactive') {
+    return `${teacherName} - ${statusLabel}`
+  }
+
+  return `${teacherName} - ${statusLabel} - ${getTeacherTypeLabel(teacher.teacherType)}`
+}
+
+function getTeacherDisplayName(teacher) {
+  return String(teacher?.displayName || teacher?.fullName || '').trim()
+}
+
+function getTeacherStatusLabel(status) {
+  const statusLabels = {
+    active: 'Đang dạy',
+    paused: 'Tạm nghỉ',
+    inactive: 'Ngừng dạy',
+  }
+
+  return statusLabels[status] ?? 'Chưa cập nhật'
+}
+
+function getTeacherTypeLabel(teacherType) {
+  const typeLabels = {
+    fulltime: 'Full-time',
+    parttime: 'Part-time',
+    collaborator: 'Cộng tác viên',
+  }
+
+  return typeLabels[teacherType] ?? 'Chưa cập nhật'
+}
+
+function createTeacherLookup(teachers = []) {
+  return new Map(
+    teachers
+      .filter((teacher) => teacher && teacher.id)
+      .map((teacher) => [String(teacher.id), teacher]),
+  )
+}
+
+function normalizeAssignedTeacherId(value) {
+  const teacherId = String(value ?? '').trim()
+  return teacherId || null
 }
 
 function renderStudentAvatar(student) {
@@ -807,4 +911,13 @@ function normalizeText(value) {
 
 function escapeAttribute(value) {
   return String(value).replace(/"/g, '&quot;')
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

@@ -11,6 +11,7 @@ import {
   getStoredInventoryMovements,
   getStoredNotifications,
   getStoredStudents,
+  getStoredTeachers,
   getStoredTuition,
   getViewMode,
   saveDeletedNotificationIds,
@@ -23,6 +24,7 @@ import {
   saveStoredInventoryMovements,
   saveStoredNotifications,
   saveStoredStudents,
+  saveStoredTeachers,
   saveStoredTuition,
   saveViewMode,
 } from './storage.js'
@@ -70,6 +72,15 @@ import {
 } from './inventory-module.js'
 import { createSampleNotifications } from './notifications.js'
 import { sampleStudents } from './student-data.js'
+import { sampleTeachers } from './teacher-data.js'
+import {
+  buildTeacherFromForm,
+  createEditTeacherFormState,
+  createEmptyTeacherFormState,
+  initialTeacherFilters,
+  renderTeacherModule,
+  validateTeacherForm,
+} from './teacher-module.js'
 import { createSampleTuitionRecords } from './tuition-data.js'
 import {
   emptyCareNoteDraft,
@@ -124,6 +135,10 @@ let shortcutDocumentDragBound = false
 let notificationOutsidePointerBound = false
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
+let teacherFilters = { ...initialTeacherFilters }
+let teachers = getStoredTeachers(sampleTeachers)
+let teacherFormState = null
+let selectedTeacherId = null
 let tuitionRecords = getStoredTuition(createSampleTuitionRecords(students))
 let notifications = getStoredNotifications(createSampleNotifications())
 let deletedNotificationIds = getDeletedNotificationIds()
@@ -151,6 +166,7 @@ let inventoryMovementFilters = { ...initialInventoryMovementFilters }
 let inventoryFormState = null
 let inventoryMovementFormState = null
 let selectedInventoryMovementId = null
+let isInventoryHistoryPanelOpen = false
 let careNoteDrafts = {}
 
 function render() {
@@ -280,7 +296,11 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'hoc-vien') {
-    return renderStudentModule(students, studentFilters, studentFormState)
+    return renderStudentModule(students, studentFilters, studentFormState, teachers)
+  }
+
+  if (moduleItem.id === 'giao-vien') {
+    return renderTeacherModule(teachers, teacherFilters, teacherFormState, selectedTeacherId)
   }
 
   if (moduleItem.id === 'hoc-phi') {
@@ -322,6 +342,10 @@ function renderWindowBody(windowItem) {
       inventoryFilters,
       inventoryFormState,
       inventoryMovementFormState,
+      inventoryMovements,
+      inventoryMovementFilters,
+      selectedInventoryMovementId,
+      isInventoryHistoryPanelOpen,
     )
   }
 
@@ -341,7 +365,7 @@ function renderWindowBody(windowItem) {
 }
 
 function renderStudentDetailWithDeleteAction(student) {
-  const detailHtml = renderStudentDetail(student)
+  const detailHtml = renderStudentDetail(student, teachers)
 
   if (!student || student.isDeleted) {
     return detailHtml
@@ -702,38 +726,8 @@ function openInventorySubwindow(view) {
     return
   }
 
-  const type = 'inventory-movements'
-  const existingWindow = openWindows.find((windowItem) => windowItem.type === type)
-
-  if (existingWindow) {
-    focusWindow(existingWindow.id)
-    isStartMenuOpen = false
-    isWindowOverflowOpen = false
-    isNotificationCenterOpen = false
-    render()
-    return
-  }
-
-  const offset = (openWindows.length % 7) * 28
-
-  openWindows.push({
-    id: `window-${nextWindowNumber}`,
-    type,
-    x: 72 + offset,
-    y: 42 + offset,
-    width: 880,
-    height: 560,
-    zIndex: ++topZIndex,
-    minimized: false,
-    maximized: true,
-    restoreBounds: {
-      x: 72 + offset,
-      y: 42 + offset,
-      width: 880,
-      height: 560,
-    },
-  })
-  nextWindowNumber += 1
+  openWindows = openWindows.filter((windowItem) => windowItem.type !== 'inventory-movements')
+  isInventoryHistoryPanelOpen = true
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
@@ -1445,7 +1439,17 @@ function bindEvents() {
 
   document.querySelectorAll('[data-inventory-open-subwindow]').forEach((button) => {
     button.addEventListener('click', () => {
-      openInventorySubwindow(button.dataset.inventoryOpenSubwindow)
+      if (button.dataset.inventoryOpenSubwindow === 'movements') {
+        openInventorySubwindow('movements')
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-history-action="close"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      isInventoryHistoryPanelOpen = false
+      selectedInventoryMovementId = null
+      render()
     })
   })
 
@@ -1491,6 +1495,7 @@ function bindEvents() {
   document.querySelectorAll('[data-inventory-movement-id]').forEach((row) => {
     row.addEventListener('click', () => {
       selectedInventoryMovementId = row.dataset.inventoryMovementId
+      isInventoryHistoryPanelOpen = true
       inventoryFormState = null
       inventoryMovementFormState = null
       render()
@@ -2434,6 +2439,245 @@ function bindEvents() {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
     })
+  })
+
+  document.querySelectorAll('[data-teacher-filter]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const filterName = control.dataset.teacherFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      teacherFilters = {
+        ...teacherFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(`[data-teacher-filter="${filterName}"]`)
+      nextControl?.focus()
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelector('[data-teacher-action="open-create"]')?.addEventListener('click', () => {
+    teacherFormState = createEmptyTeacherFormState()
+    selectedTeacherId = null
+    render()
+  })
+
+  document.querySelectorAll('[data-teacher-action="open-profile"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      selectedTeacherId = button.dataset.teacherId
+      teacherFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-action="close-profile"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedTeacherId = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-action="open-edit"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const teacher = teachers.find((item) => item.id === button.dataset.teacherId)
+
+      if (!teacher) {
+        return
+      }
+
+      teacherFormState = createEditTeacherFormState(teacher)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-action="edit-from-profile"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const teacher = teachers.find((item) => item.id === button.dataset.teacherId)
+
+      if (!teacher) {
+        return
+      }
+
+      teacherFormState = createEditTeacherFormState(teacher)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-action="stop-teaching"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const teacher = teachers.find((item) => item.id === button.dataset.teacherId)
+
+      if (!teacher || teacher.status === 'inactive') {
+        return
+      }
+
+      const confirmed = window.confirm(
+        `Ngừng dạy giáo viên ${teacher.displayName || teacher.fullName}? Dữ liệu vẫn được giữ lại và chỉ chuyển trạng thái sang Ngừng dạy.`,
+      )
+
+      if (!confirmed) {
+        return
+      }
+
+      teachers = teachers.map((item) =>
+        item.id === teacher.id
+          ? {
+              ...item,
+              status: 'inactive',
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      )
+      saveStoredTeachers(teachers)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      teacherFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-form-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const fieldName = control.dataset.teacherFormField
+
+      teacherFormState = {
+        ...teacherFormState,
+        values: {
+          ...teacherFormState.values,
+          [fieldName]: control.value,
+        },
+        errors: {
+          ...teacherFormState.errors,
+          [fieldName]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-level-field]').forEach((control) => {
+    control.addEventListener('change', () => {
+      const selectedLevels = Array.from(document.querySelectorAll('[data-teacher-level-field]:checked'))
+        .map((checkbox) => checkbox.value)
+
+      teacherFormState = {
+        ...teacherFormState,
+        values: {
+          ...teacherFormState.values,
+          levels: selectedLevels,
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-mode-field]').forEach((control) => {
+    control.addEventListener('change', () => {
+      const selectedModes = Array.from(document.querySelectorAll('[data-teacher-mode-field]:checked'))
+        .map((checkbox) => checkbox.value)
+
+      teacherFormState = {
+        ...teacherFormState,
+        values: {
+          ...teacherFormState.values,
+          teachingModes: selectedModes,
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-available-day-field]').forEach((control) => {
+    control.addEventListener('change', () => {
+      const selectedDays = Array.from(document.querySelectorAll('[data-teacher-available-day-field]:checked'))
+        .map((checkbox) => checkbox.value)
+
+      teacherFormState = {
+        ...teacherFormState,
+        values: {
+          ...teacherFormState.values,
+          availableDays: selectedDays,
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-time-slot-field]').forEach((control) => {
+    control.addEventListener('change', () => {
+      const selectedSlots = Array.from(document.querySelectorAll('[data-teacher-time-slot-field]:checked'))
+        .map((checkbox) => checkbox.value)
+
+      teacherFormState = {
+        ...teacherFormState,
+        values: {
+          ...teacherFormState.values,
+          preferredTimeSlots: selectedSlots,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-teacher-new-class-field]')?.addEventListener('change', (event) => {
+    teacherFormState = {
+      ...teacherFormState,
+      values: {
+        ...teacherFormState.values,
+        canTakeNewClass: event.currentTarget.checked,
+      },
+    }
+  })
+
+  document.querySelector('[data-teacher-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    const errors = validateTeacherForm(teacherFormState.values)
+
+    if (Object.keys(errors).length) {
+      teacherFormState = {
+        ...teacherFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    if (teacherFormState.mode === 'edit') {
+      const existingTeacher = teachers.find((teacher) => teacher.id === teacherFormState.teacherId)
+
+      if (!existingTeacher) {
+        teacherFormState = {
+          ...teacherFormState,
+          errors: {
+            form: 'Không tìm thấy giáo viên cần sửa.',
+          },
+        }
+        render()
+        return
+      }
+
+      const updatedTeacher = buildTeacherFromForm(teacherFormState.values, existingTeacher)
+      teachers = teachers.map((teacher) =>
+        teacher.id === updatedTeacher.id ? updatedTeacher : teacher,
+      )
+      selectedTeacherId = updatedTeacher.id
+    } else {
+      const createdTeacher = buildTeacherFromForm(teacherFormState.values)
+      teachers = [createdTeacher, ...teachers]
+      selectedTeacherId = createdTeacher.id
+    }
+
+    saveStoredTeachers(teachers)
+    teacherFormState = null
+    render()
   })
 
   document.querySelectorAll('[data-student-sort]').forEach((button) => {

@@ -5,6 +5,7 @@ const NOTIFICATIONS_KEY = 'ichessCenterOS.notifications.dreamhome'
 const NOTIFICATIONS_VERSION_KEY = 'ichessCenterOS.notifications.version.dreamhome'
 const DELETED_NOTIFICATION_IDS_KEY = 'ichessCenterOS.notifications.deletedIds.dreamhome'
 const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
+const TEACHERS_KEY = 'ichessCenterOS.teachers.dreamhome'
 const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
 const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
@@ -15,6 +16,8 @@ const CURRENT_NOTIFICATIONS_VERSION = '1A.1'
 const VALID_VIEW_MODES = ['grid', 'list']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
 const VALID_NOTIFICATION_TYPES = ['system', 'tuition', 'student', 'schedule', 'inventory', 'report']
+const VALID_TEACHER_STATUSES = ['active', 'paused', 'inactive']
+const VALID_TEACHER_TYPES = ['fulltime', 'parttime', 'collaborator']
 const LEGACY_SAMPLE_TEACHER_NAMES = ['Thầy Thắng', 'Cô Vân', 'Thầy Hải']
 const UNASSIGNED_TEACHER_NAME = 'Chưa phân công'
 
@@ -145,6 +148,28 @@ export function getStoredTuition(defaultTuitionRecords) {
 
 export function saveStoredTuition(tuitionRecords) {
   localStorage.setItem(TUITION_KEY, JSON.stringify(normalizeTuitionRecords(tuitionRecords)))
+}
+
+export function getStoredTeachers(defaultTeachers) {
+  try {
+    const storedTeachers = JSON.parse(localStorage.getItem(TEACHERS_KEY))
+
+    if (Array.isArray(storedTeachers)) {
+      const normalizedTeachers = normalizeTeachers(storedTeachers)
+      saveStoredTeachers(normalizedTeachers)
+      return normalizedTeachers
+    }
+  } catch {
+    localStorage.removeItem(TEACHERS_KEY)
+  }
+
+  const normalizedDefaultTeachers = normalizeTeachers(defaultTeachers)
+  saveStoredTeachers(normalizedDefaultTeachers)
+  return normalizedDefaultTeachers
+}
+
+export function saveStoredTeachers(teachers) {
+  localStorage.setItem(TEACHERS_KEY, JSON.stringify(normalizeTeachers(teachers)))
 }
 
 export function getStoredCashflow(defaultTransactions) {
@@ -289,12 +314,14 @@ export function saveStoredInventoryMovements(movements) {
 function normalizeStudents(students) {
   return students.map((student) => {
     const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
+    const assignedTeacherId = normalizeStudentAssignedTeacherId(student.assignedTeacherId)
     const deletionState = normalizeStudentDeletionState(student)
 
     if (Array.isArray(student.careNotes)) {
       return {
         ...student,
         mainTeacherName,
+        assignedTeacherId,
         ...deletionState,
       }
     }
@@ -308,6 +335,7 @@ function normalizeStudents(students) {
     return {
       ...student,
       mainTeacherName,
+      assignedTeacherId,
       ...deletionState,
       careNotes: hasRealLegacyNote
         ? [
@@ -338,6 +366,11 @@ function normalizeStudentTeacherName(mainTeacherName) {
   return LEGACY_SAMPLE_TEACHER_NAMES.includes(mainTeacherName)
     ? UNASSIGNED_TEACHER_NAME
     : mainTeacherName
+}
+
+function normalizeStudentAssignedTeacherId(value) {
+  const teacherId = String(value ?? '').trim()
+  return teacherId || null
 }
 
 function normalizeNotifications(notifications) {
@@ -416,6 +449,52 @@ function normalizeTuitionRecords(tuitionRecords) {
       termHistory: normalizeTuitionTermHistory(record.termHistory),
     }))
     .filter((record) => record.studentId)
+}
+
+function normalizeTeachers(teachers) {
+  return (teachers ?? [])
+    .filter((teacher) => teacher && typeof teacher === 'object')
+    .map((teacher, index) => {
+      const now = new Date().toISOString()
+      const status = VALID_TEACHER_STATUSES.includes(teacher.status)
+        ? teacher.status
+        : 'active'
+      const teacherType = VALID_TEACHER_TYPES.includes(teacher.teacherType)
+        ? teacher.teacherType
+        : 'fulltime'
+
+      return {
+        id: String(teacher.id || `teacher-${String(index + 1).padStart(3, '0')}`),
+        fullName: String(teacher.fullName || teacher.name || 'Giáo viên'),
+        displayName: String(teacher.displayName || ''),
+        phone: String(teacher.phone || ''),
+        email: String(teacher.email || ''),
+        status,
+        teacherType,
+        specialties: normalizeStringArray(teacher.specialties),
+        levels: normalizeStringArray(teacher.levels),
+        teachingGroups: normalizeStringArray(teacher.teachingGroups),
+        teachingModes: normalizeStringArray(teacher.teachingModes).filter((mode) =>
+          ['group', 'oneOnOne', 'competition', 'online'].includes(mode),
+        ),
+        strengths: normalizeStringArray(teacher.strengths),
+        internalTags: normalizeStringArray(teacher.internalTags),
+        availableDays: normalizeStringArray(teacher.availableDays).filter((day) =>
+          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].includes(day),
+        ),
+        preferredTimeSlots: normalizeStringArray(teacher.preferredTimeSlots).filter((slot) =>
+          ['morning', 'afternoon', 'evening', 'weekendMorning', 'weekendAfternoon'].includes(slot),
+        ),
+        maxSessionsPerWeek: normalizeNullablePositiveNumber(teacher.maxSessionsPerWeek),
+        canTakeNewClass:
+          typeof teacher.canTakeNewClass === 'boolean' ? teacher.canTakeNewClass : true,
+        scheduleNote: String(teacher.scheduleNote || ''),
+        mainRole: String(teacher.mainRole || 'Giáo viên cờ vua'),
+        note: String(teacher.note || ''),
+        createdAt: teacher.createdAt ? normalizeDateTime(teacher.createdAt) : now,
+        updatedAt: teacher.updatedAt ? normalizeDateTime(teacher.updatedAt) : now,
+      }
+    })
 }
 
 function normalizeCashflowTransactions(transactions) {
@@ -642,6 +721,21 @@ function isValidDateString(value) {
 function normalizeNumber(value) {
   const numberValue = Number(value)
   return Number.isFinite(numberValue) ? numberValue : 0
+}
+
+function normalizeNullablePositiveNumber(value) {
+  if (value === '' || value === null || value === undefined) {
+    return null
+  }
+
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? Math.max(0, numberValue) : null
+}
+
+function normalizeStringArray(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? '').trim()).filter(Boolean)
+    : []
 }
 
 function normalizeDateTime(value) {
