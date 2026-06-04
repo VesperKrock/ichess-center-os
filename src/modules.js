@@ -154,16 +154,16 @@ export const modules = [
   {
     id: 'kho-hang',
     name: 'Kho hàng',
-    shortDescription: 'Chuẩn bị khung quản lý hàng hóa, nhập kho, xuất kho và tồn kho.',
-    status: 'planned',
+    shortDescription: 'Theo dõi vật tư, tài sản và tồn kho của cơ sở.',
+    status: 'in-progress',
     plannedFeatures: [
-      'Xem danh sách hàng hóa',
+      'Xem danh sách vật tư / tài sản',
       'Nhập kho',
       'Xuất kho',
       'Theo dõi tồn kho',
     ],
     plannedData: [
-      'Thông tin hàng hóa',
+      'Thông tin vật tư / tài sản',
       'Phiếu nhập kho',
       'Phiếu xuất kho',
       'Số lượng tồn kho',

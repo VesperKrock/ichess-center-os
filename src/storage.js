@@ -9,6 +9,8 @@ const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
 const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
 const CASHBOOK_RECONCILIATIONS_KEY = 'ichessCenterOS.cashbookReconciliations.dreamhome'
+const INVENTORY_KEY = 'ichessCenterOS.inventory.dreamhome'
+const INVENTORY_MOVEMENTS_KEY = 'ichessCenterOS.inventoryMovements.dreamhome'
 const CURRENT_NOTIFICATIONS_VERSION = '1A.1'
 const VALID_VIEW_MODES = ['grid', 'list']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
@@ -237,6 +239,53 @@ export function saveStoredCashbookReconciliations(reconciliations) {
   )
 }
 
+export function getStoredInventory(defaultItems) {
+  try {
+    const storedItems = JSON.parse(localStorage.getItem(INVENTORY_KEY))
+
+    if (Array.isArray(storedItems)) {
+      const normalizedItems = normalizeInventoryItems(storedItems)
+      saveStoredInventory(normalizedItems)
+      return normalizedItems
+    }
+  } catch {
+    localStorage.removeItem(INVENTORY_KEY)
+  }
+
+  const normalizedDefaultItems = normalizeInventoryItems(defaultItems)
+  saveStoredInventory(normalizedDefaultItems)
+  return normalizedDefaultItems
+}
+
+export function saveStoredInventory(items) {
+  localStorage.setItem(INVENTORY_KEY, JSON.stringify(normalizeInventoryItems(items)))
+}
+
+export function getStoredInventoryMovements(defaultMovements = []) {
+  try {
+    const storedMovements = JSON.parse(localStorage.getItem(INVENTORY_MOVEMENTS_KEY))
+
+    if (Array.isArray(storedMovements)) {
+      const normalizedMovements = normalizeInventoryMovements(storedMovements)
+      saveStoredInventoryMovements(normalizedMovements)
+      return normalizedMovements
+    }
+  } catch {
+    localStorage.removeItem(INVENTORY_MOVEMENTS_KEY)
+  }
+
+  const normalizedDefaultMovements = normalizeInventoryMovements(defaultMovements)
+  saveStoredInventoryMovements(normalizedDefaultMovements)
+  return normalizedDefaultMovements
+}
+
+export function saveStoredInventoryMovements(movements) {
+  localStorage.setItem(
+    INVENTORY_MOVEMENTS_KEY,
+    JSON.stringify(normalizeInventoryMovements(movements)),
+  )
+}
+
 function normalizeStudents(students) {
   return students.map((student) => {
     const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
@@ -386,6 +435,8 @@ function normalizeCashflowTransactions(transactions) {
     sourceTuitionId: String(transaction.sourceTuitionId || ''),
     sourceStudentId: String(transaction.sourceStudentId || ''),
     sourceTermId: String(transaction.sourceTermId || ''),
+    sourceMovementId: String(transaction.sourceMovementId || ''),
+    sourceItemId: String(transaction.sourceItemId || ''),
     createdAt: transaction.createdAt || new Date().toISOString(),
     updatedAt: transaction.updatedAt || transaction.createdAt || new Date().toISOString(),
   }))
@@ -474,6 +525,58 @@ function normalizeCashbookReconciliations(reconciliations) {
   return Array.from(reconciliationsByDate.values()).sort((firstItem, secondItem) =>
     secondItem.date.localeCompare(firstItem.date),
   )
+}
+
+function normalizeInventoryItems(items) {
+  return (items ?? [])
+    .filter((item) => item && typeof item === 'object')
+    .map((item, index) => ({
+      id: String(item.id || `inventory-${String(index + 1).padStart(3, '0')}`),
+      name: String(item.name || 'Vật tư'),
+      category: String(item.category || 'Khác'),
+      unit: String(item.unit || 'cái'),
+      quantity: normalizeInventoryNumber(item.quantity),
+      lowStockThreshold: normalizeInventoryNumber(item.lowStockThreshold),
+      condition: String(item.condition || 'Đang dùng'),
+      location: String(item.location || ''),
+      note: String(item.note || ''),
+      createdAt: item.createdAt ? normalizeDateTime(item.createdAt) : '',
+      updatedAt: item.updatedAt ? normalizeDateTime(item.updatedAt) : new Date().toISOString(),
+    }))
+}
+
+function normalizeInventoryMovements(movements) {
+  return (movements ?? [])
+    .filter((movement) => movement && typeof movement === 'object')
+    .map((movement, index) => ({
+      id: String(movement.id || `inventory-movement-${String(index + 1).padStart(3, '0')}`),
+      itemId: String(movement.itemId || ''),
+      itemName: String(movement.itemName || 'Vật tư'),
+      type: movement.type === 'out' ? 'out' : 'in',
+      quantity: normalizeInventoryNumber(movement.quantity),
+      movementDate: isValidDateString(movement.movementDate)
+        ? String(movement.movementDate)
+        : new Date().toISOString().slice(0, 10),
+      reason: String(movement.reason || 'Khác'),
+      handledBy: String(movement.handledBy || 'Admin'),
+      note: String(movement.note || ''),
+      costAmount: normalizeMoneyNumber(movement.costAmount),
+      costMethod: String(movement.costMethod || ''),
+      supplierName: String(movement.supplierName || ''),
+      beforeQuantity: normalizeInventoryNumber(movement.beforeQuantity),
+      afterQuantity: normalizeInventoryNumber(movement.afterQuantity),
+      createdAt: movement.createdAt ? normalizeDateTime(movement.createdAt) : new Date().toISOString(),
+    }))
+    .filter((movement) => movement.itemId)
+    .sort(
+      (firstMovement, secondMovement) =>
+        new Date(secondMovement.createdAt) - new Date(firstMovement.createdAt),
+    )
+}
+
+function normalizeInventoryNumber(value) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? Math.max(0, numberValue) : 0
 }
 
 function normalizeTuitionTermHistory(termHistory) {

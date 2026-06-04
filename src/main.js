@@ -7,6 +7,8 @@ import {
   getStoredCashflowCategories,
   getStoredCashbookReconciliations,
   getStoredCashbookSettings,
+  getStoredInventory,
+  getStoredInventoryMovements,
   getStoredNotifications,
   getStoredStudents,
   getStoredTuition,
@@ -17,6 +19,8 @@ import {
   saveStoredCashflowCategories,
   saveStoredCashbookReconciliations,
   saveStoredCashbookSettings,
+  saveStoredInventory,
+  saveStoredInventoryMovements,
   saveStoredNotifications,
   saveStoredStudents,
   saveStoredTuition,
@@ -49,6 +53,21 @@ import {
   validateCashflowCategoryForm,
   validateCashflowForm,
 } from './cashflow-module.js'
+import { sampleInventoryItems } from './inventory-data.js'
+import {
+  applyInventoryMovementToItem,
+  buildInventoryItemFromForm,
+  buildInventoryMovementFromForm,
+  createEditInventoryFormState,
+  createEmptyInventoryFormState,
+  createInventoryMovementFormState,
+  initialInventoryFilters,
+  initialInventoryMovementFilters,
+  renderInventoryModule,
+  renderInventoryMovementsWindow,
+  validateInventoryForm,
+  validateInventoryMovementForm,
+} from './inventory-module.js'
 import { createSampleNotifications } from './notifications.js'
 import { sampleStudents } from './student-data.js'
 import { createSampleTuitionRecords } from './tuition-data.js'
@@ -125,6 +144,13 @@ let cashbookSettings = getStoredCashbookSettings(createDefaultCashbookSettings(c
 let cashbookSettingsFormState = null
 let cashbookReconciliations = getStoredCashbookReconciliations()
 let cashbookReconciliationFormState = null
+let inventoryItems = getStoredInventory(sampleInventoryItems)
+let inventoryMovements = getStoredInventoryMovements()
+let inventoryFilters = { ...initialInventoryFilters }
+let inventoryMovementFilters = { ...initialInventoryMovementFilters }
+let inventoryFormState = null
+let inventoryMovementFormState = null
+let selectedInventoryMovementId = null
 let careNoteDrafts = {}
 
 function render() {
@@ -238,6 +264,15 @@ function renderWindowBody(windowItem) {
     return renderStudentLearningResult(getStudentById(windowItem.studentId))
   }
 
+  if (windowItem.type === 'inventory-movements') {
+    return renderInventoryMovementsWindow(
+      inventoryItems,
+      inventoryMovements,
+      inventoryMovementFilters,
+      selectedInventoryMovementId,
+    )
+  }
+
   const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
 
   if (!moduleItem) {
@@ -278,6 +313,15 @@ function renderWindowBody(windowItem) {
       cashbookSettingsFormState,
       cashbookReconciliations,
       cashbookReconciliationFormState,
+    )
+  }
+
+  if (moduleItem.id === 'kho-hang') {
+    return renderInventoryModule(
+      inventoryItems,
+      inventoryFilters,
+      inventoryFormState,
+      inventoryMovementFormState,
     )
   }
 
@@ -331,6 +375,10 @@ function getWindowTitle(windowItem) {
 
   if (windowItem.type === 'student-learning') {
     return getStudentLearningWindowTitle(getStudentById(windowItem.studentId))
+  }
+
+  if (windowItem.type === 'inventory-movements') {
+    return 'Lịch sử nhập/xuất kho'
   }
 
   const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
@@ -649,6 +697,49 @@ function openModuleWindow(moduleId) {
   render()
 }
 
+function openInventorySubwindow(view) {
+  if (view !== 'movements') {
+    return
+  }
+
+  const type = 'inventory-movements'
+  const existingWindow = openWindows.find((windowItem) => windowItem.type === type)
+
+  if (existingWindow) {
+    focusWindow(existingWindow.id)
+    isStartMenuOpen = false
+    isWindowOverflowOpen = false
+    isNotificationCenterOpen = false
+    render()
+    return
+  }
+
+  const offset = (openWindows.length % 7) * 28
+
+  openWindows.push({
+    id: `window-${nextWindowNumber}`,
+    type,
+    x: 72 + offset,
+    y: 42 + offset,
+    width: 880,
+    height: 560,
+    zIndex: ++topZIndex,
+    minimized: false,
+    maximized: true,
+    restoreBounds: {
+      x: 72 + offset,
+      y: 42 + offset,
+      width: 880,
+      height: 560,
+    },
+  })
+  nextWindowNumber += 1
+  isStartMenuOpen = false
+  isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
+  render()
+}
+
 function openStudentDetailWindow(studentId) {
   const existingWindow = openWindows.find(
     (windowItem) => windowItem.type === 'student-detail' && windowItem.studentId === studentId,
@@ -787,6 +878,32 @@ function openCashflowEditForm(transactionId) {
   render()
 }
 
+function openInventoryEditForm(itemId) {
+  const item = inventoryItems.find((inventoryItem) => inventoryItem.id === itemId)
+
+  if (!item) {
+    return
+  }
+
+  inventoryFormState = createEditInventoryFormState(item)
+  inventoryMovementFormState = null
+  selectedInventoryMovementId = null
+  render()
+}
+
+function openInventoryMovementForm(itemId) {
+  const item = inventoryItems.find((inventoryItem) => inventoryItem.id === itemId)
+
+  if (!item) {
+    return
+  }
+
+  inventoryFormState = null
+  inventoryMovementFormState = createInventoryMovementFormState(item)
+  selectedInventoryMovementId = null
+  render()
+}
+
 function syncTuitionPaymentToCashflow(payment, tuitionRecord, student) {
   if (!payment?.id || !tuitionRecord || !student) {
     return
@@ -828,6 +945,47 @@ function syncTuitionPaymentToCashflow(payment, tuitionRecord, student) {
   saveStoredCashflow(cashflowTransactions)
 }
 
+function syncInventoryMovementToCashflow(movement, item) {
+  if (movement?.type !== 'in' || Number(movement.costAmount || 0) <= 0) {
+    return
+  }
+
+  const hasSyncedTransaction = cashflowTransactions.some(
+    (transaction) =>
+      transaction.sourceModule === 'kho-hang' &&
+      transaction.sourceMovementId === movement.id,
+  )
+
+  if (hasSyncedTransaction) {
+    return
+  }
+
+  ensureInventoryCashflowCategory()
+
+  const unit = item?.unit ? ` ${item.unit}` : ''
+  const reasonText = movement.reason ? ` - ${movement.reason}` : ''
+  const noteText = movement.note ? ` - ${movement.note}` : ''
+  const transaction = {
+    id: `cashflow-from-inventory-${movement.id}`,
+    type: 'expense',
+    category: 'Mua vật tư / Kho hàng',
+    amount: Number(movement.costAmount || 0),
+    transactionDate: movement.movementDate,
+    method: movement.costMethod || 'Tiền mặt',
+    personName: movement.supplierName || movement.itemName || 'Kho hàng',
+    recordedBy: movement.handledBy || 'Admin',
+    note: `Nhập kho ${movement.quantity}${unit} ${movement.itemName}${reasonText}${noteText}`,
+    sourceModule: 'kho-hang',
+    sourceType: 'inventory-movement',
+    sourceMovementId: movement.id,
+    sourceItemId: movement.itemId,
+    createdAt: movement.createdAt || new Date().toISOString(),
+  }
+
+  cashflowTransactions = [transaction, ...cashflowTransactions]
+  saveStoredCashflow(cashflowTransactions)
+}
+
 function ensureTuitionCashflowCategory() {
   const tuitionCategory = cashflowCategories.find((category) => category.name === 'Học phí')
 
@@ -853,6 +1011,47 @@ function ensureTuitionCashflowCategory() {
         id: `cash-cat-hoc-phi-${Date.now()}`,
         name: 'Học phí',
         type: 'income',
+        isArchived: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...cashflowCategories,
+    ]
+  }
+
+  saveStoredCashflowCategories(cashflowCategories)
+}
+
+function ensureInventoryCashflowCategory() {
+  const categoryName = 'Mua vật tư / Kho hàng'
+  const inventoryCategory = cashflowCategories.find((category) => category.name === categoryName)
+
+  if (
+    inventoryCategory &&
+    !inventoryCategory.isArchived &&
+    (inventoryCategory.type === 'expense' || inventoryCategory.type === 'both')
+  ) {
+    return
+  }
+
+  if (inventoryCategory) {
+    cashflowCategories = cashflowCategories.map((category) =>
+      category.id === inventoryCategory.id
+        ? {
+            ...category,
+            type: category.type === 'income' ? 'both' : 'expense',
+            isArchived: false,
+            updatedAt: new Date().toISOString(),
+          }
+        : category,
+    )
+  } else {
+    const now = new Date().toISOString()
+    cashflowCategories = [
+      {
+        id: `cash-cat-inventory-${Date.now()}`,
+        name: categoryName,
+        type: 'expense',
         isArchived: false,
         createdAt: now,
         updatedAt: now,
@@ -1190,6 +1389,261 @@ function bindEvents() {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
     })
+  })
+
+  document.querySelectorAll('[data-inventory-filter]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const filterName = control.dataset.inventoryFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      inventoryFilters = {
+        ...inventoryFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(`[data-inventory-filter="${filterName}"]`)
+      nextControl?.focus()
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-stock-alert]').forEach((button) => {
+    button.addEventListener('click', () => {
+      inventoryFilters = {
+        ...inventoryFilters,
+        stockAlert: button.dataset.inventoryStockAlert,
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-movement-filter]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const filterName = control.dataset.inventoryMovementFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      inventoryMovementFilters = {
+        ...inventoryMovementFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(
+        `[data-inventory-movement-filter="${filterName}"]`,
+      )
+      nextControl?.focus()
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-open-subwindow]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openInventorySubwindow(button.dataset.inventoryOpenSubwindow)
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-action="open-create"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      inventoryFormState = createEmptyInventoryFormState()
+      inventoryMovementFormState = null
+      selectedInventoryMovementId = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-item-id]').forEach((row) => {
+    row.addEventListener('click', () => {
+      openInventoryEditForm(row.dataset.inventoryItemId)
+    })
+
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      event.preventDefault()
+      openInventoryEditForm(row.dataset.inventoryItemId)
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      inventoryFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-inventory-action="open-movement"]')?.addEventListener('click', () => {
+    if (!inventoryFormState?.itemId) {
+      return
+    }
+
+    openInventoryMovementForm(inventoryFormState.itemId)
+  })
+
+  document.querySelectorAll('[data-inventory-movement-id]').forEach((row) => {
+    row.addEventListener('click', () => {
+      selectedInventoryMovementId = row.dataset.inventoryMovementId
+      inventoryFormState = null
+      inventoryMovementFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-movement-detail-action="close"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedInventoryMovementId = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-form-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!inventoryFormState) {
+        return
+      }
+
+      inventoryFormState = {
+        ...inventoryFormState,
+        values: {
+          ...inventoryFormState.values,
+          [control.dataset.inventoryFormField]: control.value,
+        },
+        errors: {
+          ...inventoryFormState.errors,
+          [control.dataset.inventoryFormField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-inventory-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!inventoryFormState) {
+      return
+    }
+
+    const errors = validateInventoryForm(inventoryFormState.values)
+
+    if (Object.keys(errors).length) {
+      inventoryFormState = {
+        ...inventoryFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const existingItem = inventoryItems.find((item) => item.id === inventoryFormState.itemId)
+    const nextItem = buildInventoryItemFromForm(inventoryFormState.values, existingItem)
+
+    inventoryItems =
+      inventoryFormState.mode === 'edit'
+        ? inventoryItems.map((item) => (item.id === nextItem.id ? nextItem : item))
+        : [nextItem, ...inventoryItems]
+    saveStoredInventory(inventoryItems)
+    inventoryFormState = null
+    render()
+  })
+
+  document.querySelector('[data-inventory-action="delete-item"]')?.addEventListener('click', () => {
+    if (!inventoryFormState?.itemId) {
+      return
+    }
+
+    if (!window.confirm('Bạn muốn xóa vật tư này khỏi danh sách kho?')) {
+      return
+    }
+
+    inventoryItems = inventoryItems.filter((item) => item.id !== inventoryFormState.itemId)
+    saveStoredInventory(inventoryItems)
+    inventoryFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-inventory-movement-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!inventoryMovementFormState) {
+        return
+      }
+
+      inventoryMovementFormState = {
+        ...inventoryMovementFormState,
+        values: {
+          ...inventoryMovementFormState.values,
+          [control.dataset.inventoryMovementField]: control.value,
+        },
+        errors: {
+          ...inventoryMovementFormState.errors,
+          [control.dataset.inventoryMovementField]: undefined,
+        },
+      }
+
+      if (control.dataset.inventoryMovementField === 'type') {
+        render()
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-movement-action="cancel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      inventoryMovementFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-inventory-movement-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!inventoryMovementFormState) {
+      return
+    }
+
+    const errors = validateInventoryMovementForm(inventoryMovementFormState.values, inventoryItems)
+
+    if (Object.keys(errors).length) {
+      inventoryMovementFormState = {
+        ...inventoryMovementFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const item = inventoryItems.find(
+      (inventoryItem) => inventoryItem.id === inventoryMovementFormState.values.itemId,
+    )
+
+    if (!item) {
+      inventoryMovementFormState = {
+        ...inventoryMovementFormState,
+        errors: {
+          ...inventoryMovementFormState.errors,
+          itemId: 'Vật tư không hợp lệ hoặc đã bị xóa.',
+        },
+      }
+      render()
+      return
+    }
+
+    const movement = buildInventoryMovementFromForm(inventoryMovementFormState.values, item)
+    inventoryItems = inventoryItems.map((inventoryItem) =>
+      inventoryItem.id === item.id ? applyInventoryMovementToItem(inventoryItem, movement) : inventoryItem,
+    )
+    inventoryMovements = [movement, ...inventoryMovements]
+    saveStoredInventory(inventoryItems)
+    saveStoredInventoryMovements(inventoryMovements)
+    syncInventoryMovementToCashflow(movement, item)
+    inventoryMovementFormState = null
+    render()
   })
 
   document.querySelector('[data-cashbook-date]')?.addEventListener('input', (event) => {

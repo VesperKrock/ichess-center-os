@@ -602,14 +602,25 @@ function renderTransactionRow(transaction) {
 function renderTransactionNote(transaction) {
   const noteText = transaction.note ? escapeHtml(transaction.note) : '—'
 
-  if (transaction.sourceModule !== 'hoc-phi') {
+  const sourceLabel = getSourceBadgeLabel(transaction.sourceModule)
+
+  if (!sourceLabel) {
     return noteText
   }
 
   return `
-    <span class="cashflow-source-badge">Từ Học phí</span>
+    <span class="cashflow-source-badge">${sourceLabel}</span>
     <span>${noteText}</span>
   `
+}
+
+function getSourceBadgeLabel(sourceModule) {
+  const labels = {
+    'hoc-phi': 'Từ Học phí',
+    'kho-hang': 'Từ Kho hàng',
+  }
+
+  return labels[sourceModule] ?? ''
 }
 
 function getRecordedByDisplayName(recordedBy) {

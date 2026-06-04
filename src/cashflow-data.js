@@ -3,6 +3,7 @@ export const sampleCashflowCategories = [
   createCategorySeed('cash-cat-sach-tai-lieu', 'Sách/tài liệu', 'both'),
   createCategorySeed('cash-cat-luong-giao-vien', 'Lương giáo viên', 'expense'),
   createCategorySeed('cash-cat-van-phong-pham', 'Văn phòng phẩm', 'expense'),
+  createCategorySeed('cash-cat-mua-vat-tu-kho-hang', 'Mua vật tư / Kho hàng', 'expense'),
   createCategorySeed('cash-cat-thue-phong', 'Thuê phòng', 'expense'),
   createCategorySeed('cash-cat-marketing', 'Marketing', 'expense'),
   createCategorySeed('cash-cat-mua-dung-cu', 'Mua dụng cụ', 'expense'),
