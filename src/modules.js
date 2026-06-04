@@ -39,19 +39,20 @@ export const modules = [
   {
     id: 'giao-vien',
     name: 'Giáo viên',
-    shortDescription: 'Quản lý danh sách giáo viên, liên hệ và trạng thái làm việc.',
-    status: 'planned',
+    shortDescription: 'Theo dõi danh sách giáo viên, liên hệ, trạng thái và hình thức hợp tác.',
+    status: 'in-progress',
     plannedFeatures: [
       'Xem danh sách giáo viên',
-      'Xem thông tin liên hệ',
-      'Theo dõi trạng thái làm việc',
-      'Gắn giáo viên với lịch dạy',
+      'Tìm kiếm giáo viên',
+      'Lọc theo trạng thái',
+      'Lọc theo loại giáo viên',
     ],
     plannedData: [
-      'Hồ sơ giáo viên',
+      'Thông tin giáo viên',
       'Thông tin liên hệ',
-      'Trạng thái làm việc',
-      'Lịch dạy liên quan',
+      'Trạng thái hoạt động',
+      'Loại giáo viên',
+      'Chuyên môn và cấp độ dạy',
     ],
   },
   {
