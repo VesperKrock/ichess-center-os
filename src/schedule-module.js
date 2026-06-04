@@ -8,6 +8,21 @@ import {
 
 const DAY_INDEX_BY_ID = new Map(scheduleDays.map((day, index) => [day.id, index]))
 
+export const attendanceStatuses = [
+  ['present', 'Có mặt'],
+  ['excusedAbsent', 'Vắng có phép'],
+  ['unexcusedAbsent', 'Vắng không phép'],
+  ['makeup', 'Học bù'],
+  ['trial', 'Học thử'],
+]
+
+const VALID_ATTENDANCE_STATUS_IDS = attendanceStatuses.map(([status]) => status)
+const guestParticipationTypes = [
+  ['trial', 'Học thử'],
+  ['makeup', 'Học bù'],
+]
+const VALID_GUEST_PARTICIPATION_TYPE_IDS = guestParticipationTypes.map(([type]) => type)
+
 export const emptyScheduleFormValues = {
   scheduleType: 'recurring',
   title: '',
@@ -71,6 +86,13 @@ export function createEditScheduleFormState(session) {
 export function renderScheduleModule(
   sessions = [],
   formState = null,
+  reportState = null,
+  sessionReports = [],
+  reportAttendanceState = null,
+  reportLearningState = null,
+  learningGroupFormState = null,
+  reportExtraState = null,
+  guestParticipantFormState = null,
   teachers = [],
   students = [],
   weekStartDate = getCurrentScheduleWeekStartDate(),
@@ -84,7 +106,7 @@ export function renderScheduleModule(
   const stats = getScheduleStats(visibleSessions, conflictMap)
 
   return `
-    <section class="schedule-module ${formState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
+    <section class="schedule-module ${formState || reportState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
       <div class="schedule-compact-header">
         <div class="schedule-stats" aria-label="Tổng quan lịch tuần">
         ${renderStatCard('Buổi trong tuần', stats.totalSessions)}
@@ -120,6 +142,23 @@ export function renderScheduleModule(
         </div>
       </div>
       ${formState ? renderScheduleForm(formState, teachers, students, sessions, normalizedWeekStart) : ''}
+      ${
+        reportState
+          ? renderScheduleReportPanel(
+              reportState,
+              sessions,
+              teachers,
+              students,
+              normalizedWeekStart,
+              sessionReports,
+              reportAttendanceState,
+              reportLearningState,
+              learningGroupFormState,
+              reportExtraState,
+              guestParticipantFormState,
+            )
+          : ''
+      }
     </section>
   `
 }
@@ -238,6 +277,369 @@ export function buildScheduleSessionFromForm(values, existingSession = null, tea
     createdAt: existingSession?.createdAt ?? now,
     updatedAt: now,
   }
+}
+
+export function getSessionReportIdentity(sessionId, occurrenceDate) {
+  return {
+    sessionId: String(sessionId ?? '').trim(),
+    occurrenceDate: normalizeDateString(occurrenceDate),
+  }
+}
+
+export function findSessionReport(sessionReports = [], sessionId, occurrenceDate) {
+  const identity = getSessionReportIdentity(sessionId, occurrenceDate)
+  return sessionReports.find(
+    (report) =>
+      String(report.sessionId) === identity.sessionId &&
+      String(report.occurrenceDate) === identity.occurrenceDate,
+  ) ?? null
+}
+
+export function createSessionReportDraft(session, existingReport = null, options = {}) {
+  const identity = getSessionReportIdentity(session?.id, session?.occurrenceDate)
+  const sessionStudentIds = normalizeIdArray(session?.studentIds)
+  const existingAttendance = new Map(
+    normalizeReportAttendance(existingReport?.attendance)
+      .map((item) => [item.studentId, item]),
+  )
+
+  return {
+    sessionId: identity.sessionId,
+    occurrenceDate: identity.occurrenceDate,
+    attendance: sessionStudentIds.map((studentId) => ({
+      studentId,
+      attendanceStatus: existingAttendance.get(studentId)?.attendanceStatus ?? 'present',
+      note: existingAttendance.get(studentId)?.note ?? '',
+    })),
+    guestParticipants: normalizeReportGuestParticipants(existingReport?.guestParticipants),
+    saveState: options.saveState ?? '',
+    error: options.error ?? '',
+  }
+}
+
+export function createEmptyGuestParticipantFormState() {
+  return {
+    values: {
+      displayName: '',
+      participationType: 'trial',
+      note: '',
+    },
+    errors: {},
+  }
+}
+
+export function validateGuestParticipantForm(values) {
+  const errors = {}
+
+  if (!String(values?.displayName ?? '').trim()) {
+    errors.displayName = 'Tên học viên tạm là bắt buộc.'
+  }
+
+  if (!VALID_GUEST_PARTICIPATION_TYPE_IDS.includes(values?.participationType)) {
+    errors.participationType = 'Loại học viên tạm không hợp lệ.'
+  }
+
+  return errors
+}
+
+export function buildGuestParticipantFromForm(values) {
+  const participationType = VALID_GUEST_PARTICIPATION_TYPE_IDS.includes(values?.participationType)
+    ? values.participationType
+    : 'trial'
+
+  return {
+    id: `guest-${Date.now()}`,
+    displayName: String(values?.displayName ?? '').trim(),
+    participationType,
+    attendanceStatus: participationType,
+    note: String(values?.note ?? '').trim(),
+  }
+}
+
+export function createSessionReportLearningState(session, existingReport = null, options = {}) {
+  const identity = getSessionReportIdentity(session?.id, session?.occurrenceDate)
+  const allowedStudentIds = normalizeIdArray(session?.studentIds)
+
+  return {
+    sessionId: identity.sessionId,
+    occurrenceDate: identity.occurrenceDate,
+    groups: normalizeReportLearningGroups(existingReport?.learningGroups, allowedStudentIds),
+    saveState: options.saveState ?? '',
+    error: options.error ?? '',
+  }
+}
+
+export function createSessionReportExtraState(session, existingReport = null, options = {}) {
+  const identity = getSessionReportIdentity(session?.id, session?.occurrenceDate)
+
+  return {
+    sessionId: identity.sessionId,
+    occurrenceDate: identity.occurrenceDate,
+    values: {
+      teachingAssistantNotes: existingReport?.teachingAssistantNotes ?? '',
+      classSituation: existingReport?.classSituation ?? '',
+      suggestions: existingReport?.suggestions ?? '',
+    },
+    saveState: options.saveState ?? '',
+    copyState: options.copyState ?? '',
+    error: options.error ?? '',
+  }
+}
+
+export function updateSessionReportExtraState(extraState, fieldName, value) {
+  if (!extraState) {
+    return extraState
+  }
+
+  return {
+    ...extraState,
+    values: {
+      ...extraState.values,
+      [fieldName]: String(value ?? ''),
+    },
+    saveState: '',
+    copyState: '',
+    error: '',
+  }
+}
+
+export function createEmptyLearningGroupFormState() {
+  return {
+    mode: 'create',
+    groupId: null,
+    values: {
+      title: '',
+      studentIds: [],
+      contentText: '',
+      note: '',
+    },
+    errors: {},
+  }
+}
+
+export function createEditLearningGroupFormState(group) {
+  return {
+    mode: 'edit',
+    groupId: group?.id ?? null,
+    values: {
+      title: group?.title ?? '',
+      studentIds: normalizeIdArray(group?.studentIds),
+      contentText: normalizeContentLines(group?.contentLines).join('\n'),
+      note: group?.note ?? '',
+    },
+    errors: {},
+  }
+}
+
+export function validateLearningGroupForm(values) {
+  const errors = {}
+  const studentIds = normalizeIdArray(values?.studentIds)
+  const contentLines = splitContentLines(values?.contentText)
+
+  if (!studentIds.length && !contentLines.length) {
+    errors.form = 'Chọn ít nhất 1 học viên hoặc nhập ít nhất 1 dòng nội dung học.'
+  }
+
+  return errors
+}
+
+export function buildLearningGroupFromForm(values, existingGroup = null, allowedStudentIds = []) {
+  const allowedStudentSet = new Set(normalizeIdArray(allowedStudentIds))
+  const studentIds = normalizeIdArray(values?.studentIds)
+    .filter((studentId) => allowedStudentSet.has(studentId))
+
+  return {
+    id: existingGroup?.id ?? `learning-group-${Date.now()}`,
+    title: String(values?.title ?? '').trim(),
+    studentIds,
+    contentLines: splitContentLines(values?.contentText),
+    note: String(values?.note ?? '').trim(),
+  }
+}
+
+export function buildSessionReportFromLearningGroups(learningState, existingReport = null) {
+  const identity = getSessionReportIdentity(learningState?.sessionId, learningState?.occurrenceDate)
+  const now = new Date().toISOString()
+
+  return {
+    id: existingReport?.id ?? createSessionReportId(identity.sessionId, identity.occurrenceDate),
+    sessionId: identity.sessionId,
+    occurrenceDate: identity.occurrenceDate,
+    attendance: normalizeReportAttendance(existingReport?.attendance),
+    learningGroups: normalizeReportLearningGroups(learningState?.groups),
+    guestParticipants: normalizeReportGuestParticipants(existingReport?.guestParticipants),
+    teachingAssistantNotes: existingReport?.teachingAssistantNotes ?? '',
+    classSituation: existingReport?.classSituation ?? '',
+    suggestions: existingReport?.suggestions ?? '',
+    createdAt: existingReport?.createdAt ?? now,
+    updatedAt: now,
+  }
+}
+
+export function buildSessionReportFromExtraInfo(extraState, existingReport = null) {
+  const identity = getSessionReportIdentity(extraState?.sessionId, extraState?.occurrenceDate)
+  const now = new Date().toISOString()
+
+  return {
+    id: existingReport?.id ?? createSessionReportId(identity.sessionId, identity.occurrenceDate),
+    sessionId: identity.sessionId,
+    occurrenceDate: identity.occurrenceDate,
+    attendance: normalizeReportAttendance(existingReport?.attendance),
+    learningGroups: normalizeReportLearningGroups(existingReport?.learningGroups),
+    guestParticipants: normalizeReportGuestParticipants(existingReport?.guestParticipants),
+    teachingAssistantNotes: String(extraState?.values?.teachingAssistantNotes ?? '').trim(),
+    classSituation: String(extraState?.values?.classSituation ?? '').trim(),
+    suggestions: String(extraState?.values?.suggestions ?? '').trim(),
+    createdAt: existingReport?.createdAt ?? now,
+    updatedAt: now,
+  }
+}
+
+export function updateSessionReportDraftAttendance(draft, studentId, fieldName, value) {
+  if (!draft) {
+    return draft
+  }
+
+  const normalizedStudentId = String(studentId ?? '').trim()
+  const attendance = normalizeReportAttendance(draft.attendance)
+  const existingIndex = attendance.findIndex((item) => item.studentId === normalizedStudentId)
+  const nextItem = {
+    ...(existingIndex >= 0
+      ? attendance[existingIndex]
+      : { studentId: normalizedStudentId, attendanceStatus: 'present', note: '' }),
+  }
+
+  if (fieldName === 'attendanceStatus') {
+    nextItem.attendanceStatus = VALID_ATTENDANCE_STATUS_IDS.includes(value) ? value : 'present'
+  }
+
+  if (fieldName === 'note') {
+    nextItem.note = String(value ?? '')
+  }
+
+  if (!nextItem.studentId) {
+    return draft
+  }
+
+  const nextAttendance =
+    existingIndex >= 0
+      ? attendance.map((item, index) => (index === existingIndex ? nextItem : item))
+      : [...attendance, nextItem]
+
+  return {
+    ...draft,
+    attendance: nextAttendance,
+    saveState: '',
+    error: '',
+  }
+}
+
+export function validateSessionReportAttendance(attendance) {
+  if (!Array.isArray(attendance)) {
+    return 'Danh sách điểm danh không hợp lệ.'
+  }
+
+  const hasInvalidItem = attendance.some(
+    (item) =>
+      !item ||
+      !String(item.studentId ?? '').trim() ||
+      !VALID_ATTENDANCE_STATUS_IDS.includes(item.attendanceStatus) ||
+      typeof item.note !== 'string',
+  )
+
+  return hasInvalidItem ? 'Dữ liệu điểm danh có dòng chưa hợp lệ.' : ''
+}
+
+export function buildSessionReportFromAttendance(draft, existingReport = null) {
+  const identity = getSessionReportIdentity(draft?.sessionId, draft?.occurrenceDate)
+  const now = new Date().toISOString()
+  const draftAttendance = normalizeReportAttendance(draft?.attendance)
+  const draftStudentIds = new Set(draftAttendance.map((item) => item.studentId))
+  const hiddenExistingAttendance = normalizeReportAttendance(existingReport?.attendance)
+    .filter((item) => !draftStudentIds.has(item.studentId))
+
+  return {
+    id: existingReport?.id ?? createSessionReportId(identity.sessionId, identity.occurrenceDate),
+    sessionId: identity.sessionId,
+    occurrenceDate: identity.occurrenceDate,
+    attendance: [...draftAttendance, ...hiddenExistingAttendance],
+    learningGroups: normalizeReportLearningGroups(existingReport?.learningGroups),
+    guestParticipants: normalizeReportGuestParticipants(
+      draft?.guestParticipants ?? existingReport?.guestParticipants,
+    ),
+    teachingAssistantNotes: existingReport?.teachingAssistantNotes ?? '',
+    classSituation: existingReport?.classSituation ?? '',
+    suggestions: existingReport?.suggestions ?? '',
+    createdAt: existingReport?.createdAt ?? now,
+    updatedAt: now,
+  }
+}
+
+export function buildTrelloReportText({
+  session = null,
+  report = null,
+  students = [],
+  teacher = null,
+} = {}) {
+  const studentLookup = createLookup(students)
+  const attendance = normalizeReportAttendance(report?.attendance)
+  const guestParticipants = normalizeReportGuestParticipants(report?.guestParticipants)
+  const sessionStudentIds = normalizeIdArray(session?.studentIds)
+  const fallbackAttendance = sessionStudentIds.map((studentId) => ({
+    studentId,
+    attendanceStatus: 'present',
+    note: '',
+  }))
+  const attendanceRows = [
+    ...(attendance.length ? attendance : fallbackAttendance),
+    ...guestParticipants.map((guest) => ({
+      studentId: guest.id,
+      displayName: guest.displayName,
+      attendanceStatus: guest.attendanceStatus,
+      note: guest.note,
+      isGuest: true,
+    })),
+  ]
+  const presentStatuses = new Set(['present', 'makeup', 'trial'])
+  const absentStatuses = new Set(['excusedAbsent', 'unexcusedAbsent'])
+  const presentRows = attendanceRows.filter((item) => presentStatuses.has(item.attendanceStatus))
+  const absentRows = attendanceRows.filter((item) => absentStatuses.has(item.attendanceStatus))
+  const presentNames = presentRows.map((item) => formatAttendanceStudentName(item, studentLookup))
+  const absentNames = absentRows.map((item) => getStudentDisplayName(studentLookup.get(item.studentId)))
+  const totalCount = attendanceRows.length
+  const rosterText = presentNames.length ? presentNames.join(', ') : ''
+  const absentText = absentNames.length ? ` Vắng: ${absentNames.join(', ')}` : ''
+  const rosterSuffix = rosterText || absentText.trim()
+    ? ` (${[rosterText, absentText.trim()].filter(Boolean).join('. ')})`
+    : ''
+  const reportDate = formatVietnameseReportDate(session?.occurrenceDate || report?.occurrenceDate)
+  const learningContent = formatTrelloLearningContent(
+    normalizeReportLearningGroups(report?.learningGroups),
+    studentLookup,
+  )
+  const assistantNotes = normalizeMultilineReportText(report?.teachingAssistantNotes)
+  const classSituation = normalizeMultilineReportText(report?.classSituation)
+  const suggestions = normalizeMultilineReportText(report?.suggestions, false)
+  const teacherLine = teacher ? `Giáo viên: ${getTeacherDisplayName(teacher)}` : ''
+  const sessionLine = session?.title ? `Buổi học: ${session.title}` : ''
+  const optionalHeader = [sessionLine, teacherLine].filter(Boolean).join('\n')
+
+  return [
+    reportDate,
+    optionalHeader,
+    `1.Sĩ số: ${presentRows.length}/${totalCount} học viên${rosterSuffix}`,
+    '2.Nội dung buổi học:',
+    learningContent,
+    '3.Nội dung kiến tập/ trợ giảng:',
+    assistantNotes,
+    '4.Tình hình lớp học:',
+    classSituation,
+    suggestions.includes('\n')
+      ? `5.Đề xuất:\n${suggestions}`
+      : `5.Đề xuất: ${suggestions}`,
+  ]
+    .filter((section) => section !== '')
+    .join('\n\n')
 }
 
 export function getVisibleScheduleSessions(sessions = [], weekStartDate = getCurrentScheduleWeekStartDate()) {
@@ -362,6 +764,20 @@ export function getScheduleConflicts(visibleSessions = [], students = []) {
   return conflictMap
 }
 
+export function isPastScheduleOccurrence(session, now = new Date()) {
+  if (!session?.occurrenceDate || !isValidTime(session.endTime)) {
+    return false
+  }
+
+  const occurrenceEnd = parseDateTime(session.occurrenceDate, session.endTime)
+
+  if (!occurrenceEnd) {
+    return false
+  }
+
+  return occurrenceEnd.getTime() < now.getTime()
+}
+
 export function getCurrentScheduleWeekStartDate(referenceDate = new Date()) {
   const date = parseLocalDate(toDateInputValue(referenceDate))
   const mondayOffset = (date.getDay() + 6) % 7
@@ -407,6 +823,7 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
       class="schedule-session-card is-${escapeAttribute(session.level)} is-${escapeAttribute(session.scheduleType)} ${conflicts ? 'has-conflict' : ''}"
       data-schedule-action="open-edit"
       data-schedule-session-id="${escapeAttribute(session.id)}"
+      data-schedule-occurrence-date="${escapeAttribute(session.occurrenceDate ?? '')}"
       tabindex="0"
     >
       <div class="schedule-session-topline">
@@ -501,6 +918,574 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         </div>
       </div>
     </form>
+  `
+}
+
+function renderScheduleReportPanel(
+  reportState,
+  sessions,
+  teachers,
+  students,
+  weekStartDate,
+  sessionReports = [],
+  reportAttendanceState = null,
+  reportLearningState = null,
+  learningGroupFormState = null,
+  reportExtraState = null,
+  guestParticipantFormState = null,
+) {
+  const visibleSessions = getVisibleScheduleSessions(sessions, weekStartDate)
+  const session = visibleSessions.find(
+    (item) =>
+      item.id === reportState.sessionId &&
+      item.occurrenceDate === reportState.occurrenceDate,
+  )
+
+  if (!session) {
+    return ''
+  }
+
+  const teacherLookup = createLookup(teachers)
+  const studentLookup = createLookup(students)
+  const teacher = session.teacherId ? teacherLookup.get(String(session.teacherId)) : null
+  const teacherLabel = getSessionTeacherLabel(session, teacher)
+  const existingReport = findSessionReport(sessionReports, session.id, session.occurrenceDate)
+  const activeDraft =
+    reportAttendanceState?.sessionId === session.id &&
+    reportAttendanceState?.occurrenceDate === session.occurrenceDate
+      ? reportAttendanceState
+      : createSessionReportDraft(session, existingReport)
+  const activeLearningState =
+    reportLearningState?.sessionId === session.id &&
+    reportLearningState?.occurrenceDate === session.occurrenceDate
+      ? reportLearningState
+      : createSessionReportLearningState(session, existingReport)
+  const activeExtraState =
+    reportExtraState?.sessionId === session.id &&
+    reportExtraState?.occurrenceDate === session.occurrenceDate
+      ? reportExtraState
+      : createSessionReportExtraState(session, existingReport)
+  const reportPreview = {
+    ...(existingReport ?? {}),
+    sessionId: session.id,
+    occurrenceDate: session.occurrenceDate,
+    attendance: activeDraft.attendance,
+    learningGroups: activeLearningState.groups,
+    guestParticipants: activeDraft.guestParticipants,
+    ...activeExtraState.values,
+  }
+  const trelloText = buildTrelloReportText({
+    session,
+    report: reportPreview,
+    students,
+    teacher,
+  })
+
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-report-panel" aria-label="Báo cáo ca dạy">
+      <div class="schedule-report-header">
+        <div>
+          <span>Báo cáo ca dạy</span>
+          <h4>${escapeHtml(session.title || 'Buổi học')}</h4>
+          <p>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</p>
+        </div>
+        <div class="schedule-report-header-actions">
+          <button type="button" data-schedule-action="edit-from-report" data-schedule-session-id="${escapeAttribute(session.id)}">Sửa buổi học</button>
+          <button type="button" data-schedule-action="close-report">Đóng</button>
+          <button type="button" data-schedule-action="close-report" aria-label="Đóng báo cáo">×</button>
+        </div>
+      </div>
+
+      <div class="schedule-report-body">
+        <div class="schedule-report-column is-left" data-report-scroll-region="left">
+          <section class="schedule-report-section">
+            <h5>Giáo viên</h5>
+            <div class="schedule-report-teacher">
+              <strong>${escapeHtml(teacherLabel.name)}</strong>
+              ${teacherLabel.warning ? `<span class="schedule-warning-badge">${escapeHtml(teacherLabel.warning)}</span>` : ''}
+            </div>
+          </section>
+
+          ${renderSessionReportAttendance(session, studentLookup, activeDraft, guestParticipantFormState)}
+        </div>
+
+        <div class="schedule-report-column is-middle" data-report-scroll-region="middle">
+          ${renderSessionReportLearningGroups(session, studentLookup, activeDraft, activeLearningState, learningGroupFormState)}
+          ${renderSessionReportExtraFields(activeExtraState)}
+        </div>
+
+        <div class="schedule-report-column is-right" data-report-scroll-region="right">
+          ${renderSessionReportTrello(trelloText, activeExtraState)}
+        </div>
+      </div>
+
+    </section>
+  `
+}
+
+function renderSessionReportAttendance(session, studentLookup, draft, guestFormState = null) {
+  const attendance = normalizeReportAttendance(draft?.attendance)
+  const guestParticipants = normalizeReportGuestParticipants(draft?.guestParticipants)
+  const presentRows = [
+    ...attendance.filter((item) => ['present', 'makeup', 'trial'].includes(item.attendanceStatus)),
+    ...guestParticipants,
+  ]
+
+  if (!attendance.length && !guestParticipants.length) {
+    return `
+      <section class="schedule-report-section session-report-attendance">
+        <div class="session-report-section-heading">
+          <h5>Điểm danh</h5>
+          <button type="button" data-session-guest-action="open-create">+ Học viên tạm</button>
+        </div>
+        ${guestFormState ? renderGuestParticipantForm(guestFormState) : ''}
+        <p class="schedule-report-empty">Chưa có học viên trong buổi học.</p>
+      </section>
+    `
+  }
+
+  const presentCount = presentRows.length
+  const absentCount = attendance.filter((item) =>
+    ['excusedAbsent', 'unexcusedAbsent'].includes(item.attendanceStatus),
+  ).length
+  const makeupCount =
+    attendance.filter((item) => item.attendanceStatus === 'makeup').length +
+    guestParticipants.filter((guest) => guest.participationType === 'makeup').length
+  const trialCount =
+    attendance.filter((item) => item.attendanceStatus === 'trial').length +
+    guestParticipants.filter((guest) => guest.participationType === 'trial').length
+  const totalCount = attendance.length + guestParticipants.length
+
+  return `
+    <section class="schedule-report-section session-report-attendance">
+      <div class="session-report-section-heading">
+        <h5>Điểm danh</h5>
+        <div>
+          <button type="button" data-session-guest-action="open-create">+ Học viên tạm</button>
+          <button type="button" data-schedule-action="save-attendance">Lưu điểm danh</button>
+        </div>
+      </div>
+
+      <div class="session-report-summary" aria-label="Tổng quan điểm danh">
+        <span>Sĩ số: ${presentCount}/${totalCount}</span>
+        <span>Vắng: ${absentCount}</span>
+        <span>Học bù: ${makeupCount}</span>
+        <span>Học thử: ${trialCount}</span>
+      </div>
+      ${guestFormState ? renderGuestParticipantForm(guestFormState) : ''}
+
+      ${
+        draft?.error
+          ? `<p class="session-report-save-state error">${escapeHtml(draft.error)}</p>`
+          : ''
+      }
+      ${
+        draft?.saveState === 'saved'
+          ? '<p class="session-report-save-state">Đã lưu điểm danh.</p>'
+          : ''
+      }
+
+      <div class="session-report-student-rows">
+        ${attendance
+          .map((item) => renderAttendanceRow(item, studentLookup.get(item.studentId)))
+          .join('')}
+        ${guestParticipants.map((guest) => renderGuestParticipantRow(guest)).join('')}
+      </div>
+    </section>
+  `
+}
+
+function renderAttendanceRow(attendanceItem, student) {
+  const studentName = getShortStudentName(student?.fullName || student?.name || 'Học viên không tìm thấy')
+  const studentMeta = [
+    student?.level,
+    student?.parentName,
+    student?.phone,
+  ].filter(Boolean).join(' · ')
+
+  return `
+    <div class="session-report-student-row">
+      <div class="session-report-student-name">
+        <strong>${escapeHtml(studentName)}</strong>
+        ${studentMeta ? `<span>${escapeHtml(studentMeta)}</span>` : ''}
+      </div>
+      <select
+        class="session-report-attendance-status"
+        data-session-report-attendance-status
+        data-session-report-student-id="${escapeAttribute(attendanceItem.studentId)}"
+        aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}"
+      >
+        ${attendanceStatuses
+          .map(
+            ([status, label]) =>
+              `<option value="${escapeAttribute(status)}" ${
+                attendanceItem.attendanceStatus === status ? 'selected' : ''
+              }>${escapeHtml(label)}</option>`,
+          )
+          .join('')}
+      </select>
+      <input
+        class="session-report-attendance-note"
+        type="text"
+        data-session-report-attendance-note
+        data-session-report-student-id="${escapeAttribute(attendanceItem.studentId)}"
+        value="${escapeAttribute(attendanceItem.note)}"
+        maxlength="140"
+        placeholder="Ghi chú ngắn..."
+        aria-label="Ghi chú điểm danh của ${escapeAttribute(studentName)}"
+      />
+    </div>
+  `
+}
+
+function renderGuestParticipantRow(guest) {
+  const guestLabel = guest.participationType === 'makeup' ? 'Học bù' : 'Học thử'
+
+  return `
+    <div class="session-report-student-row is-guest">
+      <div class="session-report-student-name">
+        <strong>${escapeHtml(getShortStudentName(guest.displayName))}</strong>
+        <span>${escapeHtml(guestLabel)} · học viên tạm</span>
+      </div>
+      <div class="session-report-guest-type">${escapeHtml(guestLabel)}</div>
+      <div class="session-report-guest-note">
+        <span>${escapeHtml(guest.note || 'Chưa có ghi chú')}</span>
+        <button type="button" data-session-guest-action="delete" data-guest-id="${escapeAttribute(guest.id)}">Xóa</button>
+      </div>
+    </div>
+  `
+}
+
+function renderGuestParticipantForm(formState) {
+  return `
+    <form class="session-report-guest-form" data-session-guest-form>
+      <label>
+        <span>Tên học viên tạm</span>
+        <input
+          type="text"
+          data-session-guest-field="displayName"
+          value="${escapeAttribute(formState.values.displayName)}"
+          placeholder="Ví dụ: Minh Anh"
+        />
+      </label>
+      <label>
+        <span>Loại</span>
+        <select data-session-guest-field="participationType">
+          ${guestParticipationTypes
+            .map(
+              ([type, label]) =>
+                `<option value="${escapeAttribute(type)}" ${
+                  formState.values.participationType === type ? 'selected' : ''
+                }>${escapeHtml(type === 'makeup' ? 'Học bù từ cơ sở khác' : label)}</option>`,
+            )
+            .join('')}
+        </select>
+      </label>
+      <label>
+        <span>Ghi chú</span>
+        <input
+          type="text"
+          data-session-guest-field="note"
+          value="${escapeAttribute(formState.values.note)}"
+          placeholder="Ghi chú ngắn..."
+        />
+      </label>
+      ${renderGuestParticipantFormErrors(formState.errors)}
+      <div class="session-report-guest-actions">
+        <button type="button" data-session-guest-action="cancel-form">Hủy</button>
+        <button type="submit">Lưu</button>
+      </div>
+    </form>
+  `
+}
+
+function renderGuestParticipantFormErrors(errors = {}) {
+  const messages = Object.values(errors).filter(Boolean)
+
+  if (!messages.length) {
+    return ''
+  }
+
+  return `
+    <div class="session-report-learning-errors">
+      ${messages.map((message) => `<p>${escapeHtml(message)}</p>`).join('')}
+    </div>
+  `
+}
+
+function renderSessionReportLearningGroups(
+  session,
+  studentLookup,
+  attendanceDraft,
+  learningState,
+  formState,
+) {
+  const sessionStudentIds = normalizeIdArray(session.studentIds)
+  const groups = normalizeReportLearningGroups(learningState?.groups, sessionStudentIds)
+  const attendanceLookup = new Map(
+    normalizeReportAttendance(attendanceDraft?.attendance).map((item) => [item.studentId, item]),
+  )
+
+  return `
+    <section class="schedule-report-section session-report-learning">
+      <div class="session-report-learning-header">
+        <div>
+          <h5>Nhóm nội dung học</h5>
+          <p>${groups.length} nhóm đã lưu</p>
+        </div>
+        ${
+          sessionStudentIds.length
+            ? '<button type="button" data-session-learning-action="open-create">+ Thêm nhóm</button>'
+            : ''
+        }
+      </div>
+
+      ${
+        learningState?.error
+          ? `<p class="session-report-save-state error">${escapeHtml(learningState.error)}</p>`
+          : ''
+      }
+      ${
+        learningState?.saveState === 'saved'
+          ? '<p class="session-report-save-state">Đã lưu nhóm nội dung học.</p>'
+          : ''
+      }
+
+      ${formState ? renderLearningGroupForm(formState, sessionStudentIds, studentLookup, attendanceLookup) : ''}
+
+      ${
+        sessionStudentIds.length
+          ? renderLearningGroupCards(groups, studentLookup)
+          : '<p class="session-report-learning-empty">Chưa có học viên để tạo nhóm nội dung.</p>'
+      }
+    </section>
+  `
+}
+
+function renderLearningGroupForm(formState, sessionStudentIds, studentLookup, attendanceLookup) {
+  return `
+    <form class="session-report-learning-form" data-session-learning-form>
+      <div class="session-report-learning-form-grid">
+        <label>
+          <span>Tên nhóm</span>
+          <input
+            type="text"
+            value="${escapeAttribute(formState.values.title)}"
+            data-session-learning-field="title"
+            placeholder="Ví dụ: Nhóm cờ tàn"
+          />
+        </label>
+
+        <label>
+          <span>Ghi chú nhóm</span>
+          <input
+            type="text"
+            value="${escapeAttribute(formState.values.note)}"
+            data-session-learning-field="note"
+            placeholder="Ghi chú ngắn..."
+          />
+        </label>
+
+        <div class="session-report-learning-students">
+          <span>Học viên trong nhóm</span>
+          <div>
+            ${sessionStudentIds
+              .map((studentId) =>
+                renderLearningStudentCheckbox(
+                  studentId,
+                  studentLookup.get(studentId),
+                  formState.values.studentIds,
+                  attendanceLookup.get(studentId),
+                ),
+              )
+              .join('')}
+          </div>
+        </div>
+
+        <label class="session-report-learning-content">
+          <span>Nội dung học</span>
+          <textarea
+            data-session-learning-field="contentText"
+            rows="4"
+            placeholder="Mỗi dòng là một ý nội dung học..."
+          >${escapeHtml(formState.values.contentText)}</textarea>
+        </label>
+      </div>
+
+      ${renderLearningGroupFormErrors(formState.errors)}
+
+      <div class="session-report-learning-actions">
+        <button type="button" data-session-learning-action="cancel-form">Hủy</button>
+        <button type="submit">Lưu nhóm</button>
+      </div>
+    </form>
+  `
+}
+
+function renderLearningStudentCheckbox(studentId, student, selectedStudentIds, attendance) {
+  const selectedSet = new Set(normalizeIdArray(selectedStudentIds))
+  const studentName = student?.fullName || student?.name || 'Học viên không tìm thấy'
+  const attendanceLabel = getAttendanceStatusLabel(attendance?.attendanceStatus)
+
+  return `
+    <label>
+      <input
+        type="checkbox"
+        value="${escapeAttribute(studentId)}"
+        data-session-learning-student
+        ${selectedSet.has(studentId) ? 'checked' : ''}
+      />
+      <span>${escapeHtml(studentName)}</span>
+      ${attendanceLabel ? `<small>${escapeHtml(attendanceLabel)}</small>` : ''}
+    </label>
+  `
+}
+
+function renderLearningGroupFormErrors(errors = {}) {
+  const messages = Object.values(errors).filter(Boolean)
+
+  if (!messages.length) {
+    return ''
+  }
+
+  return `
+    <div class="session-report-learning-errors">
+      ${messages.map((message) => `<p>${escapeHtml(message)}</p>`).join('')}
+    </div>
+  `
+}
+
+function renderLearningGroupCards(groups, studentLookup) {
+  if (!groups.length) {
+    return '<p class="session-report-learning-empty">Chưa có nhóm nội dung học.</p>'
+  }
+
+  return `
+    <div class="session-report-learning-list">
+      ${groups.map((group) => renderLearningGroupCard(group, studentLookup)).join('')}
+    </div>
+  `
+}
+
+function renderLearningGroupCard(group, studentLookup) {
+  const studentNames = normalizeIdArray(group.studentIds)
+    .map((studentId) => getStudentDisplayName(studentLookup.get(studentId)))
+  const contentLines = normalizeContentLines(group.contentLines)
+
+  return `
+    <article class="session-report-learning-card">
+      <div class="session-report-learning-card-header">
+        <div>
+          <strong>${escapeHtml(group.title || 'Nhóm nội dung')}</strong>
+          <span>${studentNames.length ? escapeHtml(studentNames.join(', ')) : 'Chưa chọn học viên'}</span>
+        </div>
+        <div>
+          <button type="button" data-session-learning-action="open-edit" data-learning-group-id="${escapeAttribute(group.id)}">Sửa</button>
+          <button type="button" data-session-learning-action="delete" data-learning-group-id="${escapeAttribute(group.id)}">Xóa</button>
+        </div>
+      </div>
+      ${
+        contentLines.length
+          ? `<ul>${contentLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+          : '<p class="session-report-learning-empty">Chưa có nội dung học.</p>'
+      }
+      ${group.note ? `<p class="session-report-learning-note">${escapeHtml(group.note)}</p>` : ''}
+    </article>
+  `
+}
+
+function renderSessionReportExtraFields(extraState) {
+  return `
+    <section class="schedule-report-section session-report-extra-fields">
+      <div class="session-report-extra-header">
+        <div>
+          <h5>Thông tin thêm cho báo cáo</h5>
+        </div>
+        <button type="button" data-session-report-action="save-extra">Lưu thông tin báo cáo</button>
+      </div>
+
+      ${
+        extraState?.error
+          ? `<p class="session-report-save-state error">${escapeHtml(extraState.error)}</p>`
+          : ''
+      }
+      ${
+        extraState?.saveState === 'saved'
+          ? '<p class="session-report-save-state">Đã lưu thông tin báo cáo.</p>'
+          : ''
+      }
+
+      <div class="session-report-extra-grid">
+        ${renderExtraTextarea(
+          'teachingAssistantNotes',
+          'Nội dung kiến tập/trợ giảng',
+          extraState?.values?.teachingAssistantNotes,
+        )}
+        ${renderExtraTextarea(
+          'classSituation',
+          'Tình hình lớp học',
+          extraState?.values?.classSituation,
+        )}
+        ${renderExtraTextarea('suggestions', 'Đề xuất', extraState?.values?.suggestions)}
+      </div>
+    </section>
+  `
+}
+
+function renderExtraTextarea(fieldName, label, value) {
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+      <textarea
+        data-session-report-extra-field="${escapeAttribute(fieldName)}"
+        rows="3"
+        placeholder="Hiện tại chưa có"
+      >${escapeHtml(value ?? '')}</textarea>
+    </label>
+  `
+}
+
+function renderSessionReportTrello(trelloText, extraState) {
+  return `
+    <section class="schedule-report-section session-report-trello">
+      <div class="session-report-trello-header">
+        <div>
+          <h5>Mẫu báo cáo Trello</h5>
+        </div>
+        <button type="button" data-session-report-action="refresh-trello">Tạo/Cập nhật mẫu</button>
+      </div>
+
+      <textarea
+        class="session-report-trello-output"
+        data-session-report-trello-output
+        readonly
+        rows="12"
+      >${escapeHtml(trelloText)}</textarea>
+
+      <div class="session-report-copy-actions">
+        <button type="button" data-session-report-action="copy-trello">Copy text</button>
+        ${
+          extraState?.copyState === 'copied'
+            ? '<span class="session-report-copy-state">Đã copy.</span>'
+            : ''
+        }
+        ${
+          extraState?.copyState === 'failed'
+            ? '<span class="session-report-copy-state error">Không copy tự động được, hãy bôi đen và copy thủ công.</span>'
+            : ''
+        }
+      </div>
+    </section>
+  `
+}
+
+function renderReportItem(label, value) {
+  return `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || 'Chưa cập nhật')}</strong>
+    </div>
   `
 }
 
@@ -841,6 +1826,26 @@ function formatDisplayDate(value) {
   })
 }
 
+function formatReportDate(value) {
+  const day = scheduleDays.find((item) => item.id === getDayOfWeekFromDate(value))
+  const displayDate = formatDisplayDate(value)
+
+  return [day?.label, displayDate].filter(Boolean).join(', ')
+}
+
+function formatVietnameseReportDate(value) {
+  const date = parseLocalDate(value)
+
+  if (!date) {
+    return 'Ngày học chưa xác định'
+  }
+
+  const weekdayLabels = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
+  return `${weekdayLabels[date.getDay()]}, ngày ${date.getDate()} tháng ${
+    date.getMonth() + 1
+  } năm ${date.getFullYear()}`
+}
+
 function getScheduleTypeBadgeLabel(session) {
   if (normalizeScheduleType(session.scheduleType) === 'recurring') {
     return 'Lịch cố định'
@@ -970,6 +1975,35 @@ function getStatusLabel(status) {
   return statusLabels[status] ?? 'Đã lên lịch'
 }
 
+function getAttendanceStatusLabel(status) {
+  return attendanceStatuses.find(([itemStatus]) => itemStatus === status)?.[1] ?? ''
+}
+
+function getStudentDisplayName(student) {
+  return getShortStudentName(student?.fullName || student?.name || 'Học viên không xác định')
+}
+
+function formatAttendanceStudentName(attendanceItem, studentLookup) {
+  const studentName = attendanceItem.isGuest
+    ? getShortStudentName(attendanceItem.displayName)
+    : getStudentDisplayName(studentLookup.get(attendanceItem.studentId))
+
+  if (attendanceItem.attendanceStatus === 'makeup') {
+    return `${studentName} (học bù)`
+  }
+
+  if (attendanceItem.attendanceStatus === 'trial') {
+    return `${studentName} (học thử)`
+  }
+
+  return studentName
+}
+
+function getShortStudentName(fullName) {
+  const nameParts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean)
+  return nameParts.length > 2 ? nameParts.slice(-2).join(' ') : nameParts.join(' ')
+}
+
 function getShortName(fullName) {
   const nameParts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean)
   return nameParts.slice(-2).join(' ') || String(fullName || '').trim()
@@ -1000,6 +2034,107 @@ function normalizeIdArray(values) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)))
     : []
+}
+
+function normalizeReportAttendance(attendance) {
+  return (Array.isArray(attendance) ? attendance : [])
+    .map((item) => ({
+      studentId: String(item?.studentId ?? '').trim(),
+      attendanceStatus: VALID_ATTENDANCE_STATUS_IDS.includes(item?.attendanceStatus)
+        ? item.attendanceStatus
+        : 'present',
+      note: String(item?.note ?? ''),
+    }))
+    .filter((item) => item.studentId)
+}
+
+function normalizeReportLearningGroups(learningGroups, allowedStudentIds = null) {
+  const allowedStudentSet = Array.isArray(allowedStudentIds)
+    ? new Set(normalizeIdArray(allowedStudentIds))
+    : null
+
+  return (Array.isArray(learningGroups) ? learningGroups : [])
+    .filter((group) => group && typeof group === 'object')
+    .map((group, index) => ({
+      id: String(group.id || `learning-group-${String(index + 1).padStart(3, '0')}`),
+      title: String(group.title || ''),
+      studentIds: normalizeIdArray(group.studentIds)
+        .filter((studentId) => !allowedStudentSet || allowedStudentSet.has(studentId)),
+      contentLines: normalizeContentLines(group.contentLines),
+      note: String(group.note || ''),
+    }))
+}
+
+function normalizeReportGuestParticipants(guestParticipants) {
+  return (Array.isArray(guestParticipants) ? guestParticipants : [])
+    .filter((guest) => guest && typeof guest === 'object')
+    .map((guest, index) => {
+      const participationType = VALID_GUEST_PARTICIPATION_TYPE_IDS.includes(guest.participationType)
+        ? guest.participationType
+        : 'trial'
+
+      return {
+        id: String(guest.id || `guest-${String(index + 1).padStart(3, '0')}`),
+        displayName: String(guest.displayName || '').trim(),
+        participationType,
+        attendanceStatus: participationType,
+        note: String(guest.note || '').trim(),
+      }
+    })
+    .filter((guest) => guest.displayName)
+}
+
+function normalizeContentLines(contentLines) {
+  return Array.isArray(contentLines)
+    ? contentLines.map((line) => String(line ?? '').trim()).filter(Boolean)
+    : []
+}
+
+function splitContentLines(contentText) {
+  return String(contentText ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function formatTrelloLearningContent(learningGroups, studentLookup) {
+  const groups = normalizeReportLearningGroups(learningGroups)
+
+  if (!groups.length) {
+    return 'Hiện tại chưa có'
+  }
+
+  return groups
+    .map((group) => {
+      const studentNames = normalizeIdArray(group.studentIds)
+        .map((studentId) => getStudentDisplayName(studentLookup.get(studentId)))
+      const heading = studentNames.length
+        ? studentNames.join(', ')
+        : group.title || 'Nhóm nội dung'
+      const contentLines = normalizeContentLines(group.contentLines)
+      const lines = contentLines.length
+        ? contentLines.map((line) => `+ ${line}`)
+        : ['+ Hiện tại chưa có']
+      const noteLine = group.note ? [`+ Ghi chú: ${group.note}`] : []
+
+      return [heading, ...lines, ...noteLine].join('\n\n')
+    })
+    .join('\n\n')
+}
+
+function normalizeMultilineReportText(value, uppercaseDefault = true) {
+  const text = String(value ?? '').trim()
+
+  if (text) {
+    return text
+  }
+
+  return uppercaseDefault ? 'Hiện tại chưa có' : 'hiện tại chưa có'
+}
+
+function createSessionReportId(sessionId, occurrenceDate) {
+  const safeSessionId = String(sessionId ?? '').replace(/[^a-zA-Z0-9_-]+/g, '-')
+  return `report-${safeSessionId}-${occurrenceDate}`
 }
 
 function normalizeNullableDate(value) {
@@ -1035,6 +2170,18 @@ function parseLocalDate(value) {
   const [year, month, day] = String(value).split('-').map(Number)
   const date = new Date(year, month - 1, day)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+function parseDateTime(dateValue, timeValue) {
+  const date = parseLocalDate(dateValue)
+
+  if (!date || !isValidTime(timeValue)) {
+    return null
+  }
+
+  const [hours, minutes] = String(timeValue).split(':').map(Number)
+  date.setHours(hours, minutes, 0, 0)
+  return date
 }
 
 function addDays(value, days) {

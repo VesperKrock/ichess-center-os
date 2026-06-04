@@ -11,6 +11,7 @@ import {
   getStoredInventoryMovements,
   getStoredNotifications,
   getStoredSchedule,
+  getStoredSessionReports,
   getStoredStudents,
   getStoredTeachers,
   getStoredTuition,
@@ -25,6 +26,7 @@ import {
   saveStoredInventoryMovements,
   saveStoredNotifications,
   saveStoredSchedule,
+  saveStoredSessionReports,
   saveStoredStudents,
   saveStoredTeachers,
   saveStoredTuition,
@@ -75,13 +77,32 @@ import {
 import { createSampleNotifications } from './notifications.js'
 import { sampleScheduleSessions } from './schedule-data.js'
 import {
+  buildSessionReportFromAttendance,
+  buildSessionReportFromLearningGroups,
+  buildLearningGroupFromForm,
+  buildGuestParticipantFromForm,
   buildScheduleSessionFromForm,
+  buildSessionReportFromExtraInfo,
   createEditScheduleFormState,
+  createEditLearningGroupFormState,
   createEmptyScheduleFormState,
+  createEmptyLearningGroupFormState,
+  createEmptyGuestParticipantFormState,
+  createSessionReportExtraState,
+  createSessionReportLearningState,
+  createSessionReportDraft,
+  findSessionReport,
   getCurrentScheduleWeekStartDate,
   getNextScheduleWeekStartDate,
   getPreviousScheduleWeekStartDate,
+  getVisibleScheduleSessions,
+  isPastScheduleOccurrence,
   renderScheduleModule,
+  updateSessionReportDraftAttendance,
+  updateSessionReportExtraState,
+  validateLearningGroupForm,
+  validateGuestParticipantForm,
+  validateSessionReportAttendance,
   validateScheduleForm,
 } from './schedule-module.js'
 import { sampleStudents } from './student-data.js'
@@ -153,7 +174,14 @@ let teachers = getStoredTeachers(sampleTeachers)
 let teacherFormState = null
 let selectedTeacherId = null
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
+let sessionReports = getStoredSessionReports()
 let scheduleFormState = null
+let scheduleReportState = null
+let sessionReportAttendanceState = null
+let sessionReportLearningState = null
+let sessionReportLearningFormState = null
+let sessionReportExtraState = null
+let sessionReportGuestFormState = null
 let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
 let tuitionRecords = getStoredTuition(createSampleTuitionRecords(students))
 let notifications = getStoredNotifications(createSampleNotifications())
@@ -186,6 +214,8 @@ let isInventoryHistoryPanelOpen = false
 let careNoteDrafts = {}
 
 function render() {
+  const scheduleReportScrollState = getScheduleReportScrollState()
+
   app.innerHTML = `
     <div class="app-shell">
       <main class="desktop-area">
@@ -200,7 +230,28 @@ function render() {
   `
 
   bindEvents()
+  restoreScheduleReportScrollState(scheduleReportScrollState)
   updateClock()
+}
+
+function getScheduleReportScrollState() {
+  return Array.from(document.querySelectorAll('[data-report-scroll-region]')).reduce(
+    (scrollState, element) => ({
+      ...scrollState,
+      [element.dataset.reportScrollRegion]: element.scrollTop,
+    }),
+    {},
+  )
+}
+
+function restoreScheduleReportScrollState(scrollState) {
+  Object.entries(scrollState).forEach(([region, scrollTop]) => {
+    const element = document.querySelector(`[data-report-scroll-region="${region}"]`)
+
+    if (element) {
+      element.scrollTop = scrollTop
+    }
+  })
 }
 
 function renderDashboard() {
@@ -323,6 +374,13 @@ function renderWindowBody(windowItem) {
     return renderScheduleModule(
       scheduleSessions,
       scheduleFormState,
+      scheduleReportState,
+      sessionReports,
+      sessionReportAttendanceState,
+      sessionReportLearningState,
+      sessionReportLearningFormState,
+      sessionReportExtraState,
+      sessionReportGuestFormState,
       teachers,
       students,
       scheduleWeekStartDate,
@@ -2722,17 +2780,29 @@ function bindEvents() {
         scheduleWeekStartDate = getNextScheduleWeekStartDate(scheduleWeekStartDate)
       }
 
+      scheduleReportState = null
+      sessionReportAttendanceState = null
+      sessionReportLearningState = null
+      sessionReportLearningFormState = null
+      sessionReportExtraState = null
+      sessionReportGuestFormState = null
       render()
     })
   })
 
   document.querySelector('[data-schedule-action="open-create"]')?.addEventListener('click', () => {
     scheduleFormState = createEmptyScheduleFormState()
+    scheduleReportState = null
+    sessionReportAttendanceState = null
+    sessionReportLearningState = null
+    sessionReportLearningFormState = null
+    sessionReportExtraState = null
+    sessionReportGuestFormState = null
     render()
   })
 
   document.querySelectorAll('[data-schedule-action="open-edit"]').forEach((card) => {
-    const openEditForm = () => {
+    const openScheduleSession = () => {
       const session = scheduleSessions.find(
         (item) => item.id === card.dataset.scheduleSessionId,
       )
@@ -2741,22 +2811,609 @@ function bindEvents() {
         return
       }
 
-      scheduleFormState = createEditScheduleFormState(session)
+      const occurrenceDate = card.dataset.scheduleOccurrenceDate
+      const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
+        (item) => item.id === session.id && item.occurrenceDate === occurrenceDate,
+      )
+
+      if (occurrence && isPastScheduleOccurrence(occurrence)) {
+        scheduleFormState = null
+        scheduleReportState = {
+          sessionId: session.id,
+          occurrenceDate: occurrence.occurrenceDate,
+        }
+        sessionReportAttendanceState = createSessionReportDraft(
+          occurrence,
+          findSessionReport(sessionReports, session.id, occurrence.occurrenceDate),
+        )
+        sessionReportLearningState = createSessionReportLearningState(
+          occurrence,
+          findSessionReport(sessionReports, session.id, occurrence.occurrenceDate),
+        )
+        sessionReportExtraState = createSessionReportExtraState(
+          occurrence,
+          findSessionReport(sessionReports, session.id, occurrence.occurrenceDate),
+        )
+        sessionReportLearningFormState = null
+        sessionReportGuestFormState = null
+      } else {
+        scheduleReportState = null
+        sessionReportAttendanceState = null
+        sessionReportLearningState = null
+        sessionReportLearningFormState = null
+        sessionReportExtraState = null
+        sessionReportGuestFormState = null
+        scheduleFormState = createEditScheduleFormState(session)
+      }
+
       render()
     }
 
-    card.addEventListener('click', openEditForm)
+    card.addEventListener('click', openScheduleSession)
     card.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
-        openEditForm()
+        openScheduleSession()
       }
     })
+  })
+
+  document.querySelectorAll('[data-schedule-action="close-report"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      scheduleReportState = null
+      sessionReportAttendanceState = null
+      sessionReportLearningState = null
+      sessionReportLearningFormState = null
+      sessionReportExtraState = null
+      sessionReportGuestFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-schedule-action="edit-from-report"]')?.addEventListener('click', (event) => {
+    const session = scheduleSessions.find(
+      (item) => item.id === event.currentTarget.dataset.scheduleSessionId,
+    )
+
+    if (!session) {
+      return
+    }
+
+    scheduleReportState = null
+    sessionReportAttendanceState = null
+    sessionReportLearningState = null
+    sessionReportLearningFormState = null
+    sessionReportExtraState = null
+    sessionReportGuestFormState = null
+    scheduleFormState = createEditScheduleFormState(session)
+    render()
+  })
+
+  document
+    .querySelectorAll(
+      '.schedule-report-panel button, .schedule-report-panel input, .schedule-report-panel select, .schedule-report-panel textarea, .schedule-report-panel label',
+    )
+    .forEach((control) => {
+      control.addEventListener('pointerdown', (event) => {
+        event.stopPropagation()
+      })
+      control.addEventListener('click', (event) => {
+        event.stopPropagation()
+      })
+    })
+
+  document.querySelectorAll('[data-session-report-attendance-status]').forEach((control) => {
+    control.addEventListener('change', () => {
+      sessionReportAttendanceState = updateSessionReportDraftAttendance(
+        sessionReportAttendanceState,
+        control.dataset.sessionReportStudentId,
+        'attendanceStatus',
+        control.value,
+      )
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-session-report-attendance-note]').forEach((control) => {
+    control.addEventListener('input', () => {
+      sessionReportAttendanceState = updateSessionReportDraftAttendance(
+        sessionReportAttendanceState,
+        control.dataset.sessionReportStudentId,
+        'note',
+        control.value,
+      )
+    })
+  })
+
+  document.querySelector('[data-schedule-action="save-attendance"]')?.addEventListener('click', () => {
+    if (!scheduleReportState || !sessionReportAttendanceState) {
+      return
+    }
+
+    const error = validateSessionReportAttendance(sessionReportAttendanceState.attendance)
+
+    if (error) {
+      sessionReportAttendanceState = {
+        ...sessionReportAttendanceState,
+        error,
+        saveState: '',
+      }
+      render()
+      return
+    }
+
+    const existingReport = findSessionReport(
+      sessionReports,
+      scheduleReportState.sessionId,
+      scheduleReportState.occurrenceDate,
+    )
+    const savedReport = buildSessionReportFromAttendance(
+      sessionReportAttendanceState,
+      existingReport,
+    )
+
+    sessionReports = existingReport
+      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
+      : [savedReport, ...sessionReports]
+
+    saveStoredSessionReports(sessionReports)
+    sessionReportAttendanceState = {
+      ...sessionReportAttendanceState,
+      attendance: savedReport.attendance,
+      error: '',
+      saveState: 'saved',
+    }
+    render()
+  })
+
+  document.querySelector('[data-session-guest-action="open-create"]')?.addEventListener('click', () => {
+    sessionReportGuestFormState = createEmptyGuestParticipantFormState()
+    render()
+  })
+
+  document.querySelector('[data-session-guest-action="cancel-form"]')?.addEventListener('click', () => {
+    sessionReportGuestFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-session-guest-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!sessionReportGuestFormState) {
+        return
+      }
+
+      sessionReportGuestFormState = {
+        ...sessionReportGuestFormState,
+        values: {
+          ...sessionReportGuestFormState.values,
+          [control.dataset.sessionGuestField]: control.value,
+        },
+        errors: {},
+      }
+    })
+
+    control.addEventListener('change', () => {
+      if (!sessionReportGuestFormState) {
+        return
+      }
+
+      sessionReportGuestFormState = {
+        ...sessionReportGuestFormState,
+        values: {
+          ...sessionReportGuestFormState.values,
+          [control.dataset.sessionGuestField]: control.value,
+        },
+        errors: {},
+      }
+    })
+  })
+
+  document.querySelector('[data-session-guest-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!scheduleReportState || !sessionReportAttendanceState || !sessionReportGuestFormState) {
+      return
+    }
+
+    const formValues = {
+      displayName:
+        document.querySelector('[data-session-guest-field="displayName"]')?.value ??
+        sessionReportGuestFormState.values.displayName,
+      participationType:
+        document.querySelector('[data-session-guest-field="participationType"]')?.value ??
+        sessionReportGuestFormState.values.participationType,
+      note:
+        document.querySelector('[data-session-guest-field="note"]')?.value ??
+        sessionReportGuestFormState.values.note,
+    }
+    const errors = validateGuestParticipantForm(formValues)
+
+    if (Object.keys(errors).length) {
+      sessionReportGuestFormState = {
+        ...sessionReportGuestFormState,
+        values: formValues,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const nextAttendanceState = {
+      ...sessionReportAttendanceState,
+      guestParticipants: [
+        buildGuestParticipantFromForm(formValues),
+        ...(sessionReportAttendanceState.guestParticipants ?? []),
+      ],
+      saveState: 'saved',
+      error: '',
+    }
+    const existingReport = findSessionReport(
+      sessionReports,
+      scheduleReportState.sessionId,
+      scheduleReportState.occurrenceDate,
+    )
+    const savedReport = buildSessionReportFromAttendance(nextAttendanceState, existingReport)
+
+    sessionReports = existingReport
+      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
+      : [savedReport, ...sessionReports]
+
+    saveStoredSessionReports(sessionReports)
+    sessionReportAttendanceState = {
+      ...nextAttendanceState,
+      guestParticipants: savedReport.guestParticipants,
+    }
+    sessionReportGuestFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-session-guest-action="delete"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!scheduleReportState || !sessionReportAttendanceState) {
+        return
+      }
+
+      const nextAttendanceState = {
+        ...sessionReportAttendanceState,
+        guestParticipants: (sessionReportAttendanceState.guestParticipants ?? []).filter(
+          (guest) => guest.id !== button.dataset.guestId,
+        ),
+        saveState: 'saved',
+        error: '',
+      }
+      const existingReport = findSessionReport(
+        sessionReports,
+        scheduleReportState.sessionId,
+        scheduleReportState.occurrenceDate,
+      )
+      const savedReport = buildSessionReportFromAttendance(nextAttendanceState, existingReport)
+
+      sessionReports = existingReport
+        ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
+        : [savedReport, ...sessionReports]
+
+      saveStoredSessionReports(sessionReports)
+      sessionReportAttendanceState = {
+        ...nextAttendanceState,
+        guestParticipants: savedReport.guestParticipants,
+      }
+      sessionReportGuestFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-session-learning-action="open-create"]')?.addEventListener('click', () => {
+    sessionReportLearningFormState = createEmptyLearningGroupFormState()
+    sessionReportLearningState = {
+      ...sessionReportLearningState,
+      error: '',
+      saveState: '',
+    }
+    render()
+  })
+
+  document.querySelectorAll('[data-session-learning-action="open-edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const group = sessionReportLearningState?.groups.find(
+        (item) => item.id === button.dataset.learningGroupId,
+      )
+
+      if (!group) {
+        return
+      }
+
+      sessionReportLearningFormState = createEditLearningGroupFormState(group)
+      sessionReportLearningState = {
+        ...sessionReportLearningState,
+        error: '',
+        saveState: '',
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-session-learning-action="delete"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!scheduleReportState || !sessionReportLearningState) {
+        return
+      }
+
+      const confirmed = window.confirm('Xóa nhóm nội dung học này?')
+
+      if (!confirmed) {
+        return
+      }
+
+      const nextLearningState = {
+        ...sessionReportLearningState,
+        groups: sessionReportLearningState.groups.filter(
+          (group) => group.id !== button.dataset.learningGroupId,
+        ),
+        error: '',
+        saveState: 'saved',
+      }
+      const existingReport = findSessionReport(
+        sessionReports,
+        scheduleReportState.sessionId,
+        scheduleReportState.occurrenceDate,
+      )
+      const savedReport = buildSessionReportFromLearningGroups(nextLearningState, existingReport)
+
+      sessionReports = existingReport
+        ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
+        : [savedReport, ...sessionReports]
+
+      saveStoredSessionReports(sessionReports)
+      sessionReportLearningState = {
+        ...nextLearningState,
+        groups: savedReport.learningGroups,
+      }
+      sessionReportLearningFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-session-learning-action="cancel-form"]')?.addEventListener('click', () => {
+    sessionReportLearningFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-session-learning-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!sessionReportLearningFormState) {
+        return
+      }
+
+      sessionReportLearningFormState = {
+        ...sessionReportLearningFormState,
+        values: {
+          ...sessionReportLearningFormState.values,
+          [control.dataset.sessionLearningField]: control.value,
+        },
+        errors: {},
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-session-learning-student]').forEach((control) => {
+    control.addEventListener('change', () => {
+      if (!sessionReportLearningFormState) {
+        return
+      }
+
+      const selectedStudentIds = Array.from(
+        document.querySelectorAll('[data-session-learning-student]:checked'),
+      ).map((checkbox) => checkbox.value)
+
+      sessionReportLearningFormState = {
+        ...sessionReportLearningFormState,
+        values: {
+          ...sessionReportLearningFormState.values,
+          studentIds: selectedStudentIds,
+        },
+        errors: {},
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-session-learning-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!scheduleReportState || !sessionReportLearningState || !sessionReportLearningFormState) {
+      return
+    }
+
+    const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
+      (item) =>
+        item.id === scheduleReportState.sessionId &&
+        item.occurrenceDate === scheduleReportState.occurrenceDate,
+    )
+
+    if (!occurrence) {
+      return
+    }
+
+    const formValues = {
+      ...sessionReportLearningFormState.values,
+      title:
+        document.querySelector('[data-session-learning-field="title"]')?.value ??
+        sessionReportLearningFormState.values.title,
+      note:
+        document.querySelector('[data-session-learning-field="note"]')?.value ??
+        sessionReportLearningFormState.values.note,
+      contentText:
+        document.querySelector('[data-session-learning-field="contentText"]')?.value ??
+        sessionReportLearningFormState.values.contentText,
+      studentIds: Array.from(
+        document.querySelectorAll('[data-session-learning-student]:checked'),
+      ).map((checkbox) => checkbox.value),
+    }
+    const errors = validateLearningGroupForm(formValues)
+
+    if (Object.keys(errors).length) {
+      sessionReportLearningFormState = {
+        ...sessionReportLearningFormState,
+        values: formValues,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const existingGroup = sessionReportLearningState.groups.find(
+      (group) => group.id === sessionReportLearningFormState.groupId,
+    )
+    const savedGroup = buildLearningGroupFromForm(
+      formValues,
+      existingGroup,
+      occurrence.studentIds,
+    )
+    const nextGroups =
+      sessionReportLearningFormState.mode === 'edit'
+        ? sessionReportLearningState.groups.map((group) =>
+            group.id === savedGroup.id ? savedGroup : group,
+          )
+        : [savedGroup, ...sessionReportLearningState.groups]
+    const nextLearningState = {
+      ...sessionReportLearningState,
+      groups: nextGroups,
+      error: '',
+      saveState: 'saved',
+    }
+    const existingReport = findSessionReport(
+      sessionReports,
+      scheduleReportState.sessionId,
+      scheduleReportState.occurrenceDate,
+    )
+    const savedReport = buildSessionReportFromLearningGroups(nextLearningState, existingReport)
+
+    sessionReports = existingReport
+      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
+      : [savedReport, ...sessionReports]
+
+    saveStoredSessionReports(sessionReports)
+    sessionReportLearningState = {
+      ...nextLearningState,
+      groups: savedReport.learningGroups,
+    }
+    sessionReportLearningFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-session-report-extra-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      sessionReportExtraState = updateSessionReportExtraState(
+        sessionReportExtraState,
+        control.dataset.sessionReportExtraField,
+        control.value,
+      )
+    })
+  })
+
+  document.querySelector('[data-session-report-action="save-extra"]')?.addEventListener('click', () => {
+    if (!scheduleReportState || !sessionReportExtraState) {
+      return
+    }
+
+    const formValues = {
+      teachingAssistantNotes:
+        document.querySelector('[data-session-report-extra-field="teachingAssistantNotes"]')?.value ??
+        sessionReportExtraState.values.teachingAssistantNotes,
+      classSituation:
+        document.querySelector('[data-session-report-extra-field="classSituation"]')?.value ??
+        sessionReportExtraState.values.classSituation,
+      suggestions:
+        document.querySelector('[data-session-report-extra-field="suggestions"]')?.value ??
+        sessionReportExtraState.values.suggestions,
+    }
+    const nextExtraState = {
+      ...sessionReportExtraState,
+      values: formValues,
+      saveState: 'saved',
+      copyState: '',
+      error: '',
+    }
+    const existingReport = findSessionReport(
+      sessionReports,
+      scheduleReportState.sessionId,
+      scheduleReportState.occurrenceDate,
+    )
+    const savedReport = buildSessionReportFromExtraInfo(nextExtraState, existingReport)
+
+    sessionReports = existingReport
+      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
+      : [savedReport, ...sessionReports]
+
+    saveStoredSessionReports(sessionReports)
+    sessionReportExtraState = nextExtraState
+    render()
+  })
+
+  document.querySelector('[data-session-report-action="refresh-trello"]')?.addEventListener('click', () => {
+    const formValues = {
+      teachingAssistantNotes:
+        document.querySelector('[data-session-report-extra-field="teachingAssistantNotes"]')?.value ??
+        sessionReportExtraState?.values.teachingAssistantNotes ??
+        '',
+      classSituation:
+        document.querySelector('[data-session-report-extra-field="classSituation"]')?.value ??
+        sessionReportExtraState?.values.classSituation ??
+        '',
+      suggestions:
+        document.querySelector('[data-session-report-extra-field="suggestions"]')?.value ??
+        sessionReportExtraState?.values.suggestions ??
+        '',
+    }
+
+    sessionReportExtraState = {
+      ...(sessionReportExtraState ?? {}),
+      sessionId: scheduleReportState?.sessionId,
+      occurrenceDate: scheduleReportState?.occurrenceDate,
+      values: formValues,
+      saveState: '',
+      copyState: '',
+      error: '',
+    }
+    render()
+  })
+
+  document.querySelector('[data-session-report-action="copy-trello"]')?.addEventListener('click', async () => {
+    const reportText = document.querySelector('[data-session-report-trello-output]')?.value ?? ''
+
+    if (!sessionReportExtraState) {
+      return
+    }
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable')
+      }
+
+      await navigator.clipboard.writeText(reportText)
+      sessionReportExtraState = {
+        ...sessionReportExtraState,
+        copyState: 'copied',
+        error: '',
+      }
+    } catch {
+      sessionReportExtraState = {
+        ...sessionReportExtraState,
+        copyState: 'failed',
+      }
+    }
+
+    render()
   })
 
   document.querySelectorAll('[data-schedule-action="cancel-form"]').forEach((button) => {
     button.addEventListener('click', () => {
       scheduleFormState = null
+      sessionReportAttendanceState = null
+      sessionReportLearningState = null
+      sessionReportLearningFormState = null
+      sessionReportExtraState = null
+      sessionReportGuestFormState = null
       render()
     })
   })
@@ -2880,6 +3537,12 @@ function bindEvents() {
 
     saveStoredSchedule(scheduleSessions)
     scheduleFormState = null
+    scheduleReportState = null
+    sessionReportAttendanceState = null
+    sessionReportLearningState = null
+    sessionReportLearningFormState = null
+    sessionReportExtraState = null
+    sessionReportGuestFormState = null
     render()
   })
 
@@ -2899,6 +3562,12 @@ function bindEvents() {
     )
     saveStoredSchedule(scheduleSessions)
     scheduleFormState = null
+    scheduleReportState = null
+    sessionReportAttendanceState = null
+    sessionReportLearningState = null
+    sessionReportLearningFormState = null
+    sessionReportExtraState = null
+    sessionReportGuestFormState = null
     render()
   })
 

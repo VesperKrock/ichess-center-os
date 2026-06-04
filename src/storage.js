@@ -7,6 +7,7 @@ const DELETED_NOTIFICATION_IDS_KEY = 'ichessCenterOS.notifications.deletedIds.dr
 const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
 const TEACHERS_KEY = 'ichessCenterOS.teachers.dreamhome'
 const SCHEDULE_KEY = 'ichessCenterOS.schedule.dreamhome'
+const SESSION_REPORTS_KEY = 'ichessCenterOS.sessionReports.dreamhome'
 const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
 const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
@@ -24,6 +25,14 @@ const VALID_SCHEDULE_LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const VALID_SCHEDULE_STATUSES = ['scheduled', 'done', 'cancelled']
 const VALID_SCHEDULE_TYPES = ['recurring', 'oneOff']
 const VALID_SCHEDULE_OCCURRENCE_REASONS = ['makeup', 'trial', 'extra', 'event', 'other']
+const VALID_ATTENDANCE_STATUSES = [
+  'present',
+  'excusedAbsent',
+  'unexcusedAbsent',
+  'makeup',
+  'trial',
+]
+const VALID_GUEST_PARTICIPATION_TYPES = ['trial', 'makeup']
 const LEGACY_SAMPLE_TEACHER_NAMES = ['Thầy Thắng', 'Cô Vân', 'Thầy Hải']
 const UNASSIGNED_TEACHER_NAME = 'Chưa phân công'
 
@@ -198,6 +207,28 @@ export function getStoredSchedule(defaultSessions) {
 
 export function saveStoredSchedule(sessions) {
   localStorage.setItem(SCHEDULE_KEY, JSON.stringify(normalizeScheduleSessions(sessions)))
+}
+
+export function getStoredSessionReports(defaultReports = []) {
+  try {
+    const storedReports = JSON.parse(localStorage.getItem(SESSION_REPORTS_KEY))
+
+    if (Array.isArray(storedReports)) {
+      const normalizedReports = normalizeSessionReports(storedReports)
+      saveStoredSessionReports(normalizedReports)
+      return normalizedReports
+    }
+  } catch {
+    localStorage.removeItem(SESSION_REPORTS_KEY)
+  }
+
+  const normalizedDefaultReports = normalizeSessionReports(defaultReports)
+  saveStoredSessionReports(normalizedDefaultReports)
+  return normalizedDefaultReports
+}
+
+export function saveStoredSessionReports(reports) {
+  localStorage.setItem(SESSION_REPORTS_KEY, JSON.stringify(normalizeSessionReports(reports)))
 }
 
 export function getStoredCashflow(defaultTransactions) {
@@ -570,6 +601,94 @@ function normalizeScheduleTime(value) {
 function normalizeScheduleDate(value) {
   const dateText = String(value ?? '').trim()
   return isValidDateString(dateText) ? dateText : null
+}
+
+function normalizeSessionReports(reports) {
+  return (reports ?? [])
+    .filter((report) => report && typeof report === 'object')
+    .map((report) => {
+      const sessionId = String(report.sessionId ?? '').trim()
+      const occurrenceDate = String(report.occurrenceDate ?? '').trim()
+
+      if (!sessionId || !isValidDateString(occurrenceDate)) {
+        return null
+      }
+
+      const now = new Date().toISOString()
+      const createdAt = report.createdAt ? normalizeDateTime(report.createdAt) : now
+
+      return {
+        id: String(report.id || createSessionReportId(sessionId, occurrenceDate)),
+        sessionId,
+        occurrenceDate,
+        attendance: normalizeSessionReportAttendance(report.attendance),
+        learningGroups: normalizeSessionReportLearningGroups(report.learningGroups),
+        guestParticipants: normalizeSessionReportGuestParticipants(report.guestParticipants),
+        teachingAssistantNotes: String(report.teachingAssistantNotes || ''),
+        classSituation: String(report.classSituation || ''),
+        suggestions: String(report.suggestions || ''),
+        createdAt,
+        updatedAt: report.updatedAt ? normalizeDateTime(report.updatedAt) : createdAt,
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeSessionReportAttendance(attendance) {
+  return (Array.isArray(attendance) ? attendance : [])
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const studentId = String(item.studentId ?? '').trim()
+
+      if (!studentId) {
+        return null
+      }
+
+      return {
+        studentId,
+        attendanceStatus: VALID_ATTENDANCE_STATUSES.includes(item.attendanceStatus)
+          ? item.attendanceStatus
+          : 'present',
+        note: String(item.note || ''),
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeSessionReportLearningGroups(learningGroups) {
+  return (Array.isArray(learningGroups) ? learningGroups : [])
+    .filter((group) => group && typeof group === 'object')
+    .map((group, index) => ({
+      id: String(group.id || `learning-group-${String(index + 1).padStart(3, '0')}`),
+      title: String(group.title || ''),
+      studentIds: normalizeStringArray(group.studentIds),
+      contentLines: normalizeStringArray(group.contentLines),
+      note: String(group.note || ''),
+    }))
+}
+
+function normalizeSessionReportGuestParticipants(guestParticipants) {
+  return (Array.isArray(guestParticipants) ? guestParticipants : [])
+    .filter((guest) => guest && typeof guest === 'object')
+    .map((guest, index) => {
+      const participationType = VALID_GUEST_PARTICIPATION_TYPES.includes(guest.participationType)
+        ? guest.participationType
+        : 'trial'
+
+      return {
+        id: String(guest.id || `guest-${String(index + 1).padStart(3, '0')}`),
+        displayName: String(guest.displayName || ''),
+        participationType,
+        attendanceStatus: participationType,
+        note: String(guest.note || ''),
+      }
+    })
+    .filter((guest) => guest.displayName)
+}
+
+function createSessionReportId(sessionId, occurrenceDate) {
+  const safeSessionId = String(sessionId).replace(/[^a-zA-Z0-9_-]+/g, '-')
+  return `report-${safeSessionId}-${occurrenceDate}`
 }
 
 function normalizeNullableId(value) {

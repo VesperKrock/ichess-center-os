@@ -2609,6 +2609,10 @@ h3 {
   .schedule-week-label {
     flex: 1 1 100%;
   }
+
+  .schedule-report-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .schedule-week-grid {
@@ -2839,6 +2843,24 @@ h3 {
   transform: translate(-50%, -50%);
 }
 
+.schedule-report-panel {
+  position: absolute;
+  z-index: 6;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: min(1480px, calc(100vw - 72px));
+  max-height: min(820px, calc(100vh - 72px));
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 8px;
+  background: #101923;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.46);
+  color: #d8e2ef;
+  transform: translate(-50%, -50%);
+}
+
 .schedule-form-header {
   display: flex;
   gap: 10px;
@@ -2873,6 +2895,781 @@ h3 {
   cursor: pointer;
   font: inherit;
   font-weight: 900;
+}
+
+.schedule-report-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 11px 12px;
+  background: #111821;
+}
+
+.schedule-report-header > div:first-child {
+  min-width: 0;
+}
+
+.schedule-report-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.schedule-report-header span {
+  color: #8fa1b8;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.schedule-report-header h4 {
+  margin: 2px 0;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.schedule-report-header p {
+  margin: 0;
+  color: #aebbd0;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.schedule-report-header button {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 0 10px;
+  color: #f4f7fb;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.schedule-report-header-actions button:last-child {
+  width: 32px;
+  padding: 0;
+}
+
+.schedule-report-body {
+  display: grid;
+  grid-template-columns: minmax(380px, 1.05fr) minmax(430px, 1.15fr) minmax(360px, 0.95fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+}
+
+.schedule-report-column {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  max-height: calc(min(820px, 100vh - 72px) - 118px);
+  overflow: hidden;
+  gap: 10px;
+}
+
+.schedule-report-column.is-left {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.schedule-report-column.is-middle {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.schedule-report-section {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(160, 184, 214, 0.14);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.schedule-report-section h5 {
+  margin: 0;
+  color: #eef6ff;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.schedule-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.schedule-report-grid div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  border: 1px solid rgba(160, 184, 214, 0.12);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.schedule-report-grid span {
+  color: #8fa1b8;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.schedule-report-grid strong,
+.schedule-report-teacher strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-report-teacher,
+.schedule-report-student-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-report-student-list span,
+.schedule-report-placeholder span {
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.schedule-report-empty,
+.schedule-report-warning {
+  margin: 0;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.schedule-report-warning {
+  color: #ffd9ad;
+}
+
+.schedule-report-placeholder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border: 1px dashed rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.session-report-attendance {
+  min-height: 0;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.session-report-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-report-section-heading > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.session-report-section-heading button {
+  min-height: 30px;
+  border: 1px solid rgba(96, 165, 250, 0.42);
+  border-radius: 7px;
+  padding: 5px 9px;
+  color: #f8fbff;
+  background: rgba(37, 99, 235, 0.34);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.session-report-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.session-report-summary span {
+  min-width: 0;
+  border: 1px solid rgba(160, 184, 214, 0.13);
+  border-radius: 7px;
+  padding: 6px 7px;
+  color: #dce8f7;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.session-report-save-state {
+  margin: 0;
+  color: #9ee8bd;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.session-report-save-state.error {
+  color: #ffb4a8;
+}
+
+.session-report-student-rows {
+  display: grid;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  gap: 7px;
+  padding-right: 2px;
+}
+
+.session-report-student-row {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) minmax(120px, 0.72fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(160, 184, 214, 0.12);
+  border-radius: 8px;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.session-report-student-row .session-report-attendance-note,
+.session-report-student-row .session-report-guest-note {
+  grid-column: 1 / -1;
+}
+
+.session-report-student-row.is-guest {
+  border-color: rgba(96, 165, 250, 0.22);
+}
+
+.session-report-student-name {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.session-report-student-name strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-report-student-name span {
+  overflow: hidden;
+  color: #8fa1b8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-report-attendance-status,
+.session-report-attendance-note {
+  min-width: 0;
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 7px;
+  color: #f4f7fb;
+  background: rgba(6, 12, 20, 0.52);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.session-report-attendance-status {
+  padding: 5px 7px;
+}
+
+.session-report-attendance-note {
+  padding: 6px 8px;
+}
+
+.session-report-guest-type {
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 999px;
+  padding: 5px 7px;
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.16);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.session-report-guest-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-report-guest-note span {
+  min-width: 0;
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-report-guest-note button,
+.session-report-guest-actions button {
+  min-height: 28px;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 7px;
+  padding: 4px 8px;
+  color: #f4f7fb;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.session-report-guest-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.72fr);
+  gap: 7px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.session-report-guest-form label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.session-report-guest-form label:nth-child(3),
+.session-report-guest-form .session-report-learning-errors,
+.session-report-guest-actions {
+  grid-column: 1 / -1;
+}
+
+.session-report-guest-form span {
+  color: #9fb1c7;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.session-report-guest-form input,
+.session-report-guest-form select {
+  min-width: 0;
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 7px;
+  padding: 5px 7px;
+  color: #f4f7fb;
+  background: rgba(6, 12, 20, 0.52);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.session-report-guest-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.session-report-guest-actions button:last-child {
+  border-color: rgba(96, 165, 250, 0.42);
+  background: rgba(37, 99, 235, 0.34);
+}
+
+.session-report-learning {
+  min-height: 0;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+  gap: 9px;
+}
+
+.session-report-learning-header,
+.session-report-learning-card-header,
+.session-report-learning-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-report-learning-header p,
+.session-report-learning-empty,
+.session-report-learning-note,
+.session-report-learning-errors p {
+  margin: 0;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.session-report-learning-header button,
+.session-report-learning-card button,
+.session-report-learning-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 7px;
+  padding: 5px 9px;
+  color: #f4f7fb;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.77rem;
+  font-weight: 900;
+}
+
+.session-report-learning-header button,
+.session-report-learning-actions button:last-child {
+  border-color: rgba(96, 165, 250, 0.42);
+  background: rgba(37, 99, 235, 0.34);
+}
+
+.session-report-learning-form {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.session-report-learning-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.session-report-learning-form label,
+.session-report-learning-students,
+.session-report-learning-content {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.session-report-learning-form span,
+.session-report-learning-students > span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.session-report-learning-form input[type='text'],
+.session-report-learning-form textarea {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 7px;
+  color: #f4f7fb;
+  background: rgba(6, 12, 20, 0.52);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.session-report-learning-form input[type='text'] {
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.session-report-learning-form textarea {
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px;
+}
+
+.session-report-learning-students,
+.session-report-learning-content {
+  grid-column: 1 / -1;
+}
+
+.session-report-learning-students > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-report-learning-students label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.session-report-learning-students small {
+  color: #9fb1c7;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.session-report-learning-errors {
+  display: grid;
+  gap: 4px;
+}
+
+.session-report-learning-errors p {
+  color: #ffb4a8;
+}
+
+.session-report-learning-list {
+  display: grid;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.session-report-learning-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(160, 184, 214, 0.13);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.session-report-learning-card-header > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.session-report-learning-card strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-report-learning-card span {
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-report-learning-card-header > div:last-child {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.session-report-learning-card ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: #dce8f7;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.session-report-learning-note {
+  border-left: 2px solid rgba(96, 165, 250, 0.45);
+  padding-left: 8px;
+  color: #c6d4e5;
+}
+
+.session-report-extra-fields,
+.session-report-trello {
+  gap: 9px;
+}
+
+.session-report-trello {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.session-report-extra-header,
+.session-report-trello-header,
+.session-report-copy-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-report-trello-header {
+  flex-wrap: nowrap;
+}
+
+.session-report-trello-header h5 {
+  white-space: nowrap;
+}
+
+.session-report-extra-header p,
+.session-report-copy-state {
+  margin: 0;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.session-report-extra-header button,
+.session-report-trello-header button,
+.session-report-copy-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(96, 165, 250, 0.42);
+  border-radius: 7px;
+  padding: 5px 9px;
+  color: #f8fbff;
+  background: rgba(37, 99, 235, 0.34);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.77rem;
+  font-weight: 900;
+}
+
+.session-report-extra-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.session-report-extra-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.session-report-extra-grid span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.session-report-extra-grid textarea,
+.session-report-trello-output {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 7px;
+  color: #f4f7fb;
+  background: rgba(6, 12, 20, 0.52);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.session-report-extra-grid textarea {
+  min-height: 86px;
+  resize: vertical;
+  padding: 8px;
+}
+
+.session-report-trello-output {
+  min-height: 520px;
+  resize: vertical;
+  padding: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.session-report-copy-actions {
+  justify-content: flex-start;
+}
+
+.session-report-copy-state {
+  color: #9ee8bd;
+  font-weight: 900;
+}
+
+.session-report-copy-state.error {
+  color: #ffb4a8;
+}
+
+@media (max-width: 1180px) {
+  .schedule-report-panel {
+    width: min(980px, calc(100vw - 40px));
+  }
+
+  .schedule-report-body {
+    grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  }
+
+  .schedule-report-column.is-right {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 820px) {
+  .schedule-report-panel {
+    width: min(760px, calc(100vw - 28px));
+    max-height: calc(100vh - 28px);
+  }
+
+  .schedule-report-body {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .schedule-report-column {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .schedule-report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-report-summary,
+  .session-report-student-row,
+  .session-report-guest-form,
+  .session-report-learning-form-grid,
+  .session-report-extra-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-report-learning-header,
+  .session-report-learning-card-header,
+  .session-report-learning-actions,
+  .session-report-extra-header,
+  .session-report-trello-header,
+  .session-report-copy-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .schedule-form-grid {
