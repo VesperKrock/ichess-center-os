@@ -10,6 +10,7 @@ import {
   getStoredInventory,
   getStoredInventoryMovements,
   getStoredNotifications,
+  getStoredSchedule,
   getStoredStudents,
   getStoredTeachers,
   getStoredTuition,
@@ -23,6 +24,7 @@ import {
   saveStoredInventory,
   saveStoredInventoryMovements,
   saveStoredNotifications,
+  saveStoredSchedule,
   saveStoredStudents,
   saveStoredTeachers,
   saveStoredTuition,
@@ -71,6 +73,17 @@ import {
   validateInventoryMovementForm,
 } from './inventory-module.js'
 import { createSampleNotifications } from './notifications.js'
+import { sampleScheduleSessions } from './schedule-data.js'
+import {
+  buildScheduleSessionFromForm,
+  createEditScheduleFormState,
+  createEmptyScheduleFormState,
+  getCurrentScheduleWeekStartDate,
+  getNextScheduleWeekStartDate,
+  getPreviousScheduleWeekStartDate,
+  renderScheduleModule,
+  validateScheduleForm,
+} from './schedule-module.js'
 import { sampleStudents } from './student-data.js'
 import { sampleTeachers } from './teacher-data.js'
 import {
@@ -139,6 +152,9 @@ let teacherFilters = { ...initialTeacherFilters }
 let teachers = getStoredTeachers(sampleTeachers)
 let teacherFormState = null
 let selectedTeacherId = null
+let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
+let scheduleFormState = null
+let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
 let tuitionRecords = getStoredTuition(createSampleTuitionRecords(students))
 let notifications = getStoredNotifications(createSampleNotifications())
 let deletedNotificationIds = getDeletedNotificationIds()
@@ -301,6 +317,16 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'giao-vien') {
     return renderTeacherModule(teachers, teacherFilters, teacherFormState, selectedTeacherId)
+  }
+
+  if (moduleItem.id === 'thoi-khoa-bieu') {
+    return renderScheduleModule(
+      scheduleSessions,
+      scheduleFormState,
+      teachers,
+      students,
+      scheduleWeekStartDate,
+    )
   }
 
   if (moduleItem.id === 'hoc-phi') {
@@ -2677,6 +2703,202 @@ function bindEvents() {
 
     saveStoredTeachers(teachers)
     teacherFormState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-schedule-week-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.scheduleWeekAction
+
+      if (action === 'previous') {
+        scheduleWeekStartDate = getPreviousScheduleWeekStartDate(scheduleWeekStartDate)
+      }
+
+      if (action === 'today') {
+        scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
+      }
+
+      if (action === 'next') {
+        scheduleWeekStartDate = getNextScheduleWeekStartDate(scheduleWeekStartDate)
+      }
+
+      render()
+    })
+  })
+
+  document.querySelector('[data-schedule-action="open-create"]')?.addEventListener('click', () => {
+    scheduleFormState = createEmptyScheduleFormState()
+    render()
+  })
+
+  document.querySelectorAll('[data-schedule-action="open-edit"]').forEach((card) => {
+    const openEditForm = () => {
+      const session = scheduleSessions.find(
+        (item) => item.id === card.dataset.scheduleSessionId,
+      )
+
+      if (!session) {
+        return
+      }
+
+      scheduleFormState = createEditScheduleFormState(session)
+      render()
+    }
+
+    card.addEventListener('click', openEditForm)
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        openEditForm()
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-schedule-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      scheduleFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-schedule-form-field]').forEach((control) => {
+    const updateScheduleFormValue = (shouldRender = false) => {
+      if (!scheduleFormState) {
+        return
+      }
+
+      const fieldName = control.dataset.scheduleFormField
+      const nextValues = {
+        ...scheduleFormState.values,
+        [fieldName]: control.value,
+      }
+
+      if (fieldName === 'teacherId' && control.value) {
+        const selectedTeacher = teachers.find((teacher) => teacher.id === control.value)
+
+        if (selectedTeacher) {
+          nextValues.teacherName = selectedTeacher.displayName || selectedTeacher.fullName || ''
+        }
+      }
+
+      if (fieldName === 'scheduleType') {
+        nextValues.allowOpenRange = ''
+        if (control.value === 'oneOff' && !nextValues.occurrenceReason) {
+          nextValues.occurrenceReason = 'makeup'
+        }
+      }
+
+      scheduleFormState = {
+        ...scheduleFormState,
+        values: nextValues,
+        errors: {
+          ...scheduleFormState.errors,
+          [fieldName]: undefined,
+        },
+      }
+
+      if (shouldRender || ['teacherId', 'scheduleType', 'date'].includes(fieldName)) {
+        render()
+      }
+    }
+
+    control.addEventListener('input', () => updateScheduleFormValue(false))
+    control.addEventListener('change', () => updateScheduleFormValue(true))
+  })
+
+  document.querySelectorAll('[data-schedule-student-field]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      if (!scheduleFormState) {
+        return
+      }
+
+      const selectedStudentIds = Array.from(
+        document.querySelectorAll('[data-schedule-student-field]:checked'),
+      ).map((input) => input.value)
+
+      scheduleFormState = {
+        ...scheduleFormState,
+        values: {
+          ...scheduleFormState.values,
+          studentIds: selectedStudentIds,
+        },
+        errors: {
+          ...scheduleFormState.errors,
+          studentIds: undefined,
+        },
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-schedule-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!scheduleFormState) {
+      return
+    }
+
+    const errors = validateScheduleForm(scheduleFormState.values)
+
+    if (Object.keys(errors).length) {
+      scheduleFormState = {
+        ...scheduleFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    if (scheduleFormState.mode === 'edit') {
+      const existingSession = scheduleSessions.find(
+        (session) => session.id === scheduleFormState.sessionId,
+      )
+
+      if (!existingSession) {
+        scheduleFormState = {
+          ...scheduleFormState,
+          errors: {
+            form: 'Không tìm thấy buổi học cần sửa.',
+          },
+        }
+        render()
+        return
+      }
+
+      const updatedSession = buildScheduleSessionFromForm(
+        scheduleFormState.values,
+        existingSession,
+        teachers,
+      )
+      scheduleSessions = scheduleSessions.map((session) =>
+        session.id === updatedSession.id ? updatedSession : session,
+      )
+    } else {
+      const createdSession = buildScheduleSessionFromForm(scheduleFormState.values, null, teachers)
+      scheduleSessions = [createdSession, ...scheduleSessions]
+    }
+
+    saveStoredSchedule(scheduleSessions)
+    scheduleFormState = null
+    render()
+  })
+
+  document.querySelector('[data-schedule-action="delete-session"]')?.addEventListener('click', () => {
+    if (!scheduleFormState?.sessionId) {
+      return
+    }
+
+    const confirmed = window.confirm('Xóa buổi học này khỏi lịch tuần?')
+
+    if (!confirmed) {
+      return
+    }
+
+    scheduleSessions = scheduleSessions.filter(
+      (session) => session.id !== scheduleFormState.sessionId,
+    )
+    saveStoredSchedule(scheduleSessions)
+    scheduleFormState = null
     render()
   })
 

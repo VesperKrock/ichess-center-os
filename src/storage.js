@@ -6,6 +6,7 @@ const NOTIFICATIONS_VERSION_KEY = 'ichessCenterOS.notifications.version.dreamhom
 const DELETED_NOTIFICATION_IDS_KEY = 'ichessCenterOS.notifications.deletedIds.dreamhome'
 const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
 const TEACHERS_KEY = 'ichessCenterOS.teachers.dreamhome'
+const SCHEDULE_KEY = 'ichessCenterOS.schedule.dreamhome'
 const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
 const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
@@ -18,6 +19,11 @@ const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
 const VALID_NOTIFICATION_TYPES = ['system', 'tuition', 'student', 'schedule', 'inventory', 'report']
 const VALID_TEACHER_STATUSES = ['active', 'paused', 'inactive']
 const VALID_TEACHER_TYPES = ['fulltime', 'parttime', 'collaborator']
+const VALID_SCHEDULE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+const VALID_SCHEDULE_LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
+const VALID_SCHEDULE_STATUSES = ['scheduled', 'done', 'cancelled']
+const VALID_SCHEDULE_TYPES = ['recurring', 'oneOff']
+const VALID_SCHEDULE_OCCURRENCE_REASONS = ['makeup', 'trial', 'extra', 'event', 'other']
 const LEGACY_SAMPLE_TEACHER_NAMES = ['Thầy Thắng', 'Cô Vân', 'Thầy Hải']
 const UNASSIGNED_TEACHER_NAME = 'Chưa phân công'
 
@@ -170,6 +176,28 @@ export function getStoredTeachers(defaultTeachers) {
 
 export function saveStoredTeachers(teachers) {
   localStorage.setItem(TEACHERS_KEY, JSON.stringify(normalizeTeachers(teachers)))
+}
+
+export function getStoredSchedule(defaultSessions) {
+  try {
+    const storedSessions = JSON.parse(localStorage.getItem(SCHEDULE_KEY))
+
+    if (Array.isArray(storedSessions)) {
+      const normalizedSessions = normalizeScheduleSessions(storedSessions)
+      saveStoredSchedule(normalizedSessions)
+      return normalizedSessions
+    }
+  } catch {
+    localStorage.removeItem(SCHEDULE_KEY)
+  }
+
+  const normalizedDefaultSessions = normalizeScheduleSessions(defaultSessions)
+  saveStoredSchedule(normalizedDefaultSessions)
+  return normalizedDefaultSessions
+}
+
+export function saveStoredSchedule(sessions) {
+  localStorage.setItem(SCHEDULE_KEY, JSON.stringify(normalizeScheduleSessions(sessions)))
 }
 
 export function getStoredCashflow(defaultTransactions) {
@@ -495,6 +523,58 @@ function normalizeTeachers(teachers) {
         updatedAt: teacher.updatedAt ? normalizeDateTime(teacher.updatedAt) : now,
       }
     })
+}
+
+function normalizeScheduleSessions(sessions) {
+  return (sessions ?? [])
+    .filter((session) => session && typeof session === 'object')
+    .map((session, index) => {
+      const now = new Date().toISOString()
+
+      return {
+        id: String(session.id || `schedule-${String(index + 1).padStart(3, '0')}`),
+        scheduleType: VALID_SCHEDULE_TYPES.includes(session.scheduleType)
+          ? session.scheduleType
+          : 'recurring',
+        title: String(session.title || 'Buổi học mẫu'),
+        dayOfWeek: VALID_SCHEDULE_DAYS.includes(session.dayOfWeek)
+          ? session.dayOfWeek
+          : 'monday',
+        startDate: normalizeScheduleDate(session.startDate),
+        endDate: normalizeScheduleDate(session.endDate),
+        date: normalizeScheduleDate(session.date),
+        occurrenceReason: VALID_SCHEDULE_OCCURRENCE_REASONS.includes(session.occurrenceReason)
+          ? session.occurrenceReason
+          : '',
+        startTime: normalizeScheduleTime(session.startTime),
+        endTime: normalizeScheduleTime(session.endTime),
+        room: String(session.room || ''),
+        teacherId: normalizeNullableId(session.teacherId),
+        teacherName: String(session.teacherName || ''),
+        studentIds: normalizeStringArray(session.studentIds),
+        groupName: String(session.groupName || ''),
+        level: VALID_SCHEDULE_LEVELS.includes(session.level) ? session.level : 'mixed',
+        status: VALID_SCHEDULE_STATUSES.includes(session.status) ? session.status : 'scheduled',
+        note: String(session.note || ''),
+        createdAt: session.createdAt ? normalizeDateTime(session.createdAt) : now,
+        updatedAt: session.updatedAt ? normalizeDateTime(session.updatedAt) : now,
+      }
+    })
+}
+
+function normalizeScheduleTime(value) {
+  const timeText = String(value ?? '').trim()
+  return /^\d{2}:\d{2}$/.test(timeText) ? timeText : ''
+}
+
+function normalizeScheduleDate(value) {
+  const dateText = String(value ?? '').trim()
+  return isValidDateString(dateText) ? dateText : null
+}
+
+function normalizeNullableId(value) {
+  const id = String(value ?? '').trim()
+  return id || null
 }
 
 function normalizeCashflowTransactions(transactions) {
