@@ -95,11 +95,20 @@ export function renderInventoryModule(
   filters = initialInventoryFilters,
   formState = null,
   movementFormState = null,
+  movements = [],
+  movementFilters = initialInventoryMovementFilters,
+  selectedMovementId = null,
+  isHistoryPanelOpen = false,
 ) {
   const activeFilters = { ...initialInventoryFilters, ...filters, stockAlert: 'all' }
+  const activeMovementFilters = { ...initialInventoryMovementFilters, ...movementFilters }
   const filteredItems = getFilteredInventoryItems(items, activeFilters)
+  const filteredMovements = getFilteredInventoryMovements(movements, activeMovementFilters)
   const categories = getInventoryFilterCategories(items)
   const stats = getInventoryStats(items)
+  const movementStats = getInventoryMovementStats(filteredMovements)
+  const selectedMovement =
+    (movements ?? []).find((movement) => movement.id === selectedMovementId) ?? null
 
   return `
     <section class="inventory-module inventory-main-table" aria-label="Kho hàng">
@@ -121,6 +130,18 @@ export function renderInventoryModule(
       ${renderInventoryListSection(filteredItems, activeFilters, categories)}
       ${formState ? renderInventoryForm(formState, items) : ''}
       ${movementFormState ? renderInventoryMovementForm(movementFormState, items) : ''}
+      ${
+        isHistoryPanelOpen
+          ? renderInventoryHistoryPanel(
+              filteredMovements,
+              movements,
+              items,
+              activeMovementFilters,
+              movementStats,
+              selectedMovement,
+            )
+          : ''
+      }
     </section>
   `
 }
@@ -209,6 +230,28 @@ export function renderInventoryMovementsWindow(
       )}
       ${selectedMovement ? renderInventoryMovementDetail(selectedMovement, items) : ''}
     </section>
+  `
+}
+
+function renderInventoryHistoryPanel(
+  filteredMovements,
+  allMovements,
+  items,
+  filters,
+  stats,
+  selectedMovement,
+) {
+  return `
+    <div class="inventory-history-backdrop" role="presentation">
+      <section class="inventory-history-panel" aria-label="Lịch sử nhập xuất kho">
+        <div class="inventory-history-panel-header">
+          <h4>Lịch sử nhập/xuất kho</h4>
+          <button type="button" data-inventory-history-action="close" aria-label="Đóng lịch sử">×</button>
+        </div>
+        ${renderInventoryMovementHistory(filteredMovements, allMovements, items, filters, stats)}
+      </section>
+      ${selectedMovement ? renderInventoryMovementDetail(selectedMovement, items) : ''}
+    </div>
   `
 }
 
@@ -813,11 +856,10 @@ function renderInventoryMovementHistory(
           />
         </label>
       </div>
-      <div class="inventory-history-stats" aria-label="Thống kê lịch sử theo bộ lọc hiện tại">
-        ${renderInventoryHistoryStat('Lượt nhập', stats.inCount, 'in')}
-        ${renderInventoryHistoryStat('Lượt xuất', stats.outCount, 'out')}
-        ${renderInventoryHistoryStat('SL nhập', stats.totalInQuantity, 'in')}
-        ${renderInventoryHistoryStat('SL xuất', stats.totalOutQuantity, 'out')}
+      <div class="inventory-history-summary" aria-label="Tóm tắt lịch sử theo bộ lọc hiện tại">
+        Nhập: ${stats.inCount.toLocaleString('vi-VN')} lượt / ${stats.totalInQuantity.toLocaleString('vi-VN')} SL
+        <span>·</span>
+        Xuất: ${stats.outCount.toLocaleString('vi-VN')} lượt / ${stats.totalOutQuantity.toLocaleString('vi-VN')} SL
       </div>
       ${
         filteredMovements.length
