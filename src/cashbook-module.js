@@ -619,15 +619,25 @@ function renderCashbookTransactionRow(transaction) {
 
 function renderCashbookNote(transaction) {
   const noteText = transaction.note ? escapeHtml(transaction.note) : '—'
+  const sourceLabel = getCashbookSourceLabel(transaction.sourceModule)
 
-  if (transaction.sourceModule !== 'hoc-phi') {
+  if (!sourceLabel) {
     return noteText
   }
 
   return `
-    <span class="cashbook-source-badge">Từ Học phí</span>
+    <span class="cashbook-source-badge">${sourceLabel}</span>
     <span>${noteText}</span>
   `
+}
+
+function getCashbookSourceLabel(sourceModule) {
+  const labels = {
+    'hoc-phi': 'Từ Học phí',
+    'kho-hang': 'Từ Kho hàng',
+  }
+
+  return labels[sourceModule] ?? ''
 }
 
 function renderCashbookStat(label, value, tone) {
