@@ -92,6 +92,7 @@ export function renderScheduleModule(
   reportLearningState = null,
   learningGroupFormState = null,
   reportExtraState = null,
+  isReportExtraExpanded = false,
   guestParticipantFormState = null,
   teachers = [],
   students = [],
@@ -155,6 +156,7 @@ export function renderScheduleModule(
               reportLearningState,
               learningGroupFormState,
               reportExtraState,
+              isReportExtraExpanded,
               guestParticipantFormState,
             )
           : ''
@@ -871,7 +873,7 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         <button type="button" data-schedule-action="cancel-form" aria-label="Đóng form">×</button>
       </div>
 
-      <div class="schedule-form-grid">
+      <div class="schedule-form-grid" data-schedule-form-scroll-region="form">
         ${renderScheduleTypeToggle(formState)}
         ${renderField('title', 'Tên buổi/lớp *', formState, 'text', { className: 'span-full' })}
         ${
@@ -932,6 +934,7 @@ function renderScheduleReportPanel(
   reportLearningState = null,
   learningGroupFormState = null,
   reportExtraState = null,
+  isReportExtraExpanded = false,
   guestParticipantFormState = null,
 ) {
   const visibleSessions = getVisibleScheduleSessions(sessions, weekStartDate)
@@ -985,10 +988,12 @@ function renderScheduleReportPanel(
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
     <section class="schedule-report-panel" aria-label="Báo cáo ca dạy">
       <div class="schedule-report-header">
-        <div>
-          <span>Báo cáo ca dạy</span>
-          <h4>${escapeHtml(session.title || 'Buổi học')}</h4>
-          <p>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</p>
+        <div class="schedule-report-compact-title">
+          <strong>Báo cáo ca dạy</strong>
+          <span>${escapeHtml(session.title || 'Buổi học')}</span>
+          <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
+          <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
+          ${teacherLabel.warning ? `<span class="schedule-warning-badge">${escapeHtml(teacherLabel.warning)}</span>` : ''}
         </div>
         <div class="schedule-report-header-actions">
           <button type="button" data-schedule-action="edit-from-report" data-schedule-session-id="${escapeAttribute(session.id)}">Sửa buổi học</button>
@@ -999,20 +1004,12 @@ function renderScheduleReportPanel(
 
       <div class="schedule-report-body">
         <div class="schedule-report-column is-left" data-report-scroll-region="left">
-          <section class="schedule-report-section">
-            <h5>Giáo viên</h5>
-            <div class="schedule-report-teacher">
-              <strong>${escapeHtml(teacherLabel.name)}</strong>
-              ${teacherLabel.warning ? `<span class="schedule-warning-badge">${escapeHtml(teacherLabel.warning)}</span>` : ''}
-            </div>
-          </section>
-
           ${renderSessionReportAttendance(session, studentLookup, activeDraft, guestParticipantFormState)}
         </div>
 
         <div class="schedule-report-column is-middle" data-report-scroll-region="middle">
           ${renderSessionReportLearningGroups(session, studentLookup, activeDraft, activeLearningState, learningGroupFormState)}
-          ${renderSessionReportExtraFields(activeExtraState)}
+          ${renderSessionReportExtraFields(activeExtraState, isReportExtraExpanded)}
         </div>
 
         <div class="schedule-report-column is-right" data-report-scroll-region="right">
@@ -1236,7 +1233,9 @@ function renderSessionReportLearningGroups(
         </div>
         ${
           sessionStudentIds.length
-            ? '<button type="button" data-session-learning-action="open-create">+ Thêm nhóm</button>'
+            ? `<button type="button" data-session-learning-action="open-create" ${formState ? 'disabled' : ''}>${
+                formState ? 'Đang nhập nhóm...' : '+ Thêm nhóm'
+              }</button>`
             : ''
         }
       </div>
@@ -1264,8 +1263,13 @@ function renderSessionReportLearningGroups(
 }
 
 function renderLearningGroupForm(formState, sessionStudentIds, studentLookup, attendanceLookup) {
+  const submitLabel = formState.mode === 'edit' ? 'Lưu thay đổi nhóm' : 'Lưu nhóm'
+
   return `
     <form class="session-report-learning-form" data-session-learning-form>
+      <div class="session-report-learning-form-title">
+        <strong>${escapeHtml(formState.mode === 'edit' ? 'Sửa nhóm nội dung' : 'Nhóm nội dung mới')}</strong>
+      </div>
       <div class="session-report-learning-form-grid">
         <label>
           <span>Tên nhóm</span>
@@ -1289,7 +1293,7 @@ function renderLearningGroupForm(formState, sessionStudentIds, studentLookup, at
 
         <div class="session-report-learning-students">
           <span>Học viên trong nhóm</span>
-          <div>
+          <div data-report-scroll-region="learning-students">
             ${sessionStudentIds
               .map((studentId) =>
                 renderLearningStudentCheckbox(
@@ -1316,8 +1320,8 @@ function renderLearningGroupForm(formState, sessionStudentIds, studentLookup, at
       ${renderLearningGroupFormErrors(formState.errors)}
 
       <div class="session-report-learning-actions">
-        <button type="button" data-session-learning-action="cancel-form">Hủy</button>
-        <button type="submit">Lưu nhóm</button>
+        <button class="session-report-learning-cancel-button" type="button" data-session-learning-action="cancel-form">Hủy</button>
+        <button class="session-report-learning-save-button" type="submit">${escapeHtml(submitLabel)}</button>
       </div>
     </form>
   `
@@ -1395,40 +1399,54 @@ function renderLearningGroupCard(group, studentLookup) {
   `
 }
 
-function renderSessionReportExtraFields(extraState) {
+const defaultClassSituationText = 'Lớp học ngoan, tham gia sôi nổi'
+
+function renderSessionReportExtraFields(extraState, isExpanded = false) {
+  const classSituationValue = extraState?.values?.classSituation || defaultClassSituationText
+
   return `
-    <section class="schedule-report-section session-report-extra-fields">
+    <section class="schedule-report-section session-report-extra-fields ${isExpanded ? 'is-expanded' : 'is-collapsed'}">
       <div class="session-report-extra-header">
         <div>
           <h5>Thông tin thêm cho báo cáo</h5>
+          <p>${isExpanded ? 'Bổ sung ghi chú trợ giảng, tình hình lớp và đề xuất.' : 'Đang thu gọn để ưu tiên nhóm nội dung học.'}</p>
         </div>
-        <button type="button" data-session-report-action="save-extra">Lưu thông tin báo cáo</button>
+        <div class="session-report-extra-actions">
+          <button type="button" data-session-report-action="toggle-extra">${isExpanded ? 'Thu gọn' : '+ Thông tin thêm'}</button>
+          ${isExpanded ? '<button type="button" data-session-report-action="save-extra">Lưu thông tin báo cáo</button>' : ''}
+        </div>
       </div>
 
       ${
-        extraState?.error
+        isExpanded && extraState?.error
           ? `<p class="session-report-save-state error">${escapeHtml(extraState.error)}</p>`
           : ''
       }
       ${
-        extraState?.saveState === 'saved'
+        isExpanded && extraState?.saveState === 'saved'
           ? '<p class="session-report-save-state">Đã lưu thông tin báo cáo.</p>'
           : ''
       }
 
-      <div class="session-report-extra-grid">
-        ${renderExtraTextarea(
-          'teachingAssistantNotes',
-          'Nội dung kiến tập/trợ giảng',
-          extraState?.values?.teachingAssistantNotes,
-        )}
-        ${renderExtraTextarea(
-          'classSituation',
-          'Tình hình lớp học',
-          extraState?.values?.classSituation,
-        )}
-        ${renderExtraTextarea('suggestions', 'Đề xuất', extraState?.values?.suggestions)}
-      </div>
+      ${
+        isExpanded
+          ? `
+            <div class="session-report-extra-grid">
+              ${renderExtraTextarea(
+                'teachingAssistantNotes',
+                'Nội dung kiến tập/trợ giảng',
+                extraState?.values?.teachingAssistantNotes,
+              )}
+              ${renderExtraTextarea(
+                'classSituation',
+                'Tình hình lớp học',
+                classSituationValue,
+              )}
+              ${renderExtraTextarea('suggestions', 'Đề xuất', extraState?.values?.suggestions)}
+            </div>
+          `
+          : ''
+      }
     </section>
   `
 }
@@ -1453,7 +1471,10 @@ function renderSessionReportTrello(trelloText, extraState) {
         <div>
           <h5>Mẫu báo cáo Trello</h5>
         </div>
-        <button type="button" data-session-report-action="refresh-trello">Tạo/Cập nhật mẫu</button>
+        <div class="session-report-trello-actions">
+          <button type="button" data-session-report-action="refresh-trello">Tạo/Cập nhật mẫu</button>
+          <button type="button" data-session-report-action="copy-trello">Copy báo cáo</button>
+        </div>
       </div>
 
       <textarea
@@ -1464,7 +1485,6 @@ function renderSessionReportTrello(trelloText, extraState) {
       >${escapeHtml(trelloText)}</textarea>
 
       <div class="session-report-copy-actions">
-        <button type="button" data-session-report-action="copy-trello">Copy text</button>
         ${
           extraState?.copyState === 'copied'
             ? '<span class="session-report-copy-state">Đã copy.</span>'
@@ -1527,7 +1547,7 @@ function renderStudentPicker(formState, students, teachers) {
   return `
     <fieldset class="schedule-student-picker span-full ${formState.errors.studentIds ? 'has-error' : ''}">
       <legend>Học viên tham gia</legend>
-      <div class="schedule-student-options">
+      <div class="schedule-student-options" data-schedule-form-scroll-region="students">
         ${
           sortedStudents.length
             ? sortedStudents
