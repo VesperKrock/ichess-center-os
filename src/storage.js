@@ -20,6 +20,7 @@ const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
 const VALID_NOTIFICATION_TYPES = ['system', 'tuition', 'student', 'schedule', 'inventory', 'report']
 const VALID_TEACHER_STATUSES = ['active', 'paused', 'inactive']
 const VALID_TEACHER_TYPES = ['fulltime', 'parttime', 'collaborator']
+const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
 const VALID_SCHEDULE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const VALID_SCHEDULE_LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const VALID_SCHEDULE_STATUSES = ['scheduled', 'done', 'cancelled']
@@ -494,6 +495,8 @@ function normalizeTuitionRecords(tuitionRecords) {
       totalSessions: normalizeNumber(record.totalSessions),
       usedSessions: normalizeNumber(record.usedSessions),
       totalAmount: normalizeNumber(record.totalAmount),
+      discountType: normalizeTuitionDiscountType(record.discountType, record.discountAmount),
+      discountValue: normalizeTuitionDiscountValue(record.discountType, record.discountValue, record.discountAmount),
       discountAmount: normalizeNumber(record.discountAmount),
       paidAmount: normalizeNumber(record.paidAmount),
       dueDate: record.dueDate ? String(record.dueDate) : '',
@@ -697,27 +700,59 @@ function normalizeNullableId(value) {
 }
 
 function normalizeCashflowTransactions(transactions) {
-  return transactions.map((transaction, index) => ({
-    id: String(transaction.id || `cashflow-${String(index + 1).padStart(3, '0')}`),
-    type: transaction.type === 'expense' ? 'expense' : 'income',
-    category: String(transaction.category || 'Khác'),
-    amount: normalizeMoneyNumber(transaction.amount),
-    transactionDate: transaction.transactionDate ? String(transaction.transactionDate) : '',
-    method: String(transaction.method || 'Khác'),
-    personName: String(transaction.personName || ''),
-    recordedBy: String(transaction.recordedBy || 'Admin DreamHome'),
-    note: String(transaction.note || ''),
-    sourceModule: String(transaction.sourceModule || 'manual'),
-    sourceType: String(transaction.sourceType || ''),
-    sourcePaymentId: String(transaction.sourcePaymentId || ''),
-    sourceTuitionId: String(transaction.sourceTuitionId || ''),
-    sourceStudentId: String(transaction.sourceStudentId || ''),
-    sourceTermId: String(transaction.sourceTermId || ''),
-    sourceMovementId: String(transaction.sourceMovementId || ''),
-    sourceItemId: String(transaction.sourceItemId || ''),
-    createdAt: transaction.createdAt || new Date().toISOString(),
-    updatedAt: transaction.updatedAt || transaction.createdAt || new Date().toISOString(),
-  }))
+  return transactions.map((transaction, index) => {
+    const normalizedTransaction = {
+      id: String(transaction.id || `cashflow-${String(index + 1).padStart(3, '0')}`),
+      type: transaction.type === 'expense' ? 'expense' : 'income',
+      category: String(transaction.category || 'Khác'),
+      amount: normalizeMoneyNumber(transaction.amount),
+      transactionDate: transaction.transactionDate ? String(transaction.transactionDate) : '',
+      method: String(transaction.method || 'Khác'),
+      personName: String(transaction.personName || ''),
+      recordedBy: String(transaction.recordedBy || 'Admin DreamHome'),
+      note: String(transaction.note || ''),
+      sourceModule: String(transaction.sourceModule || 'manual'),
+      sourceType: String(transaction.sourceType || ''),
+      sourcePaymentId: String(transaction.sourcePaymentId || ''),
+      sourceTuitionId: String(transaction.sourceTuitionId || ''),
+      sourceStudentId: String(transaction.sourceStudentId || ''),
+      sourceTermId: String(transaction.sourceTermId || ''),
+      sourceMovementId: String(transaction.sourceMovementId || ''),
+      sourceItemId: String(transaction.sourceItemId || ''),
+      createdAt: transaction.createdAt || new Date().toISOString(),
+      updatedAt: transaction.updatedAt || transaction.createdAt || new Date().toISOString(),
+    }
+    const attachment = normalizeCashflowAttachment(transaction.attachment)
+
+    if (attachment) {
+      normalizedTransaction.attachment = attachment
+    }
+
+    return normalizedTransaction
+  })
+}
+
+function normalizeCashflowAttachment(attachment) {
+  if (!attachment || typeof attachment !== 'object') {
+    return null
+  }
+
+  const type = String(attachment.type || '')
+  const dataUrl = String(attachment.dataUrl || '')
+  const size = normalizeNumber(attachment.size)
+
+  if (!type.startsWith('image/') || !dataUrl.startsWith('data:image/') || size > CASHFLOW_ATTACHMENT_MAX_SIZE) {
+    return null
+  }
+
+  return {
+    id: String(attachment.id || `attachment-${Date.now()}`),
+    name: String(attachment.name || 'anh-giao-dich'),
+    type,
+    size,
+    dataUrl,
+    createdAt: attachment.createdAt || new Date().toISOString(),
+  }
 }
 
 function normalizeCashflowCategories(categories) {
@@ -871,6 +906,8 @@ function normalizeTuitionTermHistory(termHistory) {
       totalSessions: normalizeNumber(term.totalSessions),
       usedSessions: normalizeNumber(term.usedSessions),
       totalAmount: normalizeNumber(term.totalAmount),
+      discountType: normalizeTuitionDiscountType(term.discountType, term.discountAmount),
+      discountValue: normalizeTuitionDiscountValue(term.discountType, term.discountValue, term.discountAmount),
       discountAmount: normalizeNumber(term.discountAmount),
       paidAmount: normalizeNumber(term.paidAmount),
       dueDate: term.dueDate ? String(term.dueDate) : '',
@@ -880,6 +917,22 @@ function normalizeTuitionTermHistory(termHistory) {
       endedAt: term.endedAt ? normalizeDateTime(term.endedAt) : '',
       payments: normalizeTuitionPayments(term.payments),
     }))
+}
+
+function normalizeTuitionDiscountType(discountType, discountAmount = 0) {
+  if (['none', 'percent', 'fixed'].includes(discountType)) {
+    return discountType
+  }
+
+  return normalizeNumber(discountAmount) > 0 ? 'fixed' : 'none'
+}
+
+function normalizeTuitionDiscountValue(discountType, discountValue, discountAmount = 0) {
+  if (['percent', 'fixed'].includes(discountType)) {
+    return Math.max(0, normalizeNumber(discountValue))
+  }
+
+  return normalizeNumber(discountAmount) > 0 ? normalizeNumber(discountAmount) : 0
 }
 
 function normalizeTuitionPayments(payments) {

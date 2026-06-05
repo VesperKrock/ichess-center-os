@@ -102,7 +102,7 @@ export function validateTeacherForm(values) {
   }
 
   if (!teacherTypes.includes(values.teacherType)) {
-    errors.teacherType = 'Loại giáo viên không hợp lệ.'
+    errors.teacherType = 'Hình thức giáo viên không hợp lệ.'
   }
 
   if (
@@ -141,9 +141,97 @@ export function buildTeacherFromForm(values, existingTeacher = null) {
     scheduleNote: String(values.scheduleNote ?? '').trim(),
     mainRole: String(values.mainRole ?? '').trim(),
     note: String(values.note ?? '').trim(),
+    assignedClassNames: Array.isArray(existingTeacher?.assignedClassNames)
+      ? [...existingTeacher.assignedClassNames]
+      : [],
+    assignedStudentIds: Array.isArray(existingTeacher?.assignedStudentIds)
+      ? [...existingTeacher.assignedStudentIds]
+      : [],
+    currentStudentCount: Number.isFinite(Number(existingTeacher?.currentStudentCount))
+      ? Math.max(0, Number(existingTeacher.currentStudentCount))
+      : 0,
     createdAt: existingTeacher?.createdAt ?? now,
     updatedAt: now,
   }
+}
+
+export function buildTeacherStudentLinks({ teacher, students = [], schedules = [] }) {
+  const teacherId = normalizeId(teacher?.id)
+  const studentLookup = createStudentLookup(students)
+  const linkLookup = new Map()
+
+  if (!teacherId) {
+    return createTeacherStudentLinkSummary([])
+  }
+
+  ;(students ?? []).forEach((student) => {
+    if (isDeletedStudent(student)) {
+      return
+    }
+
+    const studentId = normalizeId(student?.id)
+
+    if (!studentId || normalizeId(student?.assignedTeacherId) !== teacherId) {
+      return
+    }
+
+    const link = ensureTeacherStudentLink(linkLookup, studentId, student)
+    link.isPrimary = true
+  })
+
+  ;(schedules ?? []).forEach((schedule) => {
+    if (normalizeId(schedule?.teacherId) !== teacherId || !Array.isArray(schedule?.studentIds)) {
+      return
+    }
+
+    Array.from(new Set(schedule.studentIds.map(normalizeId))).forEach((studentId) => {
+      const student = studentLookup.get(studentId)
+
+      if (!studentId || !student || isDeletedStudent(student)) {
+        return
+      }
+
+      const link = ensureTeacherStudentLink(linkLookup, studentId, student)
+      const scheduleTitle = getScheduleTitle(schedule)
+
+      link.isScheduled = true
+      link.scheduleCount += 1
+
+      if (scheduleTitle && !link.scheduleTitles.includes(scheduleTitle)) {
+        link.scheduleTitles.push(scheduleTitle)
+      }
+    })
+  })
+
+  const assignedStudentIds = Array.isArray(teacher?.assignedStudentIds)
+    ? Array.from(new Set(teacher.assignedStudentIds.map(normalizeId))).filter(Boolean)
+    : []
+
+  assignedStudentIds.forEach((studentId) => {
+    const student = studentLookup.get(studentId)
+
+    if (!student || isDeletedStudent(student)) {
+      return
+    }
+
+    const link = ensureTeacherStudentLink(linkLookup, studentId, student)
+    link.isPrimary = true
+  })
+
+  const fallbackTotal = Number.isFinite(Number(teacher?.currentStudentCount))
+    ? Math.max(0, Number(teacher.currentStudentCount))
+    : assignedStudentIds.length
+
+  return createTeacherStudentLinkSummary([...linkLookup.values()], fallbackTotal)
+}
+
+export function buildTeacherStudentLinkMap(teachers = [], students = [], schedules = []) {
+  return new Map(
+    (teachers ?? []).map((teacher) => [
+      normalizeId(teacher?.id),
+      buildTeacherStudentLinks({ teacher, students, schedules }),
+    ]),
+  )
 }
 
 export function renderTeacherModule(
@@ -151,11 +239,14 @@ export function renderTeacherModule(
   filters = initialTeacherFilters,
   formState = null,
   selectedTeacherId = null,
+  students = [],
+  schedules = [],
 ) {
   const activeFilters = { ...initialTeacherFilters, ...filters }
   const filteredTeachers = getFilteredTeachers(teachers, activeFilters)
   const stats = getTeacherStats(teachers)
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
+  const teacherStudentLinkMap = buildTeacherStudentLinkMap(teachers, students, schedules)
 
   return `
     <section class="teacher-module ${formState || selectedTeacher ? 'panel-open' : ''}" aria-label="Giáo viên">
@@ -192,9 +283,9 @@ export function renderTeacherModule(
             </select>
           </label>
           <label>
-            <span>Loại giáo viên</span>
+            <span>Hình thức</span>
             <select data-teacher-filter="teacherType">
-              ${renderOption('all', 'Tất cả loại giáo viên', activeFilters.teacherType)}
+              ${renderOption('all', 'Tất cả hình thức', activeFilters.teacherType)}
               ${teacherTypes
                 .map((teacherType) =>
                   renderOption(teacherType, getTeacherTypeLabel(teacherType), activeFilters.teacherType),
@@ -213,13 +304,17 @@ export function renderTeacherModule(
                       <th>Giáo viên</th>
                       <th>Liên hệ</th>
                       <th>Trạng thái</th>
-                      <th>Loại</th>
+                      <th>Hình thức</th>
                       <th>Chuyên môn</th>
                       <th>Cấp độ dạy</th>
+                      <th>Các lớp phụ trách</th>
+                      <th>Tổng học viên</th>
                     </tr>
                   </thead>
                   <tbody>
-                    ${filteredTeachers.map(renderTeacherRow).join('')}
+                    ${filteredTeachers
+                      .map((teacher) => renderTeacherRow(teacher, teacherStudentLinkMap.get(normalizeId(teacher.id))))
+                      .join('')}
                   </tbody>
                 </table>
               </div>
@@ -227,7 +322,9 @@ export function renderTeacherModule(
             : '<div class="teacher-empty">Không tìm thấy giáo viên phù hợp.</div>'
         }
       </section>
-      ${selectedTeacher ? renderTeacherProfile(selectedTeacher) : ''}
+      ${selectedTeacher
+        ? renderTeacherProfile(selectedTeacher, teacherStudentLinkMap.get(normalizeId(selectedTeacher.id)))
+        : ''}
       ${formState ? renderTeacherForm(formState) : ''}
     </section>
   `
@@ -255,6 +352,7 @@ export function getFilteredTeachers(teachers, filters = initialTeacherFilters) {
           teacher.note,
           ...(teacher.specialties ?? []),
           ...(teacher.teachingGroups ?? []),
+          ...(teacher.assignedClassNames ?? []),
           ...(teacher.strengths ?? []),
           ...(teacher.internalTags ?? []),
           ...(teacher.availableDays ?? []),
@@ -309,7 +407,9 @@ export function getTeacherStats(teachers) {
   )
 }
 
-function renderTeacherRow(teacher) {
+function renderTeacherRow(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+  const totalStudents = getTeacherVisibleStudentCount(teacher, studentLinks)
+
   return `
     <tr class="teacher-row" data-teacher-action="open-profile" data-teacher-id="${escapeAttribute(teacher.id)}">
       <td title="${escapeAttribute(teacher.fullName)}">
@@ -337,11 +437,18 @@ function renderTeacherRow(teacher) {
       </td>
       <td>${renderTeacherChips(teacher.specialties)}</td>
       <td>${renderTeacherChips((teacher.levels ?? []).map(getTeacherLevelLabel))}</td>
+      <td>${renderTeacherClassSummary(teacher, studentLinks)}</td>
+      <td>
+        <span class="teacher-student-count" title="${escapeAttribute(getTeacherStudentCountTitle(studentLinks))}">
+          <strong>${Number(totalStudents || 0).toLocaleString('vi-VN')}</strong>
+          <span>học viên</span>
+        </span>
+      </td>
     </tr>
   `
 }
 
-function renderTeacherProfile(teacher) {
+function renderTeacherProfile(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
   return `
     <div class="teacher-profile-backdrop" role="presentation">
       <section class="teacher-profile-panel" aria-label="Hồ sơ giáo viên">
@@ -370,7 +477,7 @@ function renderTeacherProfile(teacher) {
             ['Tên hiển thị', teacher.displayName],
             ['Vai trò chính', teacher.mainRole],
             ['Trạng thái', getTeacherStatusLabel(teacher.status)],
-            ['Loại giáo viên', getTeacherTypeLabel(teacher.teacherType)],
+            ['Hình thức', getTeacherTypeLabel(teacher.teacherType)],
           ])}
           ${renderProfileSection('Liên hệ', [
             ['Số điện thoại', teacher.phone],
@@ -395,6 +502,7 @@ function renderTeacherProfile(teacher) {
               ['Ghi chú lịch dạy', teacher.scheduleNote || 'Chưa cập nhật'],
             ])}
           </section>
+          ${renderTeacherStudentSection(teacher, studentLinks)}
           <section class="teacher-profile-section">
             <h5>Ghi chú nội bộ</h5>
             <p>${escapeHtml(teacher.note || '-')}</p>
@@ -450,6 +558,75 @@ function renderProfileTagGroup(label, values = [], emptyLabel = '-') {
   `
 }
 
+function renderTeacherStudentSection(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+  const inactiveWarning =
+    teacher.status === 'inactive' && studentLinks.total
+      ? '<p class="teacher-student-warning">Giáo viên đã ngừng dạy nhưng vẫn còn học viên/lịch liên kết.</p>'
+      : ''
+
+  return `
+    <section class="teacher-profile-section teacher-student-section">
+      <div class="teacher-student-section-heading">
+        <h5>Học viên phụ trách / đang dạy</h5>
+        <span>${Number(studentLinks.total || 0).toLocaleString('vi-VN')} học viên</span>
+      </div>
+      <div class="teacher-student-summary" aria-label="Tổng hợp học viên của giáo viên">
+        ${renderTeacherStudentSummaryItem('Tổng', studentLinks.total)}
+        ${renderTeacherStudentSummaryItem('Phụ trách chính', studentLinks.primaryCount)}
+        ${renderTeacherStudentSummaryItem('Có trong lịch', studentLinks.scheduledCount)}
+        ${renderTeacherStudentSummaryItem('Cả hai', studentLinks.bothCount)}
+      </div>
+      ${inactiveWarning}
+      ${
+        studentLinks.students.length
+          ? `
+            <div class="teacher-student-list">
+              ${studentLinks.students.map(renderTeacherStudentRow).join('')}
+            </div>
+          `
+          : '<div class="teacher-student-empty">Chưa có học viên phụ trách hoặc đang dạy.</div>'
+      }
+    </section>
+  `
+}
+
+function renderTeacherStudentSummaryItem(label, value) {
+  return `
+    <span>
+      <strong>${Number(value || 0).toLocaleString('vi-VN')}</strong>
+      ${escapeHtml(label)}
+    </span>
+  `
+}
+
+function renderTeacherStudentRow(link) {
+  const student = link.student ?? {}
+  const metaItems = [
+    getStudentLevelLabel(student),
+    getStudentBotMilestoneLabel(student),
+    getStudentStatusLabel(student),
+  ].filter(Boolean)
+  const scheduleNote =
+    link.isScheduled && link.scheduleCount
+      ? `Có trong ${Number(link.scheduleCount).toLocaleString('vi-VN')} buổi lịch`
+      : ''
+  const scheduleTitles = (link.scheduleTitles ?? []).slice(0, 2)
+  const detailLine = [scheduleNote, ...scheduleTitles].filter(Boolean).join(' · ')
+
+  return `
+    <article class="teacher-student-row">
+      <div class="teacher-student-main">
+        <strong>${escapeHtml(getStudentDisplayName(student, link.studentId))}</strong>
+        <span>${escapeHtml(metaItems.join(' · ') || 'Chưa cập nhật thông tin học tập')}</span>
+        ${detailLine ? `<small>${escapeHtml(detailLine)}</small>` : ''}
+      </div>
+      <span class="teacher-student-source-badge is-${escapeAttribute(getTeacherStudentSourceTone(link))}">
+        ${escapeHtml(link.sourceLabel)}
+      </span>
+    </article>
+  `
+}
+
 function renderTeacherForm(formState) {
   const isEditMode = formState.mode === 'edit'
 
@@ -472,7 +649,7 @@ function renderTeacherForm(formState) {
             teacherStatuses.map((status) => [status, getTeacherStatusLabel(status)]),
           )}
           ${renderTeacherSelectField(
-            'Loại giáo viên',
+            'Hình thức',
             'teacherType',
             formState,
             teacherTypes.map((teacherType) => [teacherType, getTeacherTypeLabel(teacherType)]),
@@ -684,6 +861,176 @@ function renderOption(value, label, selectedValue) {
   return `<option value="${escapeAttribute(value)}" ${
     String(value) === String(selectedValue) ? 'selected' : ''
   }>${escapeHtml(label)}</option>`
+}
+
+function createStudentLookup(students = []) {
+  return new Map(
+    (students ?? [])
+      .map((student) => [normalizeId(student?.id), student])
+      .filter(([studentId]) => Boolean(studentId)),
+  )
+}
+
+function ensureTeacherStudentLink(linkLookup, studentId, student) {
+  if (!linkLookup.has(studentId)) {
+    linkLookup.set(studentId, {
+      student,
+      studentId,
+      isPrimary: false,
+      isScheduled: false,
+      sourceLabel: '',
+      scheduleCount: 0,
+      scheduleTitles: [],
+    })
+  }
+
+  return linkLookup.get(studentId)
+}
+
+function createTeacherStudentLinkSummary(links = [], fallbackTotal = 0) {
+  const normalizedLinks = (links ?? [])
+    .map((link) => ({
+      ...link,
+      sourceLabel: getTeacherStudentSourceLabel(link),
+    }))
+    .sort((firstLink, secondLink) =>
+      getStudentDisplayName(firstLink.student, firstLink.studentId).localeCompare(
+        getStudentDisplayName(secondLink.student, secondLink.studentId),
+        'vi',
+      ),
+    )
+
+  const normalizedFallbackTotal = Number.isFinite(Number(fallbackTotal))
+    ? Math.max(0, Number(fallbackTotal))
+    : 0
+  const total = Math.max(normalizedLinks.length, normalizedFallbackTotal)
+
+  return {
+    total,
+    primaryCount: normalizedLinks.filter((link) => link.isPrimary).length,
+    scheduledCount: normalizedLinks.filter((link) => link.isScheduled).length,
+    bothCount: normalizedLinks.filter((link) => link.isPrimary && link.isScheduled).length,
+    students: normalizedLinks,
+  }
+}
+
+function renderTeacherClassSummary(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+  const classNames = getTeacherAssignedClassNames(teacher, studentLinks)
+  const visibleClassNames = classNames.slice(0, 2)
+  const hiddenCount = Math.max(0, classNames.length - visibleClassNames.length)
+
+  if (!classNames.length) {
+    return '<span class="teacher-class-empty">Chưa cập nhật</span>'
+  }
+
+  return `
+    <div class="teacher-class-summary" title="${escapeAttribute(classNames.join(', '))}">
+      ${visibleClassNames.map((className) => `<span>${escapeHtml(className)}</span>`).join('')}
+      ${hiddenCount ? `<small>+${hiddenCount} lớp khác</small>` : ''}
+    </div>
+  `
+}
+
+function getTeacherAssignedClassNames(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+  const seededClassNames = Array.isArray(teacher?.assignedClassNames)
+    ? teacher.assignedClassNames.map((className) => String(className ?? '').trim()).filter(Boolean)
+    : []
+  const teachingGroups = Array.isArray(teacher?.teachingGroups)
+    ? teacher.teachingGroups.map((className) => String(className ?? '').trim()).filter(Boolean)
+    : []
+
+  return Array.from(new Set([...seededClassNames, ...teachingGroups]))
+}
+
+function getTeacherVisibleStudentCount(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+  const assignedStudentCount = Array.isArray(teacher?.assignedStudentIds)
+    ? teacher.assignedStudentIds.map(normalizeId).filter(Boolean).length
+    : 0
+  const fallbackCount = Number.isFinite(Number(teacher?.currentStudentCount))
+    ? Math.max(0, Number(teacher.currentStudentCount))
+    : 0
+
+  return Math.max(Number(studentLinks.total || 0), assignedStudentCount, fallbackCount)
+}
+
+function getTeacherStudentCountTitle(studentLinks = createTeacherStudentLinkSummary([])) {
+  return [
+    `${Number(studentLinks.total || 0).toLocaleString('vi-VN')} học viên`,
+    `${Number(studentLinks.primaryCount || 0).toLocaleString('vi-VN')} phụ trách chính`,
+    `${Number(studentLinks.scheduledCount || 0).toLocaleString('vi-VN')} có trong lịch dạy`,
+    `${Number(studentLinks.bothCount || 0).toLocaleString('vi-VN')} cả hai nguồn`,
+  ].join(' · ')
+}
+
+function getTeacherStudentSourceLabel(link) {
+  if (link?.isPrimary && link?.isScheduled) {
+    return 'Phụ trách chính + Có trong lịch dạy'
+  }
+
+  if (link?.isPrimary) {
+    return 'Phụ trách chính'
+  }
+
+  if (link?.isScheduled) {
+    return 'Có trong lịch dạy'
+  }
+
+  return 'Chưa rõ nguồn'
+}
+
+function getTeacherStudentSourceTone(link) {
+  if (link?.isPrimary && link?.isScheduled) {
+    return 'both'
+  }
+
+  if (link?.isPrimary) {
+    return 'primary'
+  }
+
+  return 'scheduled'
+}
+
+function getScheduleTitle(schedule) {
+  return String(schedule?.title || schedule?.groupName || schedule?.room || '').trim()
+}
+
+function getStudentDisplayName(student, fallbackId = '') {
+  return String(student?.fullName || student?.name || fallbackId || 'Học viên').trim()
+}
+
+function getStudentLevelLabel(student) {
+  const level = student?.level
+
+  if (level === null || level === undefined || level === '') {
+    return ''
+  }
+
+  const levelText = String(level).trim()
+  const levelMatch = levelText.match(/\d+/)
+
+  return levelMatch ? `Level ${Number(levelMatch[0])}` : levelText
+}
+
+function getStudentBotMilestoneLabel(student) {
+  return String(
+    student?.highestBotMilestone ||
+      student?.botMilestone ||
+      student?.botLevel ||
+      student?.milestone ||
+      '',
+  ).trim()
+}
+
+function getStudentStatusLabel(student) {
+  return String(student?.currentStatus || student?.status || '').trim()
+}
+
+function isDeletedStudent(student) {
+  return Boolean(student?.isDeleted || student?.deletedAt)
+}
+
+function normalizeId(value) {
+  return String(value ?? '').trim()
 }
 
 function getTeacherStatusLabel(status) {

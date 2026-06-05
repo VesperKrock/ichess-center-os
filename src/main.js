@@ -47,7 +47,9 @@ import {
   validateCashbookSettingsForm,
 } from './cashbook-module.js'
 import {
+  CASHFLOW_ATTACHMENT_MAX_SIZE,
   buildCashflowTransactionFromForm,
+  buildCashflowCsvExport,
   buildCashflowCategoryFromForm,
   createEditCashflowCategoryFormState,
   createEditCashflowFormState,
@@ -181,6 +183,7 @@ let sessionReportAttendanceState = null
 let sessionReportLearningState = null
 let sessionReportLearningFormState = null
 let sessionReportExtraState = null
+let isSessionReportExtraExpanded = false
 let sessionReportGuestFormState = null
 let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
 let tuitionRecords = getStoredTuition(createSampleTuitionRecords(students))
@@ -215,6 +218,7 @@ let careNoteDrafts = {}
 
 function render() {
   const scheduleReportScrollState = getScheduleReportScrollState()
+  const scheduleFormScrollState = getScheduleFormScrollState()
 
   app.innerHTML = `
     <div class="app-shell">
@@ -231,6 +235,7 @@ function render() {
 
   bindEvents()
   restoreScheduleReportScrollState(scheduleReportScrollState)
+  restoreScheduleFormScrollState(scheduleFormScrollState)
   updateClock()
 }
 
@@ -247,6 +252,26 @@ function getScheduleReportScrollState() {
 function restoreScheduleReportScrollState(scrollState) {
   Object.entries(scrollState).forEach(([region, scrollTop]) => {
     const element = document.querySelector(`[data-report-scroll-region="${region}"]`)
+
+    if (element) {
+      element.scrollTop = scrollTop
+    }
+  })
+}
+
+function getScheduleFormScrollState() {
+  return Array.from(document.querySelectorAll('[data-schedule-form-scroll-region]')).reduce(
+    (scrollState, element) => ({
+      ...scrollState,
+      [element.dataset.scheduleFormScrollRegion]: element.scrollTop,
+    }),
+    {},
+  )
+}
+
+function restoreScheduleFormScrollState(scrollState) {
+  Object.entries(scrollState).forEach(([region, scrollTop]) => {
+    const element = document.querySelector(`[data-schedule-form-scroll-region="${region}"]`)
 
     if (element) {
       element.scrollTop = scrollTop
@@ -367,7 +392,14 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'giao-vien') {
-    return renderTeacherModule(teachers, teacherFilters, teacherFormState, selectedTeacherId)
+    return renderTeacherModule(
+      teachers,
+      teacherFilters,
+      teacherFormState,
+      selectedTeacherId,
+      students,
+      scheduleSessions,
+    )
   }
 
   if (moduleItem.id === 'thoi-khoa-bieu') {
@@ -380,6 +412,7 @@ function renderWindowBody(windowItem) {
       sessionReportLearningState,
       sessionReportLearningFormState,
       sessionReportExtraState,
+      isSessionReportExtraExpanded,
       sessionReportGuestFormState,
       teachers,
       students,
@@ -1436,21 +1469,27 @@ function bindEvents() {
 
   document.querySelectorAll('[data-tuition-filter]').forEach((control) => {
     control.addEventListener('input', () => {
+      const filterName = control.dataset.tuitionFilter
+      const selectionStart = 'selectionStart' in control ? control.selectionStart : null
+      const selectionEnd = 'selectionEnd' in control ? control.selectionEnd : null
+
       tuitionFilters = {
         ...tuitionFilters,
-        [control.dataset.tuitionFilter]: control.value,
+        [filterName]: control.value,
       }
       render()
 
-      const nextControl = document.querySelector(
-        `[data-tuition-filter="${control.dataset.tuitionFilter}"]`,
-      )
+      const nextControl = document.querySelector(`[data-tuition-filter="${filterName}"]`)
       nextControl?.focus()
+
+      if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(selectionStart, selectionEnd)
+      }
     })
   })
 
   document.querySelectorAll('[data-cashflow-filter]').forEach((control) => {
-    control.addEventListener('input', () => {
+    const updateCashflowFilter = () => {
       const filterName = control.dataset.cashflowFilter
       const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
 
@@ -1466,7 +1505,9 @@ function bindEvents() {
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
-    })
+    }
+
+    control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'input', updateCashflowFilter)
   })
 
   document.querySelectorAll('[data-inventory-filter]').forEach((control) => {
@@ -1944,6 +1985,27 @@ function bindEvents() {
     render()
   })
 
+  document.querySelector('[data-cashflow-action="download-csv"]')?.addEventListener('click', () => {
+    const exportResult = buildCashflowCsvExport(cashflowTransactions, cashflowFilters)
+
+    if (!exportResult.count) {
+      return
+    }
+
+    const blob = new Blob([`\uFEFF${exportResult.csvContent}`], {
+      type: 'text/csv;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = exportResult.filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  })
+
   document.querySelectorAll('[data-cashflow-transaction-id]').forEach((row) => {
     row.addEventListener('click', () => {
       openCashflowEditForm(row.dataset.cashflowTransactionId)
@@ -1987,6 +2049,94 @@ function bindEvents() {
         }
       }
     })
+  })
+
+  document.querySelector('[data-cashflow-attachment-input]')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0]
+
+    if (!cashflowFormState || !file) {
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      cashflowFormState = {
+        ...cashflowFormState,
+        errors: {
+          ...cashflowFormState.errors,
+          attachment: 'Chỉ nhận file ảnh.',
+        },
+      }
+      render()
+      return
+    }
+
+    if (file.size > CASHFLOW_ATTACHMENT_MAX_SIZE) {
+      cashflowFormState = {
+        ...cashflowFormState,
+        errors: {
+          ...cashflowFormState.errors,
+          attachment: 'Ảnh giao dịch tối đa 1 MB.',
+        },
+      }
+      render()
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.addEventListener('load', () => {
+      cashflowFormState = {
+        ...cashflowFormState,
+        values: {
+          ...cashflowFormState.values,
+          attachment: {
+            id: `attachment-${Date.now()}`,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: String(reader.result || ''),
+            createdAt: new Date().toISOString(),
+          },
+        },
+        errors: {
+          ...cashflowFormState.errors,
+          attachment: undefined,
+        },
+      }
+      render()
+    })
+
+    reader.addEventListener('error', () => {
+      cashflowFormState = {
+        ...cashflowFormState,
+        errors: {
+          ...cashflowFormState.errors,
+          attachment: 'Không đọc được ảnh đã chọn.',
+        },
+      }
+      render()
+    })
+
+    reader.readAsDataURL(file)
+  })
+
+  document.querySelector('[data-cashflow-action="remove-attachment"]')?.addEventListener('click', () => {
+    if (!cashflowFormState) {
+      return
+    }
+
+    cashflowFormState = {
+      ...cashflowFormState,
+      values: {
+        ...cashflowFormState.values,
+        attachment: null,
+      },
+      errors: {
+        ...cashflowFormState.errors,
+        attachment: undefined,
+      },
+    }
+    render()
   })
 
   document.querySelectorAll('[data-cashflow-category-field]').forEach((control) => {
@@ -2163,6 +2313,7 @@ function bindEvents() {
       cashflowFormState.values,
       existingTransaction,
     )
+    const previousCashflowTransactions = cashflowTransactions
 
     cashflowTransactions =
       cashflowFormState.mode === 'edit'
@@ -2170,7 +2321,22 @@ function bindEvents() {
             transaction.id === nextTransaction.id ? nextTransaction : transaction,
           )
         : [nextTransaction, ...cashflowTransactions]
-    saveStoredCashflow(cashflowTransactions)
+
+    try {
+      saveStoredCashflow(cashflowTransactions)
+    } catch {
+      cashflowTransactions = previousCashflowTransactions
+      cashflowFormState = {
+        ...cashflowFormState,
+        errors: {
+          ...cashflowFormState.errors,
+          attachment: 'Không lưu được giao dịch. Ảnh có thể làm đầy bộ nhớ local.',
+        },
+      }
+      render()
+      return
+    }
+
     cashflowFormState = null
     render()
   })
@@ -2361,16 +2527,31 @@ function bindEvents() {
         return
       }
 
+      const fieldName = control.dataset.tuitionFormField
+      const selectionStart = 'selectionStart' in control ? control.selectionStart : null
+      const selectionEnd = 'selectionEnd' in control ? control.selectionEnd : null
+
       tuitionFormState = {
         ...tuitionFormState,
         values: {
           ...tuitionFormState.values,
-          [control.dataset.tuitionFormField]: control.value,
+          [fieldName]: control.value,
         },
         errors: {
           ...tuitionFormState.errors,
-          [control.dataset.tuitionFormField]: undefined,
+          [fieldName]: undefined,
+          discountAmount: undefined,
         },
+      }
+
+      if (['discountPreset', 'discountCustomValue', 'totalAmount', 'paidAmount'].includes(fieldName)) {
+        render()
+        const nextControl = document.querySelector(`[data-tuition-form-field="${fieldName}"]`)
+        nextControl?.focus()
+
+        if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
+          nextControl.setSelectionRange(selectionStart, selectionEnd)
+        }
       }
     })
   })
@@ -2785,6 +2966,7 @@ function bindEvents() {
       sessionReportLearningState = null
       sessionReportLearningFormState = null
       sessionReportExtraState = null
+      isSessionReportExtraExpanded = false
       sessionReportGuestFormState = null
       render()
     })
@@ -2797,6 +2979,7 @@ function bindEvents() {
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
+    isSessionReportExtraExpanded = false
     sessionReportGuestFormState = null
     render()
   })
@@ -2835,6 +3018,7 @@ function bindEvents() {
           findSessionReport(sessionReports, session.id, occurrence.occurrenceDate),
         )
         sessionReportLearningFormState = null
+        isSessionReportExtraExpanded = false
         sessionReportGuestFormState = null
       } else {
         scheduleReportState = null
@@ -2842,6 +3026,7 @@ function bindEvents() {
         sessionReportLearningState = null
         sessionReportLearningFormState = null
         sessionReportExtraState = null
+        isSessionReportExtraExpanded = false
         sessionReportGuestFormState = null
         scheduleFormState = createEditScheduleFormState(session)
       }
@@ -2865,6 +3050,7 @@ function bindEvents() {
       sessionReportLearningState = null
       sessionReportLearningFormState = null
       sessionReportExtraState = null
+      isSessionReportExtraExpanded = false
       sessionReportGuestFormState = null
       render()
     })
@@ -2884,6 +3070,7 @@ function bindEvents() {
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
+    isSessionReportExtraExpanded = false
     sessionReportGuestFormState = null
     scheduleFormState = createEditScheduleFormState(session)
     render()
@@ -3103,6 +3290,10 @@ function bindEvents() {
   })
 
   document.querySelector('[data-session-learning-action="open-create"]')?.addEventListener('click', () => {
+    if (sessionReportLearningFormState) {
+      return
+    }
+
     sessionReportLearningFormState = createEmptyLearningGroupFormState()
     sessionReportLearningState = {
       ...sessionReportLearningState,
@@ -3309,6 +3500,11 @@ function bindEvents() {
         control.value,
       )
     })
+  })
+
+  document.querySelector('[data-session-report-action="toggle-extra"]')?.addEventListener('click', () => {
+    isSessionReportExtraExpanded = !isSessionReportExtraExpanded
+    render()
   })
 
   document.querySelector('[data-session-report-action="save-extra"]')?.addEventListener('click', () => {
@@ -3542,6 +3738,7 @@ function bindEvents() {
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
+    isSessionReportExtraExpanded = false
     sessionReportGuestFormState = null
     render()
   })
@@ -3567,6 +3764,7 @@ function bindEvents() {
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
+    isSessionReportExtraExpanded = false
     sessionReportGuestFormState = null
     render()
   })
@@ -4023,6 +4221,8 @@ function createRenewedTuitionRecord(currentRecord, normalizedValues) {
     totalSessions: currentRecord.totalSessions,
     usedSessions: currentRecord.usedSessions,
     totalAmount: currentRecord.totalAmount,
+    discountType: currentRecord.discountType || (currentRecord.discountAmount > 0 ? 'fixed' : 'none'),
+    discountValue: currentRecord.discountValue ?? currentRecord.discountAmount ?? 0,
     discountAmount: currentRecord.discountAmount || 0,
     paidAmount: currentRecord.paidAmount,
     dueDate: currentRecord.dueDate,

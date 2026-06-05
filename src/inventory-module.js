@@ -294,10 +294,10 @@ function renderInventoryListSection(filteredItems, activeFilters, categories = [
               <table class="inventory-table">
                 <thead>
                   <tr>
-                    <th>Vật tư / Tài sản</th>
+                    <th>Hạng mục</th>
                     <th>Nhóm</th>
                     <th>Tồn kho</th>
-                    <th>Ngưỡng thấp</th>
+                    <th>Định mức tối thiểu</th>
                     <th>Tình trạng</th>
                     <th>Vị trí</th>
                     <th>Ghi chú</th>
@@ -409,7 +409,7 @@ function renderInventoryAttentionItem(item, stockState) {
       </div>
       <div>
         <span class="inventory-stock-badge is-${stockState.tone}">${stockState.label}</span>
-        <span>${quantity.toLocaleString('vi-VN')} ${escapeHtml(item.unit || '')} / ngưỡng ${threshold.toLocaleString('vi-VN')}</span>
+        <span>${quantity.toLocaleString('vi-VN')} ${escapeHtml(item.unit || '')} / định mức tối thiểu ${threshold.toLocaleString('vi-VN')}</span>
       </div>
       <span title="${escapeAttribute(item.location)}">${escapeHtml(item.location || '—')}</span>
     </article>
@@ -524,7 +524,7 @@ export function validateInventoryForm(values) {
   }
 
   if (lowStockThreshold === null) {
-    errors.lowStockThreshold = 'Ngưỡng thấp cần là số nguyên không âm.'
+    errors.lowStockThreshold = 'Định mức tối thiểu cần là số nguyên không âm.'
   }
 
   if (!String(values.condition ?? '').trim()) {
@@ -677,7 +677,7 @@ function renderInventoryForm(formState, items) {
           ${renderInventorySelectField('Nhóm', 'category', formState, categories)}
           ${renderInventoryInputField('Đơn vị tính', 'unit', formState, 'text', 'quyển, bộ, cái, tờ')}
           ${renderInventoryInputField('Số lượng tồn', 'quantity', formState, 'number', '0')}
-          ${renderInventoryInputField('Ngưỡng cảnh báo thấp', 'lowStockThreshold', formState, 'number', '0')}
+          ${renderInventoryInputField('Định mức tối thiểu', 'lowStockThreshold', formState, 'number', '0')}
           ${renderInventorySelectField('Tình trạng', 'condition', formState, conditions)}
           ${renderInventoryInputField('Vị trí', 'location', formState, 'text', 'Tủ tài liệu lớp 1')}
           <label class="inventory-field span-full ${formState.errors.note ? 'has-error' : ''}">

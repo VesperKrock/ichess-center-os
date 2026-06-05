@@ -30,6 +30,24 @@ const paymentMethodOptions = [
   { value: 'other', label: 'Khác' },
 ]
 
+const discountPresetOptions = [
+  { value: 'none', label: 'Không ưu đãi' },
+  { value: 'percent-5', label: '5%' },
+  { value: 'percent-10', label: '10%' },
+  { value: 'percent-15', label: '15%' },
+  { value: 'percent-20', label: '20%' },
+  { value: 'percent-30', label: '30%' },
+  { value: 'fixed-100000', label: '100.000 VNĐ' },
+  { value: 'fixed-200000', label: '200.000 VNĐ' },
+  { value: 'fixed-300000', label: '300.000 VNĐ' },
+  { value: 'fixed-500000', label: '500.000 VNĐ' },
+  { value: 'custom-percent', label: 'Tùy chọn %' },
+  { value: 'custom-fixed', label: 'Tùy chọn số tiền' },
+]
+
+const percentDiscountPresets = [5, 10, 15, 20, 30]
+const fixedDiscountPresets = [100000, 200000, 300000, 500000]
+
 export function createEmptyTuitionFormState(student) {
   return {
     mode: 'create',
@@ -39,6 +57,8 @@ export function createEmptyTuitionFormState(student) {
       totalSessions: '8',
       usedSessions: '0',
       totalAmount: '',
+      discountPreset: 'none',
+      discountCustomValue: '',
       discountAmount: '0',
       paidAmount: '',
       dueDate: '',
@@ -49,6 +69,8 @@ export function createEmptyTuitionFormState(student) {
 }
 
 export function createEditTuitionFormState(student, tuitionRecord) {
+  const discountFormValues = createDiscountFormValues(tuitionRecord)
+
   return {
     mode: 'edit',
     studentId: student.id,
@@ -59,6 +81,7 @@ export function createEditTuitionFormState(student, tuitionRecord) {
       totalSessions: String(tuitionRecord.totalSessions),
       usedSessions: String(tuitionRecord.usedSessions),
       totalAmount: formatMoneyInput(tuitionRecord.totalAmount),
+      ...discountFormValues,
       discountAmount: formatMoneyInput(tuitionRecord.discountAmount ?? 0),
       paidAmount: formatMoneyInput(tuitionRecord.paidAmount),
       dueDate: tuitionRecord.dueDate,
@@ -69,6 +92,8 @@ export function createEditTuitionFormState(student, tuitionRecord) {
 }
 
 export function createRenewTuitionFormState(student, tuitionRecord) {
+  const discountFormValues = createDiscountFormValues(tuitionRecord)
+
   return {
     mode: 'renew',
     studentId: student.id,
@@ -79,6 +104,7 @@ export function createRenewTuitionFormState(student, tuitionRecord) {
       totalSessions: String(tuitionRecord.totalSessions || 8),
       usedSessions: '0',
       totalAmount: formatMoneyInput(tuitionRecord.totalAmount),
+      ...discountFormValues,
       discountAmount: formatMoneyInput(tuitionRecord.discountAmount ?? 0),
       paidAmount: '0',
       dueDate: '',
@@ -328,12 +354,17 @@ export function getTuitionOverpaidAmount(tuitionRecord) {
 }
 
 export function normalizeTuitionFormValues(values) {
+  const totalAmount = normalizeMoney(values.totalAmount)
+  const discount = getDiscountCalculation(values, totalAmount)
+
   return {
     packageName: String(values.packageName || '').trim(),
     totalSessions: normalizeInteger(values.totalSessions),
     usedSessions: normalizeInteger(values.usedSessions),
-    totalAmount: normalizeMoney(values.totalAmount),
-    discountAmount: normalizeMoney(values.discountAmount),
+    totalAmount,
+    discountType: discount.type,
+    discountValue: discount.value,
+    discountAmount: discount.amount,
     paidAmount: normalizeMoney(values.paidAmount),
     dueDate: String(values.dueDate || '').trim(),
     note: String(values.note || '').trim(),
@@ -360,8 +391,14 @@ export function validateTuitionForm(values) {
     errors.totalAmount = 'Học phí không hợp lệ.'
   }
 
-  if (!Number.isFinite(normalizedValues.discountAmount) || normalizedValues.discountAmount < 0) {
+  const discount = getDiscountCalculation(values, normalizedValues.totalAmount)
+
+  if (!discount.isValid) {
     errors.discountAmount = 'Ưu đãi không hợp lệ.'
+  }
+
+  if (discount.type === 'percent' && (discount.value < 0 || discount.value > 100)) {
+    errors.discountAmount = 'Ưu đãi % cần từ 0 đến 100.'
   }
 
   if (
@@ -369,7 +406,7 @@ export function validateTuitionForm(values) {
     Number.isFinite(normalizedValues.totalAmount) &&
     normalizedValues.discountAmount > normalizedValues.totalAmount
   ) {
-    errors.discountAmount = 'Ưu đãi không được lớn hơn học phí.'
+    errors.discountAmount = 'Ưu đãi không nên lớn hơn học phí.'
   }
 
   if (!Number.isFinite(normalizedValues.paidAmount) || normalizedValues.paidAmount < 0) {
@@ -511,6 +548,7 @@ function renderTuitionForm(student, formState) {
   const isEdit = formState.mode === 'edit'
   const isRenew = formState.mode === 'renew'
   const { values, errors } = formState
+  const discountPreview = getDiscountPreview(values)
 
   return `
     <div class="tuition-form-backdrop" data-tuition-action="cancel-form"></div>
@@ -548,7 +586,9 @@ function renderTuitionForm(student, formState) {
         ${renderTextField('totalSessions', 'Tổng số buổi', values.totalSessions, errors.totalSessions, 'number')}
         ${renderTextField('usedSessions', 'Số buổi đã học', values.usedSessions, errors.usedSessions, 'number')}
         ${renderTextField('totalAmount', 'Học phí', values.totalAmount, errors.totalAmount)}
-        ${renderTextField('discountAmount', 'Ưu đãi', values.discountAmount, errors.discountAmount)}
+        ${renderDiscountPresetField(values, errors)}
+        ${renderDiscountCustomField(values, errors)}
+        ${renderDiscountPreview(discountPreview)}
         ${renderTextField('paidAmount', isRenew ? 'Thanh toán ban đầu' : 'Thanh toán', values.paidAmount, errors.paidAmount)}
         ${renderTextField('dueDate', 'Hạn đóng / ngày nhắc', values.dueDate, errors.dueDate, 'date')}
         <label class="span-full ${errors.note ? 'has-error' : ''}">
@@ -877,6 +917,66 @@ function renderTextField(fieldName, label, value, error, type = 'text', scope = 
   `
 }
 
+function renderDiscountPresetField(values, errors) {
+  return `
+    <label class="${errors.discountAmount ? 'has-error' : ''}">
+      <span>Ưu đãi</span>
+      <select data-tuition-form-field="discountPreset">
+        ${discountPresetOptions
+          .map(
+            (option) => `
+              <option value="${option.value}" ${option.value === getDiscountPresetValue(values) ? 'selected' : ''}>
+                ${option.label}
+              </option>
+            `,
+          )
+          .join('')}
+      </select>
+      ${errors.discountAmount ? `<small>${errors.discountAmount}</small>` : ''}
+    </label>
+  `
+}
+
+function renderDiscountCustomField(values, errors) {
+  const preset = getDiscountPresetValue(values)
+
+  if (preset !== 'custom-percent' && preset !== 'custom-fixed') {
+    return ''
+  }
+
+  return `
+    <label class="${errors.discountAmount ? 'has-error' : ''}">
+      <span>${preset === 'custom-percent' ? 'Nhập % ưu đãi' : 'Nhập số tiền ưu đãi'}</span>
+      <input
+        type="text"
+        value="${escapeHtml(values.discountCustomValue ?? '')}"
+        data-tuition-form-field="discountCustomValue"
+        placeholder="${preset === 'custom-percent' ? 'Ví dụ: 12.5' : 'Ví dụ: 100.000'}"
+      />
+      ${errors.discountAmount ? `<small>${errors.discountAmount}</small>` : ''}
+    </label>
+  `
+}
+
+function renderDiscountPreview(preview) {
+  return `
+    <div class="tuition-discount-preview" aria-label="Tóm tắt ưu đãi">
+      <div>
+        <span>Ưu đãi</span>
+        <strong>${formatMoney(preview.discountAmount)}</strong>
+      </div>
+      <div>
+        <span>Cần đóng</span>
+        <strong>${formatMoney(preview.payableAmount)}</strong>
+      </div>
+      <div>
+        <span>Còn nợ</span>
+        <strong>${formatMoney(preview.debtAmount)}</strong>
+      </div>
+    </div>
+  `
+}
+
 function getTuitionStats(rows) {
   return rows.reduce(
     (stats, row) => ({
@@ -930,12 +1030,109 @@ function getPackageKind(totalSessions) {
   return 'other'
 }
 
+function createDiscountFormValues(tuitionRecord) {
+  const discountType = tuitionRecord.discountType || (Number(tuitionRecord.discountAmount || 0) > 0 ? 'fixed' : 'none')
+  const discountValue =
+    tuitionRecord.discountValue ?? (discountType === 'fixed' ? tuitionRecord.discountAmount || 0 : 0)
+  const discountPreset = getDiscountPresetFromTypeValue(discountType, discountValue)
+  const isCustomPreset = discountPreset === 'custom-percent' || discountPreset === 'custom-fixed'
+
+  return {
+    discountPreset,
+    discountCustomValue: isCustomPreset
+      ? discountType === 'percent'
+        ? formatPercentInput(discountValue)
+        : formatMoneyInput(discountValue)
+      : '',
+  }
+}
+
+function getDiscountPresetFromTypeValue(type, value) {
+  const numberValue = Number(value || 0)
+
+  if (type === 'percent') {
+    return percentDiscountPresets.includes(numberValue) ? `percent-${numberValue}` : 'custom-percent'
+  }
+
+  if (type === 'fixed') {
+    return fixedDiscountPresets.includes(numberValue) ? `fixed-${numberValue}` : 'custom-fixed'
+  }
+
+  return 'none'
+}
+
+function getDiscountPresetValue(values) {
+  const preset = String(values.discountPreset || '').trim()
+  return discountPresetOptions.some((option) => option.value === preset) ? preset : 'none'
+}
+
+function getDiscountCalculation(values, totalAmount) {
+  const preset = getDiscountPresetValue(values)
+  const safeTotalAmount = Number.isFinite(totalAmount) && totalAmount > 0 ? totalAmount : 0
+  let type = 'none'
+  let value = 0
+  let isValid = true
+
+  if (preset.startsWith('percent-')) {
+    type = 'percent'
+    value = Number(preset.replace('percent-', ''))
+  } else if (preset.startsWith('fixed-')) {
+    type = 'fixed'
+    value = Number(preset.replace('fixed-', ''))
+  } else if (preset === 'custom-percent') {
+    type = 'percent'
+    value = normalizePercent(values.discountCustomValue)
+    isValid = Number.isFinite(value)
+  } else if (preset === 'custom-fixed') {
+    type = 'fixed'
+    value = normalizeCustomMoney(values.discountCustomValue)
+    isValid = Number.isFinite(value)
+  }
+
+  if (!Number.isFinite(value)) {
+    value = 0
+  }
+
+  const amount = type === 'percent'
+    ? Math.round((safeTotalAmount * value) / 100)
+    : type === 'fixed'
+      ? value
+      : 0
+
+  return {
+    type,
+    value,
+    amount: Math.max(0, Number.isFinite(amount) ? amount : 0),
+    isValid,
+  }
+}
+
+function getDiscountPreview(values) {
+  const totalAmount = normalizeMoney(values.totalAmount)
+  const paidAmount = normalizeMoney(values.paidAmount)
+  const safeTotalAmount = Number.isFinite(totalAmount) ? totalAmount : 0
+  const safePaidAmount = Number.isFinite(paidAmount) ? paidAmount : 0
+  const discount = getDiscountCalculation(values, safeTotalAmount)
+  const payableAmount = Math.max(safeTotalAmount - discount.amount, 0)
+  const debtAmount = Math.max(safeTotalAmount - discount.amount - safePaidAmount, 0)
+
+  return {
+    discountAmount: discount.amount,
+    payableAmount,
+    debtAmount,
+  }
+}
+
 function formatMoney(amount) {
   return `${Number(amount).toLocaleString('vi-VN')} VNĐ`
 }
 
 function formatMoneyInput(amount) {
   return Number(amount).toLocaleString('vi-VN')
+}
+
+function formatPercentInput(value) {
+  return String(Number(value || 0)).replace('.', ',')
 }
 
 function normalizeInteger(value) {
@@ -945,6 +1142,27 @@ function normalizeInteger(value) {
 
 function normalizeMoney(value) {
   const numberValue = Number(String(value ?? '').replace(/[^\d]/g, ''))
+  return Number.isFinite(numberValue) ? numberValue : NaN
+}
+
+function normalizeCustomMoney(value) {
+  const rawValue = String(value ?? '').trim()
+
+  if (!/\d/.test(rawValue)) {
+    return NaN
+  }
+
+  return normalizeMoney(rawValue)
+}
+
+function normalizePercent(value) {
+  const rawValue = String(value ?? '').trim()
+
+  if (!/\d/.test(rawValue)) {
+    return NaN
+  }
+
+  const numberValue = Number(rawValue.replace(',', '.').replace(/[^\d.]/g, ''))
   return Number.isFinite(numberValue) ? numberValue : NaN
 }
 
