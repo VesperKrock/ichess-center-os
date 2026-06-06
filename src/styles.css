@@ -342,6 +342,1049 @@ h3 {
   line-height: 1.5;
 }
 
+.parent-consultation-module {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  color: #d8e2ef;
+}
+
+.window-body:has(.parent-consultation-module) {
+  overflow: hidden;
+}
+
+.parent-consultation-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.parent-consultation-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.parent-consultation-stat-card {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.parent-consultation-stat-card span {
+  display: block;
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.parent-consultation-stat-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.parent-consultation-stat-card.is-active {
+  border-color: rgba(82, 209, 139, 0.28);
+  background: rgba(82, 209, 139, 0.09);
+}
+
+.parent-consultation-stat-card.is-active strong {
+  color: #9be8bd;
+}
+
+.parent-consultation-stat-card.is-warning {
+  border-color: rgba(240, 180, 91, 0.32);
+  background: rgba(154, 96, 18, 0.11);
+}
+
+.parent-consultation-stat-card.is-warning strong {
+  color: #ffe4b8;
+}
+
+.parent-consultation-add-button {
+  min-height: 38px;
+  border: 1px solid rgba(118, 164, 231, 0.48);
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: #ffffff;
+  background: #1f5d99;
+  cursor: pointer;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.parent-consultation-add-button:hover,
+.parent-consultation-add-button:focus-visible {
+  border-color: rgba(178, 213, 255, 0.8);
+  background: #2670b7;
+  outline: none;
+}
+
+.parent-consultation-list-section {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(8, 12, 18, 0.56);
+}
+
+.parent-consultation-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px;
+  background: rgba(17, 24, 33, 0.9);
+}
+
+.parent-consultation-list-header h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.98rem;
+}
+
+.parent-consultation-list-header span,
+.parent-consultation-phase {
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.parent-consultation-phase {
+  flex: 0 0 auto;
+}
+
+.parent-consultation-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.35fr) minmax(150px, 0.75fr) minmax(170px, 0.85fr) minmax(160px, 0.8fr);
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.parent-consultation-toolbar label,
+.parent-consultation-search-field {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parent-consultation-toolbar span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.parent-consultation-toolbar input,
+.parent-consultation-toolbar select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #f4f7fb;
+  background: #101923;
+  font: inherit;
+}
+
+.parent-consultation-toolbar select {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+.parent-consultation-toolbar option {
+  color: #f4f7fb;
+  background: #101923;
+}
+
+.parent-consultation-toolbar input:hover,
+.parent-consultation-toolbar select:hover,
+.parent-consultation-toolbar input:focus,
+.parent-consultation-toolbar select:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.parent-consultation-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  background: rgba(8, 12, 18, 0.78);
+  scrollbar-color: rgba(118, 164, 231, 0.48) rgba(255, 255, 255, 0.045);
+  scrollbar-width: thin;
+}
+
+.parent-consultation-table-wrap::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.parent-consultation-table-wrap::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.parent-consultation-table-wrap::-webkit-scrollbar-thumb {
+  border: 2px solid #101923;
+  border-radius: 999px;
+  background: rgba(118, 164, 231, 0.48);
+}
+
+.parent-consultation-table {
+  width: 100%;
+  min-width: 1160px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.parent-consultation-table th:nth-child(1) {
+  width: 235px;
+}
+
+.parent-consultation-table th:nth-child(2) {
+  width: 230px;
+}
+
+.parent-consultation-table th:nth-child(3) {
+  width: 132px;
+}
+
+.parent-consultation-table th:nth-child(4) {
+  width: 150px;
+}
+
+.parent-consultation-table th:nth-child(5) {
+  width: 245px;
+}
+
+.parent-consultation-table th:nth-child(6) {
+  width: 190px;
+}
+
+.parent-consultation-table th:nth-child(7) {
+  width: 116px;
+}
+
+.parent-consultation-table th,
+.parent-consultation-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.parent-consultation-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #9fb1c7;
+  background: #111821;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.parent-consultation-table td {
+  overflow: hidden;
+  color: #d8e2ef;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.parent-consultation-row:hover {
+  background: rgba(118, 164, 231, 0.075);
+}
+
+.parent-contact-cell,
+.parent-student-cell,
+.parent-note-cell {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parent-contact-cell strong,
+.parent-student-cell strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parent-contact-cell span,
+.parent-contact-cell small,
+.parent-student-cell span,
+.parent-note-cell span,
+.parent-note-cell small,
+.parent-action-cell {
+  min-width: 0;
+  overflow: hidden;
+  color: #9fb1c7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parent-note-cell span,
+.parent-action-cell {
+  color: #c8d4e3;
+}
+
+.parent-action-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.parent-action-cell small {
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parent-contact-badge,
+.parent-status-badge,
+.parent-source-badge {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid rgba(180, 202, 232, 0.18);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.parent-contact-badge.is-currentParent,
+.parent-status-badge.is-activeCare,
+.parent-status-badge.is-converted {
+  border-color: rgba(82, 209, 139, 0.36);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.parent-contact-badge.is-consultingLead,
+.parent-status-badge.is-newLead,
+.parent-status-badge.is-trialScheduled,
+.parent-status-badge.is-pendingEnrollment {
+  border-color: rgba(118, 164, 231, 0.38);
+  color: #cfe0ff;
+  background: rgba(31, 93, 153, 0.22);
+}
+
+.parent-contact-badge.is-formerParent,
+.parent-status-badge.is-paused,
+.parent-status-badge.is-waitingResponse {
+  border-color: rgba(240, 180, 91, 0.38);
+  color: #ffe4b8;
+  background: rgba(154, 96, 18, 0.15);
+}
+
+.parent-status-badge.is-closed {
+  border-color: rgba(160, 184, 214, 0.2);
+  color: #93a4b9;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.parent-consultation-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  color: #9fb1c7;
+  background: rgba(8, 12, 18, 0.78);
+  text-align: center;
+}
+
+.parent-contact-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.parent-contact-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 5px 8px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.parent-contact-actions button:hover,
+.parent-contact-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  background: rgba(31, 93, 153, 0.28);
+  outline: none;
+}
+
+.parent-contact-form-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(3, 7, 12, 0.62);
+}
+
+.parent-contact-form {
+  display: grid;
+  width: min(860px, 100%);
+  max-height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 8px;
+  background: #101923;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+}
+
+.parent-contact-form-header,
+.parent-contact-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 11px 12px;
+  background: rgba(17, 24, 33, 0.96);
+}
+
+.parent-contact-form-header h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.parent-contact-form-header button,
+.parent-contact-form-footer button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.parent-contact-form-footer {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 0;
+}
+
+.parent-contact-form-footer button:last-child {
+  border-color: rgba(118, 164, 231, 0.55);
+  background: #1f5d99;
+}
+
+.parent-contact-form-header button:hover,
+.parent-contact-form-header button:focus-visible,
+.parent-contact-form-footer button:hover,
+.parent-contact-form-footer button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.parent-contact-form-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.parent-contact-form-section {
+  display: grid;
+  gap: 8px;
+}
+
+.parent-contact-form-section + .parent-contact-form-section {
+  margin-top: 12px;
+}
+
+.parent-contact-form-section h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.84rem;
+}
+
+.parent-contact-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.parent-contact-form-grid.is-compact {
+  grid-template-columns: minmax(220px, 0.5fr);
+}
+
+.parent-contact-form-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parent-contact-form-grid span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.parent-contact-form-grid input,
+.parent-contact-form-grid select,
+.parent-contact-form-grid textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+  font: inherit;
+}
+
+.parent-contact-form-grid select {
+  color-scheme: dark;
+}
+
+.parent-contact-form-grid option {
+  color: #f4f7fb;
+  background: #101923;
+}
+
+.parent-contact-form-grid textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.parent-contact-form-grid input:focus,
+.parent-contact-form-grid select:focus,
+.parent-contact-form-grid textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.parent-contact-form-grid label.has-error input,
+.parent-contact-form-grid label.has-error select,
+.parent-contact-form-grid label.has-error textarea {
+  border-color: rgba(255, 120, 120, 0.82);
+}
+
+.parent-contact-form-grid small {
+  color: #ffb4b4;
+  font-size: 0.74rem;
+}
+
+.parent-contact-form-error {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid rgba(255, 120, 120, 0.16);
+  padding: 8px 12px;
+  color: #ffd3d3;
+  background: rgba(120, 32, 32, 0.22);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.parent-care-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+.parent-appointment-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+.parent-appointment-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  gap: 10px;
+}
+
+.parent-appointment-list {
+  display: grid;
+  max-height: 360px;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.parent-appointment-card,
+.parent-appointment-form,
+.parent-appointment-empty {
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.parent-appointment-card {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+}
+
+.parent-appointment-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.parent-appointment-type {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid rgba(82, 209, 139, 0.36);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.parent-appointment-card p {
+  margin: 0;
+  color: #c8d4e3;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.parent-appointment-card strong {
+  color: #ffffff;
+}
+
+.parent-appointment-status,
+.parent-appointment-form label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parent-appointment-status span,
+.parent-appointment-form span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.parent-appointment-status select,
+.parent-appointment-form input,
+.parent-appointment-form select,
+.parent-appointment-form textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+  font: inherit;
+}
+
+.parent-appointment-status select,
+.parent-appointment-form select {
+  color-scheme: dark;
+}
+
+.parent-appointment-status option,
+.parent-appointment-form option {
+  color: #f4f7fb;
+  background: #101923;
+}
+
+.parent-appointment-form {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 9px;
+}
+
+.parent-appointment-form textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.parent-appointment-status select:focus,
+.parent-appointment-form input:focus,
+.parent-appointment-form select:focus,
+.parent-appointment-form textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.parent-appointment-form label.has-error input,
+.parent-appointment-form label.has-error select,
+.parent-appointment-form label.has-error textarea {
+  border-color: rgba(255, 120, 120, 0.82);
+}
+
+.parent-appointment-form small {
+  color: #ffb4b4;
+  font-size: 0.74rem;
+}
+
+.parent-appointment-form button {
+  min-height: 34px;
+  border: 1px solid rgba(118, 164, 231, 0.55);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #edf4fc;
+  background: #1f5d99;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.parent-appointment-form button:hover,
+.parent-appointment-form button:focus-visible {
+  border-color: rgba(178, 213, 255, 0.8);
+  background: #2670b7;
+  outline: none;
+}
+
+.parent-appointment-empty {
+  display: grid;
+  min-height: 84px;
+  place-items: center;
+  padding: 10px;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.parent-enrollment-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+.parent-enrollment-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.parent-enrollment-heading h4 {
+  margin: 0;
+}
+
+.parent-enrollment-ready-badge {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid rgba(82, 209, 139, 0.36);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.parent-enrollment-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.parent-enrollment-form label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parent-enrollment-form span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.parent-enrollment-form input,
+.parent-enrollment-form textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+  font: inherit;
+}
+
+.parent-enrollment-form textarea {
+  min-height: 66px;
+  resize: vertical;
+}
+
+.parent-enrollment-form input:focus,
+.parent-enrollment-form textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.parent-enrollment-form label.has-error input,
+.parent-enrollment-form label.has-error textarea {
+  border-color: rgba(255, 120, 120, 0.82);
+}
+
+.parent-enrollment-form small {
+  color: #ffb4b4;
+  font-size: 0.74rem;
+}
+
+.parent-enrollment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.parent-enrollment-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.parent-enrollment-actions button:nth-child(2) {
+  border-color: rgba(82, 209, 139, 0.42);
+  background: rgba(82, 209, 139, 0.16);
+}
+
+.parent-enrollment-actions button:hover,
+.parent-enrollment-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.parent-enrollment-summary {
+  max-height: 190px;
+  overflow: auto;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  margin: 0;
+  padding: 10px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.035);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.parent-enrollment-error,
+.parent-enrollment-message {
+  border: 1px solid rgba(255, 120, 120, 0.2);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #ffd3d3;
+  background: rgba(120, 32, 32, 0.18);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.parent-enrollment-message {
+  border-color: rgba(82, 209, 139, 0.28);
+  color: #bff4d2;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.parent-care-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+  gap: 10px;
+}
+
+.parent-care-timeline {
+  display: grid;
+  max-height: 360px;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.parent-care-log,
+.parent-care-form,
+.parent-care-empty {
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.parent-care-log {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+}
+
+.parent-care-log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.parent-care-channel-badge {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid rgba(118, 164, 231, 0.38);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #cfe0ff;
+  background: rgba(31, 93, 153, 0.22);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.parent-care-log p {
+  margin: 0;
+  color: #c8d4e3;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.parent-care-log strong {
+  color: #ffffff;
+}
+
+.parent-care-form {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 9px;
+}
+
+.parent-care-form label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parent-care-form span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.parent-care-form input,
+.parent-care-form select,
+.parent-care-form textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+  font: inherit;
+}
+
+.parent-care-form select {
+  color-scheme: dark;
+}
+
+.parent-care-form option {
+  color: #f4f7fb;
+  background: #101923;
+}
+
+.parent-care-form textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.parent-care-form input:focus,
+.parent-care-form select:focus,
+.parent-care-form textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.parent-care-form label.has-error input,
+.parent-care-form label.has-error select,
+.parent-care-form label.has-error textarea {
+  border-color: rgba(255, 120, 120, 0.82);
+}
+
+.parent-care-form small {
+  color: #ffb4b4;
+  font-size: 0.74rem;
+}
+
+.parent-care-form button {
+  min-height: 34px;
+  border: 1px solid rgba(118, 164, 231, 0.55);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #edf4fc;
+  background: #1f5d99;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.parent-care-form button:hover,
+.parent-care-form button:focus-visible {
+  border-color: rgba(178, 213, 255, 0.8);
+  background: #2670b7;
+  outline: none;
+}
+
+.parent-care-empty {
+  display: grid;
+  min-height: 84px;
+  place-items: center;
+  padding: 10px;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+  text-align: center;
+}
+
 .inventory-module {
   position: relative;
   display: flex;
@@ -8452,6 +9495,12 @@ h3 {
     .student-overview-grid,
     .student-care-layout,
     .student-learning-stats,
+    .parent-consultation-topbar,
+    .parent-consultation-stats,
+    .parent-consultation-toolbar,
+    .parent-appointment-layout,
+    .parent-enrollment-form,
+    .parent-care-layout,
     .inventory-toolbar,
     .inventory-filter-grid,
     .inventory-stats,

@@ -8,6 +8,7 @@ const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
 const TEACHERS_KEY = 'ichessCenterOS.teachers.dreamhome'
 const SCHEDULE_KEY = 'ichessCenterOS.schedule.dreamhome'
 const SESSION_REPORTS_KEY = 'ichessCenterOS.sessionReports.dreamhome'
+const PARENT_CONSULTATIONS_KEY = 'ichessCenterOS.parentConsultations.dreamhome'
 const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
 const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
@@ -34,6 +35,41 @@ const VALID_ATTENDANCE_STATUSES = [
   'trial',
 ]
 const VALID_GUEST_PARTICIPATION_TYPES = ['trial', 'makeup']
+const VALID_PARENT_CONTACT_TYPES = ['currentParent', 'consultingLead', 'formerParent']
+const VALID_CONSULTATION_STATUSES = [
+  'activeCare',
+  'newLead',
+  'waitingResponse',
+  'trialScheduled',
+  'pendingEnrollment',
+  'converted',
+  'paused',
+  'closed',
+]
+const VALID_PARENT_CONTACT_SOURCES = [
+  'parentReferral',
+  'facebook',
+  'zalo',
+  'walkIn',
+  'school',
+  'oldStudent',
+  'unknown',
+]
+const VALID_PARENT_CARE_LOG_CHANNELS = ['phone', 'zalo', 'facebook', 'direct', 'email', 'other']
+const VALID_PARENT_APPOINTMENT_TYPES = [
+  'consultation',
+  'trialLesson',
+  'callback',
+  'followUp',
+  'other',
+]
+const VALID_PARENT_APPOINTMENT_STATUSES = [
+  'scheduled',
+  'completed',
+  'missed',
+  'cancelled',
+  'rescheduled',
+]
 const LEGACY_SAMPLE_TEACHER_NAMES = ['Thầy Thắng', 'Cô Vân', 'Thầy Hải']
 const UNASSIGNED_TEACHER_NAME = 'Chưa phân công'
 
@@ -230,6 +266,31 @@ export function getStoredSessionReports(defaultReports = []) {
 
 export function saveStoredSessionReports(reports) {
   localStorage.setItem(SESSION_REPORTS_KEY, JSON.stringify(normalizeSessionReports(reports)))
+}
+
+export function getStoredParentConsultations(defaultContacts) {
+  try {
+    const storedContacts = JSON.parse(localStorage.getItem(PARENT_CONSULTATIONS_KEY))
+
+    if (Array.isArray(storedContacts)) {
+      const normalizedContacts = normalizeParentConsultations(storedContacts)
+      saveStoredParentConsultations(normalizedContacts)
+      return normalizedContacts
+    }
+  } catch {
+    localStorage.removeItem(PARENT_CONSULTATIONS_KEY)
+  }
+
+  const normalizedDefaultContacts = normalizeParentConsultations(defaultContacts)
+  saveStoredParentConsultations(normalizedDefaultContacts)
+  return normalizedDefaultContacts
+}
+
+export function saveStoredParentConsultations(contacts) {
+  localStorage.setItem(
+    PARENT_CONSULTATIONS_KEY,
+    JSON.stringify(normalizeParentConsultations(contacts)),
+  )
 }
 
 export function getStoredCashflow(defaultTransactions) {
@@ -687,6 +748,151 @@ function normalizeSessionReportGuestParticipants(guestParticipants) {
       }
     })
     .filter((guest) => guest.displayName)
+}
+
+function normalizeParentConsultations(contacts) {
+  return (contacts ?? [])
+    .filter((contact) => contact && typeof contact === 'object')
+    .map((contact, index) => {
+      const now = new Date().toISOString()
+      const createdAt = contact.createdAt ? normalizeDateTime(contact.createdAt) : now
+
+      return {
+        id: String(contact.id || `contact-${String(index + 1).padStart(3, '0')}`),
+        contactType: VALID_PARENT_CONTACT_TYPES.includes(contact.contactType)
+          ? contact.contactType
+          : 'consultingLead',
+        parentName: String(contact.parentName || contact.name || ''),
+        phone: String(contact.phone || ''),
+        secondaryPhone: String(contact.secondaryPhone || ''),
+        email: String(contact.email || ''),
+        studentName: String(contact.studentName || ''),
+        studentId: normalizeNullableId(contact.studentId),
+        leadStudentName: String(contact.leadStudentName || ''),
+        leadStudentAge: String(contact.leadStudentAge || ''),
+        leadNeed: String(contact.leadNeed || ''),
+        consultationStatus: VALID_CONSULTATION_STATUSES.includes(contact.consultationStatus)
+          ? contact.consultationStatus
+          : 'newLead',
+        source: VALID_PARENT_CONTACT_SOURCES.includes(contact.source) ? contact.source : 'unknown',
+        interestedProgram: String(contact.interestedProgram || ''),
+        preferredSchedule: String(contact.preferredSchedule || ''),
+        locationArea: String(contact.locationArea || ''),
+        lastContactAt: contact.lastContactAt ? normalizeDateTime(contact.lastContactAt) : '',
+        lastNote: String(contact.lastNote || ''),
+        nextAction: String(contact.nextAction || ''),
+        careLogs: normalizeParentCareLogs(contact.careLogs),
+        appointments: normalizeParentAppointments(contact.appointments),
+        enrollmentDraft: normalizeParentEnrollmentDraft(contact.enrollmentDraft, contact),
+        createdAt,
+        updatedAt: contact.updatedAt ? normalizeDateTime(contact.updatedAt) : createdAt,
+      }
+    })
+}
+
+function normalizeParentCareLogs(careLogs) {
+  return (Array.isArray(careLogs) ? careLogs : [])
+    .filter((log) => log && typeof log === 'object')
+    .map((log, index) => {
+      const contactedAt = log.contactedAt ? normalizeDateTime(log.contactedAt) : new Date().toISOString()
+
+      return {
+        id: String(log.id || `care-log-${String(index + 1).padStart(3, '0')}`),
+        contactedAt,
+        channel: VALID_PARENT_CARE_LOG_CHANNELS.includes(log.channel) ? log.channel : 'other',
+        content: String(log.content || ''),
+        result: String(log.result || ''),
+        nextAction: String(log.nextAction || ''),
+        createdAt: log.createdAt ? normalizeDateTime(log.createdAt) : contactedAt,
+      }
+    })
+    .sort(
+      (firstLog, secondLog) =>
+        new Date(secondLog.contactedAt || secondLog.createdAt || 0) -
+        new Date(firstLog.contactedAt || firstLog.createdAt || 0),
+    )
+}
+
+function normalizeParentAppointments(appointments) {
+  return (Array.isArray(appointments) ? appointments : [])
+    .filter((appointment) => appointment && typeof appointment === 'object')
+    .map((appointment, index) => {
+      const scheduledAt = appointment.scheduledAt
+        ? normalizeDateTime(appointment.scheduledAt)
+        : new Date().toISOString()
+      const createdAt = appointment.createdAt ? normalizeDateTime(appointment.createdAt) : scheduledAt
+
+      return {
+        id: String(appointment.id || `appointment-${String(index + 1).padStart(3, '0')}`),
+        appointmentType: VALID_PARENT_APPOINTMENT_TYPES.includes(appointment.appointmentType)
+          ? appointment.appointmentType
+          : 'consultation',
+        scheduledAt,
+        channel: VALID_PARENT_CARE_LOG_CHANNELS.includes(appointment.channel)
+          ? appointment.channel
+          : 'other',
+        location: String(appointment.location || ''),
+        status: VALID_PARENT_APPOINTMENT_STATUSES.includes(appointment.status)
+          ? appointment.status
+          : 'scheduled',
+        note: String(appointment.note || ''),
+        createdAt,
+        updatedAt: appointment.updatedAt ? normalizeDateTime(appointment.updatedAt) : createdAt,
+      }
+    })
+    .sort((firstAppointment, secondAppointment) => {
+      const now = Date.now()
+      const firstTime = new Date(firstAppointment.scheduledAt || 0).getTime()
+      const secondTime = new Date(secondAppointment.scheduledAt || 0).getTime()
+      const firstUpcoming = firstAppointment.status === 'scheduled' && firstTime >= now
+      const secondUpcoming = secondAppointment.status === 'scheduled' && secondTime >= now
+
+      if (firstUpcoming && secondUpcoming) {
+        return firstTime - secondTime
+      }
+
+      if (firstUpcoming !== secondUpcoming) {
+        return firstUpcoming ? -1 : 1
+      }
+
+      return secondTime - firstTime
+    })
+}
+
+function normalizeParentEnrollmentDraft(enrollmentDraft, contact = {}) {
+  const draft =
+    enrollmentDraft && typeof enrollmentDraft === 'object'
+      ? enrollmentDraft
+      : {}
+  const hasSavedDraft = Boolean(draft.createdAt || draft.updatedAt)
+
+  return {
+    isReady: Boolean(draft.isReady),
+    studentName: String(
+      hasSavedDraft ? draft.studentName || '' : draft.studentName || contact.leadStudentName || contact.studentName || '',
+    ),
+    studentAge: String(
+      hasSavedDraft ? draft.studentAge || '' : draft.studentAge || contact.leadStudentAge || '',
+    ),
+    studentBirthYear: String(draft.studentBirthYear || ''),
+    parentName: String(hasSavedDraft ? draft.parentName || '' : draft.parentName || contact.parentName || ''),
+    phone: String(hasSavedDraft ? draft.phone || '' : draft.phone || contact.phone || ''),
+    interestedProgram: String(
+      hasSavedDraft ? draft.interestedProgram || '' : draft.interestedProgram || contact.interestedProgram || '',
+    ),
+    preferredSchedule: String(
+      hasSavedDraft ? draft.preferredSchedule || '' : draft.preferredSchedule || contact.preferredSchedule || '',
+    ),
+    learningGoal: String(hasSavedDraft ? draft.learningGoal || '' : draft.learningGoal || contact.leadNeed || ''),
+    expectedStartDate: isValidDateString(draft.expectedStartDate)
+      ? String(draft.expectedStartDate)
+      : '',
+    note: String(draft.note || ''),
+    advisorName: String(draft.advisorName || ''),
+    readyAt: draft.readyAt ? normalizeDateTime(draft.readyAt) : null,
+    createdAt: draft.createdAt ? normalizeDateTime(draft.createdAt) : null,
+    updatedAt: draft.updatedAt ? normalizeDateTime(draft.updatedAt) : null,
+  }
 }
 
 function createSessionReportId(sessionId, occurrenceDate) {

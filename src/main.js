@@ -10,6 +10,7 @@ import {
   getStoredInventory,
   getStoredInventoryMovements,
   getStoredNotifications,
+  getStoredParentConsultations,
   getStoredSchedule,
   getStoredSessionReports,
   getStoredStudents,
@@ -25,6 +26,7 @@ import {
   saveStoredInventory,
   saveStoredInventoryMovements,
   saveStoredNotifications,
+  saveStoredParentConsultations,
   saveStoredSchedule,
   saveStoredSessionReports,
   saveStoredStudents,
@@ -62,6 +64,26 @@ import {
   validateCashflowForm,
 } from './cashflow-module.js'
 import { sampleInventoryItems } from './inventory-data.js'
+import { sampleParentConsultations } from './parent-consultation-data.js'
+import {
+  addCareLogToParentContact,
+  addAppointmentToParentContact,
+  buildEnrollmentSummary,
+  buildParentContactFromForm,
+  createEmptyParentAppointmentDraft,
+  createEmptyParentCareLogDraft,
+  createEditParentContactFormState,
+  createEmptyParentContactFormState,
+  initialParentConsultationFilters,
+  renderParentConsultationModule,
+  markEnrollmentReadyForParentContact,
+  saveEnrollmentDraftToParentContact,
+  updateParentAppointmentStatus,
+  validateEnrollmentReadyDraft,
+  validateParentAppointmentDraft,
+  validateParentCareLogDraft,
+  validateParentContactForm,
+} from './parent-consultation-module.js'
 import {
   applyInventoryMovementToItem,
   buildInventoryItemFromForm,
@@ -175,6 +197,9 @@ let teacherFilters = { ...initialTeacherFilters }
 let teachers = getStoredTeachers(sampleTeachers)
 let teacherFormState = null
 let selectedTeacherId = null
+let parentConsultationFilters = { ...initialParentConsultationFilters }
+let parentConsultations = getStoredParentConsultations(sampleParentConsultations)
+let parentConsultationFormState = null
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 let sessionReports = getStoredSessionReports()
 let scheduleFormState = null
@@ -389,6 +414,15 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'hoc-vien') {
     return renderStudentModule(students, studentFilters, studentFormState, teachers)
+  }
+
+  if (moduleItem.id === 'khach-hang-tu-van') {
+    return renderParentConsultationModule(
+      parentConsultations,
+      parentConsultationFilters,
+      students,
+      parentConsultationFormState,
+    )
   }
 
   if (moduleItem.id === 'giao-vien') {
@@ -2706,6 +2740,366 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-parent-consultation-filter]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      const filterName = control.dataset.parentConsultationFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      parentConsultationFilters = {
+        ...parentConsultationFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(
+        `[data-parent-consultation-filter="${filterName}"]`,
+      )
+      nextControl?.focus()
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-field]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      if (!parentConsultationFormState) {
+        return
+      }
+
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        values: {
+          ...parentConsultationFormState.values,
+          [control.dataset.parentContactField]: control.value,
+        },
+        errors: {
+          ...parentConsultationFormState.errors,
+          [control.dataset.parentContactField]: '',
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-parent-care-log-field]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      if (!parentConsultationFormState) {
+        return
+      }
+
+      const fieldName = control.dataset.parentCareLogField
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        careLogDraft: {
+          ...(parentConsultationFormState.careLogDraft ?? createEmptyParentCareLogDraft()),
+          [fieldName]: control.value,
+          errors: {
+            ...(parentConsultationFormState.careLogDraft?.errors ?? {}),
+            [fieldName]: '',
+          },
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-parent-appointment-field]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      if (!parentConsultationFormState) {
+        return
+      }
+
+      const fieldName = control.dataset.parentAppointmentField
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        appointmentDraft: {
+          ...(parentConsultationFormState.appointmentDraft ?? createEmptyParentAppointmentDraft()),
+          [fieldName]: control.value,
+          errors: {
+            ...(parentConsultationFormState.appointmentDraft?.errors ?? {}),
+            [fieldName]: '',
+          },
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-parent-appointment-status-id]').forEach((control) => {
+    control.addEventListener('change', () => {
+      if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
+        return
+      }
+
+      const existingContact = parentConsultations.find(
+        (contact) => contact.id === parentConsultationFormState.contactId,
+      )
+
+      if (!existingContact) {
+        return
+      }
+
+      const contactWithCurrentFormValues = buildParentContactFromForm(
+        parentConsultationFormState.values,
+        existingContact,
+        students,
+      )
+      const updatedContact = updateParentAppointmentStatus(
+        contactWithCurrentFormValues,
+        control.dataset.parentAppointmentStatusId,
+        control.value,
+      )
+
+      parentConsultations = parentConsultations.map((contact) =>
+        contact.id === updatedContact.id ? updatedContact : contact,
+      )
+      saveStoredParentConsultations(parentConsultations)
+      parentConsultationFormState = createEditParentContactFormState(updatedContact)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-enrollment-field]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      if (!parentConsultationFormState) {
+        return
+      }
+
+      const fieldName = control.dataset.parentEnrollmentField
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        enrollmentDraft: {
+          ...parentConsultationFormState.enrollmentDraft,
+          [fieldName]: control.value,
+        },
+        enrollmentErrors: {
+          ...(parentConsultationFormState.enrollmentErrors ?? {}),
+          [fieldName]: '',
+          summary: '',
+        },
+        enrollmentMessage: '',
+      }
+    })
+  })
+
+  document.querySelector('[data-parent-contact-action="open-create"]')?.addEventListener('click', () => {
+    parentConsultationFormState = createEmptyParentContactFormState()
+    render()
+  })
+
+  document.querySelectorAll('[data-parent-contact-action="edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const contact = parentConsultations.find((item) => item.id === button.dataset.contactId)
+
+      if (!contact) {
+        return
+      }
+
+      parentConsultationFormState = createEditParentContactFormState(contact)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-action="delete"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const contact = parentConsultations.find((item) => item.id === button.dataset.contactId)
+
+      if (!contact || !window.confirm('Bạn có chắc muốn xóa liên hệ này?')) {
+        return
+      }
+
+      parentConsultations = parentConsultations.filter((item) => item.id !== contact.id)
+      saveStoredParentConsultations(parentConsultations)
+
+      if (parentConsultationFormState?.contactId === contact.id) {
+        parentConsultationFormState = null
+      }
+
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      parentConsultationFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-parent-contact-action="save-form"]')?.addEventListener('click', () => {
+    if (!parentConsultationFormState) {
+      return
+    }
+
+    const errors = validateParentContactForm(parentConsultationFormState.values)
+
+    if (Object.keys(errors).length) {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const existingContact =
+      parentConsultationFormState.mode === 'edit'
+        ? parentConsultations.find((contact) => contact.id === parentConsultationFormState.contactId)
+        : null
+    const nextContact = buildParentContactFromForm(
+      parentConsultationFormState.values,
+      existingContact,
+      students,
+    )
+
+    parentConsultations = existingContact
+      ? parentConsultations.map((contact) =>
+          contact.id === existingContact.id ? nextContact : contact,
+        )
+      : [nextContact, ...parentConsultations]
+
+    saveStoredParentConsultations(parentConsultations)
+    parentConsultationFormState = null
+    render()
+  })
+
+  document.querySelector('[data-parent-care-log-action="add"]')?.addEventListener('click', () => {
+    if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
+      return
+    }
+
+    const draft = parentConsultationFormState.careLogDraft ?? createEmptyParentCareLogDraft()
+    const errors = validateParentCareLogDraft(draft)
+
+    if (Object.keys(errors).length) {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        careLogDraft: {
+          ...draft,
+          errors,
+        },
+      }
+      render()
+      return
+    }
+
+    const existingContact = parentConsultations.find(
+      (contact) => contact.id === parentConsultationFormState.contactId,
+    )
+
+    if (!existingContact) {
+      return
+    }
+
+    const contactWithCurrentFormValues = buildParentContactFromForm(
+      parentConsultationFormState.values,
+      existingContact,
+      students,
+    )
+    const updatedContact = addCareLogToParentContact(contactWithCurrentFormValues, draft)
+
+    parentConsultations = parentConsultations.map((contact) =>
+      contact.id === updatedContact.id ? updatedContact : contact,
+    )
+    saveStoredParentConsultations(parentConsultations)
+    parentConsultationFormState = {
+      ...createEditParentContactFormState(updatedContact),
+      careLogDraft: createEmptyParentCareLogDraft(),
+    }
+    render()
+  })
+
+  document.querySelector('[data-parent-appointment-action="add"]')?.addEventListener('click', () => {
+    if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
+      return
+    }
+
+    const draft = parentConsultationFormState.appointmentDraft ?? createEmptyParentAppointmentDraft()
+    const errors = validateParentAppointmentDraft(draft)
+
+    if (Object.keys(errors).length) {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        appointmentDraft: {
+          ...draft,
+          errors,
+        },
+      }
+      render()
+      return
+    }
+
+    const existingContact = parentConsultations.find(
+      (contact) => contact.id === parentConsultationFormState.contactId,
+    )
+
+    if (!existingContact) {
+      return
+    }
+
+    const contactWithCurrentFormValues = buildParentContactFromForm(
+      parentConsultationFormState.values,
+      existingContact,
+      students,
+    )
+    const updatedContact = addAppointmentToParentContact(contactWithCurrentFormValues, draft)
+
+    parentConsultations = parentConsultations.map((contact) =>
+      contact.id === updatedContact.id ? updatedContact : contact,
+    )
+    saveStoredParentConsultations(parentConsultations)
+    parentConsultationFormState = {
+      ...createEditParentContactFormState(updatedContact),
+      appointmentDraft: createEmptyParentAppointmentDraft(),
+    }
+    render()
+  })
+
+  document.querySelector('[data-parent-enrollment-action="save"]')?.addEventListener('click', () => {
+    saveParentEnrollmentDraft(false)
+  })
+
+  document.querySelector('[data-parent-enrollment-action="ready"]')?.addEventListener('click', () => {
+    saveParentEnrollmentDraft(true)
+  })
+
+  document.querySelector('[data-parent-enrollment-action="copy"]')?.addEventListener('click', async () => {
+    if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
+      return
+    }
+
+    const contact = parentConsultations.find(
+      (item) => item.id === parentConsultationFormState.contactId,
+    )
+    const summary = buildEnrollmentSummary({
+      ...(contact ?? {}),
+      enrollmentDraft: parentConsultationFormState.enrollmentDraft,
+    })
+
+    try {
+      await navigator.clipboard.writeText(summary)
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        enrollmentMessage: 'Đã copy tóm tắt đăng ký.',
+      }
+    } catch {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        enrollmentMessage: 'Không copy tự động được. Hãy copy thủ công từ khung tóm tắt.',
+      }
+    }
+    render()
+  })
+
   document.querySelectorAll('[data-teacher-filter]').forEach((control) => {
     control.addEventListener('input', () => {
       const filterName = control.dataset.teacherFilter
@@ -4202,6 +4596,61 @@ function openTuitionPackageForm(studentId) {
     : createEmptyTuitionFormState(student)
   tuitionPaymentFormState = null
   tuitionDetailState = null
+  render()
+}
+
+function saveParentEnrollmentDraft(markReady = false) {
+  if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
+    return
+  }
+
+  const existingContact = parentConsultations.find(
+    (contact) => contact.id === parentConsultationFormState.contactId,
+  )
+
+  if (!existingContact) {
+    return
+  }
+
+  const errors = markReady
+    ? validateEnrollmentReadyDraft(parentConsultationFormState.enrollmentDraft)
+    : {}
+
+  if (Object.keys(errors).length) {
+    parentConsultationFormState = {
+      ...parentConsultationFormState,
+      enrollmentErrors: errors,
+      enrollmentMessage: '',
+    }
+    render()
+    return
+  }
+
+  const contactWithCurrentFormValues = buildParentContactFromForm(
+    parentConsultationFormState.values,
+    existingContact,
+    students,
+  )
+  const updatedContact = markReady
+    ? markEnrollmentReadyForParentContact(
+        contactWithCurrentFormValues,
+        parentConsultationFormState.enrollmentDraft,
+      )
+    : saveEnrollmentDraftToParentContact(
+        contactWithCurrentFormValues,
+        parentConsultationFormState.enrollmentDraft,
+      )
+
+  parentConsultations = parentConsultations.map((contact) =>
+    contact.id === updatedContact.id ? updatedContact : contact,
+  )
+  saveStoredParentConsultations(parentConsultations)
+  parentConsultationFormState = {
+    ...createEditParentContactFormState(updatedContact),
+    enrollmentMessage: markReady
+      ? 'Đã đánh dấu sẵn sàng đăng ký.'
+      : 'Đã lưu bản nháp đăng ký.',
+  }
   render()
 }
 
