@@ -2,11 +2,27 @@ import { botMilestones, sampleStudents, studentStatuses } from './student-data.j
 
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
-const levelFilterOptions = Array.from({ length: 15 }, (_, index) => `Level ${index + 1}`)
-const levelSelectOptions = Array.from({ length: 15 }, (_, index) => ({
-  value: String(index + 1),
-  label: `Level ${index + 1}`,
-}))
+const studentLevelOptions = [
+  'Dolphin 1',
+  'Dolphin 2',
+  'Dolphin 3',
+  'Dolphin 4',
+  'Turtle 1',
+  'Turtle 2',
+  'Turtle 3',
+  'Bee 1',
+  'Bee 2',
+  'Bee 3',
+  'Monkey 1',
+  'Monkey 2',
+  'Monkey 3',
+  'Elephant 1',
+  'Elephant 2',
+  'Elephant 3',
+  'Jaguar',
+  'Lion',
+  'Eagle',
+]
 const schoolLevelOptions = ['Mẫu giáo', 'Cấp 1', 'Cấp 2', 'Cấp 3', 'Cao đẳng/Đại học', 'Khác']
 const genderOptions = [
   { value: '', label: 'Chưa cập nhật' },
@@ -46,10 +62,11 @@ export const emptyStudentFormValues = {
   nationality: 'Việt Nam',
   parentName: '',
   parentBirthYear: '',
-  parentPhone: '',
+  fatherPhone: '',
+  motherPhone: '',
   parentJob: '',
   parentArea: '',
-  level: '1',
+  level: 'Dolphin 1',
   testScore: '',
   highestBotMilestone: 'Chưa có',
   personality: '',
@@ -63,8 +80,7 @@ const requiredFields = {
   birthDate: 'Ngày tháng năm sinh',
   schoolName: 'Tên trường',
   parentName: 'Họ và tên phụ huynh',
-  parentPhone: 'Số điện thoại phụ huynh',
-  level: 'Level',
+  level: 'Cấp độ học',
 }
 
 export function createEmptyStudentFormState() {
@@ -95,10 +111,13 @@ export function createEditStudentFormState(student) {
       nationality: student.nationality ?? '',
       parentName: student.parentName ?? '',
       parentBirthYear: student.parentBirthYear ? String(student.parentBirthYear) : '',
-      parentPhone: formatPhoneNumber(student.parentPhone ?? ''),
+      fatherPhone: formatPhoneNumber(student.fatherPhone ?? ''),
+      motherPhone: formatPhoneNumber(
+        student.motherPhone ?? (!student.fatherPhone ? student.parentPhone : '') ?? '',
+      ),
       parentJob: student.parentJob ?? '',
       parentArea: student.parentArea ?? '',
-      level: String(getLevelNumber(student.level) ?? 1),
+      level: getLevelLabel(student.level),
       testScore: getTestScoreForForm(student.testScore),
       highestBotMilestone: student.highestBotMilestone ?? 'Chưa có',
       personality: student.personality ?? '',
@@ -116,9 +135,8 @@ export function renderStudentModule(students, filters, formState, teachers = [])
   const stats = getStudentStats(visibleStudents)
 
   return `
-    <section class="student-module ${formState ? 'form-open' : ''}" aria-labelledby="student-module-title">
+    <section class="student-module ${formState ? 'form-open' : ''}" aria-label="Danh sách học viên">
       <div class="student-module-content">
-        <h3 class="sr-only" id="student-module-title">Học viên</h3>
         <div class="student-overview" aria-label="Tìm kiếm, lọc và thống kê học viên">
           <div class="student-top-row">
             <label class="student-search-field">
@@ -147,10 +165,10 @@ export function renderStudentModule(students, filters, formState, teachers = [])
                 </select>
               </label>
               <label>
-                <span>Level</span>
+                <span>Cấp độ học</span>
                 <select data-student-filter="level">
-                  ${renderOption('all', 'Tất cả level', filters.level)}
-                  ${levelFilterOptions
+                  ${renderOption('all', 'Tất cả cấp độ học', filters.level)}
+                  ${studentLevelOptions
                     .map((level) => renderOption(level, level, filters.level))
                     .join('')}
                 </select>
@@ -175,7 +193,7 @@ export function renderStudentModule(students, filters, formState, teachers = [])
                   <th>Phụ huynh</th>
                   <th>SĐT</th>
                   <th>Trạng thái</th>
-                  <th>${renderSortableHeader('Level', 'level', filters)}</th>
+                  <th>${renderSortableHeader('Cấp độ', 'level', filters)}</th>
                   <th>Elo</th>
                   <th>Trường học</th>
                   <th>Giáo viên phụ trách</th>
@@ -219,7 +237,10 @@ export function getFilteredStudents(students = sampleStudents, filters, teachers
         student.schoolName,
         getTeacherDisplayName(assignedTeacher),
       ].some((value) => normalizeText(value).includes(normalizedQuery)) ||
-      (queryDigits && String(student.parentPhone).replace(/\D/g, '').includes(queryDigits))
+      (queryDigits &&
+        [student.fatherPhone, student.motherPhone, student.parentPhone].some((phone) =>
+          String(phone ?? '').replace(/\D/g, '').includes(queryDigits),
+        ))
 
     const matchesStatus =
       activeFilters.status === 'all' || student.currentStatus === activeFilters.status
@@ -245,10 +266,19 @@ export function validateStudentForm(values) {
     return currentErrors
   }, {})
 
-  const parentPhoneDigits = String(values.parentPhone ?? '').replace(/\D/g, '')
+  const fatherPhoneDigits = String(values.fatherPhone ?? '').replace(/\D/g, '')
+  const motherPhoneDigits = String(values.motherPhone ?? '').replace(/\D/g, '')
 
-  if (values.parentPhone && parentPhoneDigits.length !== 10) {
-    errors.parentPhone = 'Số điện thoại phụ huynh cần đủ 10 chữ số.'
+  if (!fatherPhoneDigits && !motherPhoneDigits) {
+    errors.motherPhone = 'Cần nhập ít nhất một SĐT ba hoặc SĐT mẹ.'
+  }
+
+  if (values.fatherPhone && fatherPhoneDigits.length !== 10) {
+    errors.fatherPhone = 'SĐT ba cần đủ 10 chữ số.'
+  }
+
+  if (values.motherPhone && motherPhoneDigits.length !== 10) {
+    errors.motherPhone = 'SĐT mẹ cần đủ 10 chữ số.'
   }
 
   const parentBirthYear = String(values.parentBirthYear ?? '').trim()
@@ -273,7 +303,7 @@ export function validateStudentForm(values) {
       numericScore < 0 ||
       numericScore > 10
     ) {
-      errors.testScore = 'Điểm bài thi cần từ 0 đến 10 và theo bước 0.5.'
+      errors.testScore = 'Điểm bài kiểm tra gần nhất cần từ 0 đến 10 và theo bước 0.5.'
     }
   }
 
@@ -294,9 +324,13 @@ export function buildStudentFromForm(values, existingStudent = null) {
     ...values,
     avatarUrl: values.avatarUrl || existingStudent?.avatarUrl || '',
     assignedTeacherId: normalizeAssignedTeacherId(values.assignedTeacherId),
-    level: getLevelNumber(values.level) ?? values.level,
+    level: getLevelLabel(values.level),
     parentBirthYear: values.parentBirthYear ? Number(values.parentBirthYear) : '',
-    parentPhone: formatPhoneNumber(values.parentPhone),
+    fatherPhone: formatPhoneNumber(values.fatherPhone),
+    motherPhone: formatPhoneNumber(values.motherPhone),
+    parentPhone: formatPhoneNumber(
+      values.motherPhone || values.fatherPhone || existingStudent?.parentPhone || '',
+    ),
     testScore: values.testScore ? Number(String(values.testScore).replace(',', '.')) : '',
     latestCareNote: values.parentNotes || 'Chưa có ghi chú chăm sóc.',
   }
@@ -372,7 +406,7 @@ function renderStudentForm(formState, teachers = []) {
                   renderField('nationality', 'Quốc tịch', formState, 'text'),
                 ])}
                 ${renderFormSection('C. Trạng thái học', [
-                  renderSelectField('level', 'Level *', formState, levelSelectOptions),
+                  renderSelectField('level', 'Cấp độ học *', formState, studentLevelOptions),
                   renderSelectField('highestBotMilestone', 'Mốc bot đã vượt qua', formState, botMilestones),
                   renderSelectField(
                     'assignedTeacherId',
@@ -384,7 +418,7 @@ function renderStudentForm(formState, teachers = []) {
                     className: 'span-full',
                   }),
                   renderField('hobbies', 'Sở thích', formState, 'text'),
-                  renderField('testScore', 'Điểm bài thi', formState, 'number', {
+                  renderField('testScore', 'Điểm bài kiểm tra gần nhất', formState, 'number', {
                     placeholder: '0-10, không bắt buộc',
                     min: '0',
                     max: '10',
@@ -400,7 +434,10 @@ function renderStudentForm(formState, teachers = []) {
                     maxlength: '4',
                     placeholder: `Từ 1950 đến ${new Date().getFullYear()}`,
                   }),
-                  renderField('parentPhone', 'Số điện thoại phụ huynh *', formState, 'tel', {
+                  renderField('fatherPhone', 'SĐT ba', formState, 'tel', {
+                    placeholder: '0901 001 001',
+                  }),
+                  renderField('motherPhone', 'SĐT mẹ', formState, 'tel', {
                     placeholder: '0901 001 001',
                   }),
                   renderField('parentJob', 'Nghề nghiệp', formState, 'text'),
@@ -580,10 +617,13 @@ function compareStudentsByName(firstStudent, secondStudent) {
 }
 
 function compareStudentLevels(firstStudent, secondStudent) {
-  const firstLevel = getLevelNumber(firstStudent.level) ?? Number.MAX_SAFE_INTEGER
-  const secondLevel = getLevelNumber(secondStudent.level) ?? Number.MAX_SAFE_INTEGER
+  const firstLevel = studentLevelOptions.indexOf(getLevelLabel(firstStudent.level))
+  const secondLevel = studentLevelOptions.indexOf(getLevelLabel(secondStudent.level))
 
-  return firstLevel - secondLevel
+  return (
+    (firstLevel < 0 ? Number.MAX_SAFE_INTEGER : firstLevel) -
+    (secondLevel < 0 ? Number.MAX_SAFE_INTEGER : secondLevel)
+  )
 }
 
 function getFinalName(fullName) {
@@ -600,6 +640,7 @@ function compareText(firstValue, secondValue) {
 
 function renderStudentRow(student, teachers = []) {
   const hasCareNote = hasRealCareNote(student)
+  const contactPhone = student.motherPhone || student.fatherPhone || student.parentPhone
 
   return `
     <tr class="student-row" data-student-id="${student.id}" tabindex="0">
@@ -613,7 +654,7 @@ function renderStudentRow(student, teachers = []) {
         </div>
       </td>
       <td title="${escapeAttribute(student.parentName)}">${getShortName(student.parentName)}</td>
-      <td class="student-phone">${formatPhoneNumber(student.parentPhone)}</td>
+      <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
       <td><span class="student-status">${student.currentStatus}</span></td>
       <td>${getLevelLabel(student.level)}</td>
       <td>${student.elo ?? '—'}</td>
@@ -771,33 +812,33 @@ function getShortName(value) {
 }
 
 function getLevelLabel(level) {
-  const levelNumber = getLevelNumber(level)
-
-  if (levelNumber) {
-    return `Level ${levelNumber}`
-  }
-
-  return level ?? '—'
-}
-
-function getLevelNumber(level) {
   const legacyLevelMap = {
-    'nhap mon': 1,
-    'co ban': 2,
-    'trung cap': 3,
-    'nang cao': 4,
+    'nhap mon': 'Dolphin 1',
+    'co ban': 'Dolphin 2',
+    'trung cap': 'Dolphin 3',
+    'nang cao': 'Dolphin 4',
   }
   const levelText = String(level ?? '').trim()
-  const legacyLevelNumber = legacyLevelMap[normalizeText(levelText)]
+  const canonicalLevel = studentLevelOptions.find(
+    (option) => normalizeText(option) === normalizeText(levelText),
+  )
 
-  if (legacyLevelNumber) {
-    return legacyLevelNumber
+  if (canonicalLevel) {
+    return canonicalLevel
   }
 
-  const levelMatch = levelText.match(/\d+/)
-  const levelNumber = levelMatch ? Number(levelMatch[0]) : null
+  const legacyNamedLevel = legacyLevelMap[normalizeText(levelText)]
 
-  return levelNumber && levelNumber >= 1 && levelNumber <= 15 ? levelNumber : null
+  if (legacyNamedLevel) {
+    return legacyNamedLevel
+  }
+
+  const legacyLevelMatch = levelText.match(/^(?:level\s*)?(\d{1,2})$/i)
+  const legacyLevelNumber = legacyLevelMatch ? Number(legacyLevelMatch[1]) : null
+
+  return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
+    ? studentLevelOptions[legacyLevelNumber - 1]
+    : 'Dolphin 1'
 }
 
 function getShortSchoolName(value) {

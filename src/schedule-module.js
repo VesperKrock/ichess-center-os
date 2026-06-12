@@ -52,6 +52,24 @@ export function createEmptyScheduleFormState() {
   }
 }
 
+export function createScheduleFormStateForDay(dayOfWeek, date) {
+  const validDay = scheduleDays.some((day) => day.id === dayOfWeek)
+    ? dayOfWeek
+    : getDayOfWeekFromDate(date) || 'monday'
+  const validDate = normalizeDateString(date)
+
+  return {
+    ...createEmptyScheduleFormState(),
+    values: {
+      ...emptyScheduleFormValues,
+      scheduleType: 'oneOff',
+      dayOfWeek: validDay,
+      date: validDate,
+      occurrenceReason: '',
+    },
+  }
+}
+
 export function createEditScheduleFormState(session) {
   const scheduleType = normalizeScheduleType(session.scheduleType)
 
@@ -809,6 +827,15 @@ function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMa
             : '<div class="schedule-empty-day">Chưa có lịch</div>'
         }
       </div>
+      <button
+        class="schedule-day-add-button"
+        type="button"
+        data-schedule-action="open-create-for-day"
+        data-schedule-day-of-week="${escapeAttribute(day.id)}"
+        data-schedule-date="${escapeAttribute(day.date)}"
+      >
+        + Thêm thẻ
+      </button>
     </section>
   `
 }

@@ -20,7 +20,7 @@ const activeCareStatuses = new Set([
 
 export const parentContactTypeLabels = {
   currentParent: 'Phụ huynh hiện tại',
-  consultingLead: 'Khách tư vấn',
+  consultingLead: 'Khách tư vấn mới',
   formerParent: 'Phụ huynh cũ',
 }
 
@@ -42,6 +42,8 @@ export const parentContactSourceLabels = {
   walkIn: 'Đến trực tiếp',
   school: 'Trường học',
   oldStudent: 'Học viên cũ',
+  website: 'Website',
+  eventTournament: 'Sự kiện / Giải đấu',
   unknown: 'Chưa rõ',
 }
 
@@ -496,6 +498,7 @@ export function getFilteredParentConsultations(contacts, filters = initialParent
         contact.leadNeed,
         contact.lastNote,
         contact.nextAction,
+        parentContactSourceLabels[contact.source],
         ...(contact.careLogs ?? []).flatMap((log) => [log.content, log.result, log.nextAction]),
         ...(contact.appointments ?? []).flatMap((appointment) => [
           appointment.location,
@@ -543,7 +546,7 @@ export function renderParentConsultationModule(
       <div class="parent-consultation-topbar">
         <div class="parent-consultation-stats" aria-label="Tổng quan tư vấn">
           ${renderStatCard('Tổng liên hệ', stats.total)}
-          ${renderStatCard('Khách tư vấn', stats.consultingLeads)}
+          ${renderStatCard('Khách tư vấn mới', stats.consultingLeads)}
           ${renderStatCard('Đang chăm sóc', stats.activeCare, 'is-active')}
           ${renderStatCard('Cần follow-up', stats.callbacks, 'is-warning')}
         </div>
@@ -552,11 +555,11 @@ export function renderParentConsultationModule(
         </button>
       </div>
 
-      <section class="parent-consultation-list-section" aria-label="Bảng liên hệ phụ huynh và khách tư vấn">
+      <section class="parent-consultation-list-section" aria-label="Bảng liên hệ phụ huynh và khách tư vấn mới">
         <div class="parent-consultation-list-header">
           <div>
             <h3>Phụ huynh / Tư vấn</h3>
-            <span>${filteredContacts.length}/${contacts.length} lien he</span>
+            <span>${filteredContacts.length}/${contacts.length} liên hệ</span>
           </div>
           <span class="parent-consultation-phase">8F · Audit/polish</span>
         </div>
@@ -650,7 +653,7 @@ function renderContactsTable(contacts) {
             <th>Nguồn</th>
             <th>Ghi chú gần nhất</th>
             <th>Việc tiếp theo</th>
-            <th>Thao tac</th>
+            <th>Thao tác</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -671,7 +674,7 @@ function renderContactRow(contact) {
       <td>
         <div class="parent-contact-cell">
           <span class="parent-contact-badge is-${escapeAttribute(contact.contactType)}">
-            ${escapeHtml(parentContactTypeLabels[contact.contactType] ?? 'Lien he')}
+            ${escapeHtml(parentContactTypeLabels[contact.contactType] ?? 'Liên hệ')}
           </span>
           <strong>${escapeHtml(contact.parentName || 'Chưa có tên')}</strong>
           <span>${escapeHtml(contact.phone || 'Chưa có SĐT')}</span>
@@ -756,8 +759,8 @@ function renderParentContactForm(formState, students) {
           <section class="parent-contact-form-section">
             <h4>Học viên / bé cần tư vấn</h4>
             <div class="parent-contact-form-grid">
+              ${renderFormInput('Họ và tên bé tư vấn', 'leadStudentName', values.leadStudentName)}
               ${renderStudentSelect(values.studentId, students)}
-              ${renderFormInput('Tên bé tư vấn', 'leadStudentName', values.leadStudentName)}
               ${renderFormInput('Tuổi', 'leadStudentAge', values.leadStudentAge)}
               ${renderFormTextarea('Nhu cầu', 'leadNeed', values.leadNeed)}
             </div>
@@ -837,7 +840,7 @@ function renderAppointmentSection(formState) {
     <section class="parent-contact-form-section parent-appointment-section">
       <h4>Lịch hẹn</h4>
       <div class="parent-appointment-layout">
-        <div class="parent-appointment-list" aria-label="Danh sach lich hen">
+        <div class="parent-appointment-list" aria-label="Danh sách lịch hẹn">
           ${
             appointments.length
               ? appointments.map((appointment) => renderAppointmentCard(appointment)).join('')
@@ -867,7 +870,7 @@ function renderAppointmentCard(appointment) {
         <span>Trạng thái</span>
         <select
           data-parent-appointment-status-id="${escapeAttribute(appointment.id)}"
-          aria-label="Cap nhat trang thai lich hen"
+          aria-label="Cập nhật trạng thái lịch hẹn"
         >
           ${Object.entries(parentAppointmentStatusLabels)
             .map(
@@ -906,7 +909,7 @@ function renderCareLogSection(formState) {
     <section class="parent-contact-form-section parent-care-section">
       <h4>Lịch sử chăm sóc</h4>
       <div class="parent-care-layout">
-        <div class="parent-care-timeline" aria-label="Timeline cham soc">
+        <div class="parent-care-timeline" aria-label="Dòng thời gian chăm sóc">
           ${
             logs.length
               ? logs.map((log) => renderCareLog(log)).join('')
@@ -1156,7 +1159,7 @@ function renderStudentSelect(selectedStudentId, students) {
 
   return `
     <label>
-      <span>Học viên liên quan</span>
+      <span>Học viên liên quan (nếu có)</span>
       <select data-parent-contact-field="studentId">
         ${options}
       </select>

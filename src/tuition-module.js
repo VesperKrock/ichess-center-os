@@ -1,3 +1,9 @@
+import {
+  advisoryCareStatusLabels,
+  buildAttendanceAdvisoryRows,
+  getCurrentMonthKey,
+} from './attendance-advisory.js'
+
 export const initialTuitionFilters = {
   query: '',
   status: 'all',
@@ -32,17 +38,17 @@ const paymentMethodOptions = [
 
 const discountPresetOptions = [
   { value: 'none', label: 'Không ưu đãi' },
-  { value: 'percent-5', label: '5%' },
-  { value: 'percent-10', label: '10%' },
-  { value: 'percent-15', label: '15%' },
-  { value: 'percent-20', label: '20%' },
-  { value: 'percent-30', label: '30%' },
-  { value: 'fixed-100000', label: '100.000 VNĐ' },
-  { value: 'fixed-200000', label: '200.000 VNĐ' },
-  { value: 'fixed-300000', label: '300.000 VNĐ' },
-  { value: 'fixed-500000', label: '500.000 VNĐ' },
-  { value: 'custom-percent', label: 'Tùy chọn %' },
-  { value: 'custom-fixed', label: 'Tùy chọn số tiền' },
+  { value: 'percent-5', label: 'Theo % · 5%' },
+  { value: 'percent-10', label: 'Theo % · 10%' },
+  { value: 'percent-15', label: 'Theo % · 15%' },
+  { value: 'percent-20', label: 'Theo % · 20%' },
+  { value: 'percent-30', label: 'Theo % · 30%' },
+  { value: 'fixed-100000', label: 'Theo số tiền · 100.000 VNĐ' },
+  { value: 'fixed-200000', label: 'Theo số tiền · 200.000 VNĐ' },
+  { value: 'fixed-300000', label: 'Theo số tiền · 300.000 VNĐ' },
+  { value: 'fixed-500000', label: 'Theo số tiền · 500.000 VNĐ' },
+  { value: 'custom-percent', label: 'Theo % · Tùy chọn' },
+  { value: 'custom-fixed', label: 'Theo số tiền · Tùy chọn' },
 ]
 
 const percentDiscountPresets = [5, 10, 15, 20, 30]
@@ -137,6 +143,9 @@ export function renderTuitionModule(
   formState = null,
   paymentFormState = null,
   detailState = null,
+  sessionReports = [],
+  advisoryNotes = [],
+  advisoryMonthKey = getCurrentMonthKey(),
 ) {
   const rows = buildTuitionRows(students, tuitionRecords)
   const visibleRows = filterTuitionRows(rows, filters)
@@ -155,6 +164,13 @@ export function renderTuitionModule(
     ? tuitionRecords.find((record) => record.studentId === detailState.studentId)
     : null
   const hasPanel = Boolean(formState || paymentFormState || detailState)
+  const advisoryRows = buildAttendanceAdvisoryRows(
+    students,
+    tuitionRecords,
+    sessionReports,
+    advisoryNotes,
+    advisoryMonthKey,
+  )
 
   return `
     <section class="tuition-module ${hasPanel ? 'form-open' : ''}">
@@ -201,9 +217,10 @@ export function renderTuitionModule(
                 <th>Phụ huynh</th>
                 <th>Gói</th>
                 <th>Buổi đã học</th>
-                <th>Học phí</th>
+                <th>Học phí gốc</th>
                 <th>Ưu đãi</th>
-                <th>Thanh toán</th>
+                <th>Cần thanh toán</th>
+                <th>Đã thanh toán</th>
                 <th>Còn nợ</th>
                 <th>Trạng thái</th>
                 <th>Ghi chú</th>
@@ -213,11 +230,12 @@ export function renderTuitionModule(
               ${
                 visibleRows.length
                   ? visibleRows.map((row) => renderTuitionRow(row)).join('')
-                  : '<tr><td class="tuition-empty" colspan="10">Không có học viên phù hợp.</td></tr>'
+                  : '<tr><td class="tuition-empty" colspan="11">Không có học viên phù hợp.</td></tr>'
               }
             </tbody>
           </table>
         </div>
+        ${renderAttendanceAdvisory(advisoryRows, advisoryMonthKey)}
       </div>
       ${formState && formStudent ? renderTuitionForm(formStudent, formState) : ''}
       ${
@@ -227,6 +245,97 @@ export function renderTuitionModule(
       }
       ${detailState && detailStudent ? renderTuitionDetailPanel(detailStudent, detailTuition) : ''}
     </section>
+  `
+}
+
+function renderAttendanceAdvisory(rows, monthKey) {
+  const [year, month] = monthKey.split('-')
+
+  return `
+    <section class="tuition-attendance-advisory" aria-label="Theo dõi buổi học và cảnh báo chăm sóc">
+      <div class="tuition-advisory-header">
+        <div>
+          <h3>Theo dõi buổi học & cảnh báo chăm sóc</h3>
+          <p>Tháng ${month}/${year} · Bảng advisory, không tự ghi ngược vào gói học phí.</p>
+        </div>
+        <span>${rows.length} học viên</span>
+      </div>
+      <div class="tuition-advisory-table-wrap">
+        <table class="tuition-advisory-table">
+          <thead>
+            <tr>
+              <th>Học viên</th>
+              <th>Phụ huynh</th>
+              <th>Gói</th>
+              <th>Tổng số buổi</th>
+              <th>Đã học</th>
+              <th>Còn lại</th>
+              <th>Cảnh báo</th>
+              <th>Tình trạng chăm sóc</th>
+              <th>Ghi chú</th>
+              <th>Nguồn tính</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => renderAttendanceAdvisoryRow(row)).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `
+}
+
+function renderAttendanceAdvisoryRow(row) {
+  const studentId = escapeHtml(row.student.id)
+  const remainingLabel =
+    row.remainingSessions === null ? '—' : String(row.remainingSessions)
+
+  return `
+    <tr data-tuition-advisory-row="${studentId}" data-advisory-month-key="${escapeHtml(row.monthKey)}">
+      <td><strong>${escapeHtml(row.student.fullName)}</strong></td>
+      <td>${escapeHtml(row.student.parentName || '—')}</td>
+      <td>${escapeHtml(row.tuition?.packageName || 'Chưa có gói')}</td>
+      <td>${row.totalSessions === null ? '—' : row.totalSessions}</td>
+      <td>${row.learnedSessions}</td>
+      <td class="${Number(row.remainingSessions) < 0 ? 'is-overdue' : ''}">${remainingLabel}</td>
+      <td>
+        <span class="tuition-advisory-badge is-${escapeHtml(row.warning.tone)}">
+          ${escapeHtml(row.warning.label)}
+        </span>
+      </td>
+      <td>
+        <select data-tuition-advisory-care-status="${studentId}" aria-label="Tình trạng chăm sóc ${escapeHtml(row.student.fullName)}">
+          ${Object.entries(advisoryCareStatusLabels)
+            .map(
+              ([value, label]) => `
+                <option value="${value}" ${row.careStatus === value ? 'selected' : ''}>${escapeHtml(label)}</option>
+              `,
+            )
+            .join('')}
+        </select>
+        <small>${escapeHtml(row.careStatusLabel)}</small>
+      </td>
+      <td>
+        <textarea
+          class="tuition-advisory-note"
+          data-tuition-advisory-note="${studentId}"
+          placeholder="Ghi chú chăm sóc theo tháng..."
+        >${escapeHtml(row.note)}</textarea>
+      </td>
+      <td><span class="tuition-advisory-source">${escapeHtml(row.source)}</span></td>
+      <td>
+        <button
+          type="button"
+          class="tuition-advisory-save"
+          data-tuition-advisory-action="save"
+          data-student-id="${studentId}"
+          data-month-key="${escapeHtml(row.monthKey)}"
+        >
+          Lưu ghi chú
+        </button>
+      </td>
+    </tr>
   `
 }
 
@@ -339,18 +448,54 @@ export function createTuitionWarningNotification(row) {
 }
 
 export function getTuitionPayableAmount(tuitionRecord) {
-  return Math.max(
-    Number(tuitionRecord.totalAmount || 0) - Number(tuitionRecord.discountAmount || 0),
-    0,
-  )
+  return calculateTuitionAmounts(tuitionRecord).payableAmount
 }
 
 export function getTuitionDebtAmount(tuitionRecord) {
-  return Math.max(getTuitionPayableAmount(tuitionRecord) - Number(tuitionRecord.paidAmount || 0), 0)
+  return calculateTuitionAmounts(tuitionRecord).remainingDebt
 }
 
 export function getTuitionOverpaidAmount(tuitionRecord) {
-  return Math.max(Number(tuitionRecord.paidAmount || 0) - getTuitionPayableAmount(tuitionRecord), 0)
+  const amounts = calculateTuitionAmounts(tuitionRecord)
+  return Math.max(amounts.paidAmount - amounts.payableAmount, 0)
+}
+
+export function calculateTuitionAmounts(tuitionRecord = {}) {
+  const tuitionAmount = normalizeSafeNumber(tuitionRecord.totalAmount)
+  const discountType = normalizeDiscountType(tuitionRecord.discountType, tuitionRecord.discountAmount)
+  const rawDiscountValue =
+    tuitionRecord.discountValue ??
+    (discountType === 'amount' ? tuitionRecord.discountAmount : 0)
+  const discountValue =
+    discountType === 'percent'
+      ? Math.min(Math.max(normalizeSafeNumber(rawDiscountValue), 0), 100)
+      : discountType === 'amount'
+        ? Math.max(normalizeSafeNumber(rawDiscountValue), 0)
+        : 0
+  const calculatedDiscount =
+    discountType === 'percent'
+      ? Math.round((tuitionAmount * discountValue) / 100)
+      : discountValue
+  const discountAmount = Math.min(Math.max(calculatedDiscount, 0), tuitionAmount)
+  const payableAmount = Math.max(tuitionAmount - discountAmount, 0)
+  const paymentTotal = Array.isArray(tuitionRecord.payments)
+    ? tuitionRecord.payments.reduce(
+        (total, payment) => total + normalizeSafeNumber(payment?.amount),
+        0,
+      )
+    : 0
+  const paidAmount = Math.max(normalizeSafeNumber(tuitionRecord.paidAmount), paymentTotal)
+  const remainingDebt = Math.max(payableAmount - paidAmount, 0)
+
+  return {
+    tuitionAmount,
+    discountType,
+    discountValue,
+    discountAmount,
+    payableAmount,
+    paidAmount,
+    remainingDebt,
+  }
 }
 
 export function normalizeTuitionFormValues(values) {
@@ -361,6 +506,8 @@ export function normalizeTuitionFormValues(values) {
     packageName: String(values.packageName || '').trim(),
     totalSessions: normalizeInteger(values.totalSessions),
     usedSessions: normalizeInteger(values.usedSessions),
+    hasTotalSessionsData: true,
+    hasUsedSessionsData: true,
     totalAmount,
     discountType: discount.type,
     discountValue: discount.value,
@@ -481,6 +628,7 @@ function renderTuitionRow(row) {
   const hasOverpayment = tuition ? getTuitionOverpaidAmount(tuition) > 0 : false
   const rowTitle = tuition ? 'Bấm để cập nhật gói học phí' : 'Bấm để gán gói học phí'
   const termNumber = tuition?.currentTermNumber || 1
+  const amounts = tuition ? calculateTuitionAmounts(tuition) : null
 
   return `
     <tr
@@ -505,9 +653,10 @@ function renderTuitionRow(row) {
             : '—'
         }
       </td>
-      <td title="${tuition ? formatMoney(tuition.totalAmount) : ''}">${tuition ? formatMoney(tuition.totalAmount) : '—'}</td>
-      <td title="${tuition ? formatMoney(tuition.discountAmount || 0) : ''}">${tuition ? formatMoney(tuition.discountAmount || 0) : '—'}</td>
-      <td title="${tuition ? formatMoney(tuition.paidAmount) : ''}">${tuition ? formatMoney(tuition.paidAmount) : '—'}</td>
+      <td title="${amounts ? formatMoney(amounts.tuitionAmount) : ''}">${amounts ? formatMoney(amounts.tuitionAmount) : '—'}</td>
+      <td title="${amounts ? getDiscountFormulaLabel(amounts) : ''}">${amounts ? renderDiscountCell(amounts) : '—'}</td>
+      <td title="${amounts ? formatMoney(amounts.payableAmount) : ''}">${amounts ? formatMoney(amounts.payableAmount) : '—'}</td>
+      <td title="${amounts ? formatMoney(amounts.paidAmount) : ''}">${amounts ? formatMoney(amounts.paidAmount) : '—'}</td>
       <td>
         ${
           tuition
@@ -585,11 +734,11 @@ function renderTuitionForm(student, formState) {
         ${renderTextField('packageName', 'Tên gói', values.packageName, errors.packageName)}
         ${renderTextField('totalSessions', 'Tổng số buổi', values.totalSessions, errors.totalSessions, 'number')}
         ${renderTextField('usedSessions', 'Số buổi đã học', values.usedSessions, errors.usedSessions, 'number')}
-        ${renderTextField('totalAmount', 'Học phí', values.totalAmount, errors.totalAmount)}
+        ${renderTextField('totalAmount', 'Học phí gốc', values.totalAmount, errors.totalAmount)}
         ${renderDiscountPresetField(values, errors)}
         ${renderDiscountCustomField(values, errors)}
         ${renderDiscountPreview(discountPreview)}
-        ${renderTextField('paidAmount', isRenew ? 'Thanh toán ban đầu' : 'Thanh toán', values.paidAmount, errors.paidAmount)}
+        ${renderTextField('paidAmount', isRenew ? 'Đã thanh toán ban đầu' : 'Đã thanh toán', values.paidAmount, errors.paidAmount)}
         ${renderTextField('dueDate', 'Hạn đóng / ngày nhắc', values.dueDate, errors.dueDate, 'date')}
         <label class="span-full ${errors.note ? 'has-error' : ''}">
           <span>Ghi chú</span>
@@ -618,8 +767,7 @@ function renderCurrentTermSummary(tuitionRecord) {
     return ''
   }
 
-  const debtAmount = getTuitionDebtAmount(tuitionRecord)
-  const payableAmount = getTuitionPayableAmount(tuitionRecord)
+  const amounts = calculateTuitionAmounts(tuitionRecord)
 
   return `
     <section class="tuition-term-summary" aria-label="Kỳ hiện tại">
@@ -632,25 +780,26 @@ function renderCurrentTermSummary(tuitionRecord) {
         <strong>${tuitionRecord.usedSessions}/${tuitionRecord.totalSessions}</strong>
       </div>
       <div>
-        <span>Học phí</span>
-        <strong>${formatMoney(tuitionRecord.totalAmount)}</strong>
+        <span>Học phí gốc</span>
+        <strong>${formatMoney(amounts.tuitionAmount)}</strong>
       </div>
       <div>
         <span>Ưu đãi</span>
-        <strong>${formatMoney(tuitionRecord.discountAmount || 0)}</strong>
+        <strong>${getDiscountFormulaLabel(amounts)}</strong>
       </div>
       <div>
-        <span>Số phải đóng</span>
-        <strong>${formatMoney(payableAmount)}</strong>
+        <span>Cần thanh toán</span>
+        <strong>${formatMoney(amounts.payableAmount)}</strong>
       </div>
       <div>
-        <span>Thanh toán</span>
-        <strong>${formatMoney(tuitionRecord.paidAmount)}</strong>
+        <span>Đã thanh toán</span>
+        <strong>${formatMoney(amounts.paidAmount)}</strong>
       </div>
       <div>
         <span>Còn nợ</span>
-        <strong>${formatMoney(debtAmount)}</strong>
+        <strong>${formatMoney(amounts.remainingDebt)}</strong>
       </div>
+      ${renderTuitionFormula(amounts)}
     </section>
   `
 }
@@ -676,8 +825,7 @@ function renderTermHistory(termHistory) {
 }
 
 function renderTermHistoryItem(term) {
-  const debtAmount = getTuitionDebtAmount(term)
-  const payableAmount = getTuitionPayableAmount(term)
+  const amounts = calculateTuitionAmounts(term)
   const statusLabel = term.status === 'completed' ? 'Đã hoàn tất' : 'Đã lưu lịch sử'
   const dateText = [formatCompactDate(term.startedAt), formatCompactDate(term.endedAt)]
     .filter(Boolean)
@@ -689,7 +837,7 @@ function renderTermHistoryItem(term) {
         <strong>Kỳ ${term.termNumber || ''} · ${escapeHtml(term.packageName)}</strong>
         <span>${statusLabel}</span>
       </div>
-      <p>Buổi: ${term.usedSessions}/${term.totalSessions} · Học phí: ${formatMoney(term.totalAmount)} · Ưu đãi: ${formatMoney(term.discountAmount || 0)} · Phải đóng: ${formatMoney(payableAmount)} · Thanh toán: ${formatMoney(term.paidAmount)} · Còn nợ: ${formatMoney(debtAmount)}</p>
+      <p>Buổi: ${term.usedSessions}/${term.totalSessions} · Học phí gốc: ${formatMoney(amounts.tuitionAmount)} · Ưu đãi: ${getDiscountFormulaLabel(amounts)} · Cần thanh toán: ${formatMoney(amounts.payableAmount)} · Đã thanh toán: ${formatMoney(amounts.paidAmount)} · Còn nợ: ${formatMoney(amounts.remainingDebt)}</p>
       <small>${dateText || 'Chưa có ngày bắt đầu/kết thúc'}${term.payments?.length ? ` · ${term.payments.length} thanh toán` : ''}</small>
       ${renderTermPayments(term.payments ?? [])}
     </article>
@@ -719,9 +867,9 @@ function renderTermPayments(payments) {
 
 function renderPaymentForm(student, tuitionRecord, formState) {
   const { values, errors } = formState
-  const debtAmount = getTuitionDebtAmount(tuitionRecord)
+  const amounts = calculateTuitionAmounts(tuitionRecord)
+  const debtAmount = amounts.remainingDebt
   const overpaidAmount = getTuitionOverpaidAmount(tuitionRecord)
-  const payableAmount = getTuitionPayableAmount(tuitionRecord)
   const isHistoryOnly = formState.mode === 'history'
   const normalizedPayment = normalizePaymentFormValues(values)
   const isOverDebt = Number.isFinite(normalizedPayment.amount) && normalizedPayment.amount > debtAmount
@@ -737,12 +885,13 @@ function renderPaymentForm(student, tuitionRecord, formState) {
         <button type="button" data-tuition-payment-action="cancel-payment" aria-label="Đóng form">X</button>
       </div>
       <div class="tuition-payment-summary">
-        ${renderPaymentSummary('Học phí', formatMoney(tuitionRecord.totalAmount))}
-        ${renderPaymentSummary('Ưu đãi', formatMoney(tuitionRecord.discountAmount || 0))}
-        ${renderPaymentSummary('Số phải đóng', formatMoney(payableAmount))}
-        ${renderPaymentSummary('Thanh toán', formatMoney(tuitionRecord.paidAmount))}
+        ${renderPaymentSummary('Học phí gốc', formatMoney(amounts.tuitionAmount))}
+        ${renderPaymentSummary('Ưu đãi', getDiscountFormulaLabel(amounts))}
+        ${renderPaymentSummary('Cần thanh toán', formatMoney(amounts.payableAmount))}
+        ${renderPaymentSummary('Đã thanh toán', formatMoney(amounts.paidAmount))}
         ${renderPaymentSummary('Còn nợ', formatMoney(debtAmount))}
       </div>
+      ${renderTuitionFormula(amounts)}
       ${
         overpaidAmount > 0
           ? `<p class="tuition-payment-warning">Khoản dư ${formatMoney(overpaidAmount)} cần xử lý khi tái đăng ký/gia hạn gói ở phase sau.</p>`
@@ -819,9 +968,9 @@ function renderTuitionDetailPanel(student, tuitionRecord) {
 
 function renderTuitionDetailContent(tuitionRecord) {
   const remainingSessions = tuitionRecord.totalSessions - tuitionRecord.usedSessions
-  const debtAmount = getTuitionDebtAmount(tuitionRecord)
+  const amounts = calculateTuitionAmounts(tuitionRecord)
+  const debtAmount = amounts.remainingDebt
   const overpaidAmount = getTuitionOverpaidAmount(tuitionRecord)
-  const payableAmount = getTuitionPayableAmount(tuitionRecord)
   const status = getTuitionWarningStatus(remainingSessions)
 
   return `
@@ -831,15 +980,16 @@ function renderTuitionDetailContent(tuitionRecord) {
       ${renderDetailMetric('Tổng số buổi', tuitionRecord.totalSessions)}
       ${renderDetailMetric('Đã học', tuitionRecord.usedSessions)}
       ${renderDetailMetric('Còn lại', remainingSessions)}
-      ${renderDetailMetric('Học phí', formatMoney(tuitionRecord.totalAmount))}
-      ${renderDetailMetric('Ưu đãi', formatMoney(tuitionRecord.discountAmount || 0))}
-      ${renderDetailMetric('Số phải đóng', formatMoney(payableAmount))}
-      ${renderDetailMetric('Thanh toán', formatMoney(tuitionRecord.paidAmount))}
+      ${renderDetailMetric('Học phí gốc', formatMoney(amounts.tuitionAmount))}
+      ${renderDetailMetric('Ưu đãi', getDiscountFormulaLabel(amounts))}
+      ${renderDetailMetric('Cần thanh toán', formatMoney(amounts.payableAmount))}
+      ${renderDetailMetric('Đã thanh toán', formatMoney(amounts.paidAmount))}
       ${renderDetailMetric('Còn nợ', formatMoney(debtAmount))}
       ${renderDetailMetric('Hạn đóng / ngày nhắc', tuitionRecord.dueDate || 'Chưa đặt')}
       ${renderDetailMetric('Trạng thái', status.label)}
       ${renderDetailMetric('Ghi chú', escapeHtml(tuitionRecord.note || 'Không có ghi chú'), true)}
     </section>
+    ${renderTuitionFormula(amounts)}
     ${
       overpaidAmount > 0
         ? `<p class="tuition-payment-warning">Có đóng dư ${formatMoney(overpaidAmount)}. Khoản dư nên xử lý khi gia hạn/tạo kỳ mới.</p>`
@@ -920,7 +1070,7 @@ function renderTextField(fieldName, label, value, error, type = 'text', scope = 
 function renderDiscountPresetField(values, errors) {
   return `
     <label class="${errors.discountAmount ? 'has-error' : ''}">
-      <span>Ưu đãi</span>
+      <span>Kiểu ưu đãi / Mức ưu đãi</span>
       <select data-tuition-form-field="discountPreset">
         ${discountPresetOptions
           .map(
@@ -946,7 +1096,7 @@ function renderDiscountCustomField(values, errors) {
 
   return `
     <label class="${errors.discountAmount ? 'has-error' : ''}">
-      <span>${preset === 'custom-percent' ? 'Nhập % ưu đãi' : 'Nhập số tiền ưu đãi'}</span>
+      <span>${preset === 'custom-percent' ? 'Ưu đãi (%)' : 'Ưu đãi (VNĐ)'}</span>
       <input
         type="text"
         value="${escapeHtml(values.discountCustomValue ?? '')}"
@@ -960,19 +1110,28 @@ function renderDiscountCustomField(values, errors) {
 
 function renderDiscountPreview(preview) {
   return `
-    <div class="tuition-discount-preview" aria-label="Tóm tắt ưu đãi">
+    <div class="tuition-discount-preview" aria-label="Công thức học phí">
       <div>
-        <span>Ưu đãi</span>
-        <strong>${formatMoney(preview.discountAmount)}</strong>
+        <span>Học phí gốc</span>
+        <strong>${formatMoney(preview.tuitionAmount)}</strong>
       </div>
       <div>
-        <span>Cần đóng</span>
+        <span>Ưu đãi</span>
+        <strong>${preview.discountLabel}</strong>
+      </div>
+      <div>
+        <span>Cần thanh toán</span>
         <strong>${formatMoney(preview.payableAmount)}</strong>
+      </div>
+      <div>
+        <span>Đã thanh toán</span>
+        <strong>${formatMoney(preview.paidAmount)}</strong>
       </div>
       <div>
         <span>Còn nợ</span>
         <strong>${formatMoney(preview.debtAmount)}</strong>
       </div>
+      ${renderTuitionFormula(preview)}
     </div>
   `
 }
@@ -1031,9 +1190,9 @@ function getPackageKind(totalSessions) {
 }
 
 function createDiscountFormValues(tuitionRecord) {
-  const discountType = tuitionRecord.discountType || (Number(tuitionRecord.discountAmount || 0) > 0 ? 'fixed' : 'none')
+  const discountType = normalizeDiscountType(tuitionRecord.discountType, tuitionRecord.discountAmount)
   const discountValue =
-    tuitionRecord.discountValue ?? (discountType === 'fixed' ? tuitionRecord.discountAmount || 0 : 0)
+    tuitionRecord.discountValue ?? (discountType === 'amount' ? tuitionRecord.discountAmount || 0 : 0)
   const discountPreset = getDiscountPresetFromTypeValue(discountType, discountValue)
   const isCustomPreset = discountPreset === 'custom-percent' || discountPreset === 'custom-fixed'
 
@@ -1054,7 +1213,7 @@ function getDiscountPresetFromTypeValue(type, value) {
     return percentDiscountPresets.includes(numberValue) ? `percent-${numberValue}` : 'custom-percent'
   }
 
-  if (type === 'fixed') {
+  if (type === 'amount' || type === 'fixed') {
     return fixedDiscountPresets.includes(numberValue) ? `fixed-${numberValue}` : 'custom-fixed'
   }
 
@@ -1077,14 +1236,14 @@ function getDiscountCalculation(values, totalAmount) {
     type = 'percent'
     value = Number(preset.replace('percent-', ''))
   } else if (preset.startsWith('fixed-')) {
-    type = 'fixed'
+    type = 'amount'
     value = Number(preset.replace('fixed-', ''))
   } else if (preset === 'custom-percent') {
     type = 'percent'
     value = normalizePercent(values.discountCustomValue)
     isValid = Number.isFinite(value)
   } else if (preset === 'custom-fixed') {
-    type = 'fixed'
+    type = 'amount'
     value = normalizeCustomMoney(values.discountCustomValue)
     isValid = Number.isFinite(value)
   }
@@ -1095,7 +1254,7 @@ function getDiscountCalculation(values, totalAmount) {
 
   const amount = type === 'percent'
     ? Math.round((safeTotalAmount * value) / 100)
-    : type === 'fixed'
+    : type === 'amount'
       ? value
       : 0
 
@@ -1113,14 +1272,78 @@ function getDiscountPreview(values) {
   const safeTotalAmount = Number.isFinite(totalAmount) ? totalAmount : 0
   const safePaidAmount = Number.isFinite(paidAmount) ? paidAmount : 0
   const discount = getDiscountCalculation(values, safeTotalAmount)
-  const payableAmount = Math.max(safeTotalAmount - discount.amount, 0)
-  const debtAmount = Math.max(safeTotalAmount - discount.amount - safePaidAmount, 0)
+  const discountAmount = Math.min(discount.amount, safeTotalAmount)
+  const payableAmount = Math.max(safeTotalAmount - discountAmount, 0)
+  const debtAmount = Math.max(payableAmount - safePaidAmount, 0)
+  const discountType = normalizeDiscountType(discount.type, discountAmount)
 
   return {
-    discountAmount: discount.amount,
+    tuitionAmount: safeTotalAmount,
+    discountType,
+    discountValue: discount.value,
+    discountAmount,
+    discountLabel: getDiscountFormulaLabel({
+      discountType,
+      discountValue: discount.value,
+      discountAmount,
+    }),
     payableAmount,
+    paidAmount: safePaidAmount,
     debtAmount,
+    remainingDebt: debtAmount,
   }
+}
+
+function normalizeDiscountType(type, discountAmount = 0) {
+  if (type === 'percent') {
+    return 'percent'
+  }
+
+  if (type === 'amount' || type === 'fixed') {
+    return 'amount'
+  }
+
+  return normalizeSafeNumber(discountAmount) > 0 ? 'amount' : 'none'
+}
+
+function normalizeSafeNumber(value) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? Math.max(numberValue, 0) : 0
+}
+
+function getDiscountFormulaLabel(amounts) {
+  if (amounts.discountType === 'percent') {
+    return `${amounts.discountValue}% (-${formatMoney(amounts.discountAmount)})`
+  }
+
+  if (amounts.discountAmount > 0) {
+    return `-${formatMoney(amounts.discountAmount)}`
+  }
+
+  return formatMoney(0)
+}
+
+function getDiscountOperandLabel(amounts) {
+  if (amounts.discountType === 'percent') {
+    return `${amounts.discountValue}% (${formatMoney(amounts.discountAmount)})`
+  }
+
+  return formatMoney(amounts.discountAmount)
+}
+
+function renderDiscountCell(amounts) {
+  return `
+    <span class="tuition-discount-badge">${getDiscountFormulaLabel(amounts)}</span>
+  `
+}
+
+function renderTuitionFormula(amounts) {
+  return `
+    <div class="tuition-formula">
+      <span><strong>${formatMoney(amounts.tuitionAmount)}</strong> - ${getDiscountOperandLabel(amounts)} = <strong>${formatMoney(amounts.payableAmount)}</strong> cần thanh toán</span>
+      <span><strong>${formatMoney(amounts.payableAmount)}</strong> - ${formatMoney(amounts.paidAmount)} đã thanh toán = <strong>${formatMoney(amounts.remainingDebt ?? amounts.debtAmount)}</strong> còn nợ</span>
+    </div>
+  `
 }
 
 function formatMoney(amount) {

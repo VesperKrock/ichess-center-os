@@ -29,6 +29,7 @@ export function renderStudentDetail(student, teachers = []) {
   const careNotes = getSortedCareNotes(student)
   const latestCareNote = careNotes[0]
   const assignedTeacherLabel = getAssignedTeacherLabel(student, teachers)
+  const primaryParentPhone = student.motherPhone || student.fatherPhone || student.parentPhone
 
   return `
     <section class="student-detail student-detail-overview" aria-label="Hồ sơ tổng quan học viên">
@@ -49,7 +50,7 @@ export function renderStudentDetail(student, teachers = []) {
           <h3>${student.fullName}</h3>
           <p>${displayValue(student.currentStatus)} · ${getLevelLabel(student.level)} · Mốc bot: ${displayValue(student.highestBotMilestone)}</p>
           <p>${formatBirthDate(student.birthDate)} · ${formatAgeLabel(student.birthDate)} · ${getGenderLabel(student.gender)}</p>
-          <p>Trường: ${getSchoolLabel(student)} · PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(student.parentPhone))}</p>
+          <p>Trường: ${getSchoolLabel(student)} · PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(primaryParentPhone))}</p>
         </div>
         <button
           class="student-detail-edit"
@@ -74,14 +75,15 @@ export function renderStudentDetail(student, teachers = []) {
         ])}
         ${renderOverviewTile('Phụ huynh / Liên hệ', [
           ['Phụ huynh', student.parentName],
-          ['SĐT', formatPhoneNumber(student.parentPhone)],
+          ['SĐT ba', formatPhoneNumber(student.fatherPhone)],
+          ['SĐT mẹ', formatPhoneNumber(student.motherPhone || (!student.fatherPhone ? student.parentPhone : ''))],
           ['Năm sinh / tuổi', formatParentAge(student.parentBirthYear)],
           ['Nghề nghiệp', student.parentJob],
           ['Khu vực', student.parentArea],
         ])}
         ${renderOverviewTile('Trạng thái học', [
-          ['Level', getLevelLabel(student.level)],
-          ['Điểm bài thi', formatTestScore(student.testScore)],
+          ['Cấp độ học', getLevelLabel(student.level)],
+          ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
           ['Mốc bot', student.highestBotMilestone],
           ['Tính cách', student.personality],
           ['GV phụ trách', assignedTeacherLabel],
@@ -100,8 +102,8 @@ export function renderStudentDetail(student, teachers = []) {
         ${renderOverviewTile(
           'Kết quả học tập',
           [
-            ['Level hiện tại', getLevelLabel(student.level)],
-            ['Điểm gần nhất', formatTestScore(student.testScore)],
+            ['Cấp độ học hiện tại', getLevelLabel(student.level)],
+            ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
             ['Mốc bot', student.highestBotMilestone],
             ['Nhận xét GV', 'Sẽ cập nhật sau'],
             ['Kế hoạch học tập', 'Sẽ cập nhật sau'],
@@ -192,8 +194,8 @@ export function renderStudentLearningResult(student) {
   return `
     <section class="student-learning-window" aria-label="Kết quả học tập học viên">
       <div class="student-learning-stats">
-        ${renderLearningStat('Level hiện tại', getLevelLabel(student.level))}
-        ${renderLearningStat('Điểm gần nhất', formatTestScore(student.testScore))}
+        ${renderLearningStat('Cấp độ học hiện tại', getLevelLabel(student.level))}
+        ${renderLearningStat('Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore))}
         ${renderLearningStat('Mốc bot', displayValue(student.highestBotMilestone))}
       </div>
       <section class="student-learning-panel">
@@ -365,16 +367,48 @@ function getGenderLabel(value) {
 }
 
 function getLevelLabel(level) {
+  const studentLevelOptions = [
+    'Dolphin 1',
+    'Dolphin 2',
+    'Dolphin 3',
+    'Dolphin 4',
+    'Turtle 1',
+    'Turtle 2',
+    'Turtle 3',
+    'Bee 1',
+    'Bee 2',
+    'Bee 3',
+    'Monkey 1',
+    'Monkey 2',
+    'Monkey 3',
+    'Elephant 1',
+    'Elephant 2',
+    'Elephant 3',
+    'Jaguar',
+    'Lion',
+    'Eagle',
+  ]
   const levelMap = {
-    'Nhập môn': 'Level 1',
-    'Cơ bản': 'Level 2',
-    'Trung cấp': 'Level 3',
-    'Nâng cao': 'Level 4',
+    'Nhập môn': 'Dolphin 1',
+    'Cơ bản': 'Dolphin 2',
+    'Trung cấp': 'Dolphin 3',
+    'Nâng cao': 'Dolphin 4',
   }
   const levelText = String(levelMap[level] ?? level ?? '').trim()
-  const levelMatch = levelText.match(/\d+/)
+  const canonicalLevel = studentLevelOptions.find(
+    (option) => option.toLowerCase() === levelText.toLowerCase(),
+  )
 
-  return levelMatch ? `Level ${Number(levelMatch[0])}` : displayValue(levelText)
+  if (canonicalLevel) {
+    return canonicalLevel
+  }
+
+  const legacyLevelMatch = levelText.match(/^(?:level\s*)?(\d{1,2})$/i)
+  const legacyLevelNumber = legacyLevelMatch ? Number(legacyLevelMatch[1]) : null
+
+  return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
+    ? studentLevelOptions[legacyLevelNumber - 1]
+    : 'Dolphin 1'
 }
 
 function getSchoolLabel(student) {

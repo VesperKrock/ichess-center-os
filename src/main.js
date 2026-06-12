@@ -13,6 +13,7 @@ import {
   getStoredParentConsultations,
   getStoredSchedule,
   getStoredSessionReports,
+  getStoredAttendanceAdvisoryNotes,
   getStoredStudents,
   getStoredTeachers,
   getStoredTuition,
@@ -29,6 +30,7 @@ import {
   saveStoredParentConsultations,
   saveStoredSchedule,
   saveStoredSessionReports,
+  saveStoredAttendanceAdvisoryNotes,
   saveStoredStudents,
   saveStoredTeachers,
   saveStoredTuition,
@@ -110,6 +112,7 @@ import {
   createEditScheduleFormState,
   createEditLearningGroupFormState,
   createEmptyScheduleFormState,
+  createScheduleFormStateForDay,
   createEmptyLearningGroupFormState,
   createEmptyGuestParticipantFormState,
   createSessionReportExtraState,
@@ -202,6 +205,7 @@ let parentConsultations = getStoredParentConsultations(sampleParentConsultations
 let parentConsultationFormState = null
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 let sessionReports = getStoredSessionReports()
+let attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes()
 let scheduleFormState = null
 let scheduleReportState = null
 let sessionReportAttendanceState = null
@@ -346,8 +350,9 @@ function getOrderedModules() {
 
 function renderModuleWindow(windowItem) {
   const title = getWindowTitle(windowItem)
+  const headerTitle = getWindowHeaderTitle(windowItem)
 
-  if (!title || windowItem.minimized) {
+  if (!title || !headerTitle || windowItem.minimized) {
     return ''
   }
 
@@ -367,11 +372,11 @@ function renderModuleWindow(windowItem) {
       aria-labelledby="${windowItem.id}-title"
     >
       <div class="window-titlebar" data-drag-window-id="${windowItem.id}">
-        <h2 id="${windowItem.id}-title">${title}</h2>
+        <h2 id="${windowItem.id}-title">${headerTitle}</h2>
         <div class="window-controls">
-          <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${title}">-</button>
-          <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${title}">□</button>
-          <button type="button" data-window-action="close" data-window-id="${windowItem.id}" aria-label="Đóng ${title}">X</button>
+          <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${headerTitle}">-</button>
+          <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${headerTitle}">□</button>
+          <button type="button" data-window-action="close" data-window-id="${windowItem.id}" aria-label="Đóng ${headerTitle}">X</button>
         </div>
       </div>
       <div class="window-body">
@@ -462,6 +467,8 @@ function renderWindowBody(windowItem) {
       tuitionFormState,
       tuitionPaymentFormState,
       tuitionDetailState,
+      sessionReports,
+      attendanceAdvisoryNotes,
     )
   }
 
@@ -558,6 +565,14 @@ function getWindowTitle(windowItem) {
 
   const moduleItem = modules.find((item) => item.id === windowItem.moduleId)
   return moduleItem?.name
+}
+
+function getWindowHeaderTitle(windowItem) {
+  if (windowItem.moduleId === 'hoc-vien' && !windowItem.type) {
+    return 'DANH SÁCH HỌC VIÊN'
+  }
+
+  return getWindowTitle(windowItem)
 }
 
 function getStudentById(studentId) {
@@ -1519,6 +1534,38 @@ function bindEvents() {
       if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(selectionStart, selectionEnd)
       }
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-advisory-action="save"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const studentId = button.dataset.studentId
+      const monthKey = button.dataset.monthKey
+      const careStatus =
+        document.querySelector(`[data-tuition-advisory-care-status="${studentId}"]`)?.value ||
+        'auto'
+      const note =
+        document.querySelector(`[data-tuition-advisory-note="${studentId}"]`)?.value || ''
+      const identity = `${studentId}:${monthKey}`
+      const nextNote = {
+        id: `advisory-note-${studentId}-${monthKey}`,
+        studentId,
+        monthKey,
+        careStatus,
+        note: note.trim(),
+        updatedAt: new Date().toISOString(),
+      }
+      const hasExistingNote = attendanceAdvisoryNotes.some(
+        (item) => `${item.studentId}:${item.monthKey}` === identity,
+      )
+
+      attendanceAdvisoryNotes = hasExistingNote
+        ? attendanceAdvisoryNotes.map((item) =>
+            `${item.studentId}:${item.monthKey}` === identity ? nextNote : item,
+          )
+        : [...attendanceAdvisoryNotes, nextNote]
+      saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
+      render()
     })
   })
 
@@ -3378,6 +3425,24 @@ function bindEvents() {
     render()
   })
 
+  document.querySelectorAll('[data-schedule-action="open-create-for-day"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      scheduleFormState = createScheduleFormStateForDay(
+        button.dataset.scheduleDayOfWeek,
+        button.dataset.scheduleDate,
+      )
+      scheduleReportState = null
+      sessionReportAttendanceState = null
+      sessionReportLearningState = null
+      sessionReportLearningFormState = null
+      sessionReportExtraState = null
+      isSessionReportExtraExpanded = false
+      sessionReportGuestFormState = null
+      render()
+    })
+  })
+
   document.querySelectorAll('[data-schedule-action="open-edit"]').forEach((card) => {
     const openScheduleSession = () => {
       const session = scheduleSessions.find(
@@ -4282,7 +4347,7 @@ function bindEvents() {
     control.addEventListener('blur', () => {
       const fieldName = control.dataset.studentFormField
 
-      if (fieldName === 'parentPhone') {
+      if (fieldName === 'fatherPhone' || fieldName === 'motherPhone') {
         control.value = formatStudentPhoneNumber(control.value)
       }
 
@@ -4670,7 +4735,10 @@ function createRenewedTuitionRecord(currentRecord, normalizedValues) {
     totalSessions: currentRecord.totalSessions,
     usedSessions: currentRecord.usedSessions,
     totalAmount: currentRecord.totalAmount,
-    discountType: currentRecord.discountType || (currentRecord.discountAmount > 0 ? 'fixed' : 'none'),
+    discountType:
+      currentRecord.discountType === 'fixed'
+        ? 'amount'
+        : currentRecord.discountType || (currentRecord.discountAmount > 0 ? 'amount' : 'none'),
     discountValue: currentRecord.discountValue ?? currentRecord.discountAmount ?? 0,
     discountAmount: currentRecord.discountAmount || 0,
     paidAmount: currentRecord.paidAmount,

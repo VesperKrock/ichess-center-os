@@ -8,6 +8,7 @@ const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
 const TEACHERS_KEY = 'ichessCenterOS.teachers.dreamhome'
 const SCHEDULE_KEY = 'ichessCenterOS.schedule.dreamhome'
 const SESSION_REPORTS_KEY = 'ichessCenterOS.sessionReports.dreamhome'
+const ATTENDANCE_ADVISORY_NOTES_KEY = 'ichessCenterOS.attendanceAdvisoryNotes.dreamhome'
 const PARENT_CONSULTATIONS_KEY = 'ichessCenterOS.parentConsultations.dreamhome'
 const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
@@ -35,6 +36,14 @@ const VALID_ATTENDANCE_STATUSES = [
   'trial',
 ]
 const VALID_GUEST_PARTICIPATION_TYPES = ['trial', 'makeup']
+const VALID_ADVISORY_CARE_STATUSES = [
+  'auto',
+  'needReview',
+  'sentComment',
+  'contactedParent',
+  'waitingParent',
+  'completed',
+]
 const VALID_PARENT_CONTACT_TYPES = ['currentParent', 'consultingLead', 'formerParent']
 const VALID_CONSULTATION_STATUSES = [
   'activeCare',
@@ -53,6 +62,8 @@ const VALID_PARENT_CONTACT_SOURCES = [
   'walkIn',
   'school',
   'oldStudent',
+  'website',
+  'eventTournament',
   'unknown',
 ]
 const VALID_PARENT_CARE_LOG_CHANNELS = ['phone', 'zalo', 'facebook', 'direct', 'email', 'other']
@@ -72,6 +83,27 @@ const VALID_PARENT_APPOINTMENT_STATUSES = [
 ]
 const LEGACY_SAMPLE_TEACHER_NAMES = ['Thầy Thắng', 'Cô Vân', 'Thầy Hải']
 const UNASSIGNED_TEACHER_NAME = 'Chưa phân công'
+const STUDENT_LEVELS = [
+  'Dolphin 1',
+  'Dolphin 2',
+  'Dolphin 3',
+  'Dolphin 4',
+  'Turtle 1',
+  'Turtle 2',
+  'Turtle 3',
+  'Bee 1',
+  'Bee 2',
+  'Bee 3',
+  'Monkey 1',
+  'Monkey 2',
+  'Monkey 3',
+  'Elephant 1',
+  'Elephant 2',
+  'Elephant 3',
+  'Jaguar',
+  'Lion',
+  'Eagle',
+]
 
 export function getViewMode() {
   const savedMode = localStorage.getItem(VIEW_MODE_KEY)
@@ -268,6 +300,27 @@ export function saveStoredSessionReports(reports) {
   localStorage.setItem(SESSION_REPORTS_KEY, JSON.stringify(normalizeSessionReports(reports)))
 }
 
+export function getStoredAttendanceAdvisoryNotes(defaultNotes = []) {
+  try {
+    const storedNotes = JSON.parse(localStorage.getItem(ATTENDANCE_ADVISORY_NOTES_KEY))
+
+    if (Array.isArray(storedNotes)) {
+      return normalizeAttendanceAdvisoryNotes(storedNotes)
+    }
+  } catch {
+    localStorage.removeItem(ATTENDANCE_ADVISORY_NOTES_KEY)
+  }
+
+  return normalizeAttendanceAdvisoryNotes(defaultNotes)
+}
+
+export function saveStoredAttendanceAdvisoryNotes(notes) {
+  localStorage.setItem(
+    ATTENDANCE_ADVISORY_NOTES_KEY,
+    JSON.stringify(normalizeAttendanceAdvisoryNotes(notes)),
+  )
+}
+
 export function getStoredParentConsultations(defaultContacts) {
   try {
     const storedContacts = JSON.parse(localStorage.getItem(PARENT_CONSULTATIONS_KEY))
@@ -437,12 +490,22 @@ function normalizeStudents(students) {
     const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
     const assignedTeacherId = normalizeStudentAssignedTeacherId(student.assignedTeacherId)
     const deletionState = normalizeStudentDeletionState(student)
+    const level = normalizeStudentLevel(student.level)
+    const fatherPhone = String(student.fatherPhone ?? '')
+    const motherPhone = String(
+      student.motherPhone ?? (!fatherPhone ? student.parentPhone : '') ?? '',
+    )
+    const parentPhone = String(student.parentPhone || motherPhone || fatherPhone)
 
     if (Array.isArray(student.careNotes)) {
       return {
         ...student,
         mainTeacherName,
         assignedTeacherId,
+        level,
+        fatherPhone,
+        motherPhone,
+        parentPhone,
         ...deletionState,
       }
     }
@@ -457,6 +520,10 @@ function normalizeStudents(students) {
       ...student,
       mainTeacherName,
       assignedTeacherId,
+      level,
+      fatherPhone,
+      motherPhone,
+      parentPhone,
       ...deletionState,
       careNotes: hasRealLegacyNote
         ? [
@@ -492,6 +559,44 @@ function normalizeStudentTeacherName(mainTeacherName) {
 function normalizeStudentAssignedTeacherId(value) {
   const teacherId = String(value ?? '').trim()
   return teacherId || null
+}
+
+function normalizeStudentLevel(value) {
+  const levelText = String(value ?? '').trim()
+  const normalizedLevelText = normalizeStudentText(levelText)
+  const canonicalLevel = STUDENT_LEVELS.find(
+    (level) => normalizeStudentText(level) === normalizedLevelText,
+  )
+
+  if (canonicalLevel) {
+    return canonicalLevel
+  }
+
+  const legacyNamedLevels = {
+    'nhap mon': 'Dolphin 1',
+    'co ban': 'Dolphin 2',
+    'trung cap': 'Dolphin 3',
+    'nang cao': 'Dolphin 4',
+  }
+
+  if (legacyNamedLevels[normalizedLevelText]) {
+    return legacyNamedLevels[normalizedLevelText]
+  }
+
+  const legacyLevelMatch = levelText.match(/^(?:level\s*)?(\d{1,2})$/i)
+  const legacyLevelNumber = legacyLevelMatch ? Number(legacyLevelMatch[1]) : null
+
+  return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
+    ? STUDENT_LEVELS[legacyLevelNumber - 1]
+    : 'Dolphin 1'
+}
+
+function normalizeStudentText(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
 }
 
 function normalizeNotifications(notifications) {
@@ -549,28 +654,56 @@ function mergeDemoNotificationReadState(defaultNotifications, storedNotification
 function normalizeTuitionRecords(tuitionRecords) {
   return tuitionRecords
     .filter((record) => record && typeof record === 'object')
-    .map((record, index) => ({
-      id: String(record.id || `tuition-${String(index + 1).padStart(3, '0')}`),
-      studentId: String(record.studentId || ''),
-      packageName: String(record.packageName || 'Gói học'),
-      totalSessions: normalizeNumber(record.totalSessions),
-      usedSessions: normalizeNumber(record.usedSessions),
-      totalAmount: normalizeNumber(record.totalAmount),
-      discountType: normalizeTuitionDiscountType(record.discountType, record.discountAmount),
-      discountValue: normalizeTuitionDiscountValue(record.discountType, record.discountValue, record.discountAmount),
-      discountAmount: normalizeNumber(record.discountAmount),
-      paidAmount: normalizeNumber(record.paidAmount),
-      dueDate: record.dueDate ? String(record.dueDate) : '',
-      note: String(record.note || ''),
-      payments: normalizeTuitionPayments(record.payments),
-      currentTermNumber: Math.max(1, normalizeNumber(record.currentTermNumber) || 1),
-      currentTermId: String(
-        record.currentTermId ||
-          `term-${record.id || String(index + 1).padStart(3, '0')}-${Math.max(1, normalizeNumber(record.currentTermNumber) || 1)}`,
-      ),
-      startedAt: record.startedAt ? normalizeDateTime(record.startedAt) : '',
-      termHistory: normalizeTuitionTermHistory(record.termHistory),
-    }))
+    .map((record, index) => {
+      const totalAmount = normalizeNumber(record.totalAmount)
+      const hasTotalSessionsData =
+        record.hasTotalSessionsData !== false &&
+        record.totalSessions !== null &&
+        record.totalSessions !== undefined &&
+        Number.isFinite(Number(record.totalSessions))
+      const hasUsedSessionsData =
+        record.hasUsedSessionsData !== false &&
+        record.usedSessions !== null &&
+        record.usedSessions !== undefined &&
+        Number.isFinite(Number(record.usedSessions))
+      const discountType = normalizeTuitionDiscountType(record.discountType, record.discountAmount)
+      const discountValue = normalizeTuitionDiscountValue(
+        discountType,
+        record.discountValue,
+        record.discountAmount,
+      )
+      const discountAmount = calculateNormalizedTuitionDiscount(
+        totalAmount,
+        discountType,
+        discountValue,
+      )
+
+      return {
+        ...record,
+        id: String(record.id || `tuition-${String(index + 1).padStart(3, '0')}`),
+        studentId: String(record.studentId || ''),
+        packageName: String(record.packageName || 'Gói học'),
+        totalSessions: normalizeNumber(record.totalSessions),
+        usedSessions: normalizeNumber(record.usedSessions),
+        hasTotalSessionsData,
+        hasUsedSessionsData,
+        totalAmount,
+        discountType,
+        discountValue,
+        discountAmount,
+        paidAmount: normalizeNumber(record.paidAmount),
+        dueDate: record.dueDate ? String(record.dueDate) : '',
+        note: String(record.note || ''),
+        payments: normalizeTuitionPayments(record.payments),
+        currentTermNumber: Math.max(1, normalizeNumber(record.currentTermNumber) || 1),
+        currentTermId: String(
+          record.currentTermId ||
+            `term-${record.id || String(index + 1).padStart(3, '0')}-${Math.max(1, normalizeNumber(record.currentTermNumber) || 1)}`,
+        ),
+        startedAt: record.startedAt ? normalizeDateTime(record.startedAt) : '',
+        termHistory: normalizeTuitionTermHistory(record.termHistory),
+      }
+    })
     .filter((record) => record.studentId)
 }
 
@@ -717,6 +850,36 @@ function normalizeSessionReportAttendance(attendance) {
       }
     })
     .filter(Boolean)
+}
+
+function normalizeAttendanceAdvisoryNotes(notes) {
+  const notesByIdentity = new Map()
+
+  ;(Array.isArray(notes) ? notes : []).forEach((note) => {
+    const studentId = String(note?.studentId ?? '').trim()
+    const monthKey = /^\d{4}-\d{2}$/.test(String(note?.monthKey ?? ''))
+      ? String(note.monthKey)
+      : ''
+
+    if (!studentId || !monthKey) {
+      return
+    }
+
+    const careStatus = VALID_ADVISORY_CARE_STATUSES.includes(note.careStatus)
+      ? note.careStatus
+      : 'auto'
+
+    notesByIdentity.set(`${studentId}:${monthKey}`, {
+      id: String(note.id || `advisory-note-${studentId}-${monthKey}`),
+      studentId,
+      monthKey,
+      careStatus,
+      note: String(note.note || ''),
+      updatedAt: note.updatedAt ? normalizeDateTime(note.updatedAt) : new Date().toISOString(),
+    })
+  })
+
+  return Array.from(notesByIdentity.values())
 }
 
 function normalizeSessionReportLearningGroups(learningGroups) {
@@ -1105,40 +1268,74 @@ function normalizeTuitionTermHistory(termHistory) {
 
   return termHistory
     .filter((term) => term && typeof term === 'object')
-    .map((term, index) => ({
-      id: String(term.id || `term-history-${String(index + 1).padStart(3, '0')}`),
-      termNumber: Math.max(1, normalizeNumber(term.termNumber) || index + 1),
-      packageName: String(term.packageName || 'Gói học'),
-      totalSessions: normalizeNumber(term.totalSessions),
-      usedSessions: normalizeNumber(term.usedSessions),
-      totalAmount: normalizeNumber(term.totalAmount),
-      discountType: normalizeTuitionDiscountType(term.discountType, term.discountAmount),
-      discountValue: normalizeTuitionDiscountValue(term.discountType, term.discountValue, term.discountAmount),
-      discountAmount: normalizeNumber(term.discountAmount),
-      paidAmount: normalizeNumber(term.paidAmount),
-      dueDate: term.dueDate ? String(term.dueDate) : '',
-      note: String(term.note || ''),
-      status: ['completed', 'archived'].includes(term.status) ? term.status : 'archived',
-      startedAt: term.startedAt ? normalizeDateTime(term.startedAt) : '',
-      endedAt: term.endedAt ? normalizeDateTime(term.endedAt) : '',
-      payments: normalizeTuitionPayments(term.payments),
-    }))
+    .map((term, index) => {
+      const totalAmount = normalizeNumber(term.totalAmount)
+      const discountType = normalizeTuitionDiscountType(term.discountType, term.discountAmount)
+      const discountValue = normalizeTuitionDiscountValue(
+        discountType,
+        term.discountValue,
+        term.discountAmount,
+      )
+
+      return {
+        ...term,
+        id: String(term.id || `term-history-${String(index + 1).padStart(3, '0')}`),
+        termNumber: Math.max(1, normalizeNumber(term.termNumber) || index + 1),
+        packageName: String(term.packageName || 'Gói học'),
+        totalSessions: normalizeNumber(term.totalSessions),
+        usedSessions: normalizeNumber(term.usedSessions),
+        totalAmount,
+        discountType,
+        discountValue,
+        discountAmount: calculateNormalizedTuitionDiscount(
+          totalAmount,
+          discountType,
+          discountValue,
+        ),
+        paidAmount: normalizeNumber(term.paidAmount),
+        dueDate: term.dueDate ? String(term.dueDate) : '',
+        note: String(term.note || ''),
+        status: ['completed', 'archived'].includes(term.status) ? term.status : 'archived',
+        startedAt: term.startedAt ? normalizeDateTime(term.startedAt) : '',
+        endedAt: term.endedAt ? normalizeDateTime(term.endedAt) : '',
+        payments: normalizeTuitionPayments(term.payments),
+      }
+    })
 }
 
 function normalizeTuitionDiscountType(discountType, discountAmount = 0) {
-  if (['none', 'percent', 'fixed'].includes(discountType)) {
-    return discountType
+  if (discountType === 'percent') {
+    return 'percent'
   }
 
-  return normalizeNumber(discountAmount) > 0 ? 'fixed' : 'none'
+  if (discountType === 'amount' || discountType === 'fixed') {
+    return 'amount'
+  }
+
+  return normalizeNumber(discountAmount) > 0 ? 'amount' : 'none'
 }
 
 function normalizeTuitionDiscountValue(discountType, discountValue, discountAmount = 0) {
-  if (['percent', 'fixed'].includes(discountType)) {
-    return Math.max(0, normalizeNumber(discountValue))
+  if (discountType === 'percent') {
+    return Math.min(Math.max(0, normalizeNumber(discountValue)), 100)
+  }
+
+  if (discountType === 'amount') {
+    return Math.max(0, normalizeNumber(discountValue ?? discountAmount))
   }
 
   return normalizeNumber(discountAmount) > 0 ? normalizeNumber(discountAmount) : 0
+}
+
+function calculateNormalizedTuitionDiscount(totalAmount, discountType, discountValue) {
+  const calculatedAmount =
+    discountType === 'percent'
+      ? Math.round((totalAmount * discountValue) / 100)
+      : discountType === 'amount'
+        ? discountValue
+        : 0
+
+  return Math.min(Math.max(calculatedAmount, 0), totalAmount)
 }
 
 function normalizeTuitionPayments(payments) {
