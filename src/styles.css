@@ -747,15 +747,16 @@ h3 {
   z-index: 4;
   display: grid;
   place-items: center;
-  padding: 6px;
+  padding: 8px 10px 12px;
   background: rgba(3, 7, 12, 0.62);
 }
 
 .parent-contact-form {
   display: grid;
-  width: min(1120px, calc(100vw - 72px));
+  width: min(1240px, calc(100% - 12px));
+  height: min(780px, calc(100% - 8px));
   max-width: 100%;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100% - 8px);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid rgba(160, 184, 214, 0.22);
@@ -766,6 +767,8 @@ h3 {
 
 .parent-contact-form-header,
 .parent-contact-form-footer {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -795,6 +798,8 @@ h3 {
 }
 
 .parent-contact-form-footer {
+  position: sticky;
+  bottom: 0;
   justify-content: flex-end;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   border-bottom: 0;
@@ -816,16 +821,21 @@ h3 {
 .parent-contact-form-scroll {
   min-height: 0;
   overflow: auto;
-  padding: 12px;
+  padding: 14px;
+  overscroll-behavior: contain;
 }
 
 .parent-contact-form-section {
   display: grid;
   gap: 8px;
+  border: 1px solid rgba(160, 184, 214, 0.12);
+  border-radius: 8px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .parent-contact-form-section + .parent-contact-form-section {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .parent-contact-form-section h4 {
@@ -3946,12 +3956,12 @@ h3 {
 
 .schedule-session-card {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   border: 1px solid rgba(118, 164, 231, 0.2);
   border-left: 3px solid #76a4e7;
   border-radius: 8px;
-  padding: 9px;
+  padding: 8px 9px;
   background: rgba(31, 93, 153, 0.12);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
   cursor: pointer;
@@ -3986,74 +3996,30 @@ h3 {
   box-shadow: 0 0 0 1px rgba(255, 178, 96, 0.12), 0 8px 20px rgba(0, 0, 0, 0.18);
 }
 
-.schedule-session-topline {
-  display: flex;
-  min-width: 0;
-  gap: 6px;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .schedule-session-card h4 {
   margin: 0;
   color: #ffffff;
-  font-size: 0.86rem;
+  font-size: 0.82rem;
   line-height: 1.25;
 }
 
 .schedule-session-time {
   color: #cce0ff;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 950;
 }
 
 .schedule-session-meta,
-.schedule-session-note {
+.schedule-session-students {
   margin: 0;
   color: #aebbd0;
-  font-size: 0.77rem;
+  font-size: 0.74rem;
   line-height: 1.35;
 }
 
-.schedule-session-tags {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.schedule-session-tags span,
-.schedule-level-badge {
-  display: inline-flex;
-  max-width: 100%;
-  border: 1px solid rgba(180, 202, 232, 0.18);
-  border-radius: 999px;
-  padding: 2px 7px;
-  overflow: hidden;
+.schedule-session-students {
   color: #d8e2ef;
-  background: rgba(255, 255, 255, 0.045);
-  font-size: 0.7rem;
-  font-weight: 900;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.schedule-level-badge.is-beginner {
-  border-color: rgba(82, 209, 139, 0.34);
-  color: #bdf0ce;
-  background: rgba(32, 122, 72, 0.14);
-}
-
-.schedule-level-badge.is-intermediate {
-  border-color: rgba(112, 207, 205, 0.34);
-  color: #bdf2ef;
-  background: rgba(28, 111, 109, 0.14);
-}
-
-.schedule-level-badge.is-advanced {
-  border-color: rgba(240, 180, 91, 0.4);
-  color: #ffe4b8;
-  background: rgba(154, 96, 18, 0.15);
+  font-weight: 850;
 }
 
 .schedule-type-badge {
@@ -5104,32 +5070,63 @@ h3 {
 }
 
 .schedule-student-picker {
-  display: grid;
   grid-column: 1 / -1;
-  gap: 7px;
   min-width: 0;
   margin: 0;
   border: 1px solid rgba(160, 184, 214, 0.16);
   border-radius: 8px;
-  padding: 8px;
   background: rgba(255, 255, 255, 0.025);
 }
 
-.schedule-student-picker legend {
-  padding: 0 4px;
+.schedule-student-picker summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.schedule-student-picker summary::-webkit-details-marker {
+  display: none;
+}
+
+.schedule-student-picker summary > span:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.schedule-student-picker summary strong {
+  color: #eef6ff;
+  font-size: 0.8rem;
+}
+
+.schedule-student-picker summary small,
+.schedule-student-picker summary > span:last-child {
   color: #9fb1c7;
   font-size: 0.72rem;
-  font-weight: 900;
-  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.schedule-student-picker[open] summary {
+  border-bottom: 1px solid rgba(160, 184, 214, 0.12);
+}
+
+.schedule-student-picker-note {
+  margin: 8px 10px 0;
+  color: #8fa1b8;
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .schedule-student-options {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 6px;
-  max-height: 180px;
+  max-height: 150px;
   overflow: auto;
-  padding-right: 2px;
+  padding: 8px 10px 10px;
 }
 
 .schedule-student-option {
@@ -8641,7 +8638,7 @@ h3 {
 .tuition-attendance-advisory {
   display: grid;
   min-height: 0;
-  max-height: 310px;
+  max-height: 330px;
   flex: 0 0 auto;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
@@ -8684,7 +8681,7 @@ h3 {
 
 .tuition-advisory-table {
   width: 100%;
-  min-width: 1540px;
+  min-width: 1120px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -8710,41 +8707,43 @@ h3 {
 }
 
 .tuition-advisory-table th:nth-child(1) {
-  width: 145px;
+  width: 180px;
 }
 
 .tuition-advisory-table th:nth-child(2) {
-  width: 130px;
+  width: 160px;
 }
 
-.tuition-advisory-table th:nth-child(3) {
-  width: 130px;
+.tuition-advisory-table th:nth-child(3),
+.tuition-advisory-table th:nth-child(4) {
+  width: 74px;
 }
 
-.tuition-advisory-table th:nth-child(4),
-.tuition-advisory-table th:nth-child(5),
+.tuition-advisory-table th:nth-child(5) {
+  width: 120px;
+}
+
 .tuition-advisory-table th:nth-child(6) {
-  width: 82px;
+  width: 195px;
 }
 
 .tuition-advisory-table th:nth-child(7) {
-  width: 125px;
+  width: 245px;
 }
 
 .tuition-advisory-table th:nth-child(8) {
-  width: 210px;
-}
-
-.tuition-advisory-table th:nth-child(9) {
-  width: 260px;
-}
-
-.tuition-advisory-table th:nth-child(10) {
   width: 130px;
 }
 
-.tuition-advisory-table th:nth-child(11) {
-  width: 105px;
+.tuition-advisory-table td > strong,
+.tuition-advisory-table td > small {
+  display: block;
+}
+
+.tuition-advisory-table td > small {
+  margin-top: 3px;
+  color: #8fa1b8;
+  font-size: 0.7rem;
 }
 
 .tuition-advisory-table td.is-overdue {
@@ -8807,12 +8806,14 @@ h3 {
 }
 
 .tuition-advisory-note {
-  min-height: 48px;
+  min-height: 44px;
   resize: vertical;
 }
 
 .tuition-advisory-save {
+  width: 100%;
   min-height: 30px;
+  margin-top: 5px;
   border: 1px solid rgba(118, 164, 231, 0.4);
   border-radius: 7px;
   padding: 5px 8px;
@@ -8898,7 +8899,7 @@ h3 {
   gap: 8px;
 }
 
-.tuition-term-summary div,
+.tuition-term-summary > div,
 .tuition-term-history-item {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -8963,31 +8964,8 @@ h3 {
 }
 
 .tuition-discount-preview {
-  display: grid;
+  display: block;
   grid-column: 1 / -1;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.tuition-discount-preview div {
-  display: grid;
-  gap: 3px;
-  border: 1px solid rgba(160, 184, 214, 0.16);
-  border-radius: 8px;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.tuition-discount-preview span {
-  color: #9fb1c7;
-  font-size: 0.78rem;
-  font-weight: 850;
-}
-
-.tuition-discount-preview strong {
-  color: #ffffff;
-  font-size: 0.92rem;
-  font-weight: 950;
 }
 
 .tuition-discount-badge {
@@ -9006,18 +8984,52 @@ h3 {
 .tuition-formula {
   display: grid;
   grid-column: 1 / -1;
-  gap: 5px;
+  gap: 0;
+  margin: 0;
   border: 1px solid rgba(118, 164, 231, 0.24);
   border-radius: 8px;
-  padding: 9px 10px;
+  padding: 6px 10px;
   color: #c8d4e3;
   background: rgba(31, 93, 153, 0.1);
   font-size: 0.8rem;
   line-height: 1.4;
 }
 
-.tuition-formula strong {
+.tuition-formula div {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(150px, auto);
+  gap: 14px;
+  padding: 5px 0;
+}
+
+.tuition-formula div + div {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tuition-formula dt,
+.tuition-formula dd {
+  margin: 0;
+}
+
+.tuition-formula dt {
+  color: #9fb1c7;
+  font-weight: 800;
+}
+
+.tuition-formula dd {
   color: #ffffff;
+  font-weight: 950;
+  text-align: right;
+}
+
+.tuition-formula .is-payable dd,
+.tuition-formula .is-debt dd {
+  color: #cce0ff;
+}
+
+.tuition-formula .is-paid {
+  margin-top: 3px;
+  border-top-color: rgba(118, 164, 231, 0.22);
 }
 
 .tuition-form-grid label span {

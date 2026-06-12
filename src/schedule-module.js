@@ -844,7 +844,6 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
   const teacher = session.teacherId ? teacherLookup.get(String(session.teacherId)) : null
   const teacherLabel = getSessionTeacherLabel(session, teacher)
   const studentSummary = getStudentSummary(session.studentIds, studentLookup)
-  const typeLabel = getScheduleTypeBadgeLabel(session)
   const conflicts = conflictMap.get(session.id)
 
   return `
@@ -855,25 +854,12 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
       data-schedule-occurrence-date="${escapeAttribute(session.occurrenceDate ?? '')}"
       tabindex="0"
     >
-      <div class="schedule-session-topline">
-        <time class="schedule-session-time">${escapeHtml(formatSessionTime(session))}</time>
-        <span class="schedule-type-badge is-${escapeAttribute(session.scheduleType)}">${escapeHtml(typeLabel)}</span>
-      </div>
+      <time class="schedule-session-time">${escapeHtml(formatSessionTime(session))}</time>
       <h4>${escapeHtml(session.title)}</h4>
       <p class="schedule-session-meta">
         ${escapeHtml(teacherLabel.name)} · ${escapeHtml(session.room || 'Chưa có phòng')}
       </p>
-      <div class="schedule-session-tags">
-        <span class="schedule-level-badge is-${escapeAttribute(session.level)}">${escapeHtml(getLevelLabel(session.level))}</span>
-        <span>${escapeHtml(session.groupName || 'Nhóm mẫu')}</span>
-        <span>${escapeHtml(getStatusLabel(session.status))}</span>
-        <span class="schedule-student-count">${escapeHtml(studentSummary.countLabel)}</span>
-        ${conflicts ? `<span class="schedule-conflict-badge">${escapeHtml(getConflictSummaryLabel(conflicts))}</span>` : ''}
-        ${teacherLabel.warning ? `<span class="schedule-warning-badge">${escapeHtml(teacherLabel.warning)}</span>` : ''}
-      </div>
-      ${conflicts ? `<p class="schedule-conflict-note">${escapeHtml(conflicts.messages.slice(0, 2).join(' · '))}</p>` : ''}
-      ${studentSummary.names ? `<p class="schedule-session-note">${escapeHtml(studentSummary.names)}</p>` : ''}
-      ${session.note ? `<p class="schedule-session-note">${escapeHtml(session.note)}</p>` : ''}
+      <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
     </article>
   `
 }
@@ -1572,8 +1558,19 @@ function renderStudentPicker(formState, students, teachers) {
   const teacherLookup = createLookup(teachers)
 
   return `
-    <fieldset class="schedule-student-picker span-full ${formState.errors.studentIds ? 'has-error' : ''}">
-      <legend>Học viên tham gia</legend>
+    <details class="schedule-student-picker span-full ${formState.errors.studentIds ? 'has-error' : ''}" ${
+      selectedIds.size ? 'open' : ''
+    }>
+      <summary>
+        <span>
+          <strong>Học viên tham gia</strong>
+          <small>${selectedIds.size} học viên đã chọn</small>
+        </span>
+        <span>Chọn / chỉnh sửa</span>
+      </summary>
+      <p class="schedule-student-picker-note">
+        Giai đoạn sau học viên sẽ được gán theo lớp/khung giờ; H7 vẫn giữ cách chọn thủ công hiện tại.
+      </p>
       <div class="schedule-student-options" data-schedule-form-scroll-region="students">
         ${
           sortedStudents.length
@@ -1586,7 +1583,7 @@ function renderStudentPicker(formState, students, teachers) {
         }
       </div>
       ${formState.errors.studentIds ? `<small>${escapeHtml(formState.errors.studentIds)}</small>` : ''}
-    </fieldset>
+    </details>
   `
 }
 
