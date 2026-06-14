@@ -8,21 +8,33 @@ export function getUserDisplayName(user) {
   ])
 }
 
-export function getUploaderDisplayName(attachment = {}, currentUser = null) {
-  const attachmentDisplayName = firstNonEmptyValue([
+export function getUploaderDisplayName(
+  attachment = {},
+  currentUser = null,
+  memberProfileMap = {},
+) {
+  const uploadedByName = firstNonEmptyValue([
     attachment.uploaded_by_name,
-    attachment.uploader_name,
-    attachment.uploaderDisplayName,
     attachment.uploadedByName,
   ])
 
-  if (attachmentDisplayName) {
-    return attachmentDisplayName
+  if (uploadedByName) {
+    return uploadedByName
   }
 
   const uploadedBy = String(
     attachment.uploadedBy ?? attachment.uploaded_by ?? '',
   ).trim()
+  const memberProfile = memberProfileMap?.[uploadedBy]
+  const profileDisplayName = firstNonEmptyValue([
+    memberProfile?.displayName,
+    memberProfile?.memberLabel,
+    memberProfile?.emailSnapshot,
+  ])
+
+  if (profileDisplayName) {
+    return profileDisplayName
+  }
 
   if (uploadedBy && uploadedBy === String(currentUser?.id ?? '').trim()) {
     return (
@@ -30,6 +42,15 @@ export function getUploaderDisplayName(attachment = {}, currentUser = null) {
       String(currentUser?.email ?? '').trim() ||
       getShortUserIdentifier(uploadedBy)
     )
+  }
+
+  const futureAttachmentDisplayName = firstNonEmptyValue([
+    attachment.uploader_name,
+    attachment.uploaderDisplayName,
+  ])
+
+  if (futureAttachmentDisplayName) {
+    return futureAttachmentDisplayName
   }
 
   return getShortUserIdentifier(uploadedBy)

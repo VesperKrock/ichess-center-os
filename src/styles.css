@@ -6497,6 +6497,110 @@ h3 {
   white-space: nowrap;
 }
 
+.cloud-profile-panel {
+  border-top: 1px solid rgba(160, 184, 214, 0.14);
+  padding-top: 8px;
+}
+
+.cloud-profile-panel summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #b9d8ff;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.cloud-profile-panel form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.cloud-profile-panel label {
+  display: grid;
+  flex: 1 1 190px;
+  gap: 4px;
+  color: #9fb1c7;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.cloud-profile-panel input {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #f4f7fb;
+  background: #101923;
+  font: inherit;
+}
+
+.cloud-profile-panel button {
+  min-height: 32px;
+  border: 1px solid rgba(118, 164, 231, 0.58);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #ffffff;
+  background: #1f5d99;
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.cloud-profile-panel button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.cloud-profile-panel form > p {
+  flex-basis: 100%;
+  margin: 0;
+  color: #ffbdad;
+  font-size: 0.7rem;
+}
+
+.cloud-profile-panel form > p.is-success {
+  color: #9aebbc;
+}
+
+.cloud-gallery-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid rgba(160, 184, 214, 0.14);
+  padding-top: 8px;
+}
+
+.cloud-gallery-summary span {
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-gallery-summary button {
+  min-height: 31px;
+  border: 1px solid rgba(118, 164, 231, 0.45);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #dcecff;
+  background: rgba(31, 93, 153, 0.34);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.cloud-gallery-summary button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .cloud-status-message {
   flex-basis: 100%;
   color: #ffbdad;
@@ -7069,6 +7173,186 @@ h3 {
 .transaction-image-manager-message.is-success {
   color: #9aebbc;
   background: rgba(42, 133, 83, 0.16);
+}
+
+.cloud-gallery-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: 12px 18px 20px;
+  background: rgba(3, 8, 14, 0.78);
+  backdrop-filter: blur(3px);
+}
+
+.cloud-gallery-window {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  width: min(1180px, calc(100% - 28px));
+  height: min(740px, calc(100% - 22px));
+  max-height: calc(100% - 22px);
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(118, 164, 231, 0.38);
+  border-radius: 10px;
+  padding: 14px;
+  color: #d8e2ef;
+  background: #101923;
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.5);
+}
+
+.cloud-gallery-header,
+.cloud-gallery-toolbar,
+.cloud-gallery-item,
+.cloud-gallery-item-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.cloud-gallery-header {
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(160, 184, 214, 0.14);
+  padding-bottom: 10px;
+}
+
+.cloud-gallery-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.cloud-gallery-header p {
+  margin: 4px 0 0;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.cloud-gallery-header button {
+  align-self: flex-start;
+  border: 0;
+  padding: 3px 7px;
+  color: #b9c9da;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+.cloud-gallery-toolbar {
+  border-bottom: 1px solid rgba(160, 184, 214, 0.1);
+  padding-bottom: 10px;
+}
+
+.cloud-gallery-toolbar label {
+  display: grid;
+  gap: 4px;
+  color: #9fb1c7;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.cloud-gallery-toolbar input {
+  min-height: 33px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #f4f7fb;
+  background: #0b141e;
+  font: inherit;
+}
+
+.cloud-gallery-search {
+  flex: 1 1 auto;
+}
+
+.cloud-gallery-toolbar strong {
+  align-self: end;
+  padding-bottom: 7px;
+  color: #b9d8ff;
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.cloud-gallery-body {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.cloud-gallery-item {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.9fr) minmax(220px, 1.25fr) auto;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(7, 14, 22, 0.55);
+}
+
+.cloud-gallery-item > div {
+  min-width: 0;
+}
+
+.cloud-gallery-item strong,
+.cloud-gallery-item span,
+.cloud-gallery-item time {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-gallery-item strong {
+  color: #eef5ff;
+  font-size: 0.76rem;
+}
+
+.cloud-gallery-item span,
+.cloud-gallery-item time {
+  margin-top: 3px;
+  color: #8fa4bb;
+  font-size: 0.69rem;
+}
+
+.cloud-gallery-item-actions {
+  justify-content: flex-end;
+}
+
+.cloud-gallery-item-actions a,
+.cloud-gallery-item-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(118, 164, 231, 0.36);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #dcecff;
+  background: rgba(31, 93, 153, 0.28);
+  cursor: pointer;
+  font-size: 0.69rem;
+  font-weight: 850;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cloud-gallery-empty,
+.cloud-gallery-error,
+.cloud-gallery-message {
+  margin: 0;
+  border-radius: 7px;
+  padding: 10px;
+  color: #9fb1c7;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.76rem;
+}
+
+.cloud-gallery-error,
+.cloud-gallery-message.is-error {
+  color: #ffbdad;
+  background: rgba(151, 60, 47, 0.15);
 }
 
 .cashflow-source-badge {
@@ -10347,6 +10631,12 @@ h3 {
     width: 100%;
   }
 
+  .cloud-gallery-summary,
+  .cloud-gallery-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .cloud-attachment-row {
     grid-template-columns: 1fr;
   }
@@ -10364,6 +10654,25 @@ h3 {
   .transaction-image-manager-item,
   .transaction-image-manager-actions,
   .transaction-image-manager-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cloud-gallery-backdrop {
+    padding: 8px 8px 14px;
+  }
+
+  .cloud-gallery-window {
+    width: 100%;
+    height: calc(100% - 4px);
+    max-height: calc(100% - 4px);
+  }
+
+  .cloud-gallery-item {
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-gallery-item-actions {
     align-items: stretch;
     flex-direction: column;
   }

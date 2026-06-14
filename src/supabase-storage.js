@@ -108,7 +108,15 @@ async function runAuthorizedStorageOperation(centerId, operation) {
 
 function isCenterStoragePath(storagePath, centerId) {
   const path = String(storagePath ?? '').trim()
-  return path.startsWith(`${centerId}/${TRANSACTION_IMAGES_BUCKET}/`) && !path.startsWith('/')
+  const segments = path.split('/')
+
+  return (
+    path.startsWith(`${centerId}/${TRANSACTION_IMAGES_BUCKET}/`) &&
+    !path.startsWith('/') &&
+    !path.includes('\\') &&
+    !path.includes('//') &&
+    segments.every((segment) => segment && segment !== '.' && segment !== '..')
+  )
 }
 
 function success(data) {

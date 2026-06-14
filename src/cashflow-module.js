@@ -104,6 +104,7 @@ export function renderCashflowModule(
   cloudStatusHtml = '',
   cloudAttachmentOptions = {},
   imageManagerState = null,
+  cloudGalleryState = null,
 ) {
   const activeFilters = { ...initialCashflowFilters, ...filters }
   const filteredTransactions = getFilteredCashflowTransactions(transactions, activeFilters)
@@ -212,8 +213,44 @@ export function renderCashflowModule(
           : ''
       }
       ${imageManagerState ? renderTransactionImageManager(imageManagerState) : ''}
+      ${cloudGalleryState ? renderCloudGallery(cloudGalleryState) : ''}
     </section>
   `
+}
+
+export function filterCloudGalleryAttachments(
+  attachments = [],
+  query = '',
+  currentUser = null,
+  memberProfileMap = {},
+) {
+  const normalizedQuery = normalizeText(query).trim()
+
+  if (!normalizedQuery) {
+    return attachments
+  }
+
+  return attachments.filter((attachment) => {
+    const uploaderName = getUploaderDisplayName(
+      attachment,
+      currentUser,
+      memberProfileMap,
+    )
+    const searchableText = [
+      attachment.transactionCode,
+      attachment.fileName,
+      attachment.originalName,
+      attachment.note,
+      attachment.uploadedByName,
+      uploaderName,
+      attachment.cashflowType,
+      attachment.amount,
+    ]
+      .map(normalizeText)
+      .join(' ')
+
+    return searchableText.includes(normalizedQuery)
+  })
 }
 
 export function getFilteredCashflowTransactions(transactions, filters = initialCashflowFilters) {
@@ -922,9 +959,118 @@ function renderTransactionImageManager(state) {
   `
 }
 
+function renderCloudGallery(state) {
+  const filteredAttachments = filterCloudGalleryAttachments(
+    state.attachments,
+    state.query,
+    state.currentUser,
+    state.memberProfileMap,
+  )
+
+  return `
+    <div class="cloud-gallery-backdrop" role="presentation">
+      <section
+        class="cloud-gallery-window"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cloud-gallery-title"
+      >
+        <header class="cloud-gallery-header">
+          <div>
+            <h4 id="cloud-gallery-title">Kho ảnh giao dịch cloud</h4>
+            <p>DreamHome · Tháng ${escapeHtml(state.monthKey)}</p>
+          </div>
+          <button type="button" data-cloud-gallery-action="close" aria-label="Đóng">×</button>
+        </header>
+
+        <div class="cloud-gallery-toolbar">
+          <label>
+            <span>Tháng</span>
+            <input type="month" value="${escapeAttribute(state.monthKey)}" data-cloud-gallery-month />
+          </label>
+          <label class="cloud-gallery-search">
+            <span>Tìm kiếm</span>
+            <input
+              type="search"
+              value="${escapeAttribute(state.query)}"
+              placeholder="Mã giao dịch, tên file, người liên quan, người tải"
+              data-cloud-gallery-search
+            />
+          </label>
+          <strong>${filteredAttachments.length}/${state.attachments.length} ảnh</strong>
+        </div>
+
+        ${state.message ? `<p class="cloud-gallery-message is-${escapeAttribute(state.messageTone || 'error')}" role="status">${escapeHtml(state.message)}</p>` : ''}
+
+        <div class="cloud-gallery-body">
+          ${
+            state.status === 'loading'
+              ? '<p class="cloud-gallery-empty">Đang tải kho ảnh cloud...</p>'
+              : state.status === 'error'
+                ? `<p class="cloud-gallery-error">${escapeHtml(state.error || 'Không thể tải kho ảnh cloud. Vui lòng kiểm tra đăng nhập/quyền DreamHome.')}</p>`
+                : !state.attachments.length
+                  ? '<p class="cloud-gallery-empty">Chưa có ảnh giao dịch cloud trong tháng này.</p>'
+                  : !filteredAttachments.length
+                    ? '<p class="cloud-gallery-empty">Không tìm thấy ảnh phù hợp.</p>'
+                    : filteredAttachments.map((attachment) => renderCloudGalleryItem(attachment, state)).join('')
+          }
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderCloudGalleryItem(attachment, state) {
+  const uploaderName = getUploaderDisplayName(
+    attachment,
+    state.currentUser,
+    state.memberProfileMap,
+  )
+  const hasLocalTransaction = Boolean(
+    state.transactionIdsByCode?.[attachment.transactionCode],
+  )
+
+  return `
+    <article class="cloud-gallery-item">
+      <div class="cloud-gallery-item-transaction">
+        <strong>${escapeHtml(attachment.transactionCode || 'Chưa có mã')}</strong>
+        <span>${formatDate(attachment.transactionDate)} · ${formatMoney(attachment.amount)}</span>
+        <span>${escapeHtml(attachment.note || 'Không có nội dung/người liên quan')}</span>
+      </div>
+      <div class="cloud-gallery-item-file">
+        <strong title="${escapeAttribute(attachment.fileName)}">${escapeHtml(attachment.fileName || attachment.originalName || 'Ảnh giao dịch')}</strong>
+        <span>Tải lên bởi: ${escapeHtml(uploaderName)}</span>
+        <time datetime="${escapeAttribute(attachment.createdAt)}">${formatDateTime(attachment.createdAt)}</time>
+      </div>
+      <div class="cloud-gallery-item-actions">
+        ${
+          attachment.signedUrl
+            ? `
+              <a href="${escapeAttribute(attachment.signedUrl)}" target="_blank" rel="noopener noreferrer">Xem ảnh</a>
+              <a href="${escapeAttribute(attachment.signedUrl)}" download="${escapeAttribute(attachment.fileName || 'anh-giao-dich.jpg')}" target="_blank" rel="noopener noreferrer">Tải xuống</a>
+            `
+            : '<span>Không tạo được link xem</span>'
+        }
+        <button
+          type="button"
+          data-cloud-gallery-action="manage"
+          data-transaction-code="${escapeAttribute(attachment.transactionCode)}"
+          ${hasLocalTransaction ? '' : 'title="Không tìm thấy giao dịch local tương ứng"'}
+        >
+          Quản lý ảnh
+        </button>
+      </div>
+    </article>
+  `
+}
+
 function renderManagedAttachment(attachment, state) {
   const isDeleting = state.deletingAttachmentId === attachment.id
-  const uploaderDisplayName = getUploaderDisplayName(attachment, state.currentUser)
+  const uploaderDisplayName = getUploaderDisplayName(
+    attachment,
+    state.currentUser,
+    state.memberProfileMap,
+  )
 
   return `
     <article class="transaction-image-manager-item">

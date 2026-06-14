@@ -2,6 +2,10 @@ import { CURRENT_CENTER_ID, getCurrentCenterMembership, getCurrentSupabaseUser }
 import { getSupabaseClient } from './supabase-client.js'
 
 export const TRANSACTION_IMAGES_BUCKET = 'transaction-images'
+const attachmentColumns =
+  'id, center_id, transaction_code, transaction_date, month_key, amount, cashflow_type, note, original_name, file_name, mime_type, size_bytes, storage_bucket, storage_path, uploaded_by, uploaded_by_name, created_at'
+const legacyAttachmentColumns =
+  'id, center_id, transaction_code, transaction_date, month_key, amount, cashflow_type, note, original_name, file_name, mime_type, size_bytes, storage_bucket, storage_path, uploaded_by, created_at'
 
 export function normalizeTransactionDate(dateInput, fallbackDate = new Date()) {
   const parsedDate = parseDateInput(dateInput) ?? parseDateInput(fallbackDate)
@@ -115,6 +119,12 @@ export function buildTransactionAttachmentMetadata(payload = {}) {
     uploaded_by: String(payload.uploadedBy ?? '').trim(),
   }
 
+  const uploadedByName = String(payload.uploadedByName ?? '').trim()
+
+  if (uploadedByName) {
+    metadata.uploaded_by_name = uploadedByName
+  }
+
   const invalidField = getInvalidMetadataField(metadata, normalizedDate.data)
 
   if (invalidField) {
@@ -139,20 +149,18 @@ export async function listTransactionAttachmentsByMonth({
       return failure('monthKey không hợp lệ.')
     }
 
-    const { data, error } = await client
-      .from('transaction_attachments')
-      .select(
-        'id, center_id, transaction_code, transaction_date, month_key, amount, cashflow_type, note, original_name, file_name, mime_type, size_bytes, storage_bucket, storage_path, uploaded_by, created_at',
-      )
+    const result = await selectAttachments(client, (query) =>
+      query
       .eq('center_id', centerId)
       .eq('month_key', monthKey)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }),
+    )
 
-    if (error) {
-      return failure(error.message)
+    if (!result.ok) {
+      return result
     }
 
-    return success((data ?? []).map(mapTransactionAttachmentFromDatabase))
+    return success(result.data.map(mapTransactionAttachmentFromDatabase))
   })
 }
 
@@ -167,20 +175,18 @@ export async function listTransactionAttachmentsByTransactionCode({
   }
 
   return runAuthorizedAttachmentOperation(centerId, async (client) => {
-    const { data, error } = await client
-      .from('transaction_attachments')
-      .select(
-        'id, center_id, transaction_code, transaction_date, month_key, amount, cashflow_type, note, original_name, file_name, mime_type, size_bytes, storage_bucket, storage_path, uploaded_by, created_at',
-      )
+    const result = await selectAttachments(client, (query) =>
+      query
       .eq('center_id', centerId)
       .eq('transaction_code', normalizedCode)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: true }),
+    )
 
-    if (error) {
-      return failure(error.message)
+    if (!result.ok) {
+      return result
     }
 
-    return success((data ?? []).map(mapTransactionAttachmentFromDatabase))
+    return success(result.data.map(mapTransactionAttachmentFromDatabase))
   })
 }
 
@@ -198,11 +204,25 @@ export async function createTransactionAttachmentMetadata(payload = {}) {
       return metadataResult
     }
 
-    const { data, error } = await client
+    let { data, error } = await client
       .from('transaction_attachments')
       .insert(metadataResult.data)
       .select()
       .single()
+
+    if (error && metadataResult.data.uploaded_by_name && isMissingUploadedByNameError(error)) {
+      const legacyMetadata = { ...metadataResult.data }
+      delete legacyMetadata.uploaded_by_name
+
+      const fallbackResult = await client
+        .from('transaction_attachments')
+        .insert(legacyMetadata)
+        .select()
+        .single()
+
+      data = fallbackResult.data
+      error = fallbackResult.error
+    }
 
     if (error) {
       return failure(error.message)
@@ -280,8 +300,33 @@ function mapTransactionAttachmentFromDatabase(row = {}) {
     storageBucket: row.storage_bucket ?? '',
     storagePath: row.storage_path ?? '',
     uploadedBy: row.uploaded_by ?? '',
+    uploadedByName: row.uploaded_by_name ?? '',
     createdAt: row.created_at ?? '',
   }
+}
+
+async function selectAttachments(client, applyFilters) {
+  let { data, error } = await applyFilters(
+    client.from('transaction_attachments').select(attachmentColumns),
+  )
+
+  if (error && isMissingUploadedByNameError(error)) {
+    const fallbackResult = await applyFilters(
+      client.from('transaction_attachments').select(legacyAttachmentColumns),
+    )
+    data = fallbackResult.data
+    error = fallbackResult.error
+  }
+
+  if (error) {
+    return failure(error.message)
+  }
+
+  return success(data ?? [])
+}
+
+function isMissingUploadedByNameError(error) {
+  return /uploaded_by_name|schema cache|column/i.test(String(error?.message ?? ''))
 }
 
 function parseDateInput(dateInput) {
@@ -377,7 +422,12 @@ function getInvalidMetadataField(metadata, normalizedDate) {
   if (
     metadata.storage_path.includes('base64') ||
     /^[a-zA-Z]:[\\/]/.test(metadata.storage_path) ||
-    metadata.storage_path.startsWith('\\\\')
+    metadata.storage_path.startsWith('\\\\') ||
+    metadata.storage_path.includes('\\') ||
+    metadata.storage_path.includes('//') ||
+    metadata.storage_path
+      .split('/')
+      .some((segment) => !segment || segment === '.' || segment === '..')
   ) {
     return 'storage_path'
   }

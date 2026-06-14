@@ -24,10 +24,15 @@ import {
   validateTransactionImageFile,
 } from './image-compression.js'
 import {
+  getMemberProfileMap,
+  updateMyCenterMemberProfile,
+} from './member-profiles.js'
+import {
   createTransactionImageSignedUrl,
   deleteTransactionImageObject,
   uploadTransactionImageBlob,
 } from './supabase-storage.js'
+import { getUploaderDisplayName } from './uploader-display.js'
 import {
   getDeletedNotificationIds,
   getDesktopModuleOrder,
@@ -275,6 +280,7 @@ let cloudStatus = createInitialCloudStatus(getSupabaseConfigStatus().status)
 let cloudUserSyncId = 0
 let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
+let cloudGalleryState = null
 
 function render() {
   const scheduleReportScrollState = getScheduleReportScrollState()
@@ -525,6 +531,7 @@ function renderWindowBody(windowItem) {
         uploadingTransactionId: cloudUploadingTransactionId,
       },
       transactionImageManagerState,
+      cloudGalleryState,
     )
   }
 
@@ -1427,6 +1434,8 @@ async function syncCloudUser(user) {
   const syncId = ++cloudUserSyncId
 
   if (!user) {
+    transactionImageManagerState = null
+    cloudGalleryState = null
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -1440,6 +1449,11 @@ async function syncCloudUser(user) {
       attachmentsMonthKey: '',
       uploadMessage: '',
       uploadMessageTone: '',
+      memberProfileMap: {},
+      currentMemberProfile: null,
+      profileStatus: 'idle',
+      profileMessage: '',
+      profileMessageTone: '',
     }
     render()
     return
@@ -1458,6 +1472,11 @@ async function syncCloudUser(user) {
     attachmentsMonthKey: getCurrentMonthKey(),
     uploadMessage: '',
     uploadMessageTone: '',
+    memberProfileMap: {},
+    currentMemberProfile: null,
+    profileStatus: 'idle',
+    profileMessage: '',
+    profileMessageTone: '',
   }
   render()
 
@@ -1501,8 +1520,55 @@ async function syncCloudUser(user) {
   render()
 
   if (cloudStatus.membershipStatus === 'loaded') {
+    await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
   }
+}
+
+async function loadCenterMemberProfiles(syncId = cloudUserSyncId) {
+  const result = await getMemberProfileMap()
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  const memberProfileMap = result.ok ? result.data : {}
+
+  cloudStatus = {
+    ...cloudStatus,
+    memberProfileMap,
+    currentMemberProfile: cloudStatus.user?.id
+      ? memberProfileMap[cloudStatus.user.id] ?? null
+      : null,
+    profileStatus: result.ok
+      ? 'loaded'
+      : result.schemaUnavailable
+        ? 'unavailable'
+        : 'error',
+    profileMessage:
+      result.ok || result.schemaUnavailable
+        ? ''
+        : 'Không thể tải hồ sơ thành viên. Đang dùng tên fallback.',
+    profileMessageTone: result.ok ? 'success' : 'error',
+  }
+
+  if (transactionImageManagerState) {
+    transactionImageManagerState = {
+      ...transactionImageManagerState,
+      currentUser: cloudStatus.user,
+      memberProfileMap,
+    }
+  }
+
+  if (cloudGalleryState) {
+    cloudGalleryState = {
+      ...cloudGalleryState,
+      currentUser: cloudStatus.user,
+      memberProfileMap,
+    }
+  }
+
+  render()
 }
 
 async function loadCurrentMonthCloudAttachments(syncId = cloudUserSyncId) {
@@ -1572,6 +1638,105 @@ function getCloudAttachmentCounts() {
   }, {})
 }
 
+function getTransactionIdsByCode() {
+  const transactionCodes = getCashflowTransactionCodes()
+
+  return Object.entries(transactionCodes).reduce(
+    (transactionIdsByCode, [transactionId, transactionCode]) => {
+      if (transactionCode) {
+        transactionIdsByCode[transactionCode] = transactionId
+      }
+
+      return transactionIdsByCode
+    },
+    {},
+  )
+}
+
+async function openCloudGallery() {
+  if (
+    cloudStatus.configStatus !== 'configured' ||
+    cloudStatus.authStatus !== 'signed-in'
+  ) {
+    setCloudUploadMessage('Vui lòng đăng nhập Supabase Cloud trước.', 'error')
+    return
+  }
+
+  if (cloudStatus.membershipStatus !== 'loaded' || !cloudStatus.role) {
+    setCloudUploadMessage('Tài khoản chưa được cấp quyền cho DreamHome.', 'error')
+    return
+  }
+
+  cloudGalleryState = {
+    monthKey: getCurrentMonthKey(),
+    query: '',
+    attachments: [],
+    status: 'loading',
+    error: '',
+    message: '',
+    messageTone: '',
+    currentUser: cloudStatus.user,
+    memberProfileMap: cloudStatus.memberProfileMap,
+    transactionIdsByCode: getTransactionIdsByCode(),
+  }
+  render()
+  await loadCloudGalleryAttachments()
+}
+
+async function loadCloudGalleryAttachments() {
+  if (!cloudGalleryState) {
+    return
+  }
+
+  const monthKey = cloudGalleryState.monthKey
+  const result = await listTransactionAttachmentsByMonth({ monthKey })
+
+  if (cloudGalleryState?.monthKey !== monthKey) {
+    return
+  }
+
+  const attachments = result.ok ? await addSignedUrlsToAttachments(result.data) : []
+
+  if (cloudGalleryState?.monthKey !== monthKey) {
+    return
+  }
+
+  cloudGalleryState = {
+    ...cloudGalleryState,
+    attachments,
+    status: result.ok ? 'loaded' : 'error',
+    error: result.ok
+      ? ''
+      : result.error || 'Không thể tải kho ảnh cloud.',
+    currentUser: cloudStatus.user,
+    memberProfileMap: cloudStatus.memberProfileMap,
+    transactionIdsByCode: getTransactionIdsByCode(),
+  }
+  render()
+}
+
+function closeCloudGallery() {
+  cloudGalleryState = null
+  render()
+}
+
+async function openTransactionImageManagerFromGallery(transactionCode) {
+  const transactionId = getTransactionIdsByCode()[transactionCode]
+
+  if (!transactionId) {
+    cloudGalleryState = {
+      ...cloudGalleryState,
+      message: 'Không tìm thấy giao dịch local tương ứng.',
+      messageTone: 'error',
+    }
+    render()
+    return
+  }
+
+  cloudGalleryState = null
+  await openTransactionImageManager(transactionId)
+}
+
 async function openTransactionImageManager(transactionId) {
   const transaction = cashflowTransactions.find((item) => item.id === transactionId)
 
@@ -1592,6 +1757,7 @@ async function openTransactionImageManager(transactionId) {
     isUploading: false,
     deletingAttachmentId: null,
     currentUser: cloudStatus.user,
+    memberProfileMap: cloudStatus.memberProfileMap,
   }
   render()
   await refreshTransactionImageManager()
@@ -1697,6 +1863,9 @@ async function deleteManagedTransactionAttachment(attachmentId) {
   }
 
   await loadCurrentMonthCloudAttachments()
+  if (cloudGalleryState) {
+    await loadCloudGalleryAttachments()
+  }
   if (transactionImageManagerState?.transactionCode === transactionCode) {
     await refreshTransactionImageManager()
   }
@@ -1822,6 +1991,11 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
     mimeType: compressionResult.data.mimeType,
     sizeBytes: compressionResult.data.sizeBytes,
     storagePath,
+    uploadedByName: getUploaderDisplayName(
+      { uploadedBy: cloudStatus.user?.id },
+      cloudStatus.user,
+      cloudStatus.memberProfileMap,
+    ),
   })
 
   cloudUploadingTransactionId = null
@@ -1840,6 +2014,9 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
 
   setCloudUploadMessage('Đã upload ảnh giao dịch lên Supabase Cloud.', 'success')
   await loadCurrentMonthCloudAttachments()
+  if (cloudGalleryState) {
+    await loadCloudGalleryAttachments()
+  }
   await refreshTransactionImageManager()
 
   if (transactionImageManagerState?.transaction.id === transactionId) {
@@ -1910,6 +2087,11 @@ async function initializeSupabaseAuth() {
       attachmentsStatus: 'idle',
       attachmentsError: '',
       attachmentsMonthKey: '',
+      memberProfileMap: {},
+      currentMemberProfile: null,
+      profileStatus: 'idle',
+      profileMessage: '',
+      profileMessageTone: '',
     }
     render()
   }
@@ -2156,6 +2338,11 @@ function bindEvents() {
         attachmentsStatus: 'idle',
         attachmentsError: '',
         attachmentsMonthKey: '',
+        memberProfileMap: {},
+        currentMemberProfile: null,
+        profileStatus: 'idle',
+        profileMessage: '',
+        profileMessageTone: '',
       }
       render()
     }
@@ -2180,6 +2367,52 @@ function bindEvents() {
       }
       render()
     }
+  })
+
+  document
+    .querySelector('[data-cloud-action="open-gallery"]')
+    ?.addEventListener('click', async () => {
+      await openCloudGallery()
+    })
+
+  document.querySelector('[data-cloud-profile-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+
+    cloudStatus = {
+      ...cloudStatus,
+      profileStatus: 'saving',
+      profileMessage: '',
+      profileMessageTone: '',
+    }
+    render()
+
+    const result = await updateMyCenterMemberProfile({
+      displayName: formData.get('displayName'),
+      memberLabel: formData.get('memberLabel'),
+      emailSnapshot: cloudStatus.user?.email,
+    })
+
+    if (!result.ok) {
+      cloudStatus = {
+        ...cloudStatus,
+        profileStatus: result.schemaUnavailable ? 'unavailable' : 'error',
+        profileMessage:
+          'Chưa thể lưu hồ sơ cloud. Vui lòng kiểm tra SQL S5/policy.',
+        profileMessageTone: 'error',
+      }
+      render()
+      return
+    }
+
+    await loadCenterMemberProfiles()
+    cloudStatus = {
+      ...cloudStatus,
+      profileStatus: 'loaded',
+      profileMessage: 'Đã lưu hồ sơ cloud.',
+      profileMessageTone: 'success',
+    }
+    render()
   })
 
   document.querySelectorAll('[data-inventory-filter]').forEach((control) => {
@@ -2764,6 +2997,68 @@ function bindEvents() {
       button.addEventListener('click', async (event) => {
         event.stopPropagation()
         await deleteManagedTransactionAttachment(button.dataset.attachmentId)
+      })
+    })
+
+  document
+    .querySelectorAll('[data-cloud-gallery-action="close"]')
+    .forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation()
+        closeCloudGallery()
+      })
+    })
+
+  document.querySelector('[data-cloud-gallery-month]')?.addEventListener('change', async (event) => {
+    if (!cloudGalleryState || !/^\d{4}-\d{2}$/.test(event.target.value)) {
+      return
+    }
+
+    cloudGalleryState = {
+      ...cloudGalleryState,
+      monthKey: event.target.value,
+      attachments: [],
+      status: 'loading',
+      error: '',
+      message: '',
+      messageTone: '',
+    }
+    render()
+    await loadCloudGalleryAttachments()
+  })
+
+  document.querySelector('[data-cloud-gallery-search]')?.addEventListener('input', (event) => {
+    if (!cloudGalleryState) {
+      return
+    }
+
+    const selectionStart = event.target.selectionStart
+    const selectionEnd = event.target.selectionEnd
+    cloudGalleryState = {
+      ...cloudGalleryState,
+      query: event.target.value,
+      message: '',
+      messageTone: '',
+    }
+    render()
+
+    const nextInput = document.querySelector('[data-cloud-gallery-search]')
+    nextInput?.focus()
+    if (
+      selectionStart !== null &&
+      selectionEnd !== null &&
+      'setSelectionRange' in nextInput
+    ) {
+      nextInput.setSelectionRange(selectionStart, selectionEnd)
+    }
+  })
+
+  document
+    .querySelectorAll('[data-cloud-gallery-action="manage"]')
+    .forEach((button) => {
+      button.addEventListener('click', async (event) => {
+        event.stopPropagation()
+        await openTransactionImageManagerFromGallery(button.dataset.transactionCode)
       })
     })
 

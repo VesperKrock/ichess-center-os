@@ -1,4 +1,4 @@
-import { getUploaderDisplayName, getUserDisplayName } from './uploader-display.js'
+import { getUserDisplayName } from './uploader-display.js'
 
 export function createInitialCloudStatus(configStatus) {
   return {
@@ -14,6 +14,11 @@ export function createInitialCloudStatus(configStatus) {
     attachmentsMonthKey: '',
     uploadMessage: '',
     uploadMessageTone: '',
+    memberProfileMap: {},
+    currentMemberProfile: null,
+    profileStatus: 'idle',
+    profileMessage: '',
+    profileMessageTone: '',
   }
 }
 
@@ -41,7 +46,7 @@ export function renderCloudStatus(status) {
             ? renderSignedInStatus(status)
             : renderLoginForm(status, isBusy)
       }
-      ${renderCloudAttachments(status)}
+      ${renderCloudGallerySummary(status)}
       ${
         status.uploadMessage
           ? `<p class="cloud-upload-message ${status.uploadMessageTone === 'success' ? 'is-success' : 'is-error'}" role="status">${escapeHtml(status.uploadMessage)}</p>`
@@ -73,7 +78,8 @@ function renderLoginForm(status, isBusy) {
 
 function renderSignedInStatus(status) {
   const membershipText = getMembershipText(status)
-  const displayName = getUserDisplayName(status.user)
+  const displayName =
+    status.currentMemberProfile?.displayName || getUserDisplayName(status.user)
 
   return `
     <div class="cloud-account-status">
@@ -98,6 +104,96 @@ function renderSignedInStatus(status) {
       </button>
       ${renderMessage(status.message)}
     </div>
+    ${renderCloudProfileForm(status)}
+  `
+}
+
+function renderCloudGallerySummary(status) {
+  const isConfigured = status.configStatus === 'configured'
+  const isSignedIn = status.authStatus === 'signed-in' && status.user
+  const hasMembership = status.membershipStatus === 'loaded' && status.role
+  let summary = ''
+
+  if (!isConfigured) {
+    summary = 'Chưa cấu hình Supabase.'
+  } else if (!isSignedIn) {
+    summary = 'Đăng nhập để sử dụng kho ảnh cloud.'
+  } else if (!hasMembership) {
+    summary =
+      status.membershipStatus === 'loading'
+        ? 'Đang kiểm tra quyền truy cập...'
+        : 'Tài khoản chưa được cấp quyền cho DreamHome.'
+  } else if (status.attachmentsStatus === 'loading') {
+    summary = 'Đang tải thống kê ảnh cloud...'
+  } else if (status.attachmentsStatus === 'error') {
+    summary = 'Không tải được thống kê ảnh cloud.'
+  } else {
+    summary = `Kho ảnh cloud: ${status.attachments.length} ảnh · Tháng ${status.attachmentsMonthKey || 'hiện tại'}`
+  }
+
+  return `
+    <div class="cloud-gallery-summary">
+      <span>${escapeHtml(summary)}</span>
+      <button
+        type="button"
+        data-cloud-action="open-gallery"
+        ${hasMembership ? '' : 'disabled'}
+      >
+        Mở kho ảnh cloud
+      </button>
+    </div>
+  `
+}
+
+function renderCloudProfileForm(status) {
+  if (status.membershipStatus !== 'loaded' || !status.role) {
+    return ''
+  }
+
+  const profile = status.currentMemberProfile ?? {}
+  const isSaving = status.profileStatus === 'saving'
+
+  return `
+    <details class="cloud-profile-panel">
+      <summary>Hồ sơ cloud</summary>
+      <form data-cloud-profile-form>
+        <label>
+          <span>Tên hiển thị</span>
+          <input
+            type="text"
+            name="displayName"
+            maxlength="120"
+            value="${escapeAttribute(profile.displayName ?? '')}"
+            placeholder="Ví dụ: Đức Thắng"
+            ${isSaving ? 'disabled' : ''}
+          />
+        </label>
+        <label>
+          <span>Nhãn vai trò</span>
+          <input
+            type="text"
+            name="memberLabel"
+            maxlength="120"
+            value="${escapeAttribute(profile.memberLabel ?? '')}"
+            placeholder="Ví dụ: Admin kỹ thuật"
+            ${isSaving ? 'disabled' : ''}
+          />
+        </label>
+        <button type="submit" ${isSaving ? 'disabled' : ''}>
+          ${isSaving ? 'Đang lưu...' : 'Lưu hồ sơ'}
+        </button>
+        ${
+          status.profileStatus === 'unavailable'
+            ? '<p>Chưa thể dùng hồ sơ cloud. Vui lòng chạy SQL S5 và kiểm tra policy.</p>'
+            : ''
+        }
+        ${
+          status.profileMessage
+            ? `<p class="is-${status.profileMessageTone === 'success' ? 'success' : 'error'}" role="status">${escapeHtml(status.profileMessage)}</p>`
+            : ''
+        }
+      </form>
+    </details>
   `
 }
 
@@ -117,99 +213,8 @@ function getMembershipText(status) {
   return escapeHtml(status.role)
 }
 
-function renderCloudAttachments(status) {
-  const isConfigured = status.configStatus === 'configured'
-  const isSignedIn = status.authStatus === 'signed-in' && status.user
-  const hasMembership = status.membershipStatus === 'loaded' && status.role
-  let content = ''
-
-  if (!isConfigured) {
-    content = '<p class="cloud-empty-state">Chưa cấu hình Supabase.</p>'
-  } else if (!isSignedIn) {
-    content = '<p class="cloud-empty-state">Đăng nhập để xem ảnh giao dịch cloud.</p>'
-  } else if (status.membershipStatus === 'loading') {
-    content = '<p class="cloud-empty-state">Đang kiểm tra quyền truy cập...</p>'
-  } else if (!hasMembership) {
-    content = '<p class="cloud-error-state">Tài khoản chưa được cấp quyền cho DreamHome.</p>'
-  } else if (status.attachmentsStatus === 'loading') {
-    content = '<p class="cloud-empty-state">Đang tải metadata ảnh giao dịch...</p>'
-  } else if (status.attachmentsStatus === 'error') {
-    content = `<p class="cloud-error-state">${escapeHtml(status.attachmentsError)}</p>`
-  } else if (!status.attachments.length) {
-    content = '<p class="cloud-empty-state">Chưa có ảnh giao dịch cloud trong tháng này.</p>'
-  } else {
-    content = `
-      <div class="cloud-attachments-list" role="list">
-        ${status.attachments
-          .map((attachment) => renderCloudAttachmentRow(attachment, status.user))
-          .join('')}
-      </div>
-    `
-  }
-
-  return `
-    <section class="cloud-attachments-panel" aria-labelledby="cloud-attachments-title">
-      <div class="cloud-attachments-heading">
-        <h5 id="cloud-attachments-title">Ảnh giao dịch cloud tháng này</h5>
-        ${
-          status.attachmentsMonthKey
-            ? `<span>${escapeHtml(status.attachmentsMonthKey)}</span>`
-            : ''
-        }
-      </div>
-      ${content}
-    </section>
-  `
-}
-
-function renderCloudAttachmentRow(attachment, currentUser) {
-  return `
-    <article class="cloud-attachment-row" role="listitem">
-      <div>
-        <strong>${escapeHtml(attachment.transactionCode || 'Chưa có mã')}</strong>
-        <span>${formatDate(attachment.transactionDate)} · ${formatMoney(attachment.amount)}</span>
-      </div>
-      <div>
-        <strong title="${escapeHtml(attachment.fileName)}">${escapeHtml(attachment.fileName || attachment.originalName || 'Chưa có tên file')}</strong>
-        <span>Tải lên bởi: ${escapeHtml(getUploaderDisplayName(attachment, currentUser))}</span>
-      </div>
-      <time datetime="${escapeHtml(attachment.createdAt)}">${formatDateTime(attachment.createdAt)}</time>
-      ${
-        attachment.signedUrl
-          ? `<a href="${escapeHtml(attachment.signedUrl)}" target="_blank" rel="noopener noreferrer">Xem ảnh</a>`
-          : '<span class="cloud-signed-url-error">Không tạo được link xem</span>'
-      }
-    </article>
-  `
-}
-
 function renderMessage(message) {
   return message ? `<p class="cloud-status-message" role="status">${escapeHtml(message)}</p>` : ''
-}
-
-function formatMoney(amount) {
-  return `${Number(amount || 0).toLocaleString('vi-VN')} VNĐ`
-}
-
-function formatDate(value) {
-  const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : 'Không rõ ngày'
-}
-
-function formatDateTime(value) {
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return 'Không rõ thời gian'
-  }
-
-  return date.toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function escapeHtml(value) {
@@ -219,4 +224,8 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value)
 }

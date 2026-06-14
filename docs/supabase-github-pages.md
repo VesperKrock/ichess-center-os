@@ -38,14 +38,8 @@ Không đưa giá trị thật vào source code, tài liệu hoặc workflow.
 
 ## Không sử dụng
 
-Không tạo hoặc truyền các giá trị sau vào frontend:
-
-```txt
-SUPABASE_SERVICE_ROLE
-service_role
-sb_secret_...
-database password
-```
+Không tạo hoặc truyền key đặc quyền phía server, khóa bí mật quản trị hoặc
+thông tin đăng nhập database vào frontend.
 
 Biến có tiền tố `VITE_` được nhúng vào JavaScript khi build và có thể được trình duyệt đọc. Chỉ publishable key được phép dùng theo cách này.
 
@@ -97,3 +91,6 @@ Nếu panel hiện **Chưa cấu hình Supabase**, kiểm tra:
 - Signed URL chỉ có hiệu lực trong thời gian giới hạn.
 - `.env.local` phải tiếp tục nằm trong `.gitignore`.
 - Không log hoặc hiển thị key trong UI.
+- Deploy GitHub Pages thực tế chỉ được coi là pass sau khi workflow Actions
+  chạy thành công và người dùng kiểm tra đăng nhập, RLS cùng signed URL trên
+  URL Pages.
