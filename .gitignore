@@ -22,3 +22,10 @@ prompts/
 *.njsproj
 *.sln
 *.sw?
+.env
+.env.local
+# Local secrets / private notes
+matkhausupabase.txt
+testgmailtk.txt
+*.local.txt
+local-secrets/

@@ -6,7 +6,7 @@ export const initialTeacherFilters = {
   teacherType: 'all',
 }
 
-const teacherLevelOptions = ['beginner', 'intermediate', 'advanced']
+const teacherLevelOptions = ['preschool', 'beginner', 'intermediate', 'advanced']
 const teacherModeOptions = ['group', 'oneOnOne', 'competition', 'online']
 const teacherDayOptions = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const teacherTimeSlotOptions = ['morning', 'afternoon', 'evening', 'weekendMorning', 'weekendAfternoon']
@@ -60,7 +60,7 @@ export function createEditTeacherFormState(teacher) {
       status: teacher.status ?? 'active',
       teacherType: teacher.teacherType ?? 'fulltime',
       specialties: (teacher.specialties ?? []).join(', '),
-      levels: [...(teacher.levels ?? [])],
+      levels: [...(teacher.levels ?? teacher.teachingLevels ?? [])],
       teachingGroups: (teacher.teachingGroups ?? []).join(', '),
       teachingModes: [...(teacher.teachingModes ?? [])],
       strengths: (teacher.strengths ?? []).join(', '),
@@ -121,6 +121,7 @@ export function buildTeacherFromForm(values, existingTeacher = null) {
   const now = new Date().toISOString()
 
   return {
+    ...existingTeacher,
     id: existingTeacher?.id ?? `teacher-${Date.now()}`,
     fullName: String(values.fullName ?? '').trim(),
     displayName: String(values.displayName ?? '').trim(),
@@ -351,6 +352,8 @@ export function getFilteredTeachers(teachers, filters = initialTeacherFilters) {
           teacher.mainRole,
           teacher.note,
           ...(teacher.specialties ?? []),
+          ...(teacher.levels ?? []),
+          ...(teacher.levels ?? []).map(getTeacherLevelLabel),
           ...(teacher.teachingGroups ?? []),
           ...(teacher.assignedClassNames ?? []),
           ...(teacher.strengths ?? []),
@@ -1109,6 +1112,7 @@ function getTeacherChipTone(value) {
 
 function getTeacherLevelLabel(level) {
   const labels = {
+    preschool: 'Mầm non',
     beginner: 'Cơ bản',
     intermediate: 'Trung cấp',
     advanced: 'Nâng cao',

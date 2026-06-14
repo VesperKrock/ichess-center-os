@@ -6342,6 +6342,294 @@ h3 {
   font-weight: 850;
 }
 
+.cloud-status-panel {
+  display: grid;
+  gap: 9px;
+  border: 1px solid rgba(118, 164, 231, 0.26);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(19, 35, 52, 0.72);
+}
+
+.cloud-status-heading,
+.cloud-login-form,
+.cloud-account-status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.cloud-status-heading {
+  justify-content: space-between;
+}
+
+.cloud-status-heading h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.cloud-status-heading p,
+.cloud-status-note,
+.cloud-status-message {
+  margin: 3px 0 0;
+  color: #9fb1c7;
+  font-size: 0.76rem;
+}
+
+.cloud-status-note code {
+  color: #dcecff;
+}
+
+.cloud-config-badge,
+.cloud-auth-state {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 0.7rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.cloud-config-badge.is-configured,
+.cloud-auth-state.is-signed-in {
+  border: 1px solid rgba(105, 211, 151, 0.38);
+  color: #9aebbc;
+  background: rgba(42, 133, 83, 0.18);
+}
+
+.cloud-config-badge.is-missing {
+  border: 1px solid rgba(242, 180, 92, 0.42);
+  color: #ffd08a;
+  background: rgba(156, 99, 30, 0.2);
+}
+
+.cloud-auth-state {
+  color: #c2d0e0;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.cloud-login-form {
+  flex-wrap: wrap;
+}
+
+.cloud-login-form label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.cloud-login-form input {
+  width: min(190px, 24vw);
+  min-height: 32px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #f4f7fb;
+  background: #101923;
+  font: inherit;
+}
+
+.cloud-login-form input:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.cloud-login-form button,
+.cloud-account-status > button {
+  min-height: 32px;
+  border: 1px solid rgba(118, 164, 231, 0.58);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #ffffff;
+  background: #1f5d99;
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.cloud-login-form button:disabled,
+.cloud-account-status > button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.cloud-account-status {
+  flex-wrap: wrap;
+}
+
+.cloud-account-status dl {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 18px;
+  margin: 0;
+}
+
+.cloud-account-status dl > div {
+  min-width: 0;
+}
+
+.cloud-account-status dt {
+  color: #8296ad;
+  font-size: 0.66rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.cloud-account-status dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: #eef5ff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-account-status small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: #8296ad;
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-status-message {
+  flex-basis: 100%;
+  color: #ffbdad;
+}
+
+.cloud-attachments-panel {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid rgba(160, 184, 214, 0.15);
+  padding-top: 9px;
+}
+
+.cloud-attachments-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.cloud-attachments-heading h5 {
+  margin: 0;
+  color: #dcecff;
+  font-size: 0.78rem;
+}
+
+.cloud-attachments-heading span {
+  color: #8296ad;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.cloud-attachments-list {
+  display: grid;
+  gap: 5px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.cloud-attachment-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(200px, 1.3fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(160, 184, 214, 0.13);
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: rgba(7, 14, 22, 0.45);
+}
+
+.cloud-attachment-row > div {
+  min-width: 0;
+}
+
+.cloud-attachment-row strong,
+.cloud-attachment-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-attachment-row strong {
+  color: #eef5ff;
+  font-size: 0.73rem;
+}
+
+.cloud-attachment-row span,
+.cloud-attachment-row time,
+.cloud-empty-state,
+.cloud-error-state {
+  color: #8fa4bb;
+  font-size: 0.69rem;
+}
+
+.cloud-attachment-row span {
+  margin-top: 2px;
+}
+
+.cloud-attachment-row time {
+  white-space: nowrap;
+}
+
+.cloud-attachment-row a {
+  border: 1px solid rgba(118, 164, 231, 0.35);
+  border-radius: 5px;
+  padding: 4px 7px;
+  color: #b9d8ff;
+  font-size: 0.69rem;
+  font-weight: 850;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.cloud-attachment-row a:hover,
+.cloud-attachment-row a:focus-visible {
+  border-color: rgba(118, 164, 231, 0.8);
+  outline: none;
+}
+
+.cloud-signed-url-error {
+  color: #ffbdad;
+}
+
+.cloud-upload-message {
+  margin: 0;
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 0.72rem;
+}
+
+.cloud-upload-message.is-success {
+  color: #9aebbc;
+  background: rgba(42, 133, 83, 0.16);
+}
+
+.cloud-upload-message.is-error {
+  color: #ffbdad;
+  background: rgba(151, 60, 47, 0.15);
+}
+
+.cloud-empty-state,
+.cloud-error-state {
+  margin: 0;
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cloud-error-state {
+  color: #ffbdad;
+  background: rgba(151, 60, 47, 0.15);
+}
+
 .cashflow-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -6424,6 +6712,10 @@ h3 {
 
 .cashflow-table th:nth-child(7) {
   width: 112px;
+}
+
+.cashflow-table th:nth-child(9) {
+  width: 94px;
 }
 
 .cashflow-table th:nth-child(5),
@@ -6534,6 +6826,249 @@ h3 {
 
 .cashflow-amount.is-expense {
   color: #ffb29e;
+}
+
+.cashflow-cloud-attachment-cell {
+  text-align: center;
+}
+
+.cashflow-cloud-attachment-cell button {
+  width: 100%;
+  min-height: 28px;
+  border: 1px solid rgba(118, 164, 231, 0.38);
+  border-radius: 5px;
+  padding: 4px 6px;
+  color: #dcecff;
+  background: rgba(31, 93, 153, 0.35);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.cashflow-cloud-attachment-cell button:hover,
+.cashflow-cloud-attachment-cell button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.8);
+  outline: none;
+}
+
+.cashflow-cloud-attachment-cell button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.cashflow-cloud-attachment-cell input {
+  display: none;
+}
+
+.transaction-image-manager-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  padding: 12px 18px 20px;
+  background: rgba(3, 8, 14, 0.78);
+  backdrop-filter: blur(3px);
+}
+
+.transaction-image-manager {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  width: min(1120px, calc(100% - 32px));
+  height: min(720px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(118, 164, 231, 0.38);
+  border-radius: 10px;
+  padding: 14px;
+  color: #d8e2ef;
+  background: #101923;
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.48);
+}
+
+.transaction-image-manager-header,
+.transaction-image-manager-toolbar,
+.transaction-image-manager-item,
+.transaction-image-manager-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.transaction-image-manager-header {
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(160, 184, 214, 0.14);
+  padding-bottom: 11px;
+}
+
+.transaction-image-manager-header h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.transaction-image-manager-header p {
+  margin: 4px 0 0;
+  color: #b9c9da;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.transaction-image-manager-header span {
+  display: block;
+  margin-top: 3px;
+  color: #8fa4bb;
+  font-size: 0.75rem;
+}
+
+.transaction-image-manager-header small {
+  display: inline-block;
+  margin-top: 7px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #9aebbc;
+  background: rgba(42, 133, 83, 0.16);
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.transaction-image-manager-header > button {
+  align-self: flex-start;
+  border: 0;
+  padding: 3px 7px;
+  color: #b9c9da;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+.transaction-image-manager-toolbar {
+  justify-content: flex-end;
+  border-bottom: 1px solid rgba(160, 184, 214, 0.1);
+  padding-bottom: 10px;
+}
+
+.transaction-image-manager-toolbar input {
+  display: none;
+}
+
+.transaction-image-manager-toolbar button,
+.transaction-image-manager-actions button,
+.transaction-image-manager-actions a {
+  min-height: 31px;
+  border: 1px solid rgba(118, 164, 231, 0.38);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: #dcecff;
+  background: rgba(31, 93, 153, 0.3);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.transaction-image-manager-toolbar button:disabled,
+.transaction-image-manager-actions button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.transaction-image-manager-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.transaction-image-manager-item {
+  justify-content: space-between;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: rgba(7, 14, 22, 0.55);
+}
+
+.transaction-image-manager-item-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.transaction-image-manager-item strong,
+.transaction-image-manager-item span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transaction-image-technical-details {
+  margin-top: 7px;
+  color: #71869d;
+  font-size: 0.66rem;
+}
+
+.transaction-image-technical-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #8296ad;
+  font-weight: 800;
+}
+
+.transaction-image-technical-details[open] {
+  border-left: 2px solid rgba(118, 164, 231, 0.25);
+  padding-left: 8px;
+}
+
+.transaction-image-technical-details span {
+  margin-top: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.transaction-image-manager-item strong {
+  color: #f0f6ff;
+  font-size: 0.78rem;
+}
+
+.transaction-image-manager-item span {
+  margin-top: 3px;
+  color: #8fa4bb;
+  font-size: 0.69rem;
+}
+
+.transaction-image-manager-actions {
+  flex: 0 0 auto;
+}
+
+.transaction-image-manager-actions button {
+  border-color: rgba(242, 116, 116, 0.4);
+  color: #ffbdad;
+  background: rgba(151, 60, 47, 0.16);
+}
+
+.transaction-image-manager-empty,
+.transaction-image-manager-error,
+.transaction-image-manager-message {
+  margin: 0;
+  border-radius: 7px;
+  padding: 10px;
+  color: #9fb1c7;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.76rem;
+}
+
+.transaction-image-manager-error,
+.transaction-image-manager-message.is-error {
+  color: #ffbdad;
+  background: rgba(151, 60, 47, 0.15);
+}
+
+.transaction-image-manager-message.is-success {
+  color: #9aebbc;
+  background: rgba(42, 133, 83, 0.16);
 }
 
 .cashflow-source-badge {
@@ -9794,6 +10329,43 @@ h3 {
     .cashbook-reconciliation-grid,
     .cashbook-reconciliation-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cloud-status-heading,
+  .cloud-login-form,
+  .cloud-account-status,
+  .cloud-account-status dl {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cloud-login-form label {
+    display: grid;
+  }
+
+  .cloud-login-form input {
+    width: 100%;
+  }
+
+  .cloud-attachment-row {
+    grid-template-columns: 1fr;
+  }
+
+  .transaction-image-manager-backdrop {
+    padding: 8px 8px 14px;
+  }
+
+  .transaction-image-manager {
+    width: 100%;
+    height: calc(100% - 4px);
+    max-height: calc(100% - 4px);
+  }
+
+  .transaction-image-manager-item,
+  .transaction-image-manager-actions,
+  .transaction-image-manager-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .inventory-add-button {

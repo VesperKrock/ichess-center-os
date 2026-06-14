@@ -720,6 +720,7 @@ function normalizeTeachers(teachers) {
         : 'fulltime'
 
       return {
+        ...teacher,
         id: String(teacher.id || `teacher-${String(index + 1).padStart(3, '0')}`),
         fullName: String(teacher.fullName || teacher.name || 'Giáo viên'),
         displayName: String(teacher.displayName || ''),
@@ -728,13 +729,16 @@ function normalizeTeachers(teachers) {
         status,
         teacherType,
         specialties: normalizeStringArray(teacher.specialties),
-        levels: normalizeStringArray(teacher.levels),
+        levels: normalizeStringArray(teacher.levels ?? teacher.teachingLevels),
         teachingGroups: normalizeStringArray(teacher.teachingGroups),
         teachingModes: normalizeStringArray(teacher.teachingModes).filter((mode) =>
           ['group', 'oneOnOne', 'competition', 'online'].includes(mode),
         ),
         strengths: normalizeStringArray(teacher.strengths),
         internalTags: normalizeStringArray(teacher.internalTags),
+        assignedClassNames: normalizeStringArray(teacher.assignedClassNames),
+        assignedStudentIds: normalizeStringArray(teacher.assignedStudentIds),
+        currentStudentCount: Math.max(0, normalizeNumber(teacher.currentStudentCount)),
         availableDays: normalizeStringArray(teacher.availableDays).filter((day) =>
           ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].includes(day),
         ),

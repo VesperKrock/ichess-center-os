@@ -1,4 +1,5 @@
 import { cashflowMethods } from './cashflow-data.js'
+import { getUploaderDisplayName } from './uploader-display.js'
 
 export const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
 
@@ -100,6 +101,9 @@ export function renderCashflowModule(
   categories = [],
   isCategoryPanelOpen = false,
   categoryFormState = createEmptyCashflowCategoryFormState(),
+  cloudStatusHtml = '',
+  cloudAttachmentOptions = {},
+  imageManagerState = null,
 ) {
   const activeFilters = { ...initialCashflowFilters, ...filters }
   const filteredTransactions = getFilteredCashflowTransactions(transactions, activeFilters)
@@ -164,6 +168,7 @@ export function renderCashflowModule(
         </div>
       </div>
 
+      ${cloudStatusHtml}
       ${periodLabel ? `<p class="cashflow-period-label">Kỳ: ${escapeHtml(periodLabel)}</p>` : ''}
       <div class="cashflow-stats" aria-label="Tổng hợp thu chi theo bộ lọc hiện tại">
         ${renderStatChip('Tổng thu', formatMoney(stats.totalIncome), 'income')}
@@ -184,12 +189,17 @@ export function renderCashflowModule(
               <th>Số tiền</th>
               <th title="Người ghi nhận">Ghi nhận</th>
               <th>Ghi chú</th>
+              <th title="Ảnh giao dịch cloud">Ảnh cloud</th>
             </tr>
           </thead>
           <tbody>
             ${
               filteredTransactions.length
-                ? filteredTransactions.map(renderTransactionRow).join('')
+                ? filteredTransactions
+                    .map((transaction) =>
+                      renderTransactionRow(transaction, cloudAttachmentOptions),
+                    )
+                    .join('')
                 : renderEmptyState()
             }
           </tbody>
@@ -201,6 +211,7 @@ export function renderCashflowModule(
           ? renderCategoryPanel(categories, transactions, categoryFormState)
           : ''
       }
+      ${imageManagerState ? renderTransactionImageManager(imageManagerState) : ''}
     </section>
   `
 }
@@ -616,7 +627,6 @@ function renderCashflowForm(formState, categories = []) {
             <span>Ghi chú</span>
             <textarea data-cashflow-form-field="note">${escapeHtml(formState.values.note ?? '')}</textarea>
           </label>
-          ${renderAttachmentField(formState)}
         </div>
         ${renderFormErrors(formState.errors)}
         <div class="cashflow-form-actions">
@@ -805,7 +815,20 @@ function renderFormErrors(errors) {
   `
 }
 
-function renderTransactionRow(transaction) {
+export function getCloudAttachmentButtonLabel(attachmentCount) {
+  const count = Number(attachmentCount || 0)
+  return count > 0 ? `${count} ảnh` : 'Chèn ảnh'
+}
+
+function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
+  const transactionCode =
+    cloudAttachmentOptions.transactionCodes?.[transaction.id] ?? ''
+  const attachmentCount =
+    cloudAttachmentOptions.attachmentCounts?.[transactionCode] ?? 0
+  const isUploading =
+    cloudAttachmentOptions.uploadingTransactionId === transaction.id
+  const canUpload = Boolean(cloudAttachmentOptions.canUpload) && !isUploading
+
   return `
     <tr class="cashflow-row" data-cashflow-transaction-id="${transaction.id}" tabindex="0">
       <td>${formatDate(transaction.transactionDate)}</td>
@@ -816,8 +839,141 @@ function renderTransactionRow(transaction) {
       <td class="cashflow-amount is-${transaction.type}">${formatMoney(transaction.amount)}</td>
       <td title="${escapeAttribute(transaction.recordedBy)}">${escapeHtml(getRecordedByDisplayName(transaction.recordedBy))}</td>
       <td title="${escapeAttribute(transaction.note)}">${renderTransactionNote(transaction)}</td>
+      <td class="cashflow-cloud-attachment-cell">
+        <button
+          type="button"
+          data-cashflow-cloud-action="select-image"
+          data-cashflow-transaction-id="${escapeAttribute(transaction.id)}"
+          data-cloud-attachment-count="${attachmentCount}"
+          title="Chèn ảnh giao dịch"
+          ${canUpload ? '' : 'disabled'}
+        >
+          ${isUploading ? 'Đang tải...' : getCloudAttachmentButtonLabel(attachmentCount)}
+        </button>
+        <input
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+          data-cashflow-cloud-image-input="${escapeAttribute(transaction.id)}"
+          tabindex="-1"
+        />
+      </td>
     </tr>
   `
+}
+
+function renderTransactionImageManager(state) {
+  const transaction = state.transaction
+  const attachments = state.attachments ?? []
+
+  return `
+    <div class="transaction-image-manager-backdrop" role="presentation">
+      <section
+        class="transaction-image-manager"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transaction-image-manager-title"
+      >
+        <header class="transaction-image-manager-header">
+          <div>
+            <h4 id="transaction-image-manager-title">Ảnh giao dịch</h4>
+            <p>
+              ${escapeHtml(state.transactionCode)} ·
+              ${formatDate(transaction.transactionDate)} ·
+              ${formatMoney(transaction.amount)}
+            </p>
+            <span>${escapeHtml(transaction.personName || transaction.note || 'Không có nội dung')}</span>
+            <small>${attachments.length} ảnh đã tải lên</small>
+          </div>
+          <button type="button" data-transaction-image-manager-action="close" aria-label="Đóng">×</button>
+        </header>
+
+        <div class="transaction-image-manager-toolbar">
+          <button
+            type="button"
+            data-transaction-image-manager-action="add"
+            ${state.isUploading ? 'disabled' : ''}
+          >
+            ${state.isUploading ? 'Đang tải ảnh...' : '+ Thêm ảnh'}
+          </button>
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            data-transaction-image-manager-input
+            tabindex="-1"
+          />
+          <button type="button" data-transaction-image-manager-action="close">Đóng</button>
+        </div>
+
+        ${state.message ? `<p class="transaction-image-manager-message is-${escapeAttribute(state.messageTone || 'error')}" role="status">${escapeHtml(state.message)}</p>` : ''}
+
+        <div class="transaction-image-manager-list">
+          ${
+            state.status === 'loading'
+              ? '<p class="transaction-image-manager-empty">Đang tải danh sách ảnh...</p>'
+              : state.error
+                ? `<p class="transaction-image-manager-error">${escapeHtml(state.error)}</p>`
+                : attachments.length
+                  ? attachments.map((attachment) => renderManagedAttachment(attachment, state)).join('')
+                  : '<p class="transaction-image-manager-empty">Chưa có ảnh giao dịch nào.</p>'
+          }
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderManagedAttachment(attachment, state) {
+  const isDeleting = state.deletingAttachmentId === attachment.id
+  const uploaderDisplayName = getUploaderDisplayName(attachment, state.currentUser)
+
+  return `
+    <article class="transaction-image-manager-item">
+      <div class="transaction-image-manager-item-summary">
+        <strong title="${escapeAttribute(attachment.fileName)}">${escapeHtml(attachment.fileName || 'Ảnh giao dịch')}</strong>
+        <span>${formatFileSize(attachment.sizeBytes)} · Tải lên lúc ${formatDateTime(attachment.createdAt)}</span>
+        <span>Tải lên bởi: ${escapeHtml(uploaderDisplayName)}</span>
+        <details class="transaction-image-technical-details">
+          <summary>Chi tiết kỹ thuật</summary>
+          <span>Tên file gốc: ${escapeHtml(attachment.originalName || 'Không rõ')}</span>
+          <span>Đường dẫn lưu trữ: ${escapeHtml(attachment.storagePath || 'Không rõ')}</span>
+        </details>
+      </div>
+      <div class="transaction-image-manager-actions">
+        ${
+          attachment.signedUrl
+            ? `
+              <a href="${escapeAttribute(attachment.signedUrl)}" target="_blank" rel="noopener noreferrer">Xem ảnh</a>
+              <a href="${escapeAttribute(attachment.signedUrl)}" download="${escapeAttribute(attachment.fileName || 'anh-giao-dich.jpg')}" target="_blank" rel="noopener noreferrer">Tải xuống</a>
+            `
+            : '<span>Không tạo được link xem ảnh</span>'
+        }
+        <button
+          type="button"
+          data-transaction-image-manager-action="delete"
+          data-attachment-id="${escapeAttribute(attachment.id)}"
+          ${isDeleting ? 'disabled' : ''}
+        >
+          ${isDeleting ? 'Đang xóa...' : 'Xóa ảnh'}
+        </button>
+      </div>
+    </article>
+  `
+}
+
+function formatDateTime(value) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Không rõ thời gian'
+  }
+
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function renderTransactionNote(transaction) {
@@ -1159,7 +1315,7 @@ function getCategoryTypeLabel(type) {
 function renderEmptyState() {
   return `
     <tr>
-      <td class="cashflow-empty" colspan="8">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
+      <td class="cashflow-empty" colspan="9">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
     </tr>
   `
 }
