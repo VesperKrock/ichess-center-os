@@ -54,6 +54,7 @@ import {
   getStoredTeachers,
   getStoredTuition,
   getViewMode,
+  createCloudDbPullBackup,
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
   saveStoredCashflow,
@@ -198,6 +199,10 @@ import {
   renderAttendanceBoardModule,
 } from './attendance-board-module.js'
 import {
+  ANGEL_WINGS_DATASET_ID,
+  ANGEL_WINGS_IMPORT_BATCH_ID,
+  ANGEL_WINGS_SOURCE_TAG,
+  ANGEL_WINGS_TEACHER_ID,
   createF15K5BackupSnapshot,
   mergeAngelWingsTeacherRoster,
   removeAngelWingsAttendanceData,
@@ -205,6 +210,14 @@ import {
   upsertAngelWingsAttendanceData,
   writeAngelWingsPackageCatalog,
 } from './attendance-board-angel-wings-data.js'
+import {
+  checkCloudDbReadiness,
+  createEmptyCloudEntityCounts,
+  getCloudEntityCounts,
+  pullCoreEntitiesFromCloud,
+  pushLocalCoreEntitiesToCloud,
+} from './cloud-db-sync.js'
+import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
 import { sampleStudents } from './student-data.js'
 import { sampleTeachers } from './teacher-data.js'
 import {
@@ -384,7 +397,11 @@ let isInventoryHistoryPanelOpen = false
 let isInventoryRequestsPanelOpen = false
 let careNoteDrafts = {}
 let cloudStatus = createInitialCloudStatus(getSupabaseConfigStatus().status)
+let cloudDbState = createInitialCloudDbState()
 let cloudUserSyncId = 0
+let cloudDbAutoPullUserId = ''
+let coreCloudSyncTimer = null
+let coreCloudSyncRunId = 0
 let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
 let cloudGalleryState = null
@@ -817,6 +834,7 @@ function renderWindowBody(windowItem) {
       students,
       settingsFilters,
       settingsClassSessionFormState,
+      getSettingsCloudDbPanelState(),
     )
   }
 
@@ -1764,6 +1782,7 @@ function softDeleteStudent(studentId) {
       ),
   )
   saveStoredStudents(students)
+  queueCoreCloudSync('student-delete')
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
@@ -1808,6 +1827,8 @@ async function syncCloudUser(user) {
   if (!user) {
     transactionImageManagerState = null
     cloudGalleryState = null
+    cloudDbState = createInitialCloudDbState()
+    cloudDbAutoPullUserId = ''
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -1850,6 +1871,8 @@ async function syncCloudUser(user) {
     profileMessage: '',
     profileMessageTone: '',
   }
+  cloudDbState = createInitialCloudDbState()
+  cloudDbAutoPullUserId = ''
   render()
 
   try {
@@ -1894,7 +1917,487 @@ async function syncCloudUser(user) {
   if (cloudStatus.membershipStatus === 'loaded') {
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
+    await autoPullCoreCloudSnapshot(syncId)
   }
+}
+
+function createInitialCloudDbState() {
+  return {
+    isLoading: false,
+    readinessStatus: 'idle',
+    cloudCounts: null,
+    message: '',
+    messageTone: '',
+    lastUpdatedAt: '',
+  }
+}
+
+function getSettingsCloudDbPanelState() {
+  return {
+    ...cloudDbState,
+    configStatus: cloudStatus.configStatus,
+    authStatus: cloudStatus.authStatus,
+    membershipStatus: cloudStatus.membershipStatus,
+    role: cloudStatus.role,
+    localCounts: getCloudDbLocalCounts(),
+    localAngelWingsStatus: getLocalAngelWingsStatus(),
+  }
+}
+
+function getCloudDbLocalCounts() {
+  return {
+    [CLOUD_ENTITY_TYPES.STUDENT]: students.filter((student) => !student.isDeleted).length,
+    [CLOUD_ENTITY_TYPES.TEACHER]: teachers.length,
+    [CLOUD_ENTITY_TYPES.CLASS_SESSION]: classSessions.length,
+  }
+}
+
+function getLocalAngelWingsStatus() {
+  const angelWingsStudents = students.filter(isAngelWingsEntity)
+  const angelWingsClassSessions = classSessions.filter(isAngelWingsEntity)
+  const hasAngelWingsTeacher = teachers.some(
+    (teacher) => teacher.id === ANGEL_WINGS_TEACHER_ID || isAngelWingsEntity(teacher),
+  )
+  const looksLikeOldSeed = students.length === 8 && angelWingsStudents.length === 0
+  const isReadyForCloudPush =
+    angelWingsStudents.length >= 29 &&
+    angelWingsClassSessions.length >= 4 &&
+    hasAngelWingsTeacher
+
+  return {
+    isReadyForCloudPush,
+    looksLikeOldSeed,
+    studentCount: angelWingsStudents.length,
+    classSessionCount: angelWingsClassSessions.length,
+    hasTeacher: hasAngelWingsTeacher,
+  }
+}
+
+function isAngelWingsEntity(entity) {
+  return Boolean(
+    entity &&
+      (
+        entity.sourceTag === ANGEL_WINGS_SOURCE_TAG ||
+        entity.datasetId === ANGEL_WINGS_DATASET_ID ||
+        entity.importBatchId === ANGEL_WINGS_IMPORT_BATCH_ID ||
+        entity.isControlledFixture
+      ),
+  )
+}
+
+function canUseCoreCloudDb() {
+  return (
+    cloudStatus.configStatus === 'configured' &&
+    cloudStatus.authStatus === 'signed-in' &&
+    cloudStatus.membershipStatus === 'loaded' &&
+    Boolean(cloudStatus.role)
+  )
+}
+
+function isCoreCloudDbReady() {
+  return (
+    canUseCoreCloudDb() &&
+    cloudDbState.readinessStatus === 'ready' &&
+    getLocalAngelWingsStatus().isReadyForCloudPush
+  )
+}
+
+function queueCoreCloudSync(reason = 'auto') {
+  if (!isCoreCloudDbReady()) {
+    return
+  }
+
+  if (coreCloudSyncTimer) {
+    clearTimeout(coreCloudSyncTimer)
+  }
+
+  coreCloudSyncTimer = window.setTimeout(() => {
+    coreCloudSyncTimer = null
+    syncCoreEntitiesToCloud(reason)
+  }, 500)
+}
+
+async function syncCoreEntitiesToCloud(reason = 'auto') {
+  if (!isCoreCloudDbReady()) {
+    return
+  }
+
+  const runId = ++coreCloudSyncRunId
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: true,
+    message: 'Dang ghi Cloud DB C2 cho Hoc vien/Giao vien/Ca hoc...',
+    messageTone: '',
+  }
+  render()
+
+  const result = await pushLocalCoreEntitiesToCloud({
+    students,
+    teachers,
+    classSessions,
+  })
+
+  if (runId !== coreCloudSyncRunId) {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: false,
+    cloudCounts: result.ok ? result.counts || createEmptyCloudEntityCounts() : cloudDbState.cloudCounts,
+    message: result.ok
+      ? `Da ghi Cloud DB C2 (${reason}): Hoc vien ${result.counts.student}, Giao vien ${result.counts.teacher}, Ca hoc ${result.counts.class_session}.`
+      : result.error,
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
+  }
+  render()
+}
+
+function getCoreCloudSnapshotCounts(snapshot = {}) {
+  return {
+    [CLOUD_ENTITY_TYPES.STUDENT]: Array.isArray(snapshot.students) ? snapshot.students.length : 0,
+    [CLOUD_ENTITY_TYPES.TEACHER]: Array.isArray(snapshot.teachers) ? snapshot.teachers.length : 0,
+    [CLOUD_ENTITY_TYPES.CLASS_SESSION]: Array.isArray(snapshot.classSessions)
+      ? snapshot.classSessions.length
+      : 0,
+  }
+}
+
+function isCoreCloudSnapshotEmpty(snapshot = {}) {
+  return Object.values(getCoreCloudSnapshotCounts(snapshot)).every((count) => count === 0)
+}
+
+function applyCoreCloudSnapshotToLocal(snapshot) {
+  const backupKey = createCloudDbPullBackup(window.localStorage)
+  students = Array.isArray(snapshot.students) ? snapshot.students : []
+  teachers = Array.isArray(snapshot.teachers) ? snapshot.teachers : []
+  classSessions = Array.isArray(snapshot.classSessions) ? snapshot.classSessions : []
+  saveStoredStudents(students)
+  saveStoredTeachers(teachers)
+  saveStoredClassSessions(classSessions)
+  students = getStoredStudents([])
+  teachers = getStoredTeachers([])
+  classSessions = getStoredClassSessions([])
+
+  return {
+    backupKey,
+    counts: getCoreCloudSnapshotCounts({ students, teachers, classSessions }),
+  }
+}
+
+function restoreAngelWingsLocalDataset() {
+  const backup = createF15K5BackupSnapshot(window.localStorage)
+  const result = upsertAngelWingsAttendanceData()
+
+  students = result.students
+  teachers = mergeAngelWingsTeacherRoster(result.teachers, result.students)
+  parentConsultations = result.parentConsultations
+  classSessions = result.classSessions
+  tuitionRecords = result.tuitionRecords
+  scheduleSessions = result.schedule
+  sessionReports = result.sessionReports
+  attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
+
+  saveStoredStudents(students)
+  saveStoredTeachers(teachers)
+  saveStoredParentConsultations(parentConsultations)
+  saveStoredClassSessions(classSessions)
+  writeAngelWingsPackageCatalog(window.localStorage, result.tuitionPackages)
+  saveStoredTuition(tuitionRecords)
+  saveStoredSchedule(scheduleSessions)
+  saveStoredSessionReports(sessionReports)
+  saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
+
+  studentFilters = {
+    ...studentFilters,
+    selectedStudentId: students[0]?.id || null,
+  }
+  teacherFilters = { ...initialTeacherFilters }
+  settingsFilters = { ...initialSettingsFilters }
+  settingsClassSessionFormState = null
+  studentFormState = null
+  teacherFormState = null
+  selectedTeacherId = ANGEL_WINGS_TEACHER_ID
+
+  cloudDbState = {
+    ...cloudDbState,
+    cloudCounts: cloudDbState.cloudCounts,
+    message: `Đã khôi phục Angel Wings 06/2026 vào local: ${students.length} học viên, ${teachers.length} giáo viên, ${classSessions.length} ca học. Chưa đẩy cloud. Backup: ${backup?.backupKey || 'không tạo được'}.`,
+    messageTone: 'success',
+  }
+
+  openModuleWindow('hoc-vien')
+}
+
+async function refreshCloudDbReadiness({ showLoading = false } = {}) {
+  if (!canUseCoreCloudDb()) {
+    cloudDbState = {
+      ...cloudDbState,
+      readinessStatus: 'blocked',
+      cloudCounts: null,
+      message: cloudStatus.membershipStatus === 'loaded'
+        ? 'Không đọc được Cloud DB do quyền DreamHome/RLS. Kiểm tra center_members và policy.'
+        : 'User hiện tại chưa có membership center_members với center_id = dreamhome.',
+      messageTone: 'error',
+    }
+    if (showLoading) {
+      render()
+    }
+    return { ok: false, ready: false, error: cloudDbState.message }
+  }
+
+  if (showLoading) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: true,
+      readinessStatus: 'checking',
+      cloudCounts: null,
+      message: 'Đang kiểm tra Cloud DB C2.2 readiness...',
+      messageTone: '',
+    }
+    render()
+  }
+
+  const result = await checkCloudDbReadiness()
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: false,
+    readinessStatus: result.ok ? 'ready' : 'error',
+    cloudCounts: result.ok ? cloudDbState.cloudCounts : null,
+    message: result.ok ? '' : result.error,
+    messageTone: result.ok ? '' : 'error',
+    lastUpdatedAt: result.ok ? cloudDbState.lastUpdatedAt : new Date().toISOString(),
+  }
+
+  if (showLoading || !result.ok) {
+    render()
+  }
+
+  return result
+}
+
+async function refreshCloudDbCounts() {
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: true,
+    readinessStatus: 'checking',
+    cloudCounts: null,
+    message: '',
+    messageTone: '',
+  }
+  render()
+
+  const readiness = await checkCloudDbReadiness()
+
+  if (!readiness.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      readinessStatus: 'error',
+      cloudCounts: null,
+      message: readiness.error,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  const result = await getCloudEntityCounts({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+  })
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: false,
+    readinessStatus: result.ok ? 'ready' : 'error',
+    cloudCounts: result.ok ? result.counts : null,
+    message: result.ok ? 'Đã làm mới số liệu Cloud DB C2.' : result.error,
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
+  }
+  render()
+}
+
+async function pushCloudDbSnapshot() {
+  const readiness = await refreshCloudDbReadiness({ showLoading: true })
+
+  if (!readiness.ok) {
+    return
+  }
+
+  const angelWingsStatus = getLocalAngelWingsStatus()
+
+  if (!angelWingsStatus.isReadyForCloudPush) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      message: angelWingsStatus.looksLikeOldSeed
+        ? 'Local đang giống seed cũ 8 học viên. Hãy khôi phục Angel Wings 06/2026 trước khi đẩy cloud.'
+        : 'Local chưa có đủ marker Angel Wings 06/2026. Hãy khôi phục/kiểm tra local trước khi đẩy cloud.',
+      messageTone: 'error',
+    }
+    render()
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: true,
+    message: '',
+    messageTone: '',
+  }
+  render()
+
+  const result = await pushLocalCoreEntitiesToCloud({
+    students,
+    teachers,
+    classSessions,
+  })
+
+  if (!result.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: false,
+    cloudCounts: result.counts || createEmptyCloudEntityCounts(),
+    message: `Đã đẩy local lên cloud: Học viên ${result.counts.student}, Giáo viên ${result.counts.teacher}, Ca học ${result.counts.class_session}.`,
+    messageTone: 'success',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+async function pullCloudDbSnapshotToLocal() {
+  const readiness = await refreshCloudDbReadiness({ showLoading: true })
+
+  if (!readiness.ok) {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: true,
+    message: '',
+    messageTone: '',
+  }
+  render()
+
+  const result = await pullCoreEntitiesFromCloud()
+
+  if (!result.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return
+  }
+
+  const counts = getCoreCloudSnapshotCounts(result.data)
+
+  if (isCoreCloudSnapshotEmpty(result.data)) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      cloudCounts: counts,
+      message: 'Cloud DB C2 is empty. Local data was kept unchanged.',
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  const appliedSnapshot = applyCoreCloudSnapshotToLocal(result.data)
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: false,
+    cloudCounts: appliedSnapshot.counts,
+    message: `Pulled Cloud DB C2 to local. Backup: ${appliedSnapshot.backupKey || 'not created'}.`,
+    messageTone: 'success',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+async function autoPullCoreCloudSnapshot(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || cloudDbAutoPullUserId === cloudStatus.user?.id) {
+    return
+  }
+
+  cloudDbAutoPullUserId = cloudStatus.user?.id || ''
+  const readiness = await refreshCloudDbReadiness({ showLoading: true })
+
+  if (syncId !== cloudUserSyncId || !readiness.ok) {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: true,
+    message: 'Checking Cloud DB C2 data...',
+    messageTone: '',
+  }
+  render()
+
+  const result = await pullCoreEntitiesFromCloud()
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  if (!result.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return
+  }
+
+  const counts = getCoreCloudSnapshotCounts(result.data)
+
+  if (isCoreCloudSnapshotEmpty(result.data)) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      cloudCounts: counts,
+      message: 'Cloud DB C2 has no core data yet. Local data was kept unchanged.',
+      messageTone: 'success',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  const appliedSnapshot = applyCoreCloudSnapshotToLocal(result.data)
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: false,
+    cloudCounts: appliedSnapshot.counts,
+    message: `Pulled Cloud DB C2 after sign-in. Backup: ${appliedSnapshot.backupKey || 'not created'}.`,
+    messageTone: 'success',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
 }
 
 async function loadCenterMemberProfiles(syncId = cloudUserSyncId) {
@@ -4320,6 +4823,46 @@ function bindEvents() {
     })
   })
 
+  document.querySelector('[data-cloud-db-action="refresh"]')?.addEventListener('click', () => {
+    refreshCloudDbCounts()
+  })
+
+  document.querySelector('[data-cloud-db-action="restore-angel-wings-local"]')?.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Khôi phục controlled dataset Angel Wings 06/2026 vào local? App sẽ backup các key liên quan trước khi replace. Thao tác này KHÔNG đẩy dữ liệu lên cloud.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    restoreAngelWingsLocalDataset()
+  })
+
+  document.querySelector('[data-cloud-db-action="push"]')?.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Đẩy snapshot local của Học viên, Giáo viên và Ca học/Lớp lên Cloud DB C2? Thao tác này không thay đổi local và không sync học phí/điểm danh/thu chi.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    pushCloudDbSnapshot()
+  })
+
+  document.querySelector('[data-cloud-db-action="pull"]')?.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Tải Cloud DB C2 về local sẽ replace 3 nhóm local: Học viên, Giáo viên và Ca học/Lớp. App sẽ backup 3 key này trước khi replace. Tiếp tục?',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    pullCloudDbSnapshotToLocal()
+  })
+
   document.querySelectorAll('[data-attendance-board-filter]').forEach((control) => {
     const eventName = control.matches('select') || control.type === 'month' ? 'change' : 'input'
 
@@ -4557,6 +5100,7 @@ function bindEvents() {
           : item,
       )
       saveStoredClassSessions(classSessions)
+      queueCoreCloudSync('class-session-status')
       render()
     })
   })
@@ -4649,6 +5193,7 @@ function bindEvents() {
           )
         : [nextClassSession, ...classSessions]
       saveStoredClassSessions(classSessions)
+      queueCoreCloudSync('class-session-save')
       settingsClassSessionFormState = null
       render()
     },
@@ -5371,6 +5916,7 @@ function bindEvents() {
           : item,
       )
       saveStoredTeachers(teachers)
+      queueCoreCloudSync('teacher-status')
       render()
     })
   })
@@ -5531,6 +6077,7 @@ function bindEvents() {
     }
 
     saveStoredTeachers(teachers)
+    queueCoreCloudSync('teacher-save')
     teacherFormState = null
     render()
   })
@@ -6477,6 +7024,7 @@ function bindEvents() {
             : item,
         )
         saveStoredStudents(students)
+        queueCoreCloudSync('student-avatar')
         render()
       }
     })
@@ -6672,6 +7220,7 @@ function bindEvents() {
         }
       })
       saveStoredStudents(students)
+      queueCoreCloudSync('student-care-note')
       careNoteDrafts = {
         ...careNoteDrafts,
         [careNoteStudentId]: { ...emptyCareNoteDraft },
@@ -6734,6 +7283,7 @@ function bindEvents() {
         }
       })
       saveStoredStudents(students)
+      queueCoreCloudSync('student-care-note')
       careNoteDrafts = {
         ...careNoteDrafts,
         [studentId]: { ...emptyCareNoteDraft },
@@ -6799,6 +7349,7 @@ function bindEvents() {
     }
 
     saveStoredStudents(students)
+    queueCoreCloudSync('student-save')
     studentFormState = null
     render()
   })

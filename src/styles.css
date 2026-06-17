@@ -8093,6 +8093,133 @@ h3 {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.settings-cloud-db-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(31, 93, 153, 0.08);
+}
+
+.settings-cloud-db-panel:not([open]) {
+  display: block;
+}
+
+.settings-cloud-db-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  color: #e7f0fb;
+  font-size: 0.88rem;
+  font-weight: 900;
+  list-style: none;
+}
+
+.settings-cloud-db-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-cloud-db-panel summary strong {
+  color: #aac2de;
+  font-size: 0.76rem;
+}
+
+.settings-cloud-db-panel[open] summary {
+  margin-bottom: 2px;
+}
+
+.settings-cloud-db-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 178, 96, 0.36);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #ffd9ad;
+  background: rgba(168, 86, 18, 0.2);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.settings-cloud-db-badge.is-ready {
+  border-color: rgba(111, 210, 138, 0.36);
+  color: #c8f6d4;
+  background: rgba(37, 130, 69, 0.2);
+}
+
+.settings-cloud-db-status,
+.settings-cloud-db-counts,
+.settings-cloud-db-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-cloud-db-status span,
+.settings-cloud-db-counts > div {
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #c8d4e3;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.settings-cloud-db-counts > div {
+  display: flex;
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-cloud-db-counts strong {
+  color: #ffffff;
+}
+
+.settings-cloud-db-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.settings-cloud-db-actions button:hover,
+.settings-cloud-db-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+  background: rgba(118, 164, 231, 0.14);
+}
+
+.settings-cloud-db-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.settings-cloud-db-message,
+.settings-cloud-db-warning {
+  margin: 0;
+  color: #c8d4e3;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.settings-cloud-db-message.is-success {
+  color: #c8f6d4;
+}
+
+.settings-cloud-db-message.is-error {
+  color: #ffb4a8;
+}
+
 .cloud-error-state {
   color: #ffbdad;
   background: rgba(151, 60, 47, 0.15);

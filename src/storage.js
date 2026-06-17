@@ -231,6 +231,31 @@ export function saveClassSessions(classSessions) {
   saveStoredClassSessions(classSessions)
 }
 
+export function createCloudDbPullBackup(storage = localStorage) {
+  if (!storage) {
+    return null
+  }
+
+  const createdAt = new Date().toISOString()
+  const backupKey = `ichessCenterOS.backup.beforeCloudPull.${createdAt.replace(/[:.]/g, '-')}`
+
+  storage.setItem(
+    backupKey,
+    JSON.stringify({
+      reason: 'before-cloud-db-pull-c1',
+      phase: 'c2-online-core',
+      createdAt,
+      keys: {
+        students: storage.getItem(STUDENTS_KEY),
+        teachers: storage.getItem(TEACHERS_KEY),
+        classSessions: storage.getItem(CLASS_SESSIONS_KEY),
+      },
+    }),
+  )
+
+  return backupKey
+}
+
 export function getStoredNotifications(defaultNotifications) {
   try {
     const storedNotifications = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY))

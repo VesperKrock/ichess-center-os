@@ -1,11 +1,11 @@
-﻿export const initialSettingsFilters = {
+export const initialSettingsFilters = {
   query: '',
   status: 'all',
 }
 
 const classSessionStatusOptions = [
-  { value: 'active', label: 'Äang dĂ¹ng' },
-  { value: 'inactive', label: 'ÄĂ£ ngÆ°ng' },
+  { value: 'active', label: 'Đang dùng' },
+  { value: 'inactive', label: 'Đã ngưng' },
 ]
 
 export const classSessionDayOptions = [
@@ -56,19 +56,19 @@ export function validateSettingsClassSessionForm(values) {
   const errors = {}
 
   if (!String(values.name ?? '').trim()) {
-    errors.name = 'TĂªn ca há»c lĂ  báº¯t buá»™c.'
+    errors.name = 'Tên ca học là bắt buộc.'
   }
 
   if (!normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel).length) {
-    errors.daysOfWeek = 'Chá»n Ă­t nháº¥t 1 ngĂ y há»c.'
+    errors.daysOfWeek = 'Chọn ít nhất 1 ngày học.'
   }
 
   if (values.startTime && !isValidTime(values.startTime)) {
-    errors.startTime = 'Giá» báº¯t Ä‘áº§u cáº§n Ä‘Ăºng dáº¡ng HH:mm.'
+    errors.startTime = 'Giờ bắt đầu cần đúng dạng HH:mm.'
   }
 
   if (values.endTime && !isValidTime(values.endTime)) {
-    errors.endTime = 'Giá» káº¿t thĂºc cáº§n Ä‘Ăºng dáº¡ng HH:mm.'
+    errors.endTime = 'Giờ kết thúc cần đúng dạng HH:mm.'
   }
 
   return errors
@@ -108,6 +108,7 @@ export function renderSettingsModule(
   students = [],
   filters = initialSettingsFilters,
   formState = null,
+  cloudDbPanelState = null,
 ) {
   const activeFilters = { ...initialSettingsFilters, ...filters }
   const filteredClassSessions = getFilteredSettingsClassSessions(
@@ -118,51 +119,51 @@ export function renderSettingsModule(
   const stats = getClassSessionStats(classSessions)
 
   return `
-    <section class="settings-module" aria-label="CĂ i Ä‘áº·t cÆ¡ sá»Ÿ">
+    <section class="settings-module" aria-label="Cài đặt cơ sở">
       <div class="settings-header">
         <div>
-          <h3>CĂ i Ä‘áº·t cÆ¡ sá»Ÿ</h3>
-          <p>Quáº£n lĂ½ cĂ¡c dá»¯ liá»‡u ná»n phá»¥c vá»¥ váº­n hĂ nh cÆ¡ sá»Ÿ DreamHome.</p>
+          <h3>Cài đặt cơ sở</h3>
+          <p>Quản lý các dữ liệu nền phục vụ vận hành cơ sở DreamHome.</p>
         </div>
         <div class="settings-summary">
-          <span>${stats.total} ca há»c</span>
-          <span>${stats.active} Ä‘ang dĂ¹ng</span>
-          <span>${stats.inactive} Ä‘Ă£ ngÆ°ng</span>
+          <span>${stats.total} ca học</span>
+          <span>${stats.active} đang dùng</span>
+          <span>${stats.inactive} đã ngưng</span>
         </div>
       </div>
 
-      <div class="settings-tabs" aria-label="NhĂ³m cĂ i Ä‘áº·t">
-        <span>ThĂ´ng tin cÆ¡ sá»Ÿ - Ä‘Ă£ lĂªn káº¿ hoáº¡ch</span>
-        <strong>Ca há»c / Lá»›p</strong>
-        <span>GĂ³i há»c phĂ­ - Ä‘Ă£ lĂªn káº¿ hoáº¡ch</span>
-        <span>Dá»¯ liá»‡u máº«u - Ä‘Ă£ lĂªn káº¿ hoáº¡ch</span>
+      <div class="settings-tabs" aria-label="Nhóm cài đặt">
+        <span>Thông tin cơ sở - đã lên kế hoạch</span>
+        <strong>Ca học / Lớp</strong>
+        <span>Gói học phí - đã lên kế hoạch</span>
+        <span>Dữ liệu mẫu - đã lên kế hoạch</span>
       </div>
 
-      <section class="settings-class-session-panel" aria-label="Quáº£n lĂ½ Ca há»c / Lá»›p">
+      <section class="settings-class-session-panel" aria-label="Quản lý Ca học / Lớp">
         <div class="settings-panel-header">
           <div>
-            <h4>Ca há»c / Lá»›p</h4>
-            <p>Danh má»¥c ca há»c dĂ¹ng chung vá»›i Module Há»c viĂªn qua cĂ¹ng localStorage.</p>
+            <h4>Ca học / Lớp</h4>
+            <p>Danh mục ca học dùng chung với Module Học viên qua cùng localStorage.</p>
           </div>
           <button type="button" data-settings-class-session-action="open-create">
-            + ThĂªm ca há»c
+            + Thêm ca học
           </button>
         </div>
 
         <div class="settings-class-session-toolbar">
           <label>
-            <span>TĂ¬m kiáº¿m</span>
+            <span>Tìm kiếm</span>
             <input
               type="search"
               value="${escapeAttribute(activeFilters.query)}"
-              placeholder="TĂ¬m tĂªn ca, ngĂ y há»c, ghi chĂº..."
+              placeholder="Tìm tên ca, ngày học, ghi chú..."
               data-settings-filter="query"
             />
           </label>
           <label>
-            <span>Tráº¡ng thĂ¡i</span>
+            <span>Trạng thái</span>
             <select data-settings-filter="status">
-              ${renderOption('all', 'Táº¥t cáº£ tráº¡ng thĂ¡i', activeFilters.status)}
+              ${renderOption('all', 'Tất cả trạng thái', activeFilters.status)}
               ${classSessionStatusOptions
                 .map((option) => renderOption(option.value, option.label, activeFilters.status))
                 .join('')}
@@ -174,13 +175,13 @@ export function renderSettingsModule(
           <table class="settings-class-session-table">
             <thead>
               <tr>
-                <th>Ca há»c / Lá»›p</th>
-                <th>NgĂ y há»c</th>
-                <th>Giá» há»c</th>
-                <th>Sá»‘ há»c viĂªn</th>
-                <th>Tráº¡ng thĂ¡i</th>
-                <th>Ghi chĂº</th>
-                <th>Thao tĂ¡c</th>
+                <th>Ca học / Lớp</th>
+                <th>Ngày học</th>
+                <th>Giờ học</th>
+                <th>Số học viên</th>
+                <th>Trạng thái</th>
+                <th>Ghi chú</th>
+                <th>Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -195,6 +196,8 @@ export function renderSettingsModule(
           </table>
         </div>
       </section>
+
+      ${renderCloudDbPanel(cloudDbPanelState)}
 
       ${formState ? renderSettingsClassSessionForm(formState) : ''}
     </section>
@@ -259,7 +262,7 @@ function renderClassSessionRow(classSession, students = []) {
       ? classSession.studentCount
       : getClassSessionStudentCount(classSession.id, students)
   const statusLabel = getClassSessionStatusLabel(classSession.status)
-  const actionLabel = classSession.status === 'inactive' ? 'KĂ­ch hoáº¡t láº¡i' : 'NgÆ°ng dĂ¹ng'
+  const actionLabel = classSession.status === 'inactive' ? 'Kích hoạt lại' : 'Ngưng dùng'
 
   return `
     <tr>
@@ -268,19 +271,19 @@ function renderClassSessionRow(classSession, students = []) {
           ${escapeHtml(getClassSessionDisplayLabel(classSession))}
         </strong>
       </td>
-      <td>${escapeHtml(classSession.daysLabel || 'â€”')}</td>
+      <td>${escapeHtml(classSession.daysLabel || '—')}</td>
       <td>${escapeHtml(formatClassSessionTimeRange(classSession))}</td>
-      <td>${studentCount} há»c viĂªn</td>
+      <td>${studentCount} học viên</td>
       <td>
         <span class="settings-status-badge ${classSession.status === 'inactive' ? 'inactive' : ''}">
           ${statusLabel}
         </span>
       </td>
-      <td title="${escapeAttribute(classSession.note || '')}">${escapeHtml(classSession.note || 'â€”')}</td>
+      <td title="${escapeAttribute(classSession.note || '')}">${escapeHtml(classSession.note || '—')}</td>
       <td>
         <div class="settings-class-session-actions">
           <button type="button" data-settings-class-session-action="open-edit" data-class-session-id="${escapeAttribute(classSession.id)}">
-            Sá»­a
+            Sửa
           </button>
           <button type="button" data-settings-class-session-action="toggle-status" data-class-session-id="${escapeAttribute(classSession.id)}">
             ${actionLabel}
@@ -294,14 +297,174 @@ function renderClassSessionRow(classSession, students = []) {
 function renderEmptyClassSessionRow() {
   return `
     <tr>
-      <td class="settings-empty" colspan="7">KhĂ´ng tĂ¬m tháº¥y ca há»c phĂ¹ há»£p.</td>
+      <td class="settings-empty" colspan="7">Không tìm thấy ca học phù hợp.</td>
     </tr>
   `
 }
 
+function renderCloudDbPanel(state = null) {
+  const panelState = {
+    configStatus: 'missing-config',
+    authStatus: 'signed-out',
+    membershipStatus: 'idle',
+    role: '',
+    isLoading: false,
+    localCounts: { student: 0, teacher: 0, class_session: 0 },
+    cloudCounts: null,
+    message: '',
+    messageTone: '',
+    readinessStatus: 'idle',
+    localAngelWingsStatus: {
+      isReadyForCloudPush: false,
+      looksLikeOldSeed: false,
+      studentCount: 0,
+      classSessionCount: 0,
+      hasTeacher: false,
+    },
+    ...state,
+  }
+  const canUseCloud =
+    panelState.configStatus === 'configured' &&
+    panelState.authStatus === 'signed-in' &&
+    panelState.membershipStatus === 'loaded' &&
+    Boolean(panelState.role)
+  const cloudReady = canUseCloud && panelState.readinessStatus === 'ready'
+  const cloudCounts = cloudReady && panelState.cloudCounts
+    ? panelState.cloudCounts
+    : { student: '—', teacher: '—', class_session: '—' }
+  const localAngelWingsReady = Boolean(panelState.localAngelWingsStatus?.isReadyForCloudPush)
+  const disabled = panelState.isLoading || !cloudReady || !localAngelWingsReady
+  const message = formatCloudDbPanelValue(panelState.message)
+
+  return `
+    <details class="settings-cloud-db-panel" aria-label="Cloud DB online core" ${message || canUseCloud ? 'open' : ''}>
+      <summary>
+        <span>Cloud DB online core</span>
+        <strong>${cloudReady ? 'Ready' : 'Advanced'}</strong>
+      </summary>
+      <div class="settings-panel-header">
+        <div>
+          <h4>Cloud DB online core</h4>
+          <p>C2 đọc/ghi cloud cho 3 nhóm dữ liệu lõi: Học viên, Giáo viên, Ca học/Lớp.</p>
+        </div>
+        <span class="settings-cloud-db-badge ${cloudReady ? 'is-ready' : ''}">
+          ${cloudReady ? 'Sẵn sàng' : 'Chưa sẵn sàng'}
+        </span>
+      </div>
+      <div class="settings-cloud-db-status">
+        <span>Supabase: <strong>${panelState.configStatus === 'configured' ? 'Đã cấu hình' : 'Chưa cấu hình'}</strong></span>
+        <span>Đăng nhập: <strong>${panelState.authStatus === 'signed-in' ? 'Đã đăng nhập' : 'Chưa đăng nhập'}</strong></span>
+        <span>DreamHome: <strong>${panelState.role || 'Chưa có quyền'}</strong></span>
+        <span>Cloud DB: <strong>${getCloudDbReadinessLabel(panelState.readinessStatus)}</strong></span>
+        <span>Angel Wings local: <strong>${getAngelWingsLocalStatusLabel(panelState.localAngelWingsStatus)}</strong></span>
+      </div>
+      <div class="settings-cloud-db-counts">
+        <div>
+          <strong>Local</strong>
+          <span>Học viên ${formatCloudDbPanelValue(panelState.localCounts.student)}</span>
+          <span>Giáo viên ${formatCloudDbPanelValue(panelState.localCounts.teacher)}</span>
+          <span>Ca học ${formatCloudDbPanelValue(panelState.localCounts.class_session)}</span>
+        </div>
+        <div>
+          <strong>Cloud</strong>
+          <span>Học viên ${formatCloudDbPanelValue(cloudCounts.student)}</span>
+          <span>Giáo viên ${formatCloudDbPanelValue(cloudCounts.teacher)}</span>
+          <span>Ca học ${formatCloudDbPanelValue(cloudCounts.class_session)}</span>
+        </div>
+      </div>
+      ${
+        message
+          ? `<p class="settings-cloud-db-message ${panelState.messageTone === 'success' ? 'is-success' : 'is-error'}">${escapeHtml(message)}</p>`
+          : ''
+      }
+      <div class="settings-cloud-db-actions">
+        <button type="button" data-cloud-db-action="refresh" ${panelState.isLoading || !canUseCloud ? 'disabled' : ''}>
+          ${panelState.isLoading ? 'Đang xử lý...' : 'Làm mới số liệu'}
+        </button>
+        <button type="button" data-cloud-db-action="restore-angel-wings-local" ${panelState.isLoading ? 'disabled' : ''}>
+          Khôi phục dữ liệu Angel Wings 06/2026 vào local
+        </button>
+        <button type="button" data-cloud-db-action="push" ${disabled ? 'disabled' : ''}>
+          Đẩy local lên cloud
+        </button>
+        <button type="button" data-cloud-db-action="pull" ${disabled ? 'disabled' : ''}>
+          Tải cloud về local
+        </button>
+      </div>
+      <p class="settings-cloud-db-warning">
+        ${getCloudDbPushWarning(panelState.localAngelWingsStatus)}
+      </p>
+    </details>
+  `
+}
+
+function formatCloudDbPanelValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return ''
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value.toLocaleString('vi-VN') : ''
+  }
+
+  if (typeof value === 'string') {
+    return value
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No'
+  }
+
+  if (value instanceof Error) {
+    return value.message
+  }
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function getCloudDbReadinessLabel(status) {
+  const labels = {
+    ready: 'Sẵn sàng',
+    checking: 'Đang kiểm tra',
+    error: 'Chưa sẵn sàng',
+    blocked: 'Chưa có quyền',
+    idle: 'Chưa kiểm tra',
+  }
+
+  return labels[status] || 'Chưa kiểm tra'
+}
+
+function getAngelWingsLocalStatusLabel(status = {}) {
+  if (status.isReadyForCloudPush) {
+    return `${formatCloudDbPanelValue(status.studentCount)} học viên / ${formatCloudDbPanelValue(status.classSessionCount)} ca`
+  }
+
+  if (status.looksLikeOldSeed) {
+    return 'Đang là seed cũ 8 học viên'
+  }
+
+  return 'Chưa có marker Angel Wings'
+}
+
+function getCloudDbPushWarning(status = {}) {
+  if (status.isReadyForCloudPush) {
+    return 'C2.3 chỉ đẩy Học viên, Giáo viên, Ca học/Lớp lên cloud. Không đẩy học phí, điểm danh, Thu chi, Sổ quỹ, notification hoặc ảnh.'
+  }
+
+  if (status.looksLikeOldSeed) {
+    return 'Đang phát hiện local seed cũ 8 học viên. Hãy khôi phục Angel Wings 06/2026 trước khi đẩy local lên cloud.'
+  }
+
+  return 'Chưa đủ marker Angel Wings 06/2026 trong local. Hãy khôi phục/kiểm tra local trước khi đẩy cloud.'
+}
+
 function renderSettingsClassSessionForm(formState) {
   const isEdit = formState.mode === 'edit'
-  const title = isEdit ? 'Sá»­a ca há»c' : 'ThĂªm ca há»c'
+  const title = isEdit ? 'Sửa ca học' : 'Thêm ca học'
   const values = formState.values ?? {}
   const errors = formState.errors ?? {}
 
@@ -310,29 +473,29 @@ function renderSettingsClassSessionForm(formState) {
       <section class="settings-class-session-form" role="dialog" aria-modal="true" aria-label="${title}">
         <div class="settings-form-header">
           <h4>${title}</h4>
-          <button type="button" data-settings-class-session-action="cancel-form" aria-label="ÄĂ³ng form">Ă—</button>
+          <button type="button" data-settings-class-session-action="cancel-form" aria-label="Đóng form">×</button>
         </div>
         <div class="settings-form-grid">
-          ${renderField('name', 'TĂªn ca há»c *', values.name, errors.name, {
+          ${renderField('name', 'Tên ca học *', values.name, errors.name, {
             className: 'span-full',
-            placeholder: 'T7 15:00â€“16:30',
+            placeholder: 'T7 15:00-16:30',
           })}
           ${renderDaysOfWeekField(values.daysOfWeek, errors.daysOfWeek)}
-          ${renderField('startTime', 'Giá» báº¯t Ä‘áº§u', values.startTime, errors.startTime, {
+          ${renderField('startTime', 'Giờ bắt đầu', values.startTime, errors.startTime, {
             type: 'time',
           })}
-          ${renderField('endTime', 'Giá» káº¿t thĂºc', values.endTime, errors.endTime, {
+          ${renderField('endTime', 'Giờ kết thúc', values.endTime, errors.endTime, {
             type: 'time',
           })}
           ${renderStatusField(values.status)}
-          ${renderField('note', 'Ghi chĂº', values.note, errors.note, {
+          ${renderField('note', 'Ghi chú', values.note, errors.note, {
             className: 'span-full',
           })}
         </div>
         <div class="settings-form-actions">
-          <button type="button" data-settings-class-session-action="cancel-form">Há»§y</button>
+          <button type="button" data-settings-class-session-action="cancel-form">Hủy</button>
           <button type="button" data-settings-class-session-action="save-form">
-            ${isEdit ? 'LÆ°u thay Ä‘á»•i' : 'LÆ°u ca há»c'}
+            ${isEdit ? 'Lưu thay đổi' : 'Lưu ca học'}
           </button>
         </div>
       </section>
@@ -386,7 +549,7 @@ function renderDaysOfWeekField(values = [], error = '') {
 function renderStatusField(value) {
   return `
     <label>
-      <span>Tráº¡ng thĂ¡i</span>
+      <span>Trạng thái</span>
       <select data-settings-class-session-field="status">
         ${classSessionStatusOptions
           .map((option) => renderOption(option.value, option.label, value))
@@ -406,7 +569,7 @@ function getClassSessionStats(classSessions = []) {
 
 function buildClassSessionDisplayLabel({ name, daysLabel, startTime, endTime }) {
   if (daysLabel && startTime && endTime) {
-    return `${daysLabel} ${startTime}â€“${endTime}`
+    return `${daysLabel} ${startTime}-${endTime}`
   }
 
   return name
@@ -486,18 +649,18 @@ function getClassSessionDayOrder(day) {
 
 function formatClassSessionTimeRange(classSession) {
   if (classSession.startTime && classSession.endTime) {
-    return `${classSession.startTime}â€“${classSession.endTime}`
+    return `${classSession.startTime}-${classSession.endTime}`
   }
 
-  return 'â€”'
+  return '—'
 }
 
 function getClassSessionDisplayLabel(classSession) {
-  return String(classSession.displayLabel || classSession.name || 'Ca há»c').trim()
+  return String(classSession.displayLabel || classSession.name || 'Ca học').trim()
 }
 
 function getClassSessionStatusLabel(status) {
-  return status === 'inactive' ? 'ÄĂ£ ngÆ°ng' : 'Äang dĂ¹ng'
+  return status === 'inactive' ? 'Đã ngưng' : 'Đang dùng'
 }
 
 function createClassSessionId(value, classSessions = []) {
