@@ -42,11 +42,14 @@ import {
   getStoredCashbookSettings,
   getStoredInventory,
   getStoredInventoryMovements,
+  getStoredInventoryRequests,
   getStoredNotifications,
   getStoredParentConsultations,
   getStoredSchedule,
   getStoredSessionReports,
   getStoredAttendanceAdvisoryNotes,
+  getStoredAttendanceBoardNotes,
+  getStoredClassSessions,
   getStoredStudents,
   getStoredTeachers,
   getStoredTuition,
@@ -59,16 +62,20 @@ import {
   saveStoredCashbookSettings,
   saveStoredInventory,
   saveStoredInventoryMovements,
+  saveStoredInventoryRequests,
   saveStoredNotifications,
   saveStoredParentConsultations,
   saveStoredSchedule,
   saveStoredSessionReports,
   saveStoredAttendanceAdvisoryNotes,
+  saveStoredAttendanceBoardNotes,
+  saveStoredClassSessions,
   saveStoredStudents,
   saveStoredTeachers,
   saveStoredTuition,
   saveViewMode,
 } from './storage.js'
+import { sampleClassSessions } from './class-session-data.js'
 import { sampleCashflowCategories, sampleCashflowTransactions } from './cashflow-data.js'
 import {
   buildCashbookReconciliationFromForm,
@@ -98,10 +105,12 @@ import {
   validateCashflowForm,
 } from './cashflow-module.js'
 import { sampleInventoryItems } from './inventory-data.js'
+import { sampleInventoryRequests } from './inventory-request-data.js'
 import { sampleParentConsultations } from './parent-consultation-data.js'
 import {
   addCareLogToParentContact,
   addAppointmentToParentContact,
+  addQuickNoteToParentContact,
   buildEnrollmentSummary,
   buildParentContactFromForm,
   createEmptyParentAppointmentDraft,
@@ -122,15 +131,22 @@ import {
   applyInventoryMovementToItem,
   buildInventoryItemFromForm,
   buildInventoryMovementFromForm,
+  buildInventoryRequestFromForm,
   createEditInventoryFormState,
   createEmptyInventoryFormState,
+  createEmptyInventoryRequestFormState,
   createInventoryMovementFormState,
+  createInventoryRequestStatusFormState,
   initialInventoryFilters,
   initialInventoryMovementFilters,
+  initialInventoryRequestFilters,
   renderInventoryModule,
   renderInventoryMovementsWindow,
   validateInventoryForm,
   validateInventoryMovementForm,
+  validateInventoryRequestForm,
+  validateInventoryRequestStatusForm,
+  updateInventoryRequestStatus,
 } from './inventory-module.js'
 import { createSampleNotifications } from './notifications.js'
 import { sampleScheduleSessions } from './schedule-data.js'
@@ -164,6 +180,31 @@ import {
   validateSessionReportAttendance,
   validateScheduleForm,
 } from './schedule-module.js'
+import {
+  buildInventoryRequestNotificationCandidates,
+  buildParentFollowupNotificationCandidates,
+  buildTuitionNotificationCandidates,
+  filterNotifications,
+  getUnreadNotificationCount as countUnreadNotifications,
+  getUnreadNotificationCountsByModule,
+  markNotificationReadById,
+  markNotificationsReadByIds,
+  notificationSourceLabels,
+  upsertNotificationCandidates,
+} from './notification-center.js'
+import {
+  initialAttendanceBoardFilters,
+  removeDemoAttendanceReports,
+  renderAttendanceBoardModule,
+} from './attendance-board-module.js'
+import {
+  createF15K5BackupSnapshot,
+  mergeAngelWingsTeacherRoster,
+  removeAngelWingsAttendanceData,
+  removeLegacyDemoAttendanceReports,
+  upsertAngelWingsAttendanceData,
+  writeAngelWingsPackageCatalog,
+} from './attendance-board-angel-wings-data.js'
 import { sampleStudents } from './student-data.js'
 import { sampleTeachers } from './teacher-data.js'
 import {
@@ -195,12 +236,20 @@ import {
   validateStudentForm,
 } from './student-module.js'
 import {
+  buildSettingsClassSessionFromForm,
+  createEditSettingsClassSessionFormState,
+  createEmptySettingsClassSessionFormState,
+  getClassSessionStudentCount,
+  initialSettingsFilters,
+  renderSettingsModule,
+  validateSettingsClassSessionForm,
+} from './settings-module.js'
+import {
   buildTuitionRows,
   createEditTuitionFormState,
   createEmptyTuitionFormState,
   createPaymentFormState,
   createRenewTuitionFormState,
-  createTuitionWarningNotification,
   getTuitionDebtAmount,
   initialTuitionFilters,
   normalizePaymentFormValues,
@@ -212,6 +261,42 @@ import {
 } from './tuition-module.js'
 
 const app = document.querySelector('#app')
+
+const preservedScrollTargets = [
+  ['.window-body', 'window-body'],
+  ['.student-table-wrap', 'student-table'],
+  ['.student-form-scroll', 'student-form'],
+  ['.student-detail-overview', 'student-detail'],
+  ['.student-care-history-panel .care-note-list', 'student-care-history'],
+  ['.student-care-form', 'student-care-form'],
+  ['.student-learning-window', 'student-learning'],
+  ['.parent-consultation-table-wrap', 'parent-table'],
+  ['.parent-note-history-list', 'parent-note-history'],
+  ['.parent-student-picker-results', 'parent-student-picker'],
+  ['.teacher-table-wrap', 'teacher-table'],
+  ['.teacher-form-grid', 'teacher-form'],
+  ['.teacher-profile-grid', 'teacher-profile'],
+  ['.teacher-profile-pane', 'teacher-profile-pane'],
+  ['.teacher-update-table-wrap', 'teacher-update-table'],
+  ['.schedule-week-scroll', 'schedule-week'],
+  ['.tuition-table-wrap', 'tuition-table'],
+  ['.tuition-advisory-table-wrap', 'tuition-advisory'],
+  ['.tuition-form-panel', 'tuition-form'],
+  ['.cashflow-table-wrap', 'cashflow-table'],
+  ['.cashflow-form-panel', 'cashflow-form'],
+  ['.cashflow-category-panel', 'cashflow-category-panel'],
+  ['.cashflow-category-list', 'cashflow-category-list'],
+  ['.cashbook-table-wrap', 'cashbook-table'],
+  ['.inventory-table-wrap', 'inventory-table'],
+  ['.inventory-history-panel .inventory-movement-history', 'inventory-movement-history'],
+  ['.inventory-history-panel .inventory-history-list', 'inventory-history-list'],
+  ['.inventory-form-panel', 'inventory-form'],
+  ['.inventory-request-table-wrap', 'inventory-request-table'],
+  ['.inventory-request-panel', 'inventory-request-panel'],
+  ['.settings-class-session-table-wrap', 'settings-class-session-table'],
+  ['.attendance-board-sheet-wrap', 'attendance-board-sheet'],
+]
+const preservedScrollSelector = preservedScrollTargets.map(([selector]) => selector).join(',')
 
 let currentViewMode = getViewMode()
 let isStartMenuOpen = false
@@ -228,6 +313,7 @@ let shortcutDocumentDragBound = false
 let notificationOutsidePointerBound = false
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
+let classSessions = getStoredClassSessions(sampleClassSessions)
 let teacherFilters = { ...initialTeacherFilters }
 let teachers = getStoredTeachers(sampleTeachers)
 let teacherFormState = null
@@ -235,9 +321,13 @@ let selectedTeacherId = null
 let parentConsultationFilters = { ...initialParentConsultationFilters }
 let parentConsultations = getStoredParentConsultations(sampleParentConsultations)
 let parentConsultationFormState = null
+let skipNextParentContactScrollCapture = false
+let parentQuickNoteState = null
+let parentNoteHistoryContactId = null
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 let sessionReports = getStoredSessionReports()
 let attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes()
+let attendanceBoardNotes = getStoredAttendanceBoardNotes()
 let scheduleFormState = null
 let scheduleReportState = null
 let sessionReportAttendanceState = null
@@ -250,8 +340,18 @@ let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
 let tuitionRecords = getStoredTuition(createSampleTuitionRecords(students))
 let notifications = getStoredNotifications(createSampleNotifications())
 let deletedNotificationIds = getDeletedNotificationIds()
-notifications = syncTuitionNotifications(notifications)
+let notificationFilters = { sourceModule: 'all', readState: 'unread' }
+let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
+let attendanceBoardDetailState = null
+let attendanceBoardNoteFormState = null
+const normalizedTeacherRoster = mergeAngelWingsTeacherRoster(teachers, students)
+if (JSON.stringify(normalizedTeacherRoster) !== JSON.stringify(teachers)) {
+  teachers = normalizedTeacherRoster
+  saveStoredTeachers(teachers)
+}
 let studentFormState = null
+let settingsFilters = { ...initialSettingsFilters }
+let settingsClassSessionFormState = null
 let tuitionFilters = { ...initialTuitionFilters }
 let tuitionFormState = null
 let tuitionPaymentFormState = null
@@ -269,12 +369,19 @@ let cashbookReconciliations = getStoredCashbookReconciliations()
 let cashbookReconciliationFormState = null
 let inventoryItems = getStoredInventory(sampleInventoryItems)
 let inventoryMovements = getStoredInventoryMovements()
+let inventoryRequests = getStoredInventoryRequests(sampleInventoryRequests)
+notifications = syncAppNotifications(notifications)
 let inventoryFilters = { ...initialInventoryFilters }
 let inventoryMovementFilters = { ...initialInventoryMovementFilters }
+let inventoryRequestFilters = { ...initialInventoryRequestFilters }
 let inventoryFormState = null
 let inventoryMovementFormState = null
+let inventoryRequestFormState = null
+let inventoryRequestStatusFormState = null
 let selectedInventoryMovementId = null
+let selectedInventoryRequestId = null
 let isInventoryHistoryPanelOpen = false
+let isInventoryRequestsPanelOpen = false
 let careNoteDrafts = {}
 let cloudStatus = createInitialCloudStatus(getSupabaseConfigStatus().status)
 let cloudUserSyncId = 0
@@ -283,8 +390,21 @@ let transactionImageManagerState = null
 let cloudGalleryState = null
 
 function render() {
+  const preservedScrollState = rememberPreservedScrollPositions()
   const scheduleReportScrollState = getScheduleReportScrollState()
   const scheduleFormScrollState = getScheduleFormScrollState()
+  const parentContactFormScrollTop = getParentContactFormScrollTop()
+
+  if (
+    parentConsultationFormState &&
+    parentContactFormScrollTop !== null &&
+    !skipNextParentContactScrollCapture
+  ) {
+    parentConsultationFormState = {
+      ...parentConsultationFormState,
+      scrollTop: parentContactFormScrollTop,
+    }
+  }
 
   app.innerHTML = `
     <div class="app-shell">
@@ -302,7 +422,96 @@ function render() {
   bindEvents()
   restoreScheduleReportScrollState(scheduleReportScrollState)
   restoreScheduleFormScrollState(scheduleFormScrollState)
+  restoreParentContactFormScrollTop()
+  restorePreservedScrollPositions(preservedScrollState)
+  skipNextParentContactScrollCapture = false
   updateClock()
+}
+
+function rememberPreservedScrollPositions(root = app) {
+  const scrollState = new Map()
+
+  if (!root) {
+    return scrollState
+  }
+
+  root.querySelectorAll(preservedScrollSelector).forEach((element) => {
+    if (!isScrollableElement(element)) {
+      return
+    }
+
+    const key = getPreservedScrollKey(element)
+
+    if (!key) {
+      return
+    }
+
+    scrollState.set(key, {
+      left: element.scrollLeft,
+      top: element.scrollTop,
+    })
+  })
+
+  return scrollState
+}
+
+function restorePreservedScrollPositions(scrollState, root = app) {
+  if (!root || !scrollState?.size) {
+    return
+  }
+
+  const restore = () => {
+    root.querySelectorAll(preservedScrollSelector).forEach((element) => {
+      const key = getPreservedScrollKey(element)
+      const savedPosition = key ? scrollState.get(key) : null
+
+      if (!savedPosition) {
+        return
+      }
+
+      element.scrollTop = Math.min(savedPosition.top, getMaxScrollTop(element))
+      element.scrollLeft = Math.min(savedPosition.left, getMaxScrollLeft(element))
+    })
+  }
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(restore)
+    return
+  }
+
+  restore()
+}
+
+function getPreservedScrollKey(element) {
+  const windowElement = element.closest('[data-window-id]')
+  const rootElement = windowElement || app
+  const windowKey = windowElement?.dataset.windowId || 'app'
+  const target = preservedScrollTargets.find(([selector]) => element.matches(selector))
+
+  if (!target || !rootElement) {
+    return ''
+  }
+
+  const [selector, targetName] = target
+  const matchingElements = Array.from(rootElement.querySelectorAll(selector))
+  const targetIndex = matchingElements.indexOf(element)
+
+  return `${windowKey}:${targetName}:${Math.max(0, targetIndex)}`
+}
+
+function isScrollableElement(element) {
+  return (
+    element &&
+    (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth)
+  )
+}
+
+function getMaxScrollTop(element) {
+  return Math.max(0, element.scrollHeight - element.clientHeight)
+}
+
+function getMaxScrollLeft(element) {
+  return Math.max(0, element.scrollWidth - element.clientWidth)
 }
 
 function getScheduleReportScrollState() {
@@ -345,19 +554,46 @@ function restoreScheduleFormScrollState(scrollState) {
   })
 }
 
+function getParentContactFormScrollTop() {
+  const scrollElement = document.querySelector('[data-parent-contact-form-scroll]')
+  return scrollElement ? scrollElement.scrollTop : null
+}
+
+function restoreParentContactFormScrollTop() {
+  if (!parentConsultationFormState) {
+    return
+  }
+
+  const scrollElement = document.querySelector('[data-parent-contact-form-scroll]')
+
+  if (scrollElement) {
+    scrollElement.scrollTop = parentConsultationFormState.scrollTop || 0
+  }
+}
+
 function renderDashboard() {
+  const unreadCountsByModule = getUnreadNotificationCountsByModule(notifications)
   const moduleButtons = getOrderedModules()
     .map(
-      (moduleItem) => `
-        <button
-          class="module-button"
-          type="button"
-          data-module-id="${moduleItem.id}"
-          data-shortcut-id="${moduleItem.id}"
-        >
-          <span>${moduleItem.name}</span>
-        </button>
-      `,
+      (moduleItem) => {
+        const unreadCount = unreadCountsByModule[moduleItem.id] || 0
+
+        return `
+          <button
+            class="module-button"
+            type="button"
+            data-module-id="${moduleItem.id}"
+            data-shortcut-id="${moduleItem.id}"
+          >
+            <span>${moduleItem.name}</span>
+            ${
+              unreadCount
+                ? `<span class="module-notification-badge" aria-label="${unreadCount} thông báo chưa đọc">${unreadCount}</span>`
+                : ''
+            }
+          </button>
+        `
+      },
     )
     .join('')
 
@@ -425,7 +661,7 @@ function renderModuleWindow(windowItem) {
 
 function renderWindowBody(windowItem) {
   if (windowItem.type === 'student-detail') {
-    return renderStudentDetailWithDeleteAction(getStudentById(windowItem.studentId))
+    return renderStudentDetailWithDeleteAction(getStudentById(windowItem.studentId), classSessions)
   }
 
   if (windowItem.type === 'student-care-notes') {
@@ -455,7 +691,13 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'hoc-vien') {
-    return renderStudentModule(students, studentFilters, studentFormState, teachers)
+    return renderStudentModule(
+      students,
+      studentFilters,
+      studentFormState,
+      teachers,
+      classSessions,
+    )
   }
 
   if (moduleItem.id === 'khach-hang-tu-van') {
@@ -464,6 +706,8 @@ function renderWindowBody(windowItem) {
       parentConsultationFilters,
       students,
       parentConsultationFormState,
+      parentQuickNoteState,
+      parentNoteHistoryContactId,
     )
   }
 
@@ -475,6 +719,7 @@ function renderWindowBody(windowItem) {
       selectedTeacherId,
       students,
       scheduleSessions,
+      classSessions,
     )
   }
 
@@ -556,6 +801,36 @@ function renderWindowBody(windowItem) {
       inventoryMovementFilters,
       selectedInventoryMovementId,
       isInventoryHistoryPanelOpen,
+      inventoryRequests,
+      inventoryRequestFilters,
+      isInventoryRequestsPanelOpen,
+      inventoryRequestFormState,
+      selectedInventoryRequestId,
+      inventoryRequestStatusFormState,
+      students,
+    )
+  }
+
+  if (moduleItem.id === 'cai-dat-co-so') {
+    return renderSettingsModule(
+      classSessions,
+      students,
+      settingsFilters,
+      settingsClassSessionFormState,
+    )
+  }
+
+  if (moduleItem.id === 'bang-diem-danh') {
+    return renderAttendanceBoardModule(
+      students,
+      classSessions,
+      tuitionRecords,
+      sessionReports,
+      attendanceAdvisoryNotes,
+      attendanceBoardFilters,
+      attendanceBoardDetailState,
+      attendanceBoardNotes,
+      attendanceBoardNoteFormState,
     )
   }
 
@@ -574,8 +849,8 @@ function renderWindowBody(windowItem) {
   `
 }
 
-function renderStudentDetailWithDeleteAction(student) {
-  const detailHtml = renderStudentDetail(student, teachers)
+function renderStudentDetailWithDeleteAction(student, classSessions = []) {
+  const detailHtml = renderStudentDetail(student, teachers, classSessions)
 
   if (!student || student.isDeleted) {
     return detailHtml
@@ -754,8 +1029,105 @@ function renderSystemOverlay() {
 
   return `
     <div class="system-overlay-root active" id="system-overlay-root">
-      ${renderNotificationCenter(getUnreadNotificationCount())}
+      ${renderNotificationCenterV15J(getUnreadNotificationCount())}
     </div>
+  `
+}
+
+function renderNotificationCenterV15J(unreadCount) {
+  const visibleNotifications = filterNotifications(notifications, notificationFilters)
+  const unreadVisibleCount = visibleNotifications.filter((notification) => !notification.readAt).length
+  const moduleOptions = [
+    ['all', 'Tất cả module'],
+    ...Object.entries(notificationSourceLabels),
+  ]
+  const notificationItems = visibleNotifications
+    .map(
+      (notification) => `
+        <article
+          class="notification-item ${notification.readAt ? 'read' : 'unread'} level-${notification.severity}"
+          data-notification-id="${notification.id}"
+          tabindex="0"
+          aria-label="${escapeHtml(notification.title)}"
+        >
+          <div class="notification-item-header">
+            <strong>${escapeHtml(notification.title)}</strong>
+            <span class="notification-state">${notification.readAt ? 'Đã đọc' : 'Chưa đọc'}</span>
+          </div>
+          <p>${escapeHtml(notification.message)}</p>
+          <div class="notification-meta">
+            <span>${escapeHtml(notification.sourceLabel || getNotificationSourceLabel(notification.sourceModule))}</span>
+            <time datetime="${notification.createdAt}">${formatNotificationTime(notification.createdAt)}</time>
+          </div>
+          ${
+            notification.readAt
+              ? ''
+              : `
+                <button
+                  class="notification-read-button"
+                  type="button"
+                  data-notification-action="mark-read"
+                  data-notification-id="${notification.id}"
+                >
+                  Đánh dấu đã đọc
+                </button>
+              `
+          }
+        </article>
+      `,
+    )
+    .join('')
+
+  return `
+    <section
+      class="notification-center"
+      id="notification-center"
+      style="--notification-panel-right: ${notificationPanelPosition.right}px; --notification-panel-bottom: ${notificationPanelPosition.bottom}px;"
+      aria-label="Thông báo"
+    >
+      <div class="notification-center-header">
+        <div>
+          <h2>Thông báo</h2>
+          <p>${unreadCount} chưa đọc</p>
+        </div>
+        <div class="notification-center-actions">
+          <button
+            type="button"
+            data-notification-action="mark-all-read"
+            ${unreadVisibleCount ? '' : 'disabled'}
+          >
+            Đánh dấu tất cả đã đọc
+          </button>
+        </div>
+      </div>
+      <div class="notification-center-filters" aria-label="Lọc thông báo">
+        <label>
+          <span>Module</span>
+          <select data-notification-filter="sourceModule">
+            ${moduleOptions
+              .map(
+                ([value, label]) => `
+                  <option value="${escapeHtml(value)}" ${notificationFilters.sourceModule === value ? 'selected' : ''}>
+                    ${escapeHtml(label)}
+                  </option>
+                `,
+              )
+              .join('')}
+          </select>
+        </label>
+        <label>
+          <span>Trạng thái</span>
+          <select data-notification-filter="readState">
+            <option value="unread" ${notificationFilters.readState === 'unread' ? 'selected' : ''}>Chưa đọc</option>
+            <option value="all" ${notificationFilters.readState === 'all' ? 'selected' : ''}>Tất cả</option>
+            <option value="read" ${notificationFilters.readState === 'read' ? 'selected' : ''}>Đã đọc</option>
+          </select>
+        </label>
+      </div>
+      <div class="notification-list">
+        ${notificationItems || '<p class="notification-empty">Chưa có thông báo.</p>'}
+      </div>
+    </section>
   `
 }
 
@@ -2199,6 +2571,7 @@ function bindEvents() {
       }
 
       markNotificationRead(notificationElement.dataset.notificationId)
+      openNotificationSourceModule(notificationElement.dataset.notificationId)
     })
 
     notificationElement.addEventListener('keydown', (event) => {
@@ -2208,6 +2581,17 @@ function bindEvents() {
 
       event.preventDefault()
       markNotificationRead(notificationElement.dataset.notificationId)
+      openNotificationSourceModule(notificationElement.dataset.notificationId)
+    })
+  })
+
+  document.querySelectorAll('[data-notification-filter]').forEach((control) => {
+    control.addEventListener('change', () => {
+      notificationFilters = {
+        ...notificationFilters,
+        [control.dataset.notificationFilter]: control.value,
+      }
+      render()
     })
   })
 
@@ -2219,7 +2603,11 @@ function bindEvents() {
   })
 
   document.querySelector('[data-notification-action="mark-all-read"]')?.addEventListener('click', () => {
-    notifications = notifications.map((notification) => ({ ...notification, read: true }))
+    const visibleNotificationIds = filterNotifications(notifications, notificationFilters)
+      .filter((notification) => !notification.readAt)
+      .map((notification) => notification.id)
+
+    notifications = markNotificationsReadByIds(notifications, visibleNotificationIds)
     saveStoredNotifications(notifications)
     render()
   })
@@ -2248,7 +2636,7 @@ function bindEvents() {
       render()
 
       const nextControl = document.querySelector(`[data-tuition-filter="${filterName}"]`)
-      nextControl?.focus()
+      focusElementWithoutScrolling(nextControl)
 
       if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(selectionStart, selectionEnd)
@@ -2300,7 +2688,7 @@ function bindEvents() {
       render()
 
       const nextControl = document.querySelector(`[data-cashflow-filter="${filterName}"]`)
-      nextControl?.focus()
+      focusElementWithoutScrolling(nextControl)
 
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
@@ -2427,7 +2815,7 @@ function bindEvents() {
       render()
 
       const nextControl = document.querySelector(`[data-inventory-filter="${filterName}"]`)
-      nextControl?.focus()
+      focusElementWithoutScrolling(nextControl)
 
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
@@ -2459,7 +2847,7 @@ function bindEvents() {
       const nextControl = document.querySelector(
         `[data-inventory-movement-filter="${filterName}"]`,
       )
-      nextControl?.focus()
+      focusElementWithoutScrolling(nextControl)
 
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
@@ -2473,6 +2861,237 @@ function bindEvents() {
         openInventorySubwindow('movements')
       }
     })
+  })
+
+  document.querySelectorAll('[data-inventory-request-action="open-panel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      isInventoryRequestsPanelOpen = true
+      inventoryRequestFormState = null
+      selectedInventoryRequestId = null
+      inventoryRequestStatusFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-action="close-panel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      isInventoryRequestsPanelOpen = false
+      inventoryRequestFormState = null
+      selectedInventoryRequestId = null
+      inventoryRequestStatusFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-filter]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      const filterName = control.dataset.inventoryRequestFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      inventoryRequestFilters = {
+        ...inventoryRequestFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(`[data-inventory-request-filter="${filterName}"]`)
+      focusElementWithoutScrolling(nextControl)
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-action="open-create"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      inventoryRequestFormState = createEmptyInventoryRequestFormState()
+      selectedInventoryRequestId = null
+      inventoryRequestStatusFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      inventoryRequestFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-field]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      if (!inventoryRequestFormState) {
+        return
+      }
+
+      inventoryRequestFormState = {
+        ...inventoryRequestFormState,
+        values: {
+          ...inventoryRequestFormState.values,
+          [control.dataset.inventoryRequestField]: control.value,
+        },
+        errors: {
+          ...inventoryRequestFormState.errors,
+          [control.dataset.inventoryRequestField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-list-field]').forEach((control) => {
+    control.addEventListener('change', () => {
+      if (!inventoryRequestFormState) {
+        return
+      }
+
+      const fieldName = control.dataset.inventoryRequestListField
+      const selectedValues = Array.from(
+        document.querySelectorAll(`[data-inventory-request-list-field="${fieldName}"]:checked`),
+      ).map((checkbox) => checkbox.value)
+
+      inventoryRequestFormState = {
+        ...inventoryRequestFormState,
+        values: {
+          ...inventoryRequestFormState.values,
+          [fieldName]: selectedValues,
+        },
+        errors: {
+          ...inventoryRequestFormState.errors,
+          [fieldName]: undefined,
+        },
+      }
+
+      if (control.value === 'other') {
+        render()
+      }
+    })
+  })
+
+  document.querySelector('[data-inventory-request-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!inventoryRequestFormState) {
+      return
+    }
+
+    const errors = validateInventoryRequestForm(inventoryRequestFormState.values)
+
+    if (Object.keys(errors).length) {
+      inventoryRequestFormState = {
+        ...inventoryRequestFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const request = buildInventoryRequestFromForm(
+      inventoryRequestFormState.values,
+      null,
+      inventoryRequests,
+    )
+    inventoryRequests = [request, ...inventoryRequests]
+    saveStoredInventoryRequests(inventoryRequests)
+    notifications = syncAppNotifications(notifications)
+    inventoryRequestFormState = null
+    selectedInventoryRequestId = request.id
+    inventoryRequestStatusFormState = createInventoryRequestStatusFormState(request)
+    render()
+  })
+
+  document.querySelectorAll('[data-inventory-request-id]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const request = inventoryRequests.find((item) => item.id === row.dataset.inventoryRequestId)
+
+      selectedInventoryRequestId = row.dataset.inventoryRequestId
+      inventoryRequestFormState = null
+      inventoryRequestStatusFormState = createInventoryRequestStatusFormState(request)
+      render()
+    })
+
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      event.preventDefault()
+      const request = inventoryRequests.find((item) => item.id === row.dataset.inventoryRequestId)
+
+      selectedInventoryRequestId = row.dataset.inventoryRequestId
+      inventoryRequestFormState = null
+      inventoryRequestStatusFormState = createInventoryRequestStatusFormState(request)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-detail-action="close"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedInventoryRequestId = null
+      inventoryRequestStatusFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-request-status-field]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      if (!inventoryRequestStatusFormState) {
+        return
+      }
+
+      inventoryRequestStatusFormState = {
+        ...inventoryRequestStatusFormState,
+        values: {
+          ...inventoryRequestStatusFormState.values,
+          [control.dataset.inventoryRequestStatusField]: control.value,
+        },
+        errors: {
+          ...inventoryRequestStatusFormState.errors,
+          [control.dataset.inventoryRequestStatusField]: undefined,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-inventory-request-status-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+
+    if (!inventoryRequestStatusFormState) {
+      return
+    }
+
+    const errors = validateInventoryRequestStatusForm(inventoryRequestStatusFormState.values)
+
+    if (Object.keys(errors).length) {
+      inventoryRequestStatusFormState = {
+        ...inventoryRequestStatusFormState,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const request = inventoryRequests.find((item) => item.id === inventoryRequestStatusFormState.requestId)
+
+    if (!request) {
+      return
+    }
+
+    const updatedRequest = updateInventoryRequestStatus(request, inventoryRequestStatusFormState.values)
+    inventoryRequests = inventoryRequests.map((item) =>
+      item.id === updatedRequest.id ? updatedRequest : item,
+    )
+    saveStoredInventoryRequests(inventoryRequests)
+    notifications = syncAppNotifications(notifications)
+    selectedInventoryRequestId = updatedRequest.id
+    inventoryRequestStatusFormState = createInventoryRequestStatusFormState(updatedRequest)
+    render()
   })
 
   document.querySelectorAll('[data-inventory-history-action="close"]').forEach((button) => {
@@ -3043,7 +3662,7 @@ function bindEvents() {
     render()
 
     const nextInput = document.querySelector('[data-cloud-gallery-search]')
-    nextInput?.focus()
+    focusElementWithoutScrolling(nextInput)
     if (
       selectionStart !== null &&
       selectionEnd !== null &&
@@ -3520,7 +4139,7 @@ function bindEvents() {
       if (['discountPreset', 'discountCustomValue', 'totalAmount', 'paidAmount'].includes(fieldName)) {
         render()
         const nextControl = document.querySelector(`[data-tuition-form-field="${fieldName}"]`)
-        nextControl?.focus()
+        focusElementWithoutScrolling(nextControl)
 
         if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
           nextControl.setSelectionRange(selectionStart, selectionEnd)
@@ -3604,7 +4223,7 @@ function bindEvents() {
       if (control.dataset.tuitionPaymentField === 'amount') {
         render()
         const nextControl = document.querySelector('[data-tuition-payment-field="amount"]')
-        nextControl?.focus()
+        focusElementWithoutScrolling(nextControl)
       }
     })
   })
@@ -3671,13 +4290,369 @@ function bindEvents() {
       render()
 
       const nextControl = document.querySelector(`[data-student-filter="${filterName}"]`)
-      nextControl?.focus()
+      focusElementWithoutScrolling(nextControl)
 
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
     })
   })
+
+  document.querySelectorAll('[data-settings-filter]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      const filterName = control.dataset.settingsFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      settingsFilters = {
+        ...settingsFilters,
+        [filterName]: control.value,
+      }
+      render()
+
+      const nextControl = document.querySelector(`[data-settings-filter="${filterName}"]`)
+      focusElementWithoutScrolling(nextControl)
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-board-filter]').forEach((control) => {
+    const eventName = control.matches('select') || control.type === 'month' ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      const filterName = control.dataset.attendanceBoardFilter
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      attendanceBoardFilters = {
+        ...attendanceBoardFilters,
+        [filterName]: control.value,
+      }
+      attendanceBoardDetailState = null
+      render()
+
+      const nextControl = document.querySelector(`[data-attendance-board-filter="${filterName}"]`)
+      focusElementWithoutScrolling(nextControl)
+
+      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+        nextControl.setSelectionRange(cursorPosition, cursorPosition)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-cell-detail]').forEach((button) => {
+    button.addEventListener('click', () => {
+      attendanceBoardDetailState = {
+        studentId: button.dataset.studentId || '',
+        dateKey: button.dataset.dateKey || '',
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-detail-close]').forEach((button) => {
+    button.addEventListener('click', () => {
+      attendanceBoardDetailState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-note-open]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const studentId = button.dataset.studentId || ''
+      const existingNote = attendanceBoardNotes.find(
+        (note) => note.studentId === studentId && note.month === attendanceBoardFilters.month,
+      )
+      attendanceBoardNoteFormState = {
+        studentId,
+        month: attendanceBoardFilters.month,
+        note: existingNote?.note || '',
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-attendance-note-field]')?.addEventListener('input', (event) => {
+    if (!attendanceBoardNoteFormState) {
+      return
+    }
+
+    attendanceBoardNoteFormState = {
+      ...attendanceBoardNoteFormState,
+      note: event.target.value,
+    }
+  })
+
+  document.querySelectorAll('[data-attendance-note-cancel]').forEach((button) => {
+    button.addEventListener('click', () => {
+      attendanceBoardNoteFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-attendance-note-save]')?.addEventListener('click', () => {
+    if (!attendanceBoardNoteFormState) {
+      return
+    }
+
+    const now = new Date().toISOString()
+    const noteIdentity = `${attendanceBoardNoteFormState.studentId}:${attendanceBoardNoteFormState.month}`
+    const existingNote = attendanceBoardNotes.find(
+      (note) => `${note.studentId}:${note.month}` === noteIdentity,
+    )
+    const nextNote = {
+      id:
+        existingNote?.id ||
+        `attendance-board-note-${attendanceBoardNoteFormState.studentId}-${attendanceBoardNoteFormState.month}`,
+      studentId: attendanceBoardNoteFormState.studentId,
+      month: attendanceBoardNoteFormState.month,
+      note: String(attendanceBoardNoteFormState.note || '').trim(),
+      createdAt: existingNote?.createdAt || now,
+      updatedAt: now,
+    }
+
+    attendanceBoardNotes = [
+      nextNote,
+      ...attendanceBoardNotes.filter((note) => `${note.studentId}:${note.month}` !== noteIdentity),
+    ]
+    saveStoredAttendanceBoardNotes(attendanceBoardNotes)
+    attendanceBoardNoteFormState = null
+    render()
+  })
+
+  document.querySelector('[data-attendance-board-angel-wings-action="load"]')?.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'N\u1ea1p controlled dataset Angel Wings 06/2026 v\u00e0 replace c\u00e1c key li\u00ean quan: H\u1ecdc vi\u00ean, Gi\u00e1o vi\u00ean, Ph\u1ee5 huynh, Ca h\u1ecdc/Gi\u00e1 g\u00f3i, H\u1ecdc ph\u00ed, Th\u1eddi kh\u00f3a bi\u1ec3u v\u00e0 sessionReports? H\u1ec7 th\u1ed1ng s\u1ebd backup tr\u01b0\u1edbc khi ghi.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    createF15K5BackupSnapshot(window.localStorage)
+    const result = upsertAngelWingsAttendanceData()
+
+    students = result.students
+    teachers = mergeAngelWingsTeacherRoster(teachers, result.students)
+    parentConsultations = result.parentConsultations
+    classSessions = result.classSessions
+    tuitionRecords = result.tuitionRecords
+    scheduleSessions = result.schedule
+    sessionReports = result.sessionReports
+    attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
+    saveStoredStudents(students)
+    saveStoredTeachers(teachers)
+    saveStoredParentConsultations(parentConsultations)
+    saveStoredClassSessions(classSessions)
+    writeAngelWingsPackageCatalog(window.localStorage, result.tuitionPackages)
+    saveStoredTuition(tuitionRecords)
+    saveStoredSchedule(scheduleSessions)
+    saveStoredSessionReports(sessionReports)
+    saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
+    render()
+  })
+
+  document.querySelector('[data-attendance-board-angel-wings-action="clear"]')?.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Xóa dữ liệu nhập Angel Wings khỏi sessionReports và fixture học phí Angel Wings? Học viên thật và dữ liệu khác sẽ được giữ nguyên.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    createF15K5BackupSnapshot(window.localStorage)
+    const result = removeAngelWingsAttendanceData()
+
+    students = result.students
+    teachers = mergeAngelWingsTeacherRoster(teachers, result.students)
+    parentConsultations = result.parentConsultations
+    classSessions = result.classSessions
+    tuitionRecords = result.tuitionRecords
+    scheduleSessions = result.schedule
+    sessionReports = result.sessionReports
+    attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
+    saveStoredStudents(students)
+    saveStoredTeachers(teachers)
+    saveStoredParentConsultations(parentConsultations)
+    saveStoredClassSessions(classSessions)
+    writeAngelWingsPackageCatalog(window.localStorage, result.tuitionPackages)
+    saveStoredTuition(tuitionRecords)
+    saveStoredSchedule(scheduleSessions)
+    saveStoredSessionReports(sessionReports)
+    saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
+    render()
+  })
+
+  document.querySelector('[data-attendance-board-demo-action="clear"]')?.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Ch\u1ec9 x\u00f3a demo c\u0169 F15K.1/F15K.3, kh\u00f4ng x\u00f3a d\u1eef li\u1ec7u th\u1eadt ho\u1eb7c Angel Wings. Ti\u1ebfp t\u1ee5c?',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    sessionReports = removeLegacyDemoAttendanceReports(removeDemoAttendanceReports(sessionReports))
+    saveStoredSessionReports(sessionReports)
+    render()
+  })
+
+  document.querySelector('[data-settings-class-session-action="open-create"]')?.addEventListener(
+    'click',
+    () => {
+      settingsClassSessionFormState = createEmptySettingsClassSessionFormState()
+      render()
+    },
+  )
+
+  document.querySelectorAll('[data-settings-class-session-action="open-edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const classSession = classSessions.find(
+        (item) => item.id === button.dataset.classSessionId,
+      )
+
+      if (!classSession) {
+        return
+      }
+
+      settingsClassSessionFormState = createEditSettingsClassSessionFormState(classSession)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-settings-class-session-action="toggle-status"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const classSession = classSessions.find(
+        (item) => item.id === button.dataset.classSessionId,
+      )
+
+      if (!classSession) {
+        return
+      }
+
+      const studentCount = getClassSessionStudentCount(classSession.id, students)
+      const nextStatus = classSession.status === 'inactive' ? 'active' : 'inactive'
+
+      if (nextStatus === 'inactive' && studentCount > 0) {
+        const confirmed = window.confirm(
+          `Ca học này đang có ${studentCount} học viên. Ngưng dùng ca học? Học viên cũ vẫn giữ liên kết nhưng ca này sẽ không hiện trong lựa chọn mới.`,
+        )
+
+        if (!confirmed) {
+          return
+        }
+      }
+
+      classSessions = classSessions.map((item) =>
+        item.id === classSession.id
+          ? {
+              ...item,
+              status: nextStatus,
+              updatedAt: new Date().toISOString(),
+            }
+          : item,
+      )
+      saveStoredClassSessions(classSessions)
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-settings-class-session-action="cancel-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      settingsClassSessionFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-settings-class-session-field]').forEach((control) => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      if (!settingsClassSessionFormState) {
+        return
+      }
+
+      settingsClassSessionFormState = {
+        ...settingsClassSessionFormState,
+        values: {
+          ...settingsClassSessionFormState.values,
+          [control.dataset.settingsClassSessionField]: control.value,
+        },
+        errors: {
+          ...settingsClassSessionFormState.errors,
+          [control.dataset.settingsClassSessionField]: '',
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-settings-class-session-day]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      if (!settingsClassSessionFormState) {
+        return
+      }
+
+      const selectedDays = Array.from(
+        document.querySelectorAll('[data-settings-class-session-day]:checked'),
+      ).map((item) => item.value)
+
+      settingsClassSessionFormState = {
+        ...settingsClassSessionFormState,
+        values: {
+          ...settingsClassSessionFormState.values,
+          daysOfWeek: selectedDays,
+        },
+        errors: {
+          ...settingsClassSessionFormState.errors,
+          daysOfWeek: '',
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-settings-class-session-action="save-form"]')?.addEventListener(
+    'click',
+    () => {
+      if (!settingsClassSessionFormState) {
+        return
+      }
+
+      const errors = validateSettingsClassSessionForm(settingsClassSessionFormState.values)
+
+      if (Object.keys(errors).length) {
+        settingsClassSessionFormState = {
+          ...settingsClassSessionFormState,
+          errors,
+        }
+        render()
+        return
+      }
+
+      const existingClassSession = settingsClassSessionFormState.classSessionId
+        ? classSessions.find(
+            (item) => item.id === settingsClassSessionFormState.classSessionId,
+          )
+        : null
+      const nextClassSession = buildSettingsClassSessionFromForm(
+        settingsClassSessionFormState.values,
+        existingClassSession,
+        classSessions,
+      )
+
+      classSessions = existingClassSession
+        ? classSessions.map((item) =>
+            item.id === nextClassSession.id ? nextClassSession : item,
+          )
+        : [nextClassSession, ...classSessions]
+      saveStoredClassSessions(classSessions)
+      settingsClassSessionFormState = null
+      render()
+    },
+  )
 
   document.querySelectorAll('[data-parent-consultation-filter]').forEach((control) => {
     const eventName = control.matches('select') ? 'change' : 'input'
@@ -3695,12 +4670,100 @@ function bindEvents() {
       const nextControl = document.querySelector(
         `[data-parent-consultation-filter="${filterName}"]`,
       )
-      nextControl?.focus()
+      focusElementWithoutScrolling(nextControl)
 
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
     })
+  })
+
+  document.querySelectorAll('[data-parent-note-history-contact-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      parentNoteHistoryContactId = button.dataset.parentNoteHistoryContactId
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-note-history-action="close"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      parentNoteHistoryContactId = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-quick-note-contact-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const contact = parentConsultations.find(
+        (item) => item.id === button.dataset.parentQuickNoteContactId,
+      )
+
+      if (!contact) {
+        return
+      }
+
+      parentQuickNoteState = {
+        contactId: contact.id,
+        content: '',
+        error: '',
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-parent-quick-note-field="content"]')?.addEventListener('input', (event) => {
+    if (!parentQuickNoteState) {
+      return
+    }
+
+    parentQuickNoteState = {
+      ...parentQuickNoteState,
+      content: event.currentTarget.value,
+      error: '',
+    }
+  })
+
+  document.querySelectorAll('[data-parent-quick-note-action="cancel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      parentQuickNoteState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-parent-quick-note-action="save"]')?.addEventListener('click', () => {
+    if (!parentQuickNoteState) {
+      return
+    }
+
+    const noteContent = String(parentQuickNoteState.content || '').trim()
+
+    if (!noteContent) {
+      parentQuickNoteState = {
+        ...parentQuickNoteState,
+        error: 'Vui lòng nhập nội dung ghi chú.',
+      }
+      render()
+      return
+    }
+
+    const existingContact = parentConsultations.find(
+      (item) => item.id === parentQuickNoteState.contactId,
+    )
+
+    if (!existingContact) {
+      parentQuickNoteState = null
+      render()
+      return
+    }
+
+    const updatedContact = addQuickNoteToParentContact(existingContact, noteContent)
+    parentConsultations = parentConsultations.map((contact) =>
+      contact.id === updatedContact.id ? updatedContact : contact,
+    )
+    saveStoredParentConsultations(parentConsultations)
+    notifications = syncAppNotifications(notifications)
+    parentQuickNoteState = null
+    render()
   })
 
   document.querySelectorAll('[data-parent-contact-field]').forEach((control) => {
@@ -3711,18 +4774,138 @@ function bindEvents() {
         return
       }
 
+      const fieldName = control.dataset.parentContactField
+      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+      const fieldValue = fieldName === 'studentBirthYear'
+        ? control.value.replace(/\D/g, '').slice(0, 4)
+        : control.value
+
+      if (fieldName === 'studentBirthYear' && control.value !== fieldValue) {
+        control.value = fieldValue
+      }
+
       parentConsultationFormState = {
         ...parentConsultationFormState,
         values: {
           ...parentConsultationFormState.values,
-          [control.dataset.parentContactField]: control.value,
+          [fieldName]: fieldValue,
+          ...(fieldName === 'studentBirthYear'
+            ? { leadStudentAge: calculateParentContactAgeFromBirthYear(fieldValue) }
+            : {}),
         },
         errors: {
           ...parentConsultationFormState.errors,
-          [control.dataset.parentContactField]: '',
+          [fieldName]: '',
         },
       }
+
+      if (fieldName === 'studentSearch' || fieldName === 'studentBirthYear') {
+        render()
+
+        const nextControl = document.querySelector(`[data-parent-contact-field="${fieldName}"]`)
+        focusElementWithoutScrolling(nextControl)
+
+        if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+          nextControl.setSelectionRange(cursorPosition, cursorPosition)
+        }
+      }
     })
+  })
+
+  document.querySelector('[data-parent-contact-form-scroll]')?.addEventListener('scroll', (event) => {
+    if (!parentConsultationFormState) {
+      return
+    }
+
+    parentConsultationFormState = {
+      ...parentConsultationFormState,
+      scrollTop: event.currentTarget.scrollTop,
+    }
+  })
+
+  document.querySelectorAll('[data-parent-contact-step]').forEach((button) => {
+    if (!button.matches('button')) {
+      return
+    }
+
+    button.addEventListener('click', () => {
+      if (!parentConsultationFormState) {
+        return
+      }
+
+      const nextStep = clampParentContactWizardStep(button.dataset.parentContactStep)
+
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        activeStep: nextStep,
+        scrollTop: 0,
+      }
+      skipNextParentContactScrollCapture = true
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-step-move]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!parentConsultationFormState) {
+        return
+      }
+
+      const direction = Number.parseInt(button.dataset.parentContactStepMove, 10)
+      const nextStep = clampParentContactWizardStep(
+        (parentConsultationFormState.activeStep || 1) + direction,
+      )
+
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        activeStep: nextStep,
+        scrollTop: 0,
+      }
+      skipNextParentContactScrollCapture = true
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-student-select-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!parentConsultationFormState) {
+        return
+      }
+
+      const selectedStudent = students.find((student) => student.id === button.dataset.parentStudentSelectId)
+
+      if (!selectedStudent) {
+        return
+      }
+
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        values: {
+          ...parentConsultationFormState.values,
+          studentId: selectedStudent.id,
+          studentName: selectedStudent.fullName,
+          studentSearch: selectedStudent.fullName,
+        },
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-parent-student-clear]')?.addEventListener('click', () => {
+    if (!parentConsultationFormState) {
+      return
+    }
+
+    parentConsultationFormState = {
+      ...parentConsultationFormState,
+      values: {
+        ...parentConsultationFormState.values,
+        studentId: '',
+        studentName: '',
+        studentSearch: '',
+      },
+    }
+    render()
   })
 
   document.querySelectorAll('[data-parent-care-log-field]').forEach((control) => {
@@ -3800,7 +4983,12 @@ function bindEvents() {
         contact.id === updatedContact.id ? updatedContact : contact,
       )
       saveStoredParentConsultations(parentConsultations)
-      parentConsultationFormState = createEditParentContactFormState(updatedContact)
+    notifications = syncAppNotifications(notifications)
+      parentConsultationFormState = {
+        ...createEditParentContactFormState(updatedContact),
+        activeStep: parentConsultationFormState.activeStep,
+        scrollTop: parentConsultationFormState.scrollTop || 0,
+      }
       render()
     })
   })
@@ -3814,11 +5002,22 @@ function bindEvents() {
       }
 
       const fieldName = control.dataset.parentEnrollmentField
+      const fieldValue = fieldName === 'studentBirthYear'
+        ? control.value.replace(/\D/g, '').slice(0, 4)
+        : control.value
+
+      if (fieldName === 'studentBirthYear' && control.value !== fieldValue) {
+        control.value = fieldValue
+      }
+
       parentConsultationFormState = {
         ...parentConsultationFormState,
         enrollmentDraft: {
           ...parentConsultationFormState.enrollmentDraft,
-          [fieldName]: control.value,
+          [fieldName]: fieldValue,
+          ...(fieldName === 'studentBirthYear'
+            ? { studentAge: calculateParentContactAgeFromBirthYear(fieldValue) }
+            : {}),
         },
         enrollmentErrors: {
           ...(parentConsultationFormState.enrollmentErrors ?? {}),
@@ -3826,6 +5025,18 @@ function bindEvents() {
           summary: '',
         },
         enrollmentMessage: '',
+      }
+
+      if (fieldName === 'studentBirthYear') {
+        const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+        render()
+
+        const nextControl = document.querySelector('[data-parent-enrollment-field="studentBirthYear"]')
+        focusElementWithoutScrolling(nextControl)
+
+        if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+          nextControl.setSelectionRange(cursorPosition, cursorPosition)
+        }
       }
     })
   })
@@ -3858,9 +5069,18 @@ function bindEvents() {
 
       parentConsultations = parentConsultations.filter((item) => item.id !== contact.id)
       saveStoredParentConsultations(parentConsultations)
+    notifications = syncAppNotifications(notifications)
 
       if (parentConsultationFormState?.contactId === contact.id) {
         parentConsultationFormState = null
+      }
+
+      if (parentQuickNoteState?.contactId === contact.id) {
+        parentQuickNoteState = null
+      }
+
+      if (parentNoteHistoryContactId === contact.id) {
+        parentNoteHistoryContactId = null
       }
 
       render()
@@ -3874,41 +5094,51 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-parent-contact-action="save-form"]')?.addEventListener('click', () => {
-    if (!parentConsultationFormState) {
-      return
-    }
-
-    const errors = validateParentContactForm(parentConsultationFormState.values)
-
-    if (Object.keys(errors).length) {
-      parentConsultationFormState = {
-        ...parentConsultationFormState,
-        errors,
+  document.querySelectorAll('[data-parent-contact-action="save-form"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!parentConsultationFormState) {
+        return
       }
+
+      const errors = validateParentContactForm(parentConsultationFormState.values)
+
+      if (Object.keys(errors).length) {
+        parentConsultationFormState = {
+          ...parentConsultationFormState,
+          activeStep: getParentContactStepForErrors(errors),
+          scrollTop: 0,
+          errors,
+        }
+        skipNextParentContactScrollCapture = true
+        render()
+        return
+      }
+
+      const existingContact =
+        parentConsultationFormState.mode === 'edit'
+          ? parentConsultations.find((contact) => contact.id === parentConsultationFormState.contactId)
+          : null
+      const baseContact = buildParentContactFromForm(
+        parentConsultationFormState.values,
+        existingContact,
+        students,
+      )
+      const nextContact = saveEnrollmentDraftToParentContact(
+        baseContact,
+        parentConsultationFormState.enrollmentDraft,
+      )
+
+      parentConsultations = existingContact
+        ? parentConsultations.map((contact) =>
+            contact.id === existingContact.id ? nextContact : contact,
+          )
+        : [nextContact, ...parentConsultations]
+
+      saveStoredParentConsultations(parentConsultations)
+    notifications = syncAppNotifications(notifications)
+      parentConsultationFormState = null
       render()
-      return
-    }
-
-    const existingContact =
-      parentConsultationFormState.mode === 'edit'
-        ? parentConsultations.find((contact) => contact.id === parentConsultationFormState.contactId)
-        : null
-    const nextContact = buildParentContactFromForm(
-      parentConsultationFormState.values,
-      existingContact,
-      students,
-    )
-
-    parentConsultations = existingContact
-      ? parentConsultations.map((contact) =>
-          contact.id === existingContact.id ? nextContact : contact,
-        )
-      : [nextContact, ...parentConsultations]
-
-    saveStoredParentConsultations(parentConsultations)
-    parentConsultationFormState = null
-    render()
+    })
   })
 
   document.querySelector('[data-parent-care-log-action="add"]')?.addEventListener('click', () => {
@@ -3950,9 +5180,12 @@ function bindEvents() {
       contact.id === updatedContact.id ? updatedContact : contact,
     )
     saveStoredParentConsultations(parentConsultations)
+    notifications = syncAppNotifications(notifications)
     parentConsultationFormState = {
       ...createEditParentContactFormState(updatedContact),
       careLogDraft: createEmptyParentCareLogDraft(),
+      activeStep: parentConsultationFormState.activeStep,
+      scrollTop: parentConsultationFormState.scrollTop || 0,
     }
     render()
   })
@@ -3996,9 +5229,12 @@ function bindEvents() {
       contact.id === updatedContact.id ? updatedContact : contact,
     )
     saveStoredParentConsultations(parentConsultations)
+    notifications = syncAppNotifications(notifications)
     parentConsultationFormState = {
       ...createEditParentContactFormState(updatedContact),
       appointmentDraft: createEmptyParentAppointmentDraft(),
+      activeStep: parentConsultationFormState.activeStep,
+      scrollTop: parentConsultationFormState.scrollTop || 0,
     }
     render()
   })
@@ -4028,12 +5264,12 @@ function bindEvents() {
       await navigator.clipboard.writeText(summary)
       parentConsultationFormState = {
         ...parentConsultationFormState,
-        enrollmentMessage: 'Đã copy tóm tắt đăng ký.',
+        enrollmentMessage: 'Đã copy tóm tắt học thử.',
       }
     } catch {
       parentConsultationFormState = {
         ...parentConsultationFormState,
-        enrollmentMessage: 'Không copy tự động được. Hãy copy thủ công từ khung tóm tắt.',
+        enrollmentMessage: 'Không copy tự động được. Hãy copy thủ công từ khung tóm tắt học thử.',
       }
     }
     render()
@@ -4051,7 +5287,7 @@ function bindEvents() {
       render()
 
       const nextControl = document.querySelector(`[data-teacher-filter="${filterName}"]`)
-      nextControl?.focus()
+      focusElementWithoutScrolling(nextControl)
 
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
@@ -4147,7 +5383,9 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-teacher-form-field]').forEach((control) => {
-    control.addEventListener('input', () => {
+    const eventName = control.matches('select') ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
       const fieldName = control.dataset.teacherFormField
 
       teacherFormState = {
@@ -4160,6 +5398,10 @@ function bindEvents() {
           ...teacherFormState.errors,
           [fieldName]: undefined,
         },
+      }
+
+      if (fieldName === 'teacherType') {
+        render()
       }
     })
   })
@@ -4219,6 +5461,21 @@ function bindEvents() {
         values: {
           ...teacherFormState.values,
           preferredTimeSlots: selectedSlots,
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-class-session-field]').forEach((control) => {
+    control.addEventListener('change', () => {
+      const selectedClassSessionIds = Array.from(document.querySelectorAll('[data-teacher-class-session-field]:checked'))
+        .map((checkbox) => checkbox.value)
+
+      teacherFormState = {
+        ...teacherFormState,
+        values: {
+          ...teacherFormState.values,
+          availableClassSessionIds: selectedClassSessionIds,
         },
       }
     })
@@ -5154,6 +6411,18 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-student-note-action="open-care-notes"]').forEach((button) => {
+    button.addEventListener('pointerdown', (event) => {
+      event.stopPropagation()
+    })
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openStudentSubWindow(button.dataset.studentId, 'student-care-notes')
+    })
+  })
+
   document.querySelectorAll('[data-student-action="edit-from-detail"]').forEach((button) => {
     button.addEventListener('click', () => {
       openStudentEditForm(button.dataset.studentEditId)
@@ -5258,6 +6527,23 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-student-class-session-id]').forEach((control) => {
+    control.addEventListener('change', () => {
+      const selectedClassSessionIds = Array.from(
+        document.querySelectorAll('[data-student-class-session-id]:checked'),
+      ).map((checkbox) => checkbox.value)
+
+      studentFormState = {
+        ...studentFormState,
+        values: {
+          ...studentFormState.values,
+          classSessionIds: Array.from(new Set(selectedClassSessionIds)),
+        },
+      }
+      updateStudentFormSaveButton()
+    })
+  })
+
   document.querySelectorAll('[data-student-form-step]').forEach((button) => {
     button.addEventListener('click', () => {
       studentFormState = {
@@ -5287,6 +6573,10 @@ function bindEvents() {
       }
       render()
     })
+  })
+
+  document.querySelector('[data-student-action="open-settings-module"]')?.addEventListener('click', () => {
+    openModuleWindow('cai-dat-co-so')
   })
 
   document.querySelectorAll('[data-care-note-field]').forEach((control) => {
@@ -5513,7 +6803,7 @@ function bindEvents() {
     render()
   })
 
-  document.querySelectorAll('[data-student-id]').forEach((row) => {
+  document.querySelectorAll('.student-row[data-student-id]').forEach((row) => {
     row.addEventListener('click', () => {
       studentFilters = {
         ...studentFilters,
@@ -5557,7 +6847,16 @@ function openTuitionPackageForm(studentId) {
 }
 
 function saveParentEnrollmentDraft(markReady = false) {
-  if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
+  if (!parentConsultationFormState) {
+    return
+  }
+
+  if (parentConsultationFormState.mode !== 'edit') {
+    parentConsultationFormState = {
+      ...parentConsultationFormState,
+      enrollmentMessage: 'Thông tin học thử sẽ được lưu khi lưu liên hệ.',
+    }
+    render()
     return
   }
 
@@ -5576,9 +6875,12 @@ function saveParentEnrollmentDraft(markReady = false) {
   if (Object.keys(errors).length) {
     parentConsultationFormState = {
       ...parentConsultationFormState,
+      activeStep: 4,
+      scrollTop: 0,
       enrollmentErrors: errors,
       enrollmentMessage: '',
     }
+    skipNextParentContactScrollCapture = true
     render()
     return
   }
@@ -5602,11 +6904,14 @@ function saveParentEnrollmentDraft(markReady = false) {
     contact.id === updatedContact.id ? updatedContact : contact,
   )
   saveStoredParentConsultations(parentConsultations)
+    notifications = syncAppNotifications(notifications)
   parentConsultationFormState = {
     ...createEditParentContactFormState(updatedContact),
+    activeStep: parentConsultationFormState.activeStep || 4,
+    scrollTop: parentConsultationFormState.scrollTop || 0,
     enrollmentMessage: markReady
-      ? 'Đã đánh dấu sẵn sàng đăng ký.'
-      : 'Đã lưu bản nháp đăng ký.',
+      ? 'Đã đánh dấu đã hẹn học thử và cập nhật lịch hẹn.'
+      : 'Đã lưu thông tin học thử và cập nhật lịch hẹn nếu có ngày học thử.',
   }
   render()
 }
@@ -5704,65 +7009,65 @@ function getNotificationPanelPosition(bellButton) {
 }
 
 function getUnreadNotificationCount() {
-  return notifications.filter((notification) => !notification.read).length
+  return countUnreadNotifications(notifications)
 }
 
 function syncTuitionNotifications(currentNotifications) {
-  const deletedIds = new Set(deletedNotificationIds)
-  const candidateTuitionNotifications = buildTuitionRows(students, tuitionRecords)
-    .map((row) => createTuitionWarningNotification(row))
-    .filter(Boolean)
-  const currentTuitionWarningIds = new Set(candidateTuitionNotifications.map((notification) => notification.id))
-  const retainedNotifications = currentNotifications.filter(
-    (notification) =>
-      !String(notification.id).startsWith('tuition-warning-') ||
-      currentTuitionWarningIds.has(notification.id),
-  )
-  const existingNotificationIds = new Set(retainedNotifications.map((notification) => notification.id))
-  const tuitionNotifications = candidateTuitionNotifications
-    .filter(
-      (notification) =>
-        notification &&
-        !existingNotificationIds.has(notification.id) &&
-        !deletedIds.has(notification.id),
-    )
+  return syncAppNotifications(currentNotifications)
+}
 
-  if (!tuitionNotifications.length && retainedNotifications.length === currentNotifications.length) {
-    return currentNotifications
+function syncAppNotifications(currentNotifications) {
+  const notificationCandidates = [
+    ...buildTuitionNotificationCandidates(
+      buildTuitionRows(students, tuitionRecords),
+      getCurrentMonthKey(),
+    ),
+    ...buildInventoryRequestNotificationCandidates(inventoryRequests),
+    ...buildParentFollowupNotificationCandidates(parentConsultations),
+  ]
+  const nextNotifications = upsertNotificationCandidates(currentNotifications, notificationCandidates)
+
+  if (JSON.stringify(nextNotifications) !== JSON.stringify(currentNotifications)) {
+    saveStoredNotifications(nextNotifications)
   }
 
-  const nextNotifications = [...tuitionNotifications, ...retainedNotifications]
-  saveStoredNotifications(nextNotifications)
   return nextNotifications
 }
 
 function markNotificationRead(notificationId) {
   const targetNotification = notifications.find((notification) => notification.id === notificationId)
 
-  if (!targetNotification || targetNotification.read) {
+  if (!targetNotification || targetNotification.readAt) {
     return
   }
 
-  notifications = notifications.map((notification) =>
-    notification.id === notificationId ? { ...notification, read: true } : notification,
-  )
+  notifications = markNotificationReadById(notifications, notificationId)
   saveStoredNotifications(notifications)
   render()
 }
 
-function getNotificationSourceLabel(sourceModule) {
-  const sourceLabels = {
-    system: 'Hệ thống',
-    'hoc-phi': 'Học phí',
-    'hoc-vien': 'Học viên demo',
-    schedule: 'Lịch học demo',
-    inventory: 'Kho demo',
-    report: 'Báo cáo demo',
+function openNotificationSourceModule(notificationId) {
+  const notification = notifications.find((item) => item.id === notificationId)
+
+  if (!notification || !modules.some((moduleItem) => moduleItem.id === notification.sourceModule)) {
+    return
   }
 
-  return sourceLabels[sourceModule] ?? sourceModule
+  isNotificationCenterOpen = false
+  openModuleWindow(notification.sourceModule)
 }
 
+function getNotificationSourceLabel(sourceModule) {
+  const sourceLabels = {
+    ...notificationSourceLabels,
+    system: notificationSourceLabels['he-thong'],
+    schedule: notificationSourceLabels['thoi-khoa-bieu'],
+    inventory: notificationSourceLabels['kho-hang'],
+    report: notificationSourceLabels['he-thong'],
+  }
+
+  return sourceLabels[sourceModule] ?? sourceModule ?? notificationSourceLabels['he-thong']
+}
 function formatNotificationTime(createdAt) {
   const createdDate = new Date(createdAt)
   const elapsedMs = Date.now() - createdDate.getTime()
@@ -5969,6 +7274,57 @@ function bindWindowDragging() {
       document.addEventListener('pointerup', handlePointerUp)
     })
   })
+}
+
+function calculateParentContactAgeFromBirthYear(birthYear) {
+  const year = Number.parseInt(String(birthYear || '').trim(), 10)
+  const currentYear = new Date().getFullYear()
+
+  if (!Number.isFinite(year) || year < 1900 || year > currentYear) {
+    return ''
+  }
+
+  return String(currentYear - year)
+}
+
+function clampParentContactWizardStep(step) {
+  const parsedStep = Number.parseInt(step, 10)
+
+  if (!Number.isFinite(parsedStep)) {
+    return 1
+  }
+
+  return Math.min(Math.max(parsedStep, 1), 4)
+}
+
+function getParentContactStepForErrors(errors = {}) {
+  const errorFields = Object.keys(errors)
+
+  if (errorFields.some((field) => ['parentName', 'phone', 'contactType'].includes(field))) {
+    return 1
+  }
+
+  if (errorFields.some((field) => ['studentBirthYear'].includes(field))) {
+    return 2
+  }
+
+  if (errorFields.some((field) => ['consultationStatus', 'source'].includes(field))) {
+    return 3
+  }
+
+  return 1
+}
+
+function focusElementWithoutScrolling(element) {
+  if (!element || typeof element.focus !== 'function') {
+    return
+  }
+
+  try {
+    element.focus({ preventScroll: true })
+  } catch {
+    element.focus()
+  }
 }
 
 function updateClock() {

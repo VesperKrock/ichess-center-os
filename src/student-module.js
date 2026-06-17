@@ -44,6 +44,7 @@ export const initialStudentFilters = {
   query: '',
   status: 'all',
   level: 'all',
+  classSessionId: 'all',
   sortBy: '',
   sortDirection: 'asc',
   selectedStudentId: null,
@@ -67,6 +68,7 @@ export const emptyStudentFormValues = {
   parentJob: '',
   parentArea: '',
   level: 'Dolphin 1',
+  classSessionIds: [],
   testScore: '',
   highestBotMilestone: 'Chưa có',
   personality: '',
@@ -118,6 +120,7 @@ export function createEditStudentFormState(student) {
       parentJob: student.parentJob ?? '',
       parentArea: student.parentArea ?? '',
       level: getLevelLabel(student.level),
+      classSessionIds: normalizeClassSessionIds(student.classSessionIds),
       testScore: getTestScoreForForm(student.testScore),
       highestBotMilestone: student.highestBotMilestone ?? 'Chưa có',
       personality: student.personality ?? '',
@@ -129,10 +132,17 @@ export function createEditStudentFormState(student) {
   }
 }
 
-export function renderStudentModule(students, filters, formState, teachers = []) {
+export function renderStudentModule(
+  students,
+  filters,
+  formState,
+  teachers = [],
+  classSessions = [],
+) {
   const visibleStudents = getVisibleStudents(students)
-  const filteredStudents = getFilteredStudents(students, filters, teachers)
+  const filteredStudents = getFilteredStudents(students, filters, teachers, classSessions)
   const stats = getStudentStats(visibleStudents)
+  const activeClassSessions = getActiveClassSessions(classSessions)
 
   return `
     <section class="student-module ${formState ? 'form-open' : ''}" aria-label="Danh sách học viên">
@@ -173,6 +183,22 @@ export function renderStudentModule(students, filters, formState, teachers = [])
                     .join('')}
                 </select>
               </label>
+              <label>
+                <span>Ca học / Lớp</span>
+                <select data-student-filter="classSessionId">
+                  ${renderOption('all', 'Tất cả ca học', filters.classSessionId)}
+                  ${renderOption('unassigned', 'Chưa phân lớp', filters.classSessionId)}
+                  ${activeClassSessions
+                    .map((classSession) =>
+                      renderOption(
+                        classSession.id,
+                        getClassSessionDisplayLabel(classSession),
+                        filters.classSessionId,
+                      ),
+                    )
+                    .join('')}
+                </select>
+              </label>
             </div>
             <div class="student-stats">
               ${renderStatCard('Tổng', stats.total)}
@@ -197,13 +223,16 @@ export function renderStudentModule(students, filters, formState, teachers = [])
                   <th>Elo</th>
                   <th>Trường học</th>
                   <th>Giáo viên phụ trách</th>
+                  <th>Ca học</th>
                   <th>Ghi chú</th>
                 </tr>
               </thead>
               <tbody>
                 ${
                   filteredStudents.length
-                    ? filteredStudents.map((student) => renderStudentRow(student, teachers)).join('')
+                    ? filteredStudents
+                        .map((student) => renderStudentRow(student, teachers, classSessions))
+                        .join('')
                     : renderEmptyState()
                 }
               </tbody>
@@ -211,12 +240,17 @@ export function renderStudentModule(students, filters, formState, teachers = [])
           </div>
         </div>
       </div>
-      ${formState ? renderStudentForm(formState, teachers) : ''}
+      ${formState ? renderStudentForm(formState, teachers, classSessions) : ''}
     </section>
   `
 }
 
-export function getFilteredStudents(students = sampleStudents, filters, teachers = []) {
+export function getFilteredStudents(
+  students = sampleStudents,
+  filters,
+  teachers = [],
+  classSessions = [],
+) {
   if (!Array.isArray(students)) {
     filters = students
     students = sampleStudents
@@ -227,8 +261,10 @@ export function getFilteredStudents(students = sampleStudents, filters, teachers
   const queryDigits = String(activeFilters.query).replace(/\D/g, '')
 
   const teacherLookup = createTeacherLookup(teachers)
+  const classSessionLookup = createClassSessionLookup(classSessions)
   const filteredStudents = getVisibleStudents(students).filter((student) => {
     const assignedTeacher = teacherLookup.get(String(student.assignedTeacherId ?? ''))
+    const classSessionLabels = getStudentClassSessionLabels(student, classSessionLookup)
     const matchesQuery =
       !normalizedQuery ||
       [
@@ -236,6 +272,7 @@ export function getFilteredStudents(students = sampleStudents, filters, teachers
         student.parentName,
         student.schoolName,
         getTeacherDisplayName(assignedTeacher),
+        ...classSessionLabels,
       ].some((value) => normalizeText(value).includes(normalizedQuery)) ||
       (queryDigits &&
         [student.fatherPhone, student.motherPhone, student.parentPhone].some((phone) =>
@@ -246,8 +283,13 @@ export function getFilteredStudents(students = sampleStudents, filters, teachers
       activeFilters.status === 'all' || student.currentStatus === activeFilters.status
     const matchesLevel =
       activeFilters.level === 'all' || getLevelLabel(student.level) === activeFilters.level
+    const classSessionIds = normalizeClassSessionIds(student.classSessionIds)
+    const matchesClassSession =
+      activeFilters.classSessionId === 'all' ||
+      (activeFilters.classSessionId === 'unassigned' && classSessionIds.length === 0) ||
+      classSessionIds.includes(activeFilters.classSessionId)
 
-    return matchesQuery && matchesStatus && matchesLevel
+    return matchesQuery && matchesStatus && matchesLevel && matchesClassSession
   })
 
   return sortStudents(filteredStudents, activeFilters)
@@ -324,6 +366,7 @@ export function buildStudentFromForm(values, existingStudent = null) {
     ...values,
     avatarUrl: values.avatarUrl || existingStudent?.avatarUrl || '',
     assignedTeacherId: normalizeAssignedTeacherId(values.assignedTeacherId),
+    classSessionIds: normalizeClassSessionIds(values.classSessionIds),
     level: getLevelLabel(values.level),
     parentBirthYear: values.parentBirthYear ? Number(values.parentBirthYear) : '',
     fatherPhone: formatPhoneNumber(values.fatherPhone),
@@ -345,7 +388,11 @@ export function buildStudentFromForm(values, existingStudent = null) {
   }
 }
 
-function renderStudentForm(formState, teachers = []) {
+function renderStudentForm(
+  formState,
+  teachers = [],
+  classSessions = [],
+) {
   const isEdit = formState.mode === 'edit'
   const title = isEdit ? 'Sửa học viên' : 'Thêm học viên'
   const currentStep = formState.step ?? 1
@@ -414,6 +461,7 @@ function renderStudentForm(formState, teachers = []) {
                     formState,
                     getTeacherSelectOptions(teachers),
                   ),
+                  renderClassSessionCheckboxes(formState, classSessions),
                   renderTextareaField('personality', 'Tính cách học viên', formState, {
                     className: 'span-full',
                   }),
@@ -524,6 +572,50 @@ function renderSelectField(name, label, formState, options) {
       </select>
       ${formState.errors[name] ? `<small>${formState.errors[name]}</small>` : ''}
     </label>
+  `
+}
+
+function renderClassSessionCheckboxes(formState, classSessions = []) {
+  const selectedIds = new Set(normalizeClassSessionIds(formState.values.classSessionIds))
+  const selectableClassSessions = getSelectableClassSessions(classSessions, selectedIds)
+
+  return `
+    <div class="student-class-session-field span-full">
+      <div class="student-class-session-heading">
+        <div>
+          <span>Ca học / Lớp</span>
+          <p>Có thể chọn nhiều ca học trong tuần. Nếu chưa chọn, học viên sẽ được tính là Chưa phân lớp.</p>
+          <p>Danh mục ca học được quản lý tại Cài đặt cơ sở.</p>
+        </div>
+        <button class="student-secondary-button" type="button" data-student-action="open-settings-module">
+          Mở Cài đặt cơ sở
+        </button>
+      </div>
+      <div class="student-class-session-list">
+        ${
+          selectableClassSessions.length
+            ? selectableClassSessions
+                .map(
+                  (classSession) => `
+                    <label class="student-class-session-option ${classSession.status === 'inactive' ? 'is-inactive' : ''}">
+                      <input
+                        type="checkbox"
+                        value="${escapeAttribute(classSession.id)}"
+                        data-student-class-session-id="${escapeAttribute(classSession.id)}"
+                        ${selectedIds.has(classSession.id) ? 'checked' : ''}
+                      />
+                      <span>
+                        ${escapeHtml(getClassSessionDisplayLabel(classSession))}
+                        ${classSession.status === 'inactive' ? '<em>Đã ngưng</em>' : ''}
+                      </span>
+                    </label>
+                  `,
+                )
+                .join('')
+            : '<p class="student-class-session-empty">Chưa có ca học active.</p>'
+        }
+      </div>
+    </div>
   `
 }
 
@@ -638,9 +730,10 @@ function compareText(firstValue, secondValue) {
   })
 }
 
-function renderStudentRow(student, teachers = []) {
+function renderStudentRow(student, teachers = [], classSessions = []) {
   const hasCareNote = hasRealCareNote(student)
   const contactPhone = student.motherPhone || student.fatherPhone || student.parentPhone
+  const classSessionLookup = createClassSessionLookup(classSessions)
 
   return `
     <tr class="student-row" data-student-id="${student.id}" tabindex="0">
@@ -660,9 +753,10 @@ function renderStudentRow(student, teachers = []) {
       <td>${student.elo ?? '—'}</td>
       <td title="${escapeAttribute(student.schoolName)}">${getShortSchoolName(student.schoolName)}</td>
       <td>${renderStudentTeacherCell(student, teachers)}</td>
+      <td>${renderStudentClassSessionCell(student, classSessionLookup)}</td>
       <td>
         ${hasCareNote
-          ? `<button class="student-note-badge has-note" type="button" title="${escapeAttribute(getLatestCareNoteText(student))}">Có ghi chú</button>`
+          ? `<button class="student-note-badge has-note" type="button" title="${escapeAttribute(getLatestCareNoteText(student))}" data-student-note-action="open-care-notes" data-student-id="${escapeAttribute(student.id)}">Có ghi chú</button>`
           : '<span class="student-note-badge is-empty">Không</span>'}
       </td>
     </tr>
@@ -697,6 +791,37 @@ function renderStudentTeacherCell(student, teachers = []) {
           ? '<span class="student-teacher-warning">Ngừng dạy</span>'
           : ''
       }
+    </div>
+  `
+}
+
+function renderStudentClassSessionCell(student, classSessionLookup = new Map()) {
+  const classSessionIds = normalizeClassSessionIds(student.classSessionIds)
+
+  if (!classSessionIds.length) {
+    return '<span class="student-class-session-unassigned">Chưa phân lớp</span>'
+  }
+
+  const classSessionItems = getStudentClassSessionItems(student, classSessionLookup)
+  const visibleItems = classSessionItems.slice(0, 2)
+  const hiddenCount = Math.max(0, classSessionItems.length - visibleItems.length)
+  const title = classSessionItems
+    .map((item) => `${item.label}${item.status === 'inactive' ? ' (Đã ngưng)' : ''}`)
+    .join(', ')
+
+  return `
+    <div class="student-class-session-cell" title="${escapeAttribute(title)}">
+      ${visibleItems
+        .map(
+          (item) => `
+            <span class="student-class-session-badge ${item.status === 'inactive' ? 'inactive' : ''}">
+              ${escapeHtml(item.label)}
+              ${item.status === 'inactive' ? '<em>Đã ngưng</em>' : ''}
+            </span>
+          `,
+        )
+        .join('')}
+      ${hiddenCount ? `<span class="student-class-session-more">+${hiddenCount} ca</span>` : ''}
     </div>
   `
 }
@@ -756,9 +881,75 @@ function createTeacherLookup(teachers = []) {
   )
 }
 
+function createClassSessionLookup(classSessions = []) {
+  return new Map(
+    classSessions
+      .filter((classSession) => classSession && classSession.id)
+      .map((classSession) => [String(classSession.id), classSession]),
+  )
+}
+
+function getActiveClassSessions(classSessions = []) {
+  return classSessions
+    .filter((classSession) => classSession && classSession.status !== 'inactive')
+    .sort((firstClassSession, secondClassSession) =>
+      getClassSessionDisplayLabel(firstClassSession).localeCompare(
+        getClassSessionDisplayLabel(secondClassSession),
+        'vi',
+        { sensitivity: 'base' },
+      ),
+    )
+}
+
+function getSelectableClassSessions(classSessions = [], selectedIds = new Set()) {
+  return classSessions
+    .filter(
+      (classSession) =>
+        classSession &&
+        classSession.id &&
+        (classSession.status !== 'inactive' || selectedIds.has(classSession.id)),
+    )
+    .sort((firstClassSession, secondClassSession) =>
+      getClassSessionDisplayLabel(firstClassSession).localeCompare(
+        getClassSessionDisplayLabel(secondClassSession),
+        'vi',
+        { sensitivity: 'base' },
+      ),
+    )
+}
+
+function getStudentClassSessionLabels(student, classSessionLookup = new Map()) {
+  return getStudentClassSessionItems(student, classSessionLookup).map((item) => item.label)
+}
+
+function getStudentClassSessionItems(student, classSessionLookup = new Map()) {
+  return normalizeClassSessionIds(student.classSessionIds).map((classSessionId) => {
+    const classSession = classSessionLookup.get(classSessionId)
+    return classSession
+      ? {
+          label: getClassSessionDisplayLabel(classSession),
+          status: classSession.status === 'inactive' ? 'inactive' : 'active',
+        }
+      : {
+          label: 'Ca học không tìm thấy',
+          status: 'missing',
+        }
+  })
+}
+
+function getClassSessionDisplayLabel(classSession) {
+  return String(classSession?.displayLabel || classSession?.name || 'Ca học').trim()
+}
+
 function normalizeAssignedTeacherId(value) {
   const teacherId = String(value ?? '').trim()
   return teacherId || null
+}
+
+function normalizeClassSessionIds(value) {
+  return Array.isArray(value)
+    ? Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)))
+    : []
 }
 
 function renderStudentAvatar(student) {
@@ -776,7 +967,7 @@ function renderStudentAvatar(student) {
 function renderEmptyState() {
   return `
     <tr>
-      <td class="student-empty" colspan="9">
+      <td class="student-empty" colspan="10">
         Không tìm thấy học viên phù hợp với bộ lọc hiện tại.
       </td>
     </tr>

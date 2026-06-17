@@ -26,6 +26,7 @@ const emptyTeacherFormValues = {
   internalTags: '',
   availableDays: [],
   preferredTimeSlots: [],
+  availableClassSessionIds: [],
   maxSessionsPerWeek: '',
   canTakeNewClass: true,
   scheduleNote: '',
@@ -43,6 +44,7 @@ export function createEmptyTeacherFormState() {
       teachingModes: [],
       availableDays: [],
       preferredTimeSlots: [],
+      availableClassSessionIds: [],
     },
     errors: {},
   }
@@ -67,6 +69,7 @@ export function createEditTeacherFormState(teacher) {
       internalTags: (teacher.internalTags ?? []).join(', '),
       availableDays: [...(teacher.availableDays ?? [])],
       preferredTimeSlots: [...(teacher.preferredTimeSlots ?? [])],
+      availableClassSessionIds: [...(teacher.availableClassSessionIds ?? [])],
       maxSessionsPerWeek: teacher.maxSessionsPerWeek ?? '',
       canTakeNewClass: teacher.canTakeNewClass ?? true,
       scheduleNote: teacher.scheduleNote ?? '',
@@ -137,6 +140,7 @@ export function buildTeacherFromForm(values, existingTeacher = null) {
     internalTags: parseCommaSeparatedList(values.internalTags),
     availableDays: normalizeAvailableDays(values.availableDays),
     preferredTimeSlots: normalizePreferredTimeSlots(values.preferredTimeSlots),
+    availableClassSessionIds: normalizeClassSessionIds(values.availableClassSessionIds),
     maxSessionsPerWeek: normalizeMaxSessionsPerWeek(values.maxSessionsPerWeek),
     canTakeNewClass: Boolean(values.canTakeNewClass),
     scheduleNote: String(values.scheduleNote ?? '').trim(),
@@ -242,6 +246,7 @@ export function renderTeacherModule(
   selectedTeacherId = null,
   students = [],
   schedules = [],
+  classSessions = [],
 ) {
   const activeFilters = { ...initialTeacherFilters, ...filters }
   const filteredTeachers = getFilteredTeachers(teachers, activeFilters)
@@ -306,8 +311,7 @@ export function renderTeacherModule(
                       <th>Liên hệ</th>
                       <th>Trạng thái</th>
                       <th>Hình thức</th>
-                      <th>Chuyên môn</th>
-                      <th>Cấp độ dạy</th>
+                      <th>Lớp dạy phù hợp</th>
                       <th>Các lớp phụ trách</th>
                       <th>Tổng học viên</th>
                     </tr>
@@ -324,9 +328,9 @@ export function renderTeacherModule(
         }
       </section>
       ${selectedTeacher
-        ? renderTeacherProfile(selectedTeacher, teacherStudentLinkMap.get(normalizeId(selectedTeacher.id)))
+        ? renderTeacherProfile(selectedTeacher, teacherStudentLinkMap.get(normalizeId(selectedTeacher.id)), classSessions)
         : ''}
-      ${formState ? renderTeacherForm(formState) : ''}
+      ${formState ? renderTeacherForm(formState, classSessions) : ''}
     </section>
   `
 }
@@ -438,7 +442,6 @@ function renderTeacherRow(teacher, studentLinks = createTeacherStudentLinkSummar
           ${escapeHtml(getTeacherTypeLabel(teacher.teacherType))}
         </span>
       </td>
-      <td>${renderTeacherChips(teacher.specialties)}</td>
       <td>${renderTeacherChips((teacher.levels ?? []).map(getTeacherLevelLabel))}</td>
       <td>${renderTeacherClassSummary(teacher, studentLinks)}</td>
       <td>
@@ -451,14 +454,14 @@ function renderTeacherRow(teacher, studentLinks = createTeacherStudentLinkSummar
   `
 }
 
-function renderTeacherProfile(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+function renderTeacherProfile(teacher, studentLinks = createTeacherStudentLinkSummary([]), classSessions = []) {
   return `
     <div class="teacher-profile-backdrop" role="presentation">
       <section class="teacher-profile-panel" aria-label="Hồ sơ giáo viên">
         <div class="teacher-profile-header">
           <div class="teacher-profile-title">
             <h4>${escapeHtml(teacher.fullName || 'Giáo viên')}</h4>
-            <span>${escapeHtml([teacher.displayName, teacher.mainRole].filter(Boolean).join(' · ') || '-')}</span>
+            <span>${escapeHtml(teacher.displayName || '-')}</span>
             <div class="teacher-profile-badges">
               <span class="teacher-status-badge is-${escapeAttribute(teacher.status)}">${escapeHtml(getTeacherStatusLabel(teacher.status))}</span>
               <span class="teacher-type-badge is-${escapeAttribute(teacher.teacherType)}">${escapeHtml(getTeacherTypeLabel(teacher.teacherType))}</span>
@@ -474,49 +477,110 @@ function renderTeacherProfile(teacher, studentLinks = createTeacherStudentLinkSu
             <button type="button" data-teacher-action="close-profile">Đóng</button>
           </div>
         </div>
-        <div class="teacher-profile-grid">
-          ${renderProfileSection('Tổng quan', [
-            ['Họ tên đầy đủ', teacher.fullName],
-            ['Tên hiển thị', teacher.displayName],
-            ['Vai trò chính', teacher.mainRole],
-            ['Trạng thái', getTeacherStatusLabel(teacher.status)],
-            ['Hình thức', getTeacherTypeLabel(teacher.teacherType)],
-          ])}
-          ${renderProfileSection('Liên hệ', [
-            ['Số điện thoại', teacher.phone],
-            ['Email', teacher.email],
-          ])}
-          <section class="teacher-profile-section">
-            <h5>Giảng dạy</h5>
-            ${renderProfileTagGroup('Chuyên môn', teacher.specialties)}
-            ${renderProfileTagGroup('Cấp độ dạy', (teacher.levels ?? []).map(getTeacherLevelLabel))}
-            ${renderProfileTagGroup('Nhóm lớp phù hợp', teacher.teachingGroups)}
-            ${renderProfileTagGroup('Hình thức dạy phù hợp', (teacher.teachingModes ?? []).map(getTeacherModeLabel))}
-            ${renderProfileTagGroup('Điểm mạnh', teacher.strengths)}
-            ${renderProfileTagGroup('Tag nội bộ', teacher.internalTags)}
-          </section>
-          <section class="teacher-profile-section">
-            <h5>Khả dụng giảng dạy</h5>
-            ${renderProfileTagGroup('Ngày có thể dạy', (teacher.availableDays ?? []).map(getTeacherDayLabel), 'Chưa cập nhật')}
-            ${renderProfileTagGroup('Khung giờ ưu tiên', (teacher.preferredTimeSlots ?? []).map(getTeacherTimeSlotLabel), 'Chưa cập nhật')}
-            ${renderProfileRows([
-              ['Nhận lớp mới', teacher.canTakeNewClass ? 'Có thể nhận lớp mới' : 'Chưa nhận lớp mới'],
-              ['Tối đa/tuần', getMaxSessionsLabel(teacher.maxSessionsPerWeek)],
-              ['Ghi chú lịch dạy', teacher.scheduleNote || 'Chưa cập nhật'],
-            ])}
-          </section>
-          ${renderTeacherStudentSection(teacher, studentLinks)}
-          <section class="teacher-profile-section">
-            <h5>Ghi chú nội bộ</h5>
-            <p>${escapeHtml(teacher.note || '-')}</p>
-          </section>
-          ${renderProfileSection('Metadata', [
-            ['Ngày tạo', formatTeacherDateTime(teacher.createdAt)],
-            ['Cập nhật gần nhất', formatTeacherDateTime(teacher.updatedAt)],
-          ])}
+        <div class="teacher-profile-grid teacher-profile-two-pane">
+          ${renderTeacherInfoPane(teacher, classSessions)}
+          ${renderTeacherTeachingUpdatePane(teacher, studentLinks)}
         </div>
       </section>
     </div>
+  `
+}
+
+function renderTeacherInfoPane(teacher, classSessions = []) {
+  return `
+    <section class="teacher-profile-pane teacher-profile-info-pane" aria-label="Thông tin giáo viên">
+      <div class="teacher-profile-pane-heading">
+        <h5>Thông tin giáo viên</h5>
+        <span>${escapeHtml(getTeacherTypeLabel(teacher.teacherType))}</span>
+      </div>
+      ${renderProfileSection('Tổng quan', [
+        ['Họ tên đầy đủ', teacher.fullName],
+        ['Tên hiển thị', teacher.displayName],
+        ['Trạng thái', getTeacherStatusLabel(teacher.status)],
+        ['Hình thức', getTeacherTypeLabel(teacher.teacherType)],
+      ])}
+      ${renderProfileSection('Liên hệ', [
+        ['Số điện thoại', teacher.phone],
+        ['Email', teacher.email],
+      ])}
+      <section class="teacher-profile-section">
+        <h5>Giảng dạy</h5>
+        ${renderProfileTagGroup('Lớp dạy phù hợp', (teacher.levels ?? []).map(getTeacherLevelLabel), 'Chưa cập nhật')}
+        ${renderProfileTagGroup('Hình thức dạy phù hợp', (teacher.teachingModes ?? []).map(getTeacherModeLabel), 'Chưa cập nhật')}
+      </section>
+      ${renderTeacherAvailabilityProfile(teacher, classSessions)}
+    </section>
+  `
+}
+
+function renderTeacherTeachingUpdatePane(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+  return `
+    <section class="teacher-profile-pane teacher-teaching-update-pane" aria-label="Cập nhật tình hình giảng dạy">
+      <div class="teacher-profile-pane-heading">
+        <h5>Cập nhật tình hình giảng dạy</h5>
+        <span>${Number(studentLinks.total || 0).toLocaleString('vi-VN')} học viên liên quan</span>
+      </div>
+      ${renderTeacherStudentUpdateSummary(teacher, studentLinks)}
+      ${
+        studentLinks.students.length
+          ? `
+            <div class="teacher-update-table-wrap">
+              <table class="teacher-update-table">
+                <thead>
+                  <tr>
+                    <th>Tên học viên</th>
+                    <th>Trình độ hiện tại</th>
+                    <th>Điểm bài kiểm tra gần nhất</th>
+                    <th>Nhận xét từ giáo viên</th>
+                    <th>Kế hoạch giảng dạy tiếp theo</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${studentLinks.students.map(renderTeacherStudentUpdateRow).join('')}
+                </tbody>
+              </table>
+            </div>
+          `
+          : '<div class="teacher-student-empty">Chưa có học viên liên quan.</div>'
+      }
+    </section>
+  `
+}
+
+function renderTeacherStudentUpdateSummary(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+  const inactiveWarning =
+    teacher.status === 'inactive' && studentLinks.total
+      ? '<p class="teacher-student-warning">Giáo viên đã ngừng dạy nhưng vẫn còn học viên/lịch liên kết.</p>'
+      : ''
+
+  return `
+    <div class="teacher-student-summary" aria-label="Tổng hợp học viên của giáo viên">
+      ${renderTeacherStudentSummaryItem('Tổng', studentLinks.total)}
+      ${renderTeacherStudentSummaryItem('Phụ trách chính', studentLinks.primaryCount)}
+      ${renderTeacherStudentSummaryItem('Có trong lịch', studentLinks.scheduledCount)}
+      ${renderTeacherStudentSummaryItem('Cả hai', studentLinks.bothCount)}
+    </div>
+    ${inactiveWarning}
+  `
+}
+
+function renderTeacherStudentUpdateRow(link) {
+  const student = link.student ?? {}
+  const studentName = getStudentDisplayName(student, link.studentId)
+
+  return `
+    <tr>
+      <td>
+        <strong title="${escapeAttribute(studentName)}">${escapeHtml(studentName)}</strong>
+        <span>${escapeHtml(link.sourceLabel || 'Học viên liên quan')}</span>
+      </td>
+      <td>${escapeHtml(getStudentLevelLabel(student) || 'Chưa cập nhật')}</td>
+      <td>${escapeHtml(getStudentTestScoreLabel(student))}</td>
+      <td>${escapeHtml(getTeacherStudentReviewLabel(student))}</td>
+      <td>${escapeHtml(getTeacherStudentPlanLabel(student))}</td>
+      <td title="${escapeAttribute(getTeacherStudentNoteLabel(student))}">${escapeHtml(getTeacherStudentNoteLabel(student))}</td>
+    </tr>
   `
 }
 
@@ -558,6 +622,32 @@ function renderProfileTagGroup(label, values = [], emptyLabel = '-') {
           : `<p>${escapeHtml(emptyLabel)}</p>`
       }
     </div>
+  `
+}
+
+function renderTeacherAvailabilityProfile(teacher, classSessions = []) {
+  if (teacher.teacherType === 'fulltime') {
+    return `
+      <section class="teacher-profile-section">
+        <h5>Khả dụng giảng dạy</h5>
+        <p class="teacher-availability-note">Full-time: lịch dạy được cơ sở sắp xếp trực tiếp.</p>
+        ${teacher.scheduleNote ? renderProfileRows([['Ghi chú lịch dạy', teacher.scheduleNote]]) : ''}
+      </section>
+    `
+  }
+
+  return `
+    <section class="teacher-profile-section">
+      <h5>Khả dụng giảng dạy</h5>
+      ${renderProfileTagGroup('Ngày có thể dạy', (teacher.availableDays ?? []).map(getTeacherDayLabel), 'Chưa cập nhật')}
+      ${renderProfileTagGroup('Khung giờ ưu tiên', (teacher.preferredTimeSlots ?? []).map(getTeacherTimeSlotLabel), 'Chưa cập nhật')}
+      ${renderProfileTagGroup('Ca học / Lớp có thể dạy', getTeacherClassSessionLabels(teacher.availableClassSessionIds, classSessions), 'Chưa chọn ca học')}
+      ${renderProfileRows([
+        ['Nhận lớp mới', teacher.canTakeNewClass ? 'Có thể nhận lớp mới' : 'Chưa nhận lớp mới'],
+        ['Tối đa/tuần', getMaxSessionsLabel(teacher.maxSessionsPerWeek)],
+        ['Ghi chú lịch dạy', teacher.scheduleNote || 'Chưa cập nhật'],
+      ])}
+    </section>
   `
 }
 
@@ -630,7 +720,7 @@ function renderTeacherStudentRow(link) {
   `
 }
 
-function renderTeacherForm(formState) {
+function renderTeacherForm(formState, classSessions = []) {
   const isEditMode = formState.mode === 'edit'
 
   return `
@@ -657,16 +747,8 @@ function renderTeacherForm(formState) {
             formState,
             teacherTypes.map((teacherType) => [teacherType, getTeacherTypeLabel(teacherType)]),
           )}
-          ${renderTeacherInputField('Vai trò', 'mainRole', formState)}
-          ${renderTeacherInputField(
-            'Chuyên môn',
-            'specialties',
-            formState,
-            'text',
-            'Cờ vua căn bản, Lớp thiếu nhi',
-          )}
           <fieldset class="teacher-level-field">
-            <legend>Cấp độ dạy</legend>
+            <legend>Lớp dạy phù hợp</legend>
             <div class="teacher-level-options">
               ${teacherLevelOptions
                 .map(
@@ -689,14 +771,6 @@ function renderTeacherForm(formState) {
             <span>Ghi chú</span>
             <textarea data-teacher-form-field="note">${escapeHtml(formState.values.note ?? '')}</textarea>
           </label>
-          <div class="teacher-form-subheading teacher-form-field-wide">Thông tin giảng dạy mở rộng</div>
-          ${renderTeacherInputField(
-            'Nhóm lớp phù hợp',
-            'teachingGroups',
-            formState,
-            'text',
-            'Lớp thiếu nhi, Lớp nhập môn, Kèm 1-1',
-          )}
           <fieldset class="teacher-level-field">
             <legend>Hình thức dạy</legend>
             <div class="teacher-level-options">
@@ -718,73 +792,13 @@ function renderTeacherForm(formState) {
             </div>
           </fieldset>
           ${renderTeacherInputField(
-            'Điểm mạnh',
-            'strengths',
-            formState,
-            'text',
-            'Kiên nhẫn với học viên nhỏ tuổi, Dạy nền tảng tốt',
-          )}
-          ${renderTeacherInputField(
             'Tag nội bộ',
             'internalTags',
             formState,
             'text',
             'ưu tiên lớp mới, có thể kèm 1-1',
           )}
-          <div class="teacher-form-subheading teacher-form-field-wide">Khả dụng giảng dạy</div>
-          <fieldset class="teacher-level-field teacher-form-field-wide">
-            <legend>Ngày có thể dạy</legend>
-            <div class="teacher-level-options">
-              ${teacherDayOptions
-                .map(
-                  (day) => `
-                    <label>
-                      <input
-                        type="checkbox"
-                        value="${escapeAttribute(day)}"
-                        data-teacher-available-day-field
-                        ${formState.values.availableDays.includes(day) ? 'checked' : ''}
-                      />
-                      <span>${escapeHtml(getTeacherDayLabel(day))}</span>
-                    </label>
-                  `,
-                )
-                .join('')}
-            </div>
-          </fieldset>
-          <fieldset class="teacher-level-field teacher-form-field-wide">
-            <legend>Khung giờ ưu tiên</legend>
-            <div class="teacher-level-options">
-              ${teacherTimeSlotOptions
-                .map(
-                  (slot) => `
-                    <label>
-                      <input
-                        type="checkbox"
-                        value="${escapeAttribute(slot)}"
-                        data-teacher-time-slot-field
-                        ${formState.values.preferredTimeSlots.includes(slot) ? 'checked' : ''}
-                      />
-                      <span>${escapeHtml(getTeacherTimeSlotLabel(slot))}</span>
-                    </label>
-                  `,
-                )
-                .join('')}
-            </div>
-          </fieldset>
-          <label class="teacher-level-field teacher-new-class-field">
-            <span>Có thể nhận lớp mới</span>
-            <input
-              type="checkbox"
-              data-teacher-new-class-field
-              ${formState.values.canTakeNewClass ? 'checked' : ''}
-            />
-          </label>
-          ${renderTeacherInputField('Số buổi tối đa/tuần', 'maxSessionsPerWeek', formState, 'number', '6')}
-          <label class="teacher-form-field teacher-form-field-wide">
-            <span>Ghi chú lịch dạy</span>
-            <textarea data-teacher-form-field="scheduleNote">${escapeHtml(formState.values.scheduleNote ?? '')}</textarea>
-          </label>
+          ${renderTeacherAvailabilityFields(formState, classSessions)}
         </div>
         ${renderTeacherFormErrors(formState.errors)}
         <div class="teacher-form-actions">
@@ -793,6 +807,117 @@ function renderTeacherForm(formState) {
         </div>
       </form>
     </div>
+  `
+}
+
+function renderTeacherAvailabilityFields(formState, classSessions = []) {
+  if (formState.values.teacherType === 'fulltime') {
+    return `
+      <div class="teacher-form-subheading teacher-form-field-wide">Khả dụng giảng dạy</div>
+      <div class="teacher-availability-note teacher-form-field-wide">
+        Full-time: lịch dạy được cơ sở sắp xếp trực tiếp.
+      </div>
+      <label class="teacher-form-field teacher-form-field-wide">
+        <span>Ghi chú lịch dạy</span>
+        <textarea data-teacher-form-field="scheduleNote">${escapeHtml(formState.values.scheduleNote ?? '')}</textarea>
+      </label>
+    `
+  }
+
+  return `
+    <div class="teacher-form-subheading teacher-form-field-wide">Khả dụng giảng dạy</div>
+    <fieldset class="teacher-level-field teacher-form-field-wide">
+      <legend>Ngày có thể dạy</legend>
+      <div class="teacher-level-options">
+        ${teacherDayOptions
+          .map(
+            (day) => `
+              <label>
+                <input
+                  type="checkbox"
+                  value="${escapeAttribute(day)}"
+                  data-teacher-available-day-field
+                  ${formState.values.availableDays.includes(day) ? 'checked' : ''}
+                />
+                <span>${escapeHtml(getTeacherDayLabel(day))}</span>
+              </label>
+            `,
+          )
+          .join('')}
+      </div>
+    </fieldset>
+    <fieldset class="teacher-level-field teacher-form-field-wide">
+      <legend>Khung giờ ưu tiên</legend>
+      <div class="teacher-level-options">
+        ${teacherTimeSlotOptions
+          .map(
+            (slot) => `
+              <label>
+                <input
+                  type="checkbox"
+                  value="${escapeAttribute(slot)}"
+                  data-teacher-time-slot-field
+                  ${formState.values.preferredTimeSlots.includes(slot) ? 'checked' : ''}
+                />
+                <span>${escapeHtml(getTeacherTimeSlotLabel(slot))}</span>
+              </label>
+            `,
+          )
+          .join('')}
+      </div>
+    </fieldset>
+    ${renderTeacherClassSessionField(formState, classSessions)}
+    <label class="teacher-level-field teacher-new-class-field">
+      <span>Có thể nhận lớp mới</span>
+      <input
+        type="checkbox"
+        data-teacher-new-class-field
+        ${formState.values.canTakeNewClass ? 'checked' : ''}
+      />
+    </label>
+    ${renderTeacherInputField('Số buổi tối đa/tuần', 'maxSessionsPerWeek', formState, 'number', '6')}
+    <label class="teacher-form-field teacher-form-field-wide">
+      <span>Ghi chú lịch dạy</span>
+      <textarea data-teacher-form-field="scheduleNote">${escapeHtml(formState.values.scheduleNote ?? '')}</textarea>
+    </label>
+  `
+}
+
+function renderTeacherClassSessionField(formState, classSessions = []) {
+  const selectedIds = normalizeClassSessionIds(formState.values.availableClassSessionIds)
+  const visibleSessions = getVisibleClassSessionsForTeacher(classSessions, selectedIds)
+
+  return `
+    <fieldset class="teacher-level-field teacher-form-field-wide teacher-class-session-field">
+      <legend>Ca học / Lớp có thể dạy</legend>
+      <p>Danh mục ca học được quản lý tại Cài đặt cơ sở.</p>
+      ${
+        visibleSessions.length
+          ? `
+            <div class="teacher-level-options">
+              ${visibleSessions
+                .map((session) => {
+                  const sessionId = normalizeId(session.id)
+                  const isInactive = session.status === 'inactive' || session.isActive === false
+
+                  return `
+                    <label class="${isInactive ? 'is-inactive' : ''}">
+                      <input
+                        type="checkbox"
+                        value="${escapeAttribute(sessionId)}"
+                        data-teacher-class-session-field
+                        ${selectedIds.includes(sessionId) ? 'checked' : ''}
+                      />
+                      <span>${escapeHtml(getClassSessionLabel(session))}${isInactive ? ' (ngưng dùng)' : ''}</span>
+                    </label>
+                  `
+                })
+                .join('')}
+            </div>
+          `
+          : '<div class="teacher-empty-inline">Chưa có ca học trong Cài đặt cơ sở.</div>'
+      }
+    </fieldset>
   `
 }
 
@@ -1002,7 +1127,7 @@ function getStudentDisplayName(student, fallbackId = '') {
 }
 
 function getStudentLevelLabel(student) {
-  const level = student?.level
+  const level = student?.level ?? student?.currentLevel
 
   if (level === null || level === undefined || level === '') {
     return ''
@@ -1012,6 +1137,60 @@ function getStudentLevelLabel(student) {
   const levelMatch = levelText.match(/\d+/)
 
   return levelMatch ? `Level ${Number(levelMatch[0])}` : levelText
+}
+
+function getStudentTestScoreLabel(student) {
+  const score =
+    student?.latestTestScore ??
+    student?.testScore ??
+    student?.examScore ??
+    ''
+
+  if (score === null || score === undefined || score === '') {
+    return 'Chưa cập nhật'
+  }
+
+  const numberScore = Number(score)
+
+  if (Number.isFinite(numberScore)) {
+    return `${numberScore.toLocaleString('vi-VN')}/10`
+  }
+
+  return String(score).trim() || 'Chưa cập nhật'
+}
+
+function getTeacherStudentReviewLabel(student) {
+  return getFirstNonEmptyValue([
+    student?.teacherReview,
+    student?.teacherComment,
+    student?.learningComment,
+    student?.latestTeacherFeedback,
+  ])
+}
+
+function getTeacherStudentPlanLabel(student) {
+  return getFirstNonEmptyValue([
+    student?.teachingPlan,
+    student?.nextTeachingPlan,
+    student?.learningPlan,
+    student?.nextLearningPlan,
+  ])
+}
+
+function getTeacherStudentNoteLabel(student) {
+  return getFirstNonEmptyValue([
+    student?.note,
+    student?.latestCareNote,
+    student?.parentNotes,
+  ])
+}
+
+function getFirstNonEmptyValue(values = []) {
+  const value = values
+    .map((item) => String(item ?? '').trim())
+    .find(Boolean)
+
+  return value || 'Chưa cập nhật'
 }
 
 function getStudentBotMilestoneLabel(student) {
@@ -1193,6 +1372,16 @@ function normalizePreferredTimeSlots(slots) {
     .filter((slot) => teacherTimeSlotOptions.includes(slot))
 }
 
+function normalizeClassSessionIds(classSessionIds) {
+  return Array.from(
+    new Set(
+      (Array.isArray(classSessionIds) ? classSessionIds : [])
+        .map(normalizeId)
+        .filter(Boolean),
+    ),
+  )
+}
+
 function normalizeMaxSessionsPerWeek(value) {
   if (value === '' || value === null || value === undefined) {
     return null
@@ -1200,6 +1389,54 @@ function normalizeMaxSessionsPerWeek(value) {
 
   const numberValue = Number(value)
   return Number.isFinite(numberValue) ? Math.max(0, numberValue) : null
+}
+
+function getVisibleClassSessionsForTeacher(classSessions = [], selectedIds = []) {
+  const selectedSet = new Set(selectedIds)
+
+  return (classSessions ?? [])
+    .filter((classSession) => {
+      const classSessionId = normalizeId(classSession?.id)
+
+      return (
+        classSession &&
+        classSessionId &&
+        (classSession.status !== 'inactive' || selectedSet.has(classSessionId))
+      )
+    })
+    .sort((firstSession, secondSession) => {
+      const firstStatusRank = firstSession.status === 'inactive' ? 1 : 0
+      const secondStatusRank = secondSession.status === 'inactive' ? 1 : 0
+
+      if (firstStatusRank !== secondStatusRank) {
+        return firstStatusRank - secondStatusRank
+      }
+
+      return getClassSessionLabel(firstSession).localeCompare(getClassSessionLabel(secondSession), 'vi')
+    })
+}
+
+function getTeacherClassSessionLabels(classSessionIds = [], classSessions = []) {
+  const classSessionLookup = new Map(
+    (classSessions ?? [])
+      .filter((classSession) => classSession && classSession.id)
+      .map((classSession) => [normalizeId(classSession.id), classSession]),
+  )
+
+  return normalizeClassSessionIds(classSessionIds).map((classSessionId) => {
+    const classSession = classSessionLookup.get(classSessionId)
+
+    if (!classSession) {
+      return `Ca học đã lưu (${classSessionId})`
+    }
+
+    const label = getClassSessionLabel(classSession)
+    return classSession.status === 'inactive' ? `${label} (ngưng dùng)` : label
+  })
+}
+
+function getClassSessionLabel(classSession) {
+  return String(classSession?.displayLabel || classSession?.name || 'Ca học').trim()
 }
 
 function normalizeText(value) {

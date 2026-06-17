@@ -14,6 +14,48 @@ export const initialInventoryMovementFilters = {
   date: '',
 }
 
+export const initialInventoryRequestFilters = {
+  query: '',
+  status: 'all',
+  neededDate: '',
+}
+
+export const inventoryRequestStatuses = [
+  'new',
+  'pending',
+  'preparing',
+  'fulfilled',
+  'rejected',
+  'cancelled',
+]
+
+const inventoryRequestItemOptions = [
+  ['book', 'Sách'],
+  ['pencil', 'Bút chì'],
+  ['eraser', 'Gôm'],
+  ['test', 'Bài kiểm tra (Test)'],
+  ['standardChessSet', 'Bộ cờ tiêu chuẩn'],
+  ['chessClock', 'Đồng hồ thi đấu'],
+  ['scoreSheet', 'Biên bản thi đấu'],
+  ['other', 'Mục khác'],
+]
+
+const inventoryRequestUsageOptions = [
+  ['homeTutoring', 'Dạy kèm tại nhà'],
+  ['onlinePrivate', 'Dạy kèm trực tuyến'],
+  ['onlineGroup', 'Dạy nhóm trực tuyến'],
+  ['centerClass', 'Dạy tại trung tâm'],
+  ['clubPartner', 'Dạy tại CLB, đơn vị liên kết'],
+  ['other', 'Mục khác'],
+]
+
+const inventoryRequestPriorityOptions = [
+  ['low', 'Thấp'],
+  ['normal', 'Bình thường'],
+  ['high', 'Cao'],
+  ['urgent', 'Gấp'],
+]
+
 const emptyInventoryFormValues = {
   name: '',
   category: inventoryCategories[0] ?? 'Khác',
@@ -48,6 +90,29 @@ const emptyInventoryMovementFormValues = {
   costMethod: 'Tiền mặt',
   supplierName: '',
   note: '',
+}
+
+const emptyInventoryRequestFormValues = {
+  requestedByName: '',
+  requestedByRole: '',
+  requestedByPhone: '',
+  studentName: '',
+  linkedStudentId: '',
+  itemTypes: [],
+  otherItemText: '',
+  itemDetails: '',
+  usageModes: [],
+  otherUsageText: '',
+  usageLocationDetail: '',
+  neededDate: getTodayDate(),
+  priority: 'normal',
+  adminNote: '',
+}
+
+const emptyInventoryRequestStatusValues = {
+  status: 'pending',
+  adminNote: '',
+  handledBy: 'Admin',
 }
 
 export function createEmptyInventoryFormState() {
@@ -90,6 +155,30 @@ export function createInventoryMovementFormState(item) {
   }
 }
 
+export function createEmptyInventoryRequestFormState() {
+  return {
+    values: {
+      ...emptyInventoryRequestFormValues,
+      itemTypes: [],
+      usageModes: [],
+    },
+    errors: {},
+  }
+}
+
+export function createInventoryRequestStatusFormState(request) {
+  return {
+    requestId: request?.id ?? null,
+    values: {
+      ...emptyInventoryRequestStatusValues,
+      status: request?.status ?? 'pending',
+      adminNote: request?.adminNote ?? '',
+      handledBy: request?.handledBy ?? 'Admin',
+    },
+    errors: {},
+  }
+}
+
 export function renderInventoryModule(
   items,
   filters = initialInventoryFilters,
@@ -99,16 +188,28 @@ export function renderInventoryModule(
   movementFilters = initialInventoryMovementFilters,
   selectedMovementId = null,
   isHistoryPanelOpen = false,
+  inventoryRequests = [],
+  requestFilters = initialInventoryRequestFilters,
+  isRequestsPanelOpen = false,
+  requestFormState = null,
+  selectedRequestId = null,
+  requestStatusFormState = null,
+  students = [],
 ) {
   const activeFilters = { ...initialInventoryFilters, ...filters, stockAlert: 'all' }
   const activeMovementFilters = { ...initialInventoryMovementFilters, ...movementFilters }
+  const activeRequestFilters = { ...initialInventoryRequestFilters, ...requestFilters }
   const filteredItems = getFilteredInventoryItems(items, activeFilters)
   const filteredMovements = getFilteredInventoryMovements(movements, activeMovementFilters)
+  const filteredRequests = getFilteredInventoryRequests(inventoryRequests, activeRequestFilters)
   const categories = getInventoryFilterCategories(items)
   const stats = getInventoryStats(items)
   const movementStats = getInventoryMovementStats(filteredMovements)
+  const requestStats = getInventoryRequestStats(inventoryRequests)
   const selectedMovement =
     (movements ?? []).find((movement) => movement.id === selectedMovementId) ?? null
+  const selectedRequest =
+    (inventoryRequests ?? []).find((request) => request.id === selectedRequestId) ?? null
 
   return `
     <section class="inventory-module inventory-main-table" aria-label="Kho hàng">
@@ -121,6 +222,7 @@ export function renderInventoryModule(
         </div>
         <div class="inventory-dashboard-actions">
           <button type="button" data-inventory-open-subwindow="movements">Mở lịch sử nhập/xuất</button>
+          <button type="button" data-inventory-request-action="open-panel">Đề xuất vật tư</button>
           <button class="inventory-add-button" type="button" data-inventory-action="open-create">
             + Thêm vật tư
           </button>
@@ -139,6 +241,20 @@ export function renderInventoryModule(
               activeMovementFilters,
               movementStats,
               selectedMovement,
+            )
+          : ''
+      }
+      ${
+        isRequestsPanelOpen
+          ? renderInventoryRequestsPanel(
+              filteredRequests,
+              inventoryRequests,
+              activeRequestFilters,
+              requestStats,
+              requestFormState,
+              selectedRequest,
+              requestStatusFormState,
+              students,
             )
           : ''
       }
@@ -502,6 +618,165 @@ export function getInventoryMovementStats(movements) {
   )
 }
 
+export function getFilteredInventoryRequests(
+  requests,
+  filters = initialInventoryRequestFilters,
+) {
+  const activeFilters = { ...initialInventoryRequestFilters, ...filters }
+  const normalizedQuery = normalizeText(activeFilters.query)
+
+  return [...(requests ?? [])]
+    .filter((request) => {
+      const matchesStatus = activeFilters.status === 'all' || request.status === activeFilters.status
+      const matchesDate = !activeFilters.neededDate || request.neededDate === activeFilters.neededDate
+      const itemLabels = getInventoryRequestItemLabels(request)
+      const usageLabels = getInventoryRequestUsageLabels(request)
+      const matchesQuery =
+        !normalizedQuery ||
+        [
+          request.requestCode,
+          request.requestedByName,
+          request.requestedByRole,
+          request.requestedByPhone,
+          request.studentName,
+          request.itemDetails,
+          request.otherItemText,
+          request.usageLocationDetail,
+          request.otherUsageText,
+          request.adminNote,
+          request.handledBy,
+          ...itemLabels,
+          ...usageLabels,
+        ].some((value) => normalizeText(value).includes(normalizedQuery))
+
+      return matchesStatus && matchesDate && matchesQuery
+    })
+    .sort(compareInventoryRequests)
+}
+
+export function getInventoryRequestStats(requests = []) {
+  return (requests ?? []).reduce(
+    (stats, request) => {
+      stats.total += 1
+
+      if (request.status === 'new' || request.status === 'pending') {
+        stats.open += 1
+      }
+
+      if (request.status === 'preparing') {
+        stats.preparing += 1
+      }
+
+      if (request.status === 'fulfilled') {
+        stats.fulfilled += 1
+      }
+
+      if (request.status === 'rejected' || request.status === 'cancelled') {
+        stats.closed += 1
+      }
+
+      return stats
+    },
+    {
+      total: 0,
+      open: 0,
+      preparing: 0,
+      fulfilled: 0,
+      closed: 0,
+    },
+  )
+}
+
+export function validateInventoryRequestForm(values) {
+  const errors = {}
+
+  if (!String(values.requestedByName ?? '').trim()) {
+    errors.requestedByName = 'Vui lòng nhập họ tên người đề xuất.'
+  }
+
+  if (!String(values.studentName ?? '').trim()) {
+    errors.studentName = 'Vui lòng nhập học viên được đề xuất.'
+  }
+
+  if (!normalizeInventoryRequestValues(values.itemTypes).length) {
+    errors.itemTypes = 'Vui lòng chọn ít nhất một dụng cụ/sản phẩm.'
+  }
+
+  if (!String(values.itemDetails ?? '').trim()) {
+    errors.itemDetails = 'Vui lòng nhập mô tả số lượng và nội dung chi tiết.'
+  }
+
+  if (!normalizeInventoryRequestValues(values.usageModes).length) {
+    errors.usageModes = 'Vui lòng chọn hình thức/địa điểm sử dụng.'
+  }
+
+  if (!String(values.usageLocationDetail ?? '').trim()) {
+    errors.usageLocationDetail = 'Vui lòng nhập cụ thể nơi sử dụng.'
+  }
+
+  if (!isValidDate(values.neededDate)) {
+    errors.neededDate = 'Ngày cần sản phẩm không hợp lệ.'
+  }
+
+  return errors
+}
+
+export function validateInventoryRequestStatusForm(values) {
+  const errors = {}
+
+  if (!inventoryRequestStatuses.includes(values.status)) {
+    errors.status = 'Trạng thái xử lý không hợp lệ.'
+  }
+
+  return errors
+}
+
+export function buildInventoryRequestFromForm(values, existingRequest = null, allRequests = []) {
+  const now = new Date().toISOString()
+  const itemTypes = normalizeInventoryRequestValues(values.itemTypes)
+  const usageModes = normalizeInventoryRequestValues(values.usageModes)
+
+  return {
+    ...existingRequest,
+    id: existingRequest?.id ?? createInventoryRequestId(),
+    requestCode: existingRequest?.requestCode ?? createInventoryRequestCode(now, allRequests),
+    requestedByName: String(values.requestedByName ?? '').trim(),
+    requestedByRole: String(values.requestedByRole ?? '').trim(),
+    requestedByPhone: String(values.requestedByPhone ?? '').trim(),
+    studentName: String(values.studentName ?? '').trim(),
+    linkedStudentId: String(values.linkedStudentId ?? '').trim(),
+    itemTypes,
+    otherItemText: itemTypes.includes('other') ? String(values.otherItemText ?? '').trim() : '',
+    itemDetails: String(values.itemDetails ?? '').trim(),
+    usageModes,
+    otherUsageText: usageModes.includes('other') ? String(values.otherUsageText ?? '').trim() : '',
+    usageLocationDetail: String(values.usageLocationDetail ?? '').trim(),
+    neededDate: String(values.neededDate ?? '').trim(),
+    priority: getInventoryRequestPriorityValue(values.priority),
+    status: existingRequest?.status ?? 'new',
+    adminNote: String(values.adminNote ?? '').trim(),
+    handledBy: existingRequest?.handledBy ?? '',
+    handledAt: existingRequest?.handledAt ?? '',
+    createdAt: existingRequest?.createdAt ?? now,
+    updatedAt: now,
+  }
+}
+
+export function updateInventoryRequestStatus(request, values) {
+  const now = new Date().toISOString()
+  const nextStatus = inventoryRequestStatuses.includes(values.status) ? values.status : request.status
+  const isHandledStatus = ['fulfilled', 'rejected', 'cancelled'].includes(nextStatus)
+
+  return {
+    ...request,
+    status: nextStatus,
+    adminNote: String(values.adminNote ?? '').trim(),
+    handledBy: String(values.handledBy ?? '').trim(),
+    handledAt: isHandledStatus ? request.handledAt || now : '',
+    updatedAt: now,
+  }
+}
+
 export function validateInventoryForm(values) {
   const errors = {}
   const quantity = parseInventoryInteger(values.quantity)
@@ -811,6 +1086,99 @@ function renderInventorySelectField(
   `
 }
 
+function renderInventoryRequestInput(
+  label,
+  name,
+  formState,
+  type = 'text',
+  placeholder = '',
+  disabled = false,
+  dataAttribute = 'inventory-request-field',
+) {
+  return `
+    <label class="inventory-field ${formState.errors[name] ? 'has-error' : ''} ${disabled ? 'is-disabled' : ''}">
+      <span>${escapeHtml(label)}</span>
+      <input
+        type="${escapeAttribute(type)}"
+        value="${escapeAttribute(formState.values[name] ?? '')}"
+        placeholder="${escapeAttribute(placeholder)}"
+        ${disabled ? 'disabled' : ''}
+        data-${dataAttribute}="${escapeAttribute(name)}"
+      />
+      ${renderFieldError(formState.errors[name])}
+    </label>
+  `
+}
+
+function renderInventoryRequestSelect(
+  label,
+  name,
+  formState,
+  options,
+  dataAttribute = 'inventory-request-field',
+) {
+  return `
+    <label class="inventory-field ${formState.errors[name] ? 'has-error' : ''}">
+      <span>${escapeHtml(label)}</span>
+      <select data-${dataAttribute}="${escapeAttribute(name)}">
+        ${options
+          .map(([value, optionLabel]) => renderOption(value, optionLabel, formState.values[name]))
+          .join('')}
+      </select>
+      ${renderFieldError(formState.errors[name])}
+    </label>
+  `
+}
+
+function renderInventoryRequestStudentSelect(formState, students = []) {
+  return `
+    <label class="inventory-field">
+      <span>Học viên liên quan (nếu có)</span>
+      <select data-inventory-request-field="linkedStudentId">
+        ${renderOption('', 'Không liên kết học viên', formState.values.linkedStudentId)}
+        ${(students ?? [])
+          .filter((student) => student && !student.isDeleted)
+          .map((student) =>
+            renderOption(
+              student.id,
+              student.fullName || student.name || student.id,
+              formState.values.linkedStudentId,
+            ),
+          )
+          .join('')}
+      </select>
+    </label>
+  `
+}
+
+function renderInventoryRequestCheckboxGroup(label, name, formState, options) {
+  const selectedValues = normalizeInventoryRequestValues(formState.values[name])
+
+  return `
+    <fieldset class="inventory-request-checkbox-group span-full ${formState.errors[name] ? 'has-error' : ''}">
+      <legend>${escapeHtml(label)}</legend>
+      <div class="inventory-request-checkbox-options">
+        ${options
+          .map(
+            ([value, optionLabel]) => `
+              <label>
+                <input
+                  type="checkbox"
+                  value="${escapeAttribute(value)}"
+                  data-inventory-request-list-field="${escapeAttribute(name)}"
+                  ${selectedValues.includes(value) ? 'checked' : ''}
+                />
+                <span>${escapeHtml(optionLabel)}</span>
+              </label>
+            `,
+          )
+          .join('')}
+      </div>
+      ${renderFieldError(formState.errors[name])}
+    </fieldset>
+  `
+}
+
 function renderInventoryMovementHistory(
   filteredMovements,
   allMovements,
@@ -955,6 +1323,220 @@ function renderInventoryMovementDetail(movement, items) {
   `
 }
 
+function renderInventoryRequestsPanel(
+  filteredRequests,
+  allRequests,
+  filters,
+  stats,
+  formState,
+  selectedRequest,
+  statusFormState,
+  students = [],
+) {
+  return `
+    <div class="inventory-request-backdrop" role="presentation">
+      <section class="inventory-request-panel" aria-label="Đề xuất vật tư">
+        <div class="inventory-request-header">
+          <div>
+            <h4>Đề xuất vật tư</h4>
+            <p>Tiếp nhận đề xuất dụng cụ/sản phẩm, không tự trừ tồn kho hoặc tạo nhập/xuất kho.</p>
+          </div>
+          <div class="inventory-request-header-actions">
+            <button type="button" data-inventory-request-action="open-create">+ Thêm đề xuất</button>
+            <button type="button" data-inventory-request-action="close-panel" aria-label="Đóng đề xuất">Đóng</button>
+          </div>
+        </div>
+        <div class="inventory-request-stats" aria-label="Tổng quan đề xuất vật tư">
+          ${renderInventoryHistoryStat('Tổng đề xuất', stats.total, 'neutral')}
+          ${renderInventoryHistoryStat('Mới / Chờ xử lý', stats.open, 'in')}
+          ${renderInventoryHistoryStat('Đang chuẩn bị', stats.preparing, 'out')}
+          ${renderInventoryHistoryStat('Đã hoàn tất', stats.fulfilled, 'in')}
+        </div>
+        <div class="inventory-request-filters" aria-label="Tìm kiếm và lọc đề xuất vật tư">
+          <label class="inventory-request-search">
+            <span>Tìm kiếm</span>
+            <input
+              type="search"
+              value="${escapeAttribute(filters.query)}"
+              placeholder="Mã, người đề xuất, học viên, vật tư, nơi dùng"
+              data-inventory-request-filter="query"
+            />
+          </label>
+          <label>
+            <span>Trạng thái</span>
+            <select data-inventory-request-filter="status">
+              ${renderOption('all', 'Tất cả trạng thái', filters.status)}
+              ${inventoryRequestStatuses
+                .map((status) => renderOption(status, getInventoryRequestStatusLabel(status), filters.status))
+                .join('')}
+            </select>
+          </label>
+          <label>
+            <span>Ngày cần</span>
+            <input
+              type="date"
+              value="${escapeAttribute(filters.neededDate)}"
+              data-inventory-request-filter="neededDate"
+            />
+          </label>
+        </div>
+        ${
+          filteredRequests.length
+            ? `
+              <div class="inventory-request-table-wrap">
+                <table class="inventory-request-table">
+                  <thead>
+                    <tr>
+                      <th>Mã đề xuất</th>
+                      <th>Người đề xuất</th>
+                      <th>Học viên</th>
+                      <th>Vật tư</th>
+                      <th>Ngày cần</th>
+                      <th>Trạng thái</th>
+                      <th>Ghi chú xử lý</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${filteredRequests.map(renderInventoryRequestRow).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : '<div class="inventory-empty">Không có đề xuất vật tư phù hợp.</div>'
+        }
+        ${formState ? renderInventoryRequestForm(formState, students) : ''}
+        ${selectedRequest ? renderInventoryRequestDetail(selectedRequest, statusFormState) : ''}
+      </section>
+    </div>
+  `
+}
+
+function renderInventoryRequestRow(request) {
+  return `
+    <tr class="inventory-request-row" data-inventory-request-id="${escapeAttribute(request.id)}" tabindex="0">
+      <td>
+        <strong>${escapeHtml(request.requestCode || request.id)}</strong>
+        <span>${escapeHtml(getInventoryRequestPriorityLabel(request.priority))}</span>
+      </td>
+      <td title="${escapeAttribute(request.requestedByName)}">
+        <strong>${escapeHtml(request.requestedByName || '—')}</strong>
+        <span>${escapeHtml(request.requestedByRole || request.requestedByPhone || '—')}</span>
+      </td>
+      <td title="${escapeAttribute(request.studentName)}">${escapeHtml(request.studentName || '—')}</td>
+      <td>${renderInventoryRequestChips(getInventoryRequestItemLabels(request))}</td>
+      <td>${formatDate(request.neededDate)}</td>
+      <td>
+        <span class="inventory-request-status is-${escapeAttribute(request.status)}">
+          ${escapeHtml(getInventoryRequestStatusLabel(request.status))}
+        </span>
+      </td>
+      <td title="${escapeAttribute(request.adminNote)}">${escapeHtml(request.adminNote || '—')}</td>
+    </tr>
+  `
+}
+
+function renderInventoryRequestForm(formState, students = []) {
+  const values = formState.values
+
+  return `
+    <div class="inventory-form-backdrop" role="presentation">
+      <form class="inventory-form-panel inventory-request-form-panel" data-inventory-request-form>
+        <div class="inventory-form-header">
+          <div>
+            <h4>Thêm đề xuất vật tư</h4>
+            <p>Đề xuất chỉ lưu vào danh sách xử lý, không tự tạo nhập/xuất kho.</p>
+          </div>
+          <button type="button" data-inventory-request-action="cancel-form" aria-label="Đóng form">×</button>
+        </div>
+        <div class="inventory-form-grid">
+          ${renderInventoryRequestInput('Họ & tên người đề xuất', 'requestedByName', formState, 'text', 'Người đề xuất')}
+          ${renderInventoryRequestInput('Vai trò / bộ phận', 'requestedByRole', formState, 'text', 'Giáo viên, tư vấn, trợ giảng')}
+          ${renderInventoryRequestInput('Số điện thoại', 'requestedByPhone', formState, 'tel', '090...')}
+          ${renderInventoryRequestInput('Họ & tên học viên được đề xuất', 'studentName', formState, 'text', 'Tên học viên / lớp')}
+          ${renderInventoryRequestStudentSelect(formState, students)}
+          ${renderInventoryRequestSelect('Mức ưu tiên', 'priority', formState, inventoryRequestPriorityOptions)}
+          ${renderInventoryRequestCheckboxGroup('Dụng cụ, sản phẩm đề xuất', 'itemTypes', formState, inventoryRequestItemOptions)}
+          ${renderInventoryRequestInput('Mục khác nếu có', 'otherItemText', formState, 'text', 'Nội dung vật tư khác', !values.itemTypes.includes('other'))}
+          <label class="inventory-field span-full ${formState.errors.itemDetails ? 'has-error' : ''}">
+            <span>Mô tả số lượng và nội dung chi tiết</span>
+            <textarea data-inventory-request-field="itemDetails">${escapeHtml(values.itemDetails ?? '')}</textarea>
+            ${renderFieldError(formState.errors.itemDetails)}
+          </label>
+          ${renderInventoryRequestCheckboxGroup('Hình thức/địa điểm sử dụng', 'usageModes', formState, inventoryRequestUsageOptions)}
+          ${renderInventoryRequestInput('Mục khác nếu có', 'otherUsageText', formState, 'text', 'Hình thức sử dụng khác', !values.usageModes.includes('other'))}
+          ${renderInventoryRequestInput('Cụ thể nơi sử dụng', 'usageLocationDetail', formState, 'text', 'Phòng học, CLB, địa chỉ cụ thể')}
+          ${renderInventoryRequestInput('Ngày cần sản phẩm', 'neededDate', formState, 'date')}
+          <label class="inventory-field span-full">
+            <span>Ghi chú thêm</span>
+            <textarea data-inventory-request-field="adminNote">${escapeHtml(values.adminNote ?? '')}</textarea>
+          </label>
+        </div>
+        ${renderFormErrors(formState.errors)}
+        <div class="inventory-form-actions">
+          <span></span>
+          <div>
+            <button type="button" data-inventory-request-action="cancel-form">Hủy</button>
+            <button class="inventory-save-button" type="submit">Lưu đề xuất</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  `
+}
+
+function renderInventoryRequestDetail(request, statusFormState) {
+  const formState = statusFormState ?? createInventoryRequestStatusFormState(request)
+
+  return `
+    <div class="inventory-form-backdrop" role="presentation">
+      <section class="inventory-form-panel inventory-request-detail-panel" aria-label="Chi tiết đề xuất vật tư">
+        <div class="inventory-form-header">
+          <div>
+            <h4>Chi tiết đề xuất ${escapeHtml(request.requestCode || '')}</h4>
+            <p>Chỉ cập nhật trạng thái xử lý, không tạo nhập/xuất kho.</p>
+          </div>
+          <button type="button" data-inventory-request-detail-action="close" aria-label="Đóng chi tiết">×</button>
+        </div>
+        <div class="inventory-request-detail-grid">
+          ${renderMovementDetailField('Mã đề xuất', request.requestCode)}
+          ${renderMovementDetailField('Người đề xuất', request.requestedByName)}
+          ${renderMovementDetailField('Vai trò / SĐT', [request.requestedByRole, request.requestedByPhone].filter(Boolean).join(' · ') || '—')}
+          ${renderMovementDetailField('Học viên', request.studentName)}
+          ${renderMovementDetailField('Vật tư đề xuất', getInventoryRequestItemLabels(request).join(', '), true)}
+          ${renderMovementDetailField('Mô tả số lượng/nội dung', request.itemDetails, true)}
+          ${renderMovementDetailField('Hình thức sử dụng', getInventoryRequestUsageLabels(request).join(', '), true)}
+          ${renderMovementDetailField('Nơi sử dụng cụ thể', request.usageLocationDetail, true)}
+          ${renderMovementDetailField('Ngày cần', formatDate(request.neededDate))}
+          ${renderMovementDetailField('Trạng thái', getInventoryRequestStatusLabel(request.status))}
+          ${renderMovementDetailField('Ghi chú xử lý', request.adminNote || '—', true)}
+          ${renderMovementDetailField('Người xử lý', request.handledBy || '—')}
+          ${renderMovementDetailField('Thời gian xử lý', request.handledAt ? formatDateTime(request.handledAt) : '—')}
+          ${renderMovementDetailField('Ngày tạo', formatDateTime(request.createdAt))}
+          ${renderMovementDetailField('Cập nhật gần nhất', formatDateTime(request.updatedAt))}
+        </div>
+        <form class="inventory-request-status-form" data-inventory-request-status-form>
+          <div class="inventory-form-grid">
+            ${renderInventoryRequestSelect('Trạng thái xử lý', 'status', formState, inventoryRequestStatuses.map((status) => [status, getInventoryRequestStatusLabel(status)]), 'inventory-request-status-field')}
+            ${renderInventoryRequestInput('Người xử lý', 'handledBy', formState, 'text', 'Admin', false, 'inventory-request-status-field')}
+            <label class="inventory-field span-full">
+              <span>Ghi chú xử lý</span>
+              <textarea data-inventory-request-status-field="adminNote">${escapeHtml(formState.values.adminNote ?? '')}</textarea>
+            </label>
+          </div>
+          ${renderFormErrors(formState.errors)}
+          <div class="inventory-form-actions">
+            <span></span>
+            <div>
+              <button type="button" data-inventory-request-detail-action="close">Đóng</button>
+              <button class="inventory-save-button" type="submit">Cập nhật trạng thái</button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </div>
+  `
+}
+
 function renderMovementDetailField(label, value, wide = false) {
   return `
     <div class="inventory-movement-detail-field ${wide ? 'span-full' : ''}">
@@ -1083,6 +1665,106 @@ function compareInventoryMovements(firstMovement, secondMovement) {
   }
 
   return new Date(secondMovement.createdAt) - new Date(firstMovement.createdAt)
+}
+
+function compareInventoryRequests(firstRequest, secondRequest) {
+  const statusOrder = { new: 0, pending: 1, preparing: 2, fulfilled: 3, rejected: 4, cancelled: 5 }
+  const statusCompare =
+    (statusOrder[firstRequest.status] ?? 99) - (statusOrder[secondRequest.status] ?? 99)
+
+  if (statusCompare !== 0) {
+    return statusCompare
+  }
+
+  return new Date(secondRequest.createdAt) - new Date(firstRequest.createdAt)
+}
+
+function renderInventoryRequestChips(values = []) {
+  const visibleValues = values.filter(Boolean)
+
+  if (!visibleValues.length) {
+    return '—'
+  }
+
+  return `
+    <div class="inventory-request-chip-list">
+      ${visibleValues.slice(0, 3).map((value) => `<span>${escapeHtml(value)}</span>`).join('')}
+      ${visibleValues.length > 3 ? `<small>+${visibleValues.length - 3}</small>` : ''}
+    </div>
+  `
+}
+
+function getInventoryRequestItemLabels(request) {
+  const labelLookup = new Map(inventoryRequestItemOptions)
+  const labels = normalizeInventoryRequestValues(request?.itemTypes).map((itemType) =>
+    itemType === 'other'
+      ? request?.otherItemText || labelLookup.get(itemType) || itemType
+      : labelLookup.get(itemType) || itemType,
+  )
+
+  return labels.filter(Boolean)
+}
+
+function getInventoryRequestUsageLabels(request) {
+  const labelLookup = new Map(inventoryRequestUsageOptions)
+  const labels = normalizeInventoryRequestValues(request?.usageModes).map((usageMode) =>
+    usageMode === 'other'
+      ? request?.otherUsageText || labelLookup.get(usageMode) || usageMode
+      : labelLookup.get(usageMode) || usageMode,
+  )
+
+  return labels.filter(Boolean)
+}
+
+function getInventoryRequestStatusLabel(status) {
+  const labels = {
+    new: 'Mới gửi',
+    pending: 'Chờ xử lý',
+    preparing: 'Đang chuẩn bị',
+    fulfilled: 'Đã hoàn tất',
+    rejected: 'Từ chối',
+    cancelled: 'Hủy',
+  }
+
+  return labels[status] ?? 'Mới gửi'
+}
+
+function getInventoryRequestPriorityLabel(priority) {
+  const labels = {
+    low: 'Ưu tiên thấp',
+    normal: 'Bình thường',
+    high: 'Ưu tiên cao',
+    urgent: 'Cần gấp',
+  }
+
+  return labels[priority] ?? 'Bình thường'
+}
+
+function getInventoryRequestPriorityValue(priority) {
+  return ['low', 'normal', 'high', 'urgent'].includes(priority) ? priority : 'normal'
+}
+
+function normalizeInventoryRequestValues(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+function createInventoryRequestId() {
+  return `inventory-request-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function createInventoryRequestCode(createdAt, requests = []) {
+  const dateKey = new Date(createdAt).toISOString().slice(0, 10).replace(/-/g, '')
+  const existingCount = (requests ?? []).filter((request) =>
+    String(request.requestCode ?? '').startsWith(`DXK-${dateKey}-`),
+  ).length
+
+  return `DXK-${dateKey}-${String(existingCount + 1).padStart(4, '0')}`
 }
 
 function renderOption(value, label, selectedValue) {

@@ -18,10 +18,18 @@ const activeCareStatuses = new Set([
   'trialScheduled',
 ])
 
+export const parentContactWizardSteps = [
+  { id: 1, label: 'Thông tin phụ huynh' },
+  { id: 2, label: 'Học viên mới / bé cần tư vấn' },
+  { id: 3, label: 'Tư vấn / chăm sóc' },
+  { id: 4, label: 'Lịch hẹn & đăng ký dự kiến' },
+]
+
 export const parentContactTypeLabels = {
   currentParent: 'Phụ huynh hiện tại',
   consultingLead: 'Khách tư vấn mới',
-  formerParent: 'Phụ huynh cũ',
+  reservedParent: 'Phụ huynh bảo lưu',
+  stoppedParent: 'Phụ huynh đã ngưng',
 }
 
 export const parentConsultationStatusLabels = {
@@ -47,7 +55,7 @@ export const parentContactSourceLabels = {
   unknown: 'Chưa rõ',
 }
 
-export const parentCareLogChannels = ['phone', 'zalo', 'facebook', 'direct', 'email', 'other']
+export const parentCareLogChannels = ['phone', 'zalo', 'facebook', 'direct', 'email', 'note', 'other']
 
 export const parentCareLogChannelLabels = {
   phone: 'Điện thoại',
@@ -55,6 +63,7 @@ export const parentCareLogChannelLabels = {
   facebook: 'Facebook',
   direct: 'Trực tiếp',
   email: 'Email',
+  note: 'Ghi chú nhanh',
   other: 'Khác',
 }
 
@@ -90,6 +99,12 @@ export const parentAppointmentStatusLabels = {
   rescheduled: 'Dời lịch',
 }
 
+export const childChessLevelLabels = {
+  new: 'Chưa biết chơi',
+  basic: 'Đã biết chơi cơ bản',
+  advanced: 'Muốn nâng cao trình độ',
+}
+
 const emptyParentContactValues = {
   contactType: 'consultingLead',
   parentName: '',
@@ -98,13 +113,19 @@ const emptyParentContactValues = {
   email: '',
   locationArea: '',
   studentId: '',
+  studentName: '',
+  studentSearch: '',
   leadStudentName: '',
+  studentBirthYear: '',
   leadStudentAge: '',
   leadNeed: '',
+  parentFeedbackAboutChild: '',
   consultationStatus: 'newLead',
   source: 'unknown',
   interestedProgram: '',
   preferredSchedule: '',
+  consultedAt: '',
+  registeredAt: '',
   lastNote: '',
   nextAction: '',
 }
@@ -120,6 +141,11 @@ const emptyEnrollmentDraft = {
   preferredSchedule: '',
   learningGoal: '',
   expectedStartDate: '',
+  expectedTrialDate: '',
+  childChessLevel: '',
+  trialDraftId: '',
+  trialAppointmentId: '',
+  trialScheduledAt: '',
   note: '',
   advisorName: '',
   readyAt: null,
@@ -159,12 +185,15 @@ export function createEnrollmentDraftFromContact(contact = {}) {
   return {
     ...emptyEnrollmentDraft,
     studentName: contact.leadStudentName || contact.studentName || '',
-    studentAge: contact.leadStudentAge || '',
+    studentAge: contact.leadStudentAge || calculateAgeFromBirthYear(contact.studentBirthYear) || '',
+    studentBirthYear: contact.studentBirthYear || '',
     parentName: contact.parentName || '',
     phone: contact.phone || '',
     interestedProgram: contact.interestedProgram || '',
     preferredSchedule: contact.preferredSchedule || '',
     learningGoal: contact.leadNeed || '',
+    expectedTrialDate: '',
+    childChessLevel: '',
   }
 }
 
@@ -180,6 +209,8 @@ export function createEmptyParentContactFormState() {
     enrollmentDraft: createEnrollmentDraftFromContact(),
     enrollmentErrors: {},
     enrollmentMessage: '',
+    activeStep: 1,
+    scrollTop: 0,
     errors: {},
   }
 }
@@ -196,13 +227,19 @@ export function createEditParentContactFormState(contact) {
       email: contact.email || '',
       locationArea: contact.locationArea || '',
       studentId: contact.studentId || '',
+      studentName: contact.studentName || '',
+      studentSearch: contact.studentName || '',
       leadStudentName: contact.leadStudentName || '',
+      studentBirthYear: contact.studentBirthYear || '',
       leadStudentAge: contact.leadStudentAge || '',
       leadNeed: contact.leadNeed || '',
+      parentFeedbackAboutChild: contact.parentFeedbackAboutChild || '',
       consultationStatus: contact.consultationStatus || 'newLead',
       source: contact.source || 'unknown',
       interestedProgram: contact.interestedProgram || '',
       preferredSchedule: contact.preferredSchedule || '',
+      consultedAt: contact.consultedAt || '',
+      registeredAt: contact.registeredAt || '',
       lastNote: contact.lastNote || '',
       nextAction: contact.nextAction || '',
     },
@@ -213,6 +250,8 @@ export function createEditParentContactFormState(contact) {
     enrollmentDraft: createEnrollmentDraftFromContact(contact),
     enrollmentErrors: {},
     enrollmentMessage: '',
+    activeStep: 1,
+    scrollTop: 0,
     errors: {},
   }
 }
@@ -221,7 +260,7 @@ export function validateParentContactForm(values) {
   const errors = {}
 
   if (!String(values.parentName ?? '').trim()) {
-    errors.parentName = 'Vui lòng nhập tên phụ huynh/contact.'
+    errors.parentName = 'Vui lòng nhập tên phụ huynh.'
   }
 
   if (!String(values.phone ?? '').trim()) {
@@ -238,6 +277,17 @@ export function validateParentContactForm(values) {
 
   if (!parentContactSources.includes(values.source)) {
     errors.source = 'Nguồn liên hệ không hợp lệ.'
+  }
+
+  const birthYear = String(values.studentBirthYear ?? '').trim()
+  const currentYear = new Date().getFullYear()
+  const birthYearNumber = Number.parseInt(birthYear, 10)
+
+  if (
+    birthYear &&
+    (!/^\d{4}$/.test(birthYear) || !Number.isFinite(birthYearNumber) || birthYearNumber < 1900 || birthYearNumber > currentYear)
+  ) {
+    errors.studentBirthYear = `Năm sinh cần nằm trong khoảng 1900-${currentYear}.`
   }
 
   return errors
@@ -294,8 +344,23 @@ export function validateEnrollmentReadyDraft(draft) {
     errors.phone = 'Cần có số điện thoại.'
   }
 
+  if (!String(draft.expectedTrialDate ?? '').trim()) {
+    errors.expectedTrialDate = 'Cần có ngày học thử dự kiến.'
+  }
+
+  const birthYear = String(draft.studentBirthYear ?? '').trim()
+  const currentYear = new Date().getFullYear()
+  const birthYearNumber = Number.parseInt(birthYear, 10)
+
+  if (
+    birthYear &&
+    (!/^\d{4}$/.test(birthYear) || !Number.isFinite(birthYearNumber) || birthYearNumber < 1900 || birthYearNumber > currentYear)
+  ) {
+    errors.studentBirthYear = `Năm sinh cần nằm trong khoảng 1900-${currentYear}.`
+  }
+
   if (Object.keys(errors).length) {
-    errors.summary = 'Cần có tên học viên, phụ huynh và SĐT trước khi đánh dấu sẵn sàng đăng ký.'
+    errors.summary = 'Cần có tên học viên, phụ huynh, số điện thoại và ngày học thử dự kiến.'
   }
 
   return errors
@@ -304,12 +369,15 @@ export function validateEnrollmentReadyDraft(draft) {
 export function saveEnrollmentDraftToParentContact(contact, draft) {
   const now = new Date().toISOString()
   const existingDraft = contact.enrollmentDraft ?? {}
-
-  return {
+  const normalizedDraft = normalizeEnrollmentDraftForSave({
+    ...draft,
+    trialDraftId: draft.trialDraftId || existingDraft.trialDraftId || `trial-draft-${contact.id || Date.now()}`,
+  })
+  const contactWithDraft = {
     ...contact,
     enrollmentDraft: {
       ...emptyEnrollmentDraft,
-      ...normalizeEnrollmentDraftForSave(draft),
+      ...normalizedDraft,
       isReady: Boolean(existingDraft.isReady),
       readyAt: existingDraft.readyAt || null,
       createdAt: existingDraft.createdAt || now,
@@ -317,6 +385,8 @@ export function saveEnrollmentDraftToParentContact(contact, draft) {
     },
     updatedAt: now,
   }
+
+  return upsertTrialLessonAppointment(contactWithDraft, now)
 }
 
 export function markEnrollmentReadyForParentContact(contact, draft) {
@@ -325,7 +395,8 @@ export function markEnrollmentReadyForParentContact(contact, draft) {
 
   return {
     ...savedContact,
-    consultationStatus: 'pendingEnrollment',
+    consultationStatus: 'trialScheduled',
+    nextAction: savedContact.nextAction || 'Gửi xác nhận lịch học thử',
     enrollmentDraft: {
       ...savedContact.enrollmentDraft,
       isReady: true,
@@ -336,24 +407,95 @@ export function markEnrollmentReadyForParentContact(contact, draft) {
   }
 }
 
+function upsertTrialLessonAppointment(contact, now) {
+  const draft = contact.enrollmentDraft ?? emptyEnrollmentDraft
+  const expectedTrialDate = String(draft.expectedTrialDate || draft.expectedStartDate || '').trim()
+
+  if (!expectedTrialDate) {
+    return contact
+  }
+
+  const trialDraftId = draft.trialDraftId || `trial-draft-${contact.id || Date.now()}`
+  const existingAppointments = contact.appointments ?? []
+  const existingAppointment =
+    existingAppointments.find((appointment) => appointment.id === draft.trialAppointmentId) ||
+    existingAppointments.find(
+      (appointment) =>
+        appointment.sourceType === 'trial-booking' &&
+        appointment.sourceDraftId === trialDraftId,
+    ) ||
+    existingAppointments.find(
+      (appointment) =>
+        appointment.sourceType === 'trial-booking' &&
+        appointment.appointmentType === 'trialLesson',
+    )
+  const appointmentId = existingAppointment?.id || `appointment-trial-${contact.id || Date.now()}`
+  const scheduledAt = toDateOnlyIso(expectedTrialDate)
+  const appointment = {
+    ...(existingAppointment ?? {}),
+    id: appointmentId,
+    appointmentType: 'trialLesson',
+    scheduledAt,
+    channel: existingAppointment?.channel || 'direct',
+    location: existingAppointment?.location || '',
+    status: existingAppointment?.status || 'scheduled',
+    note: buildTrialLessonAppointmentNote(draft),
+    sourceType: 'trial-booking',
+    sourceDraftId: trialDraftId,
+    createdAt: existingAppointment?.createdAt || now,
+    updatedAt: now,
+  }
+  const appointments = existingAppointment
+    ? existingAppointments.map((item) => (item.id === existingAppointment.id ? appointment : item))
+    : [appointment, ...existingAppointments]
+
+  return {
+    ...contact,
+    consultationStatus: 'trialScheduled',
+    nextAction: contact.nextAction || 'Gửi xác nhận lịch học thử',
+    appointments: sortAppointments(appointments),
+    enrollmentDraft: {
+      ...draft,
+      trialDraftId,
+      trialAppointmentId: appointmentId,
+      trialScheduledAt: scheduledAt,
+    },
+    updatedAt: now,
+  }
+}
+
+function buildTrialLessonAppointmentNote(draft) {
+  return [
+    `Học viên: ${draft.studentName || 'Chưa nhập'}`,
+    `Năm sinh: ${draft.studentBirthYear || 'Chưa nhập'}`,
+    `Phụ huynh: ${draft.parentName || 'Chưa nhập'}`,
+    `Số điện thoại liên hệ: ${draft.phone || 'Chưa nhập'}`,
+    `Trình độ hiện tại: ${childChessLevelLabels[draft.childChessLevel] || 'Chưa nhập'}`,
+    `Lịch rảnh khi đăng ký học: ${draft.preferredSchedule || 'Chưa nhập'}`,
+    draft.note ? `Ghi chú: ${draft.note}` : '',
+  ].filter(Boolean).join('\n')
+}
+
 export function buildEnrollmentSummary(contact) {
   const draft = contact.enrollmentDraft ?? emptyEnrollmentDraft
-  const ageLine = [draft.studentAge ? `${draft.studentAge} tuổi` : '', draft.studentBirthYear]
-    .filter(Boolean)
-    .join(' / ')
+  const age = draft.studentAge || calculateAgeFromBirthYear(draft.studentBirthYear)
+  const birthYearLine = draft.studentBirthYear
+    ? `${draft.studentBirthYear}${age ? ` (${age} tuổi)` : ''}`
+    : age
+      ? `${age} tuổi`
+      : ''
 
   return [
-    'THÔNG TIN ĐĂNG KÝ DỰ KIẾN',
+    'THÔNG TIN HỌC THỬ DỰ KIẾN',
     '',
     `Học viên: ${draft.studentName || 'Chưa nhập'}`,
-    `Tuổi/Năm sinh: ${ageLine || 'Chưa nhập'}`,
+    `Năm sinh (tuổi): ${birthYearLine || 'Chưa nhập'}`,
     `Phụ huynh: ${draft.parentName || 'Chưa nhập'}`,
-    `SĐT: ${draft.phone || 'Chưa nhập'}`,
-    `Chương trình quan tâm: ${draft.interestedProgram || 'Chưa nhập'}`,
-    `Lịch học mong muốn: ${draft.preferredSchedule || 'Chưa nhập'}`,
-    `Mục tiêu học: ${draft.learningGoal || 'Chưa nhập'}`,
-    `Ngày dự kiến bắt đầu: ${draft.expectedStartDate || 'Chưa nhập'}`,
-    `Người phụ trách tư vấn: ${draft.advisorName || 'Chưa nhập'}`,
+    `Số điện thoại liên hệ: ${draft.phone || 'Chưa nhập'}`,
+    `Trình độ hiện tại: ${childChessLevelLabels[draft.childChessLevel] || 'Chưa nhập'}`,
+    `Lịch rảnh khi đăng ký học: ${draft.preferredSchedule || 'Chưa nhập'}`,
+    `Ngày học thử dự kiến: ${draft.expectedTrialDate || draft.expectedStartDate || 'Chưa nhập'}`,
+    `Người tư vấn / phụ trách: ${draft.advisorName || 'Chưa nhập'}`,
     '',
     'Ghi chú:',
     draft.note || 'Chưa có ghi chú.',
@@ -381,18 +523,22 @@ export function buildParentContactFromForm(values, existingContact = null, stude
     contactType: values.contactType,
     parentName: String(values.parentName || '').trim(),
     phone: String(values.phone || '').trim(),
-    secondaryPhone: String(values.secondaryPhone || '').trim(),
+    secondaryPhone: String(values.secondaryPhone ?? existingContact?.secondaryPhone ?? '').trim(),
     email: String(values.email || '').trim(),
     studentName,
     studentId,
     leadStudentName: String(values.leadStudentName || '').trim(),
-    leadStudentAge: String(values.leadStudentAge || '').trim(),
+    studentBirthYear: String(values.studentBirthYear || '').trim(),
+    leadStudentAge: calculateAgeFromBirthYear(values.studentBirthYear) || String(values.leadStudentAge || '').trim(),
     leadNeed: String(values.leadNeed || '').trim(),
+    parentFeedbackAboutChild: String(values.parentFeedbackAboutChild || '').trim(),
     consultationStatus: values.consultationStatus,
     source: values.source,
     interestedProgram: String(values.interestedProgram || '').trim(),
     preferredSchedule: String(values.preferredSchedule || '').trim(),
     locationArea: String(values.locationArea || '').trim(),
+    consultedAt: String(values.consultedAt || '').trim(),
+    registeredAt: String(values.registeredAt || '').trim(),
     lastContactAt: String(values.lastNote || '').trim() ? now : existingContact?.lastContactAt || '',
     lastNote: String(values.lastNote || '').trim(),
     nextAction: String(values.nextAction || '').trim(),
@@ -425,6 +571,33 @@ export function addCareLogToParentContact(contact, draft) {
     lastContactAt: careLog.contactedAt,
     lastNote: careLog.content,
     nextAction: careLog.nextAction,
+    updatedAt: now,
+  }
+}
+
+export function addQuickNoteToParentContact(contact, content) {
+  const noteContent = String(content || '').trim()
+
+  if (!noteContent) {
+    return contact
+  }
+
+  const now = new Date().toISOString()
+  const careLog = {
+    id: `care-log-${Date.now()}`,
+    contactedAt: now,
+    channel: 'note',
+    content: noteContent,
+    result: '',
+    nextAction: '',
+    createdAt: now,
+  }
+
+  return {
+    ...contact,
+    careLogs: sortCareLogsNewestFirst([careLog, ...(contact.careLogs ?? [])]),
+    lastNote: noteContent,
+    lastContactAt: now,
     updatedAt: now,
   }
 }
@@ -495,7 +668,11 @@ export function getFilteredParentConsultations(contacts, filters = initialParent
         contact.email,
         contact.studentName,
         contact.leadStudentName,
+        contact.studentBirthYear,
         contact.leadNeed,
+        contact.parentFeedbackAboutChild,
+        contact.consultedAt,
+        contact.registeredAt,
         contact.lastNote,
         contact.nextAction,
         parentContactSourceLabels[contact.source],
@@ -537,6 +714,8 @@ export function renderParentConsultationModule(
   filters = initialParentConsultationFilters,
   students = [],
   formState = null,
+  quickNoteState = null,
+  noteHistoryContactId = null,
 ) {
   const stats = getParentConsultationStats(contacts)
   const filteredContacts = getFilteredParentConsultations(contacts, filters)
@@ -570,7 +749,7 @@ export function renderParentConsultationModule(
             <input
               type="search"
               value="${escapeAttribute(filters.query)}"
-              placeholder="Tên phụ huynh, SĐT, học viên, nhu cầu..."
+              placeholder="Tên phụ huynh, số điện thoại, học viên, mong muốn..."
               data-parent-consultation-filter="query"
             />
           </label>
@@ -605,6 +784,8 @@ export function renderParentConsultationModule(
         }
       </section>
       ${formState ? renderParentContactForm(formState, students) : ''}
+      ${noteHistoryContactId ? renderNoteHistoryModal(contacts, noteHistoryContactId) : ''}
+      ${quickNoteState ? renderQuickNoteModal(contacts, quickNoteState) : ''}
     </section>
   `
 }
@@ -648,11 +829,11 @@ function renderContactsTable(contacts) {
         <thead>
           <tr>
             <th>Phụ huynh / Liên hệ</th>
-            <th>Học viên / Nhu cầu</th>
+            <th>Học viên / Mong muốn</th>
             <th>Trạng thái</th>
             <th>Nguồn</th>
             <th>Ghi chú gần nhất</th>
-            <th>Việc tiếp theo</th>
+            <th>Thêm ghi chú</th>
             <th>Thao tác</th>
           </tr>
         </thead>
@@ -665,8 +846,8 @@ function renderContactsTable(contacts) {
 function renderContactRow(contact) {
   const studentSummary = getStudentSummary(contact)
   const lastContactTime = formatDateTime(contact.lastContactAt)
-  const latestNote = contact.lastNote || 'Chưa có ghi chú chăm sóc.'
-  const nextAction = contact.nextAction || 'Chưa có việc tiếp theo.'
+  const latestLog = getLatestCareLog(contact.careLogs)
+  const latestNote = contact.lastNote || latestLog?.content || 'Chưa có ghi chú'
   const upcomingAppointment = getUpcomingAppointment(contact.appointments)
 
   return `
@@ -677,8 +858,7 @@ function renderContactRow(contact) {
             ${escapeHtml(parentContactTypeLabels[contact.contactType] ?? 'Liên hệ')}
           </span>
           <strong>${escapeHtml(contact.parentName || 'Chưa có tên')}</strong>
-          <span>${escapeHtml(contact.phone || 'Chưa có SĐT')}</span>
-          ${contact.secondaryPhone ? `<small>Phụ: ${escapeHtml(contact.secondaryPhone)}</small>` : ''}
+          <span>${escapeHtml(contact.phone || 'Chưa có số điện thoại')}</span>
         </div>
       </td>
       <td>
@@ -696,14 +876,23 @@ function renderContactRow(contact) {
         <span class="parent-source-badge">${escapeHtml(parentContactSourceLabels[contact.source] ?? 'Chưa rõ')}</span>
       </td>
       <td>
-        <div class="parent-note-cell">
+        <button
+          type="button"
+          class="parent-note-cell parent-note-history-trigger"
+          data-parent-note-history-contact-id="${escapeAttribute(contact.id)}"
+        >
           <span>${escapeHtml(latestNote)}</span>
           ${lastContactTime ? `<small>${escapeHtml(lastContactTime)}</small>` : ''}
-        </div>
+        </button>
       </td>
       <td>
-        <div class="parent-action-cell">
-          <span>${escapeHtml(nextAction)}</span>
+        <div class="parent-quick-note-cell">
+          <button
+            type="button"
+            data-parent-quick-note-contact-id="${escapeAttribute(contact.id)}"
+          >
+            Thêm ghi chú
+          </button>
           ${
             upcomingAppointment
               ? `<small>Hẹn ${escapeHtml(parentAppointmentTypeLabels[upcomingAppointment.appointmentType] ?? 'Khác')}: ${escapeHtml(formatDateTime(upcomingAppointment.scheduledAt, true))}</small>`
@@ -725,70 +914,225 @@ function renderContactRow(contact) {
   `
 }
 
+function renderQuickNoteModal(contacts, quickNoteState) {
+  const contact = contacts.find((item) => item.id === quickNoteState.contactId)
+
+  if (!contact) {
+    return ''
+  }
+
+  return `
+    <div class="parent-note-modal-backdrop" role="presentation">
+      <section class="parent-note-modal is-compact" aria-label="Thêm ghi chú">
+        <div class="parent-note-modal-header">
+          <div>
+            <h3>Thêm ghi chú</h3>
+            <p>${escapeHtml(getContactNoteSubtitle(contact))}</p>
+          </div>
+          <button type="button" data-parent-quick-note-action="cancel" aria-label="Đóng">X</button>
+        </div>
+        <label class="${quickNoteState.error ? 'has-error' : ''}">
+          <span>Nội dung ghi chú</span>
+          <textarea data-parent-quick-note-field="content">${escapeHtml(quickNoteState.content || '')}</textarea>
+          ${quickNoteState.error ? `<small>${escapeHtml(quickNoteState.error)}</small>` : ''}
+        </label>
+        <div class="parent-note-modal-actions">
+          <button type="button" data-parent-quick-note-action="cancel">Hủy</button>
+          <button type="button" data-parent-quick-note-action="save">Lưu ghi chú</button>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderNoteHistoryModal(contacts, contactId) {
+  const contact = contacts.find((item) => item.id === contactId)
+
+  if (!contact) {
+    return ''
+  }
+
+  const logs = sortCareLogsNewestFirst(contact.careLogs ?? [])
+
+  return `
+    <div class="parent-note-modal-backdrop" role="presentation">
+      <section class="parent-note-modal" aria-label="Lịch sử ghi chú">
+        <div class="parent-note-modal-header">
+          <div>
+            <h3>Lịch sử ghi chú</h3>
+            <p>${escapeHtml(getContactNoteSubtitle(contact))}</p>
+          </div>
+          <button type="button" data-parent-note-history-action="close" aria-label="Đóng">X</button>
+        </div>
+        <div class="parent-note-history-list">
+          ${
+            logs.length
+              ? logs.map((log) => renderNoteHistoryItem(log)).join('')
+              : '<div class="parent-note-history-empty">Chưa có lịch sử ghi chú.</div>'
+          }
+        </div>
+        <div class="parent-note-modal-actions">
+          <button type="button" data-parent-quick-note-contact-id="${escapeAttribute(contact.id)}">
+            + Thêm ghi chú
+          </button>
+          <button type="button" data-parent-note-history-action="close">Đóng</button>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderNoteHistoryItem(log) {
+  return `
+    <article class="parent-note-history-item">
+      <div class="parent-note-history-meta">
+        <time datetime="${escapeAttribute(log.contactedAt || log.createdAt || '')}">
+          ${escapeHtml(formatFullDateTime(log.contactedAt || log.createdAt))}
+        </time>
+        <span>${escapeHtml(parentCareLogChannelLabels[log.channel] ?? 'Khác')}</span>
+      </div>
+      <p>${escapeHtml(log.content || 'Chưa có nội dung.')}</p>
+      ${log.result ? `<small><strong>Kết quả:</strong> ${escapeHtml(log.result)}</small>` : ''}
+      ${log.nextAction ? `<small><strong>Việc tiếp theo:</strong> ${escapeHtml(log.nextAction)}</small>` : ''}
+    </article>
+  `
+}
+
+function getContactNoteSubtitle(contact) {
+  return [contact.parentName, contact.studentName || contact.leadStudentName]
+    .filter(Boolean)
+    .join(' · ') || 'Liên hệ chưa có tên'
+}
+
 function renderParentContactForm(formState, students) {
   const { values, errors } = formState
   const title = formState.mode === 'edit' ? 'Sửa liên hệ tư vấn' : 'Thêm liên hệ tư vấn'
+  const activeStep = getParentContactWizardStep(formState.activeStep)
+  const saveLabel = formState.mode === 'edit' ? 'Lưu thay đổi' : 'Lưu liên hệ'
 
   return `
     <div class="parent-contact-form-backdrop" role="presentation">
       <form class="parent-contact-form" aria-label="${escapeAttribute(title)}">
         <div class="parent-contact-form-header">
-          <h3>${escapeHtml(title)}</h3>
-          <button type="button" data-parent-contact-action="cancel-form" aria-label="Đóng form">X</button>
+          <div>
+            <h3>${escapeHtml(title)}</h3>
+            <span>Bước ${activeStep}/${parentContactWizardSteps.length}</span>
+          </div>
+          <div class="parent-contact-form-header-actions">
+            <button type="button" data-parent-contact-action="save-form">${escapeHtml(saveLabel)}</button>
+            <button type="button" data-parent-contact-action="cancel-form" aria-label="Đóng form">X</button>
+          </div>
         </div>
+        ${renderParentContactWizardIndicator(activeStep)}
         ${renderFormErrorSummary(errors)}
-        <div class="parent-contact-form-scroll">
-          <section class="parent-contact-form-section">
-            <h4>Loại liên hệ</h4>
-            <div class="parent-contact-form-grid is-compact">
-              ${renderFormSelect('Loại liên hệ', 'contactType', values.contactType, parentContactTypeLabels, errors.contactType)}
-            </div>
-          </section>
-
-          <section class="parent-contact-form-section">
-            <h4>Thông tin liên hệ</h4>
-            <div class="parent-contact-form-grid">
-              ${renderFormInput('Tên phụ huynh/contact', 'parentName', values.parentName, errors.parentName)}
-              ${renderFormInput('SĐT', 'phone', values.phone, errors.phone)}
-              ${renderFormInput('SĐT phụ', 'secondaryPhone', values.secondaryPhone)}
-              ${renderFormInput('Email', 'email', values.email, '', 'email')}
-              ${renderFormInput('Khu vực', 'locationArea', values.locationArea)}
-            </div>
-          </section>
-
-          <section class="parent-contact-form-section">
-            <h4>Học viên / bé cần tư vấn</h4>
-            <div class="parent-contact-form-grid">
-              ${renderFormInput('Họ và tên bé tư vấn', 'leadStudentName', values.leadStudentName)}
-              ${renderStudentSelect(values.studentId, students)}
-              ${renderFormInput('Tuổi', 'leadStudentAge', values.leadStudentAge)}
-              ${renderFormTextarea('Nhu cầu', 'leadNeed', values.leadNeed)}
-            </div>
-          </section>
-
-          <section class="parent-contact-form-section">
-            <h4>Tư vấn/chăm sóc</h4>
-            <div class="parent-contact-form-grid">
-              ${renderFormSelect('Trạng thái', 'consultationStatus', values.consultationStatus, parentConsultationStatusLabels, errors.consultationStatus)}
-              ${renderFormSelect('Nguồn', 'source', values.source, parentContactSourceLabels, errors.source)}
-              ${renderFormInput('Chương trình quan tâm', 'interestedProgram', values.interestedProgram)}
-              ${renderFormInput('Lịch rảnh mong muốn', 'preferredSchedule', values.preferredSchedule)}
-              ${renderFormTextarea('Ghi chú gần nhất', 'lastNote', values.lastNote)}
-              ${renderFormTextarea('Việc tiếp theo', 'nextAction', values.nextAction)}
-            </div>
-          </section>
-
-          ${renderAppointmentSection(formState)}
-          ${renderEnrollmentSection(formState)}
-          ${renderCareLogSection(formState)}
+        <div
+          class="parent-contact-form-scroll"
+          data-parent-contact-form-scroll
+          data-parent-contact-step="${activeStep}"
+        >
+          ${renderParentContactWizardStep(activeStep, formState, students)}
         </div>
         <div class="parent-contact-form-footer">
-          <button type="button" data-parent-contact-action="cancel-form">Hủy</button>
-          <button type="button" data-parent-contact-action="save-form">Lưu liên hệ</button>
+          <div class="parent-contact-step-nav">
+            ${
+              activeStep > 1
+                ? '<button type="button" data-parent-contact-step-move="-1">← Quay lại</button>'
+                : ''
+            }
+            ${
+              activeStep < parentContactWizardSteps.length
+                ? '<button type="button" data-parent-contact-step-move="1">Tiếp theo →</button>'
+                : ''
+            }
+          </div>
+          <div class="parent-contact-form-footer-actions">
+            <button type="button" data-parent-contact-action="cancel-form">Hủy</button>
+            <button type="button" data-parent-contact-action="save-form">${escapeHtml(saveLabel)}</button>
+          </div>
         </div>
       </form>
     </div>
   `
+}
+
+function renderParentContactWizardIndicator(activeStep) {
+  return `
+    <nav class="parent-contact-wizard" aria-label="Các bước thêm/sửa liên hệ">
+      ${parentContactWizardSteps.map((step) => `
+        <button
+          type="button"
+          class="${step.id === activeStep ? 'is-active' : ''}"
+          data-parent-contact-step="${step.id}"
+          aria-current="${step.id === activeStep ? 'step' : 'false'}"
+        >
+          <strong>${step.id}</strong>
+          <span>${escapeHtml(step.label)}</span>
+        </button>
+      `).join('')}
+    </nav>
+  `
+}
+
+function renderParentContactWizardStep(activeStep, formState, students) {
+  const { values, errors } = formState
+
+  if (activeStep === 1) {
+    return `
+      <section class="parent-contact-form-section">
+        <h4>Thông tin phụ huynh</h4>
+        <div class="parent-contact-form-grid">
+          ${renderFormSelect('Loại liên hệ', 'contactType', values.contactType, parentContactTypeLabels, errors.contactType)}
+          ${renderFormInput('Tên phụ huynh', 'parentName', values.parentName, errors.parentName)}
+          ${renderFormInput('Số điện thoại', 'phone', values.phone, errors.phone)}
+          ${renderFormInput('Email', 'email', values.email, '', 'email')}
+          ${renderFormInput('Khu vực', 'locationArea', values.locationArea)}
+        </div>
+      </section>
+    `
+  }
+
+  if (activeStep === 2) {
+    return `
+      <section class="parent-contact-form-section">
+        <h4>Học viên mới / bé cần tư vấn</h4>
+        <div class="parent-contact-form-grid">
+          ${renderFormInput('Họ và tên bé tư vấn', 'leadStudentName', values.leadStudentName)}
+          ${renderStudentPicker(values, students)}
+          ${renderBirthYearInput(values.studentBirthYear, errors.studentBirthYear)}
+          ${renderFormTextarea('Mong muốn của phụ huynh', 'leadNeed', values.leadNeed)}
+          ${renderFormTextarea('Phụ huynh nhận xét về bé (nếu có)', 'parentFeedbackAboutChild', values.parentFeedbackAboutChild)}
+        </div>
+      </section>
+    `
+  }
+
+  if (activeStep === 3) {
+    return `
+      <section class="parent-contact-form-section">
+        <h4>Tư vấn / chăm sóc</h4>
+        <div class="parent-contact-form-grid">
+          ${renderFormSelect('Trạng thái', 'consultationStatus', values.consultationStatus, parentConsultationStatusLabels, errors.consultationStatus)}
+          ${renderFormSelect('Nguồn', 'source', values.source, parentContactSourceLabels, errors.source)}
+          ${renderFormInput('Ngày tư vấn', 'consultedAt', values.consultedAt, '', 'date')}
+          ${renderFormInput('Ngày đăng ký', 'registeredAt', values.registeredAt, '', 'date')}
+          ${renderFormInput('Chương trình quan tâm', 'interestedProgram', values.interestedProgram)}
+          ${renderFormInput('Lịch rảnh mong muốn', 'preferredSchedule', values.preferredSchedule)}
+          ${renderFormTextarea('Ghi chú gần nhất', 'lastNote', values.lastNote)}
+          ${renderFormTextarea('Việc tiếp theo', 'nextAction', values.nextAction)}
+        </div>
+      </section>
+    `
+  }
+
+  return `
+    ${renderAppointmentSection(formState)}
+    ${renderEnrollmentSection(formState)}
+  `
+}
+
+function getParentContactWizardStep(step) {
+  const normalizedStep = Number.parseInt(step, 10)
+  return Math.min(Math.max(Number.isFinite(normalizedStep) ? normalizedStep : 1, 1), parentContactWizardSteps.length)
 }
 
 function renderEnrollmentSection(formState) {
@@ -800,32 +1144,30 @@ function renderEnrollmentSection(formState) {
   return `
     <section class="parent-contact-form-section parent-enrollment-section">
       <div class="parent-enrollment-heading">
-        <h4>Chuẩn bị đăng ký</h4>
+        <h4>Đặt lịch hẹn học thử</h4>
         ${
           draft.isReady
-            ? '<span class="parent-enrollment-ready-badge">Sẵn sàng đăng ký</span>'
+            ? '<span class="parent-enrollment-ready-badge">Đã hẹn học thử</span>'
             : ''
         }
       </div>
       ${errors.summary ? `<div class="parent-enrollment-error">${escapeHtml(errors.summary)}</div>` : ''}
       ${message ? `<div class="parent-enrollment-message">${escapeHtml(message)}</div>` : ''}
       <div class="parent-enrollment-form">
-        ${renderEnrollmentInput('Tên học viên dự kiến', 'studentName', draft.studentName, errors.studentName)}
-        ${renderEnrollmentInput('Tuổi', 'studentAge', draft.studentAge)}
-        ${renderEnrollmentInput('Năm sinh', 'studentBirthYear', draft.studentBirthYear)}
+        ${renderEnrollmentInput('Họ và tên học viên', 'studentName', draft.studentName, errors.studentName)}
+        ${renderEnrollmentBirthYearInput(draft.studentBirthYear, errors.studentBirthYear)}
         ${renderEnrollmentInput('Tên phụ huynh', 'parentName', draft.parentName, errors.parentName)}
-        ${renderEnrollmentInput('SĐT', 'phone', draft.phone, errors.phone)}
-        ${renderEnrollmentInput('Chương trình quan tâm', 'interestedProgram', draft.interestedProgram)}
-        ${renderEnrollmentInput('Lịch học mong muốn', 'preferredSchedule', draft.preferredSchedule)}
-        ${renderEnrollmentTextarea('Mục tiêu học', 'learningGoal', draft.learningGoal)}
-        ${renderEnrollmentInput('Ngày dự kiến bắt đầu', 'expectedStartDate', draft.expectedStartDate, '', 'date')}
-        ${renderEnrollmentInput('Người phụ trách tư vấn', 'advisorName', draft.advisorName)}
-        ${renderEnrollmentTextarea('Ghi chú đăng ký', 'note', draft.note)}
+        ${renderEnrollmentInput('Số điện thoại liên hệ', 'phone', draft.phone, errors.phone)}
+        ${renderEnrollmentSelect('Trình độ của bé hiện tại', 'childChessLevel', draft.childChessLevel, { '': 'Chưa chọn', ...childChessLevelLabels })}
+        ${renderEnrollmentInput('Lịch rảnh khi đăng ký học', 'preferredSchedule', draft.preferredSchedule)}
+        ${renderEnrollmentInput('Ngày học thử dự kiến', 'expectedTrialDate', draft.expectedTrialDate || draft.expectedStartDate, errors.expectedTrialDate, 'date')}
+        ${renderEnrollmentInput('Người tư vấn / phụ trách', 'advisorName', draft.advisorName)}
+        ${renderEnrollmentTextarea('Ghi chú', 'note', draft.note)}
       </div>
       <div class="parent-enrollment-actions">
-        <button type="button" data-parent-enrollment-action="save">Lưu bản nháp đăng ký</button>
-        <button type="button" data-parent-enrollment-action="ready">Đánh dấu sẵn sàng đăng ký</button>
-        <button type="button" data-parent-enrollment-action="copy">Copy tóm tắt đăng ký</button>
+        <button type="button" data-parent-enrollment-action="save">Lưu thông tin học thử</button>
+        <button type="button" data-parent-enrollment-action="ready">Đánh dấu đã hẹn học thử</button>
+        <button type="button" data-parent-enrollment-action="copy">Copy tóm tắt học thử</button>
       </div>
       <pre class="parent-enrollment-summary">${escapeHtml(summary)}</pre>
     </section>
@@ -1133,6 +1475,47 @@ function renderEnrollmentInput(label, field, value, error = '', type = 'text') {
   `
 }
 
+function renderEnrollmentBirthYearInput(value, error = '') {
+  const age = calculateAgeFromBirthYear(value)
+  const hint = age ? `${age} tuổi` : 'Nhập năm sinh để tự tính tuổi.'
+
+  return `
+    <label class="${error ? 'has-error' : ''}">
+      <span>Năm sinh (tuổi)</span>
+      <input
+        type="text"
+        inputmode="numeric"
+        maxlength="4"
+        value="${escapeAttribute(value ?? '')}"
+        data-parent-enrollment-field="studentBirthYear"
+      />
+      <small class="parent-birthyear-hint">${escapeHtml(error || hint)}</small>
+    </label>
+  `
+}
+
+function renderEnrollmentSelect(label, field, selectedValue, optionsByValue, error = '') {
+  const options = Object.entries(optionsByValue)
+    .map(
+      ([value, optionLabel]) => `
+        <option value="${escapeAttribute(value)}" ${selectedValue === value ? 'selected' : ''}>
+          ${escapeHtml(optionLabel)}
+        </option>
+      `,
+    )
+    .join('')
+
+  return `
+    <label class="${error ? 'has-error' : ''}">
+      <span>${escapeHtml(label)}</span>
+      <select data-parent-enrollment-field="${escapeAttribute(field)}">
+        ${options}
+      </select>
+      ${error ? `<small>${escapeHtml(error)}</small>` : ''}
+    </label>
+  `
+}
+
 function renderEnrollmentTextarea(label, field, value, error = '') {
   return `
     <label class="${error ? 'has-error' : ''}">
@@ -1143,27 +1526,84 @@ function renderEnrollmentTextarea(label, field, value, error = '') {
   `
 }
 
-function renderStudentSelect(selectedStudentId, students) {
-  const options = [
-    '<option value="">Không chọn học viên</option>',
-    ...students
-      .filter((student) => !student.isDeleted)
-      .map(
-        (student) => `
-          <option value="${escapeAttribute(student.id)}" ${selectedStudentId === student.id ? 'selected' : ''}>
-            ${escapeHtml(student.fullName)}
-          </option>
-        `,
-      ),
-  ].join('')
+function renderBirthYearInput(value, error = '') {
+  const age = calculateAgeFromBirthYear(value)
+  const hint = age ? `${age} tuổi` : 'Nhập năm sinh để tự tính tuổi.'
 
   return `
-    <label>
-      <span>Học viên liên quan (nếu có)</span>
-      <select data-parent-contact-field="studentId">
-        ${options}
-      </select>
+    <label class="${error ? 'has-error' : ''}">
+      <span>Năm sinh (tuổi)</span>
+      <input
+        type="text"
+        inputmode="numeric"
+        maxlength="4"
+        value="${escapeAttribute(value || '')}"
+        data-parent-contact-field="studentBirthYear"
+      />
+      <small class="parent-birthyear-hint">${escapeHtml(error || hint)}</small>
     </label>
+  `
+}
+
+function renderStudentPicker(values, students) {
+  const activeStudents = students.filter((student) => !student.isDeleted)
+  const search = String(values.studentSearch ?? '').trim()
+  const selectedStudent =
+    activeStudents.find((student) => student.id === values.studentId) ||
+    (values.studentId || values.studentName
+      ? {
+          id: values.studentId || '',
+          fullName: values.studentName || 'Học viên đã chọn',
+        }
+      : null)
+  const normalizedSearch = normalizeText(search)
+  const filteredStudents = (normalizedSearch
+    ? activeStudents.filter((student) =>
+        [student.fullName, student.parentName, student.phone]
+          .some((value) => normalizeText(value).includes(normalizedSearch)),
+      )
+    : activeStudents
+  ).slice(0, 8)
+
+  return `
+    <div class="parent-student-picker">
+      <label>
+        <span>Học viên liên quan (nếu có)</span>
+        <input
+          type="search"
+          value="${escapeAttribute(values.studentSearch || '')}"
+          placeholder="Tìm theo tên học viên, phụ huynh, số điện thoại"
+          data-parent-contact-field="studentSearch"
+        />
+      </label>
+      <small>Không chọn học viên nếu đây là bé mới. Danh sách này chỉ để liên kết hồ sơ có sẵn.</small>
+      ${
+        selectedStudent
+          ? `
+            <div class="parent-student-selected">
+              <span>${escapeHtml(selectedStudent.fullName)}</span>
+              <button type="button" data-parent-student-clear>Không chọn học viên</button>
+            </div>
+          `
+          : ''
+      }
+      <div class="parent-student-picker-results" aria-label="Kết quả tìm học viên">
+        ${
+          filteredStudents.length
+            ? filteredStudents.map((student) => `
+              <button
+                type="button"
+                class="parent-student-picker-result ${student.id === values.studentId ? 'is-selected' : ''}"
+                data-parent-student-select-id="${escapeAttribute(student.id)}"
+              >
+                <strong>${escapeHtml(student.fullName)}</strong>
+                <span>${escapeHtml([student.parentName, student.phone].filter(Boolean).join(' · ') || 'Chưa có thông tin liên hệ')}</span>
+              </button>
+            `).join('')
+            : '<div class="parent-student-picker-empty">Không tìm thấy học viên phù hợp.</div>'
+        }
+      </div>
+    </div>
   `
 }
 
@@ -1176,12 +1616,29 @@ function getStudentSummary(contact) {
   }
 
   const leadStudent = contact.leadStudentName || 'Chưa rõ học viên'
-  const age = contact.leadStudentAge ? ` · ${contact.leadStudentAge} tuổi` : ''
+  const calculatedAge = calculateAgeFromBirthYear(contact.studentBirthYear)
+  const ageValue = calculatedAge || contact.leadStudentAge
+  const age = ageValue ? ` · ${ageValue} tuổi` : ''
 
   return {
     title: `${leadStudent}${age}`,
-    subtitle: contact.leadNeed || contact.interestedProgram || 'Nhu cầu tư vấn chưa nhập',
+    subtitle: contact.leadNeed || contact.interestedProgram || 'Mong muốn tư vấn chưa nhập',
   }
+}
+
+function calculateAgeFromBirthYear(birthYear) {
+  const year = Number.parseInt(String(birthYear || '').trim(), 10)
+  const currentYear = new Date().getFullYear()
+
+  if (!Number.isFinite(year) || year < 1900 || year > currentYear) {
+    return ''
+  }
+
+  return String(currentYear - year)
+}
+
+function getLatestCareLog(careLogs = []) {
+  return sortCareLogsNewestFirst(careLogs)[0] ?? null
 }
 
 function sortCareLogsNewestFirst(careLogs) {
@@ -1213,19 +1670,44 @@ function sortAppointments(appointments) {
   })
 }
 
+function formatFullDateTime(value) {
+  const date = value ? new Date(value) : null
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return 'Chưa rõ thời gian'
+  }
+
+  return date.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
 function normalizeEnrollmentDraftForForm(draft = {}) {
+  const studentBirthYear = String(draft.studentBirthYear || '')
+  const expectedStartDate = String(draft.expectedStartDate || '')
+
   return {
     ...emptyEnrollmentDraft,
     isReady: Boolean(draft.isReady),
     studentName: String(draft.studentName || ''),
-    studentAge: String(draft.studentAge || ''),
-    studentBirthYear: String(draft.studentBirthYear || ''),
+    studentAge: String(draft.studentAge || calculateAgeFromBirthYear(studentBirthYear) || ''),
+    studentBirthYear,
     parentName: String(draft.parentName || ''),
     phone: String(draft.phone || ''),
     interestedProgram: String(draft.interestedProgram || ''),
     preferredSchedule: String(draft.preferredSchedule || ''),
     learningGoal: String(draft.learningGoal || ''),
-    expectedStartDate: String(draft.expectedStartDate || ''),
+    expectedStartDate,
+    expectedTrialDate: String(draft.expectedTrialDate || expectedStartDate || ''),
+    childChessLevel: childChessLevelLabels[draft.childChessLevel] ? draft.childChessLevel : '',
+    trialDraftId: String(draft.trialDraftId || ''),
+    trialAppointmentId: String(draft.trialAppointmentId || ''),
+    trialScheduledAt: String(draft.trialScheduledAt || ''),
     note: String(draft.note || ''),
     advisorName: String(draft.advisorName || ''),
     readyAt: draft.readyAt || null,
@@ -1261,6 +1743,17 @@ function toDateTimeLocalValue(value) {
 
   const timezoneOffsetMs = date.getTimezoneOffset() * 60000
   return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 16)
+}
+
+function toDateOnlyIso(value) {
+  const dateText = String(value || '').trim()
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+    return `${dateText}T00:00:00.000Z`
+  }
+
+  const date = dateText ? new Date(dateText) : null
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : ''
 }
 
 function formatDateTime(value, includeTime = false) {

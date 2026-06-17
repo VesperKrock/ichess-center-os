@@ -1,4 +1,4 @@
-export const parentContactTypes = ['currentParent', 'consultingLead', 'formerParent']
+export const parentContactTypes = ['currentParent', 'consultingLead', 'reservedParent', 'stoppedParent']
 
 export const consultationStatuses = [
   'activeCare',
@@ -143,7 +143,7 @@ export const sampleParentConsultations = [
   },
   {
     id: 'contact-004',
-    contactType: 'formerParent',
+    contactType: 'reservedParent',
     parentName: 'Phạm Quốc Dũng',
     phone: '0904004004',
     secondaryPhone: '',
@@ -212,7 +212,7 @@ export const sampleParentConsultations = [
   },
   {
     id: 'contact-007',
-    contactType: 'formerParent',
+    contactType: 'stoppedParent',
     parentName: 'Bùi Thanh Tâm',
     phone: '0907007007',
     secondaryPhone: '',

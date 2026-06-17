@@ -21,7 +21,7 @@ export const emptyCareNoteDraft = {
   editingNoteId: '',
 }
 
-export function renderStudentDetail(student, teachers = []) {
+export function renderStudentDetail(student, teachers = [], classSessions = []) {
   if (!student) {
     return renderStudentNotFound()
   }
@@ -29,6 +29,7 @@ export function renderStudentDetail(student, teachers = []) {
   const careNotes = getSortedCareNotes(student)
   const latestCareNote = careNotes[0]
   const assignedTeacherLabel = getAssignedTeacherLabel(student, teachers)
+  const classSessionLabel = getStudentClassSessionLabel(student, classSessions)
   const primaryParentPhone = student.motherPhone || student.fatherPhone || student.parentPhone
 
   return `
@@ -87,6 +88,7 @@ export function renderStudentDetail(student, teachers = []) {
           ['Mốc bot', student.highestBotMilestone],
           ['Tính cách', student.personality],
           ['GV phụ trách', assignedTeacherLabel],
+          ['Ca học / Lớp', classSessionLabel],
         ])}
         ${renderOverviewTile(
           'Chăm sóc',
@@ -322,6 +324,34 @@ function getAssignedTeacherLabel(student, teachers = []) {
 
   const teacherName = String(teacher.displayName || teacher.fullName || 'Giáo viên').trim()
   return `${teacherName} - ${getTeacherStatusLabel(teacher.status)}`
+}
+
+function getStudentClassSessionLabel(student, classSessions = []) {
+  const classSessionIds = Array.isArray(student?.classSessionIds)
+    ? Array.from(new Set(student.classSessionIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
+    : []
+
+  if (!classSessionIds.length) {
+    return 'Chưa phân lớp'
+  }
+
+  const classSessionLookup = new Map(
+    classSessions
+      .filter((classSession) => classSession && classSession.id)
+      .map((classSession) => [String(classSession.id), classSession]),
+  )
+
+  return classSessionIds
+    .map((classSessionId) => {
+      const classSession = classSessionLookup.get(classSessionId)
+      if (!classSession) {
+        return 'Ca học không tìm thấy'
+      }
+
+      const label = classSession.displayLabel || classSession.name || 'Ca học'
+      return classSession.status === 'inactive' ? `${label} (Đã ngưng)` : label
+    })
+    .join(', ')
 }
 
 function getTeacherStatusLabel(status) {

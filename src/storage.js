@@ -1,6 +1,7 @@
-const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
+﻿const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
 const STUDENTS_KEY = 'ichessCenterOS.students.dreamhome'
+const CLASS_SESSIONS_KEY = 'ichessCenterOS.classSessions.dreamhome'
 const NOTIFICATIONS_KEY = 'ichessCenterOS.notifications.dreamhome'
 const NOTIFICATIONS_VERSION_KEY = 'ichessCenterOS.notifications.version.dreamhome'
 const DELETED_NOTIFICATION_IDS_KEY = 'ichessCenterOS.notifications.deletedIds.dreamhome'
@@ -9,6 +10,7 @@ const TEACHERS_KEY = 'ichessCenterOS.teachers.dreamhome'
 const SCHEDULE_KEY = 'ichessCenterOS.schedule.dreamhome'
 const SESSION_REPORTS_KEY = 'ichessCenterOS.sessionReports.dreamhome'
 const ATTENDANCE_ADVISORY_NOTES_KEY = 'ichessCenterOS.attendanceAdvisoryNotes.dreamhome'
+const ATTENDANCE_BOARD_NOTES_KEY = 'ichessCenterOS.attendanceBoardNotes.dreamhome'
 const PARENT_CONSULTATIONS_KEY = 'ichessCenterOS.parentConsultations.dreamhome'
 const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
 const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
@@ -16,14 +18,26 @@ const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
 const CASHBOOK_RECONCILIATIONS_KEY = 'ichessCenterOS.cashbookReconciliations.dreamhome'
 const INVENTORY_KEY = 'ichessCenterOS.inventory.dreamhome'
 const INVENTORY_MOVEMENTS_KEY = 'ichessCenterOS.inventoryMovements.dreamhome'
-const CURRENT_NOTIFICATIONS_VERSION = '1A.1'
+const INVENTORY_REQUESTS_KEY = 'ichessCenterOS.inventoryRequests.dreamhome'
+const CURRENT_NOTIFICATIONS_VERSION = '15J.1'
 const VALID_VIEW_MODES = ['grid', 'list']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
-const VALID_NOTIFICATION_TYPES = ['system', 'tuition', 'student', 'schedule', 'inventory', 'report']
+const VALID_NOTIFICATION_TYPES = [
+  'system',
+  'tuition',
+  'tuition-advisory',
+  'student',
+  'schedule',
+  'inventory',
+  'inventory-request',
+  'parent-followup',
+  'report',
+]
 const VALID_TEACHER_STATUSES = ['active', 'paused', 'inactive']
 const VALID_TEACHER_TYPES = ['fulltime', 'parttime', 'collaborator']
 const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
 const VALID_SCHEDULE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+const VALID_CLASS_SESSION_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 const VALID_SCHEDULE_LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const VALID_SCHEDULE_STATUSES = ['scheduled', 'done', 'cancelled']
 const VALID_SCHEDULE_TYPES = ['recurring', 'oneOff']
@@ -44,7 +58,7 @@ const VALID_ADVISORY_CARE_STATUSES = [
   'waitingParent',
   'completed',
 ]
-const VALID_PARENT_CONTACT_TYPES = ['currentParent', 'consultingLead', 'formerParent']
+const VALID_PARENT_CONTACT_TYPES = ['currentParent', 'consultingLead', 'reservedParent', 'stoppedParent']
 const VALID_CONSULTATION_STATUSES = [
   'activeCare',
   'newLead',
@@ -66,7 +80,7 @@ const VALID_PARENT_CONTACT_SOURCES = [
   'eventTournament',
   'unknown',
 ]
-const VALID_PARENT_CARE_LOG_CHANNELS = ['phone', 'zalo', 'facebook', 'direct', 'email', 'other']
+const VALID_PARENT_CARE_LOG_CHANNELS = ['phone', 'zalo', 'facebook', 'direct', 'email', 'note', 'other']
 const VALID_PARENT_APPOINTMENT_TYPES = [
   'consultation',
   'trialLesson',
@@ -81,8 +95,34 @@ const VALID_PARENT_APPOINTMENT_STATUSES = [
   'cancelled',
   'rescheduled',
 ]
-const LEGACY_SAMPLE_TEACHER_NAMES = ['Thầy Thắng', 'Cô Vân', 'Thầy Hải']
-const UNASSIGNED_TEACHER_NAME = 'Chưa phân công'
+const VALID_INVENTORY_REQUEST_STATUSES = [
+  'new',
+  'pending',
+  'preparing',
+  'fulfilled',
+  'rejected',
+  'cancelled',
+]
+const VALID_INVENTORY_REQUEST_ITEM_TYPES = [
+  'book',
+  'pencil',
+  'eraser',
+  'test',
+  'standardChessSet',
+  'chessClock',
+  'scoreSheet',
+  'other',
+]
+const VALID_INVENTORY_REQUEST_USAGE_MODES = [
+  'homeTutoring',
+  'onlinePrivate',
+  'onlineGroup',
+  'centerClass',
+  'clubPartner',
+  'other',
+]
+const LEGACY_SAMPLE_TEACHER_NAMES = ['Tháº§y Tháº¯ng', 'CĂ´ VĂ¢n', 'Tháº§y Háº£i']
+const UNASSIGNED_TEACHER_NAME = 'ChÆ°a phĂ¢n cĂ´ng'
 const STUDENT_LEVELS = [
   'Dolphin 1',
   'Dolphin 2',
@@ -156,6 +196,39 @@ export function getStoredStudents(defaultStudents) {
 
 export function saveStoredStudents(students) {
   localStorage.setItem(STUDENTS_KEY, JSON.stringify(normalizeStudents(students)))
+}
+
+export function getStoredClassSessions(defaultClassSessions = []) {
+  try {
+    const storedClassSessions = JSON.parse(localStorage.getItem(CLASS_SESSIONS_KEY))
+
+    if (Array.isArray(storedClassSessions)) {
+      const normalizedClassSessions = normalizeClassSessions(storedClassSessions)
+      saveStoredClassSessions(normalizedClassSessions)
+      return normalizedClassSessions
+    }
+  } catch {
+    localStorage.removeItem(CLASS_SESSIONS_KEY)
+  }
+
+  const normalizedDefaultClassSessions = normalizeClassSessions(defaultClassSessions)
+  saveStoredClassSessions(normalizedDefaultClassSessions)
+  return normalizedDefaultClassSessions
+}
+
+export function saveStoredClassSessions(classSessions) {
+  localStorage.setItem(
+    CLASS_SESSIONS_KEY,
+    JSON.stringify(normalizeClassSessions(classSessions)),
+  )
+}
+
+export function getClassSessions(defaultClassSessions = []) {
+  return getStoredClassSessions(defaultClassSessions)
+}
+
+export function saveClassSessions(classSessions) {
+  saveStoredClassSessions(classSessions)
 }
 
 export function getStoredNotifications(defaultNotifications) {
@@ -318,6 +391,27 @@ export function saveStoredAttendanceAdvisoryNotes(notes) {
   localStorage.setItem(
     ATTENDANCE_ADVISORY_NOTES_KEY,
     JSON.stringify(normalizeAttendanceAdvisoryNotes(notes)),
+  )
+}
+
+export function getStoredAttendanceBoardNotes(defaultNotes = []) {
+  try {
+    const storedNotes = JSON.parse(localStorage.getItem(ATTENDANCE_BOARD_NOTES_KEY))
+
+    if (Array.isArray(storedNotes)) {
+      return normalizeAttendanceBoardNotes(storedNotes)
+    }
+  } catch {
+    localStorage.removeItem(ATTENDANCE_BOARD_NOTES_KEY)
+  }
+
+  return normalizeAttendanceBoardNotes(defaultNotes)
+}
+
+export function saveStoredAttendanceBoardNotes(notes) {
+  localStorage.setItem(
+    ATTENDANCE_BOARD_NOTES_KEY,
+    JSON.stringify(normalizeAttendanceBoardNotes(notes)),
   )
 }
 
@@ -485,8 +579,33 @@ export function saveStoredInventoryMovements(movements) {
   )
 }
 
+export function getStoredInventoryRequests(defaultRequests = []) {
+  try {
+    const storedRequests = JSON.parse(localStorage.getItem(INVENTORY_REQUESTS_KEY))
+
+    if (Array.isArray(storedRequests)) {
+      const normalizedRequests = normalizeInventoryRequests(storedRequests)
+      saveStoredInventoryRequests(normalizedRequests)
+      return normalizedRequests
+    }
+  } catch {
+    localStorage.removeItem(INVENTORY_REQUESTS_KEY)
+  }
+
+  const normalizedDefaultRequests = normalizeInventoryRequests(defaultRequests)
+  saveStoredInventoryRequests(normalizedDefaultRequests)
+  return normalizedDefaultRequests
+}
+
+export function saveStoredInventoryRequests(requests) {
+  localStorage.setItem(
+    INVENTORY_REQUESTS_KEY,
+    JSON.stringify(normalizeInventoryRequests(requests)),
+  )
+}
+
 function normalizeStudents(students) {
-  return students.map((student) => {
+  return students.map((student, index) => {
     const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
     const assignedTeacherId = normalizeStudentAssignedTeacherId(student.assignedTeacherId)
     const deletionState = normalizeStudentDeletionState(student)
@@ -496,16 +615,20 @@ function normalizeStudents(students) {
       student.motherPhone ?? (!fatherPhone ? student.parentPhone : '') ?? '',
     )
     const parentPhone = String(student.parentPhone || motherPhone || fatherPhone)
+    const classSessionIds = normalizeStringArray(student.classSessionIds)
+    const studentCode = normalizeStudentCode(student.studentCode || student.code || student.internalCode, index)
 
     if (Array.isArray(student.careNotes)) {
       return {
         ...student,
+        studentCode,
         mainTeacherName,
         assignedTeacherId,
         level,
         fatherPhone,
         motherPhone,
         parentPhone,
+        classSessionIds,
         ...deletionState,
       }
     }
@@ -513,17 +636,19 @@ function normalizeStudents(students) {
     const legacyNote = String(student.latestCareNote ?? '').trim()
     const hasRealLegacyNote =
       legacyNote &&
-      legacyNote !== 'Chưa có ghi chú chăm sóc.' &&
-      !legacyNote.toLowerCase().includes('chưa có ghi chú')
+      legacyNote !== 'ChÆ°a cĂ³ ghi chĂº chÄƒm sĂ³c.' &&
+      !legacyNote.toLowerCase().includes('chÆ°a cĂ³ ghi chĂº')
 
     return {
       ...student,
+      studentCode,
       mainTeacherName,
       assignedTeacherId,
       level,
       fatherPhone,
       motherPhone,
       parentPhone,
+      classSessionIds,
       ...deletionState,
       careNotes: hasRealLegacyNote
         ? [
@@ -540,6 +665,138 @@ function normalizeStudents(students) {
         : [],
     }
   })
+}
+
+export function normalizeClassSessions(classSessions) {
+  return (classSessions ?? [])
+    .filter((classSession) => classSession && typeof classSession === 'object')
+    .map((classSession, index) => normalizeClassSession(classSession, index))
+}
+
+export function normalizeClassSession(classSession, index = 0) {
+  const now = new Date().toISOString()
+  const name = String(classSession.name || classSession.displayLabel || '').trim()
+  const sourceDaysLabel = String(classSession.daysLabel || classSession.dayLabel || '').trim()
+  const daysOfWeek = normalizeClassSessionDaysOfWeek(classSession.daysOfWeek, sourceDaysLabel)
+  const daysLabel = buildClassSessionDaysLabel(daysOfWeek) || sourceDaysLabel
+  const startTime = String(classSession.startTime || '').trim()
+  const endTime = String(classSession.endTime || '').trim()
+  const generatedLabel =
+    daysLabel && startTime && endTime ? `${daysLabel} ${startTime}-${endTime}` : name
+
+  return {
+    ...classSession,
+    id: String(classSession.id || `class-session-${index + 1}`).trim(),
+    name: name || generatedLabel || `Ca học ${index + 1}`,
+    daysOfWeek,
+    daysLabel,
+    dayLabel: daysLabel,
+    startTime,
+    endTime,
+    displayLabel: String(classSession.displayLabel || generatedLabel || name || `Ca học ${index + 1}`).trim(),
+    status: classSession.status === 'inactive' ? 'inactive' : 'active',
+    note: String(classSession.note || ''),
+    createdAt: classSession.createdAt ? normalizeDateTime(classSession.createdAt) : now,
+    updatedAt: classSession.updatedAt ? normalizeDateTime(classSession.updatedAt) : now,
+  }
+}
+
+export function getActiveClassSessions(classSessions = []) {
+  return normalizeClassSessions(classSessions).filter(
+    (classSession) => classSession.status !== 'inactive',
+  )
+}
+
+export function buildClassSessionMap(classSessions = []) {
+  return new Map(
+    normalizeClassSessions(classSessions)
+      .filter((classSession) => classSession.id)
+      .map((classSession) => [String(classSession.id), classSession]),
+  )
+}
+
+export function getClassSessionById(classSessions = [], id) {
+  return buildClassSessionMap(classSessions).get(String(id ?? '')) ?? null
+}
+
+function normalizeClassSessionDaysOfWeek(daysOfWeek, fallbackLabel = '') {
+  const values = Array.isArray(daysOfWeek) ? daysOfWeek : []
+  const normalized = values
+    .map((day) => String(day || '').trim().toLowerCase())
+    .map((day) => {
+      const aliasMap = {
+        monday: 'mon',
+        t2: 'mon',
+        tuesday: 'tue',
+        t3: 'tue',
+        wednesday: 'wed',
+        t4: 'wed',
+        thursday: 'thu',
+        t5: 'thu',
+        friday: 'fri',
+        t6: 'fri',
+        saturday: 'sat',
+        t7: 'sat',
+        sunday: 'sun',
+        cn: 'sun',
+      }
+      return aliasMap[day] || day
+    })
+    .filter((day) => VALID_CLASS_SESSION_DAYS.includes(day))
+
+  const uniqueDays = Array.from(new Set(normalized)).sort(
+    (firstDay, secondDay) => VALID_CLASS_SESSION_DAYS.indexOf(firstDay) - VALID_CLASS_SESSION_DAYS.indexOf(secondDay),
+  )
+
+  return uniqueDays.length ? uniqueDays : parseClassSessionDaysLabel(fallbackLabel)
+}
+
+function parseClassSessionDaysLabel(label = '') {
+  const source = String(label || '').toUpperCase()
+  const tokens = source.match(/CN|T[2-7]/g) || []
+  const indexes = new Set()
+
+  tokens.forEach((token) => {
+    const startIndex = getClassSessionDayIndex(token)
+
+    if (startIndex === null) {
+      return
+    }
+
+    indexes.add(startIndex)
+  })
+
+  return Array.from(indexes)
+    .sort((firstIndex, secondIndex) => firstIndex - secondIndex)
+    .map((index) => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][index])
+}
+
+function buildClassSessionDaysLabel(daysOfWeek = []) {
+  const dayLabels = {
+    mon: 'T2',
+    tue: 'T3',
+    wed: 'T4',
+    thu: 'T5',
+    fri: 'T6',
+    sat: 'T7',
+    sun: 'CN',
+  }
+  return (Array.isArray(daysOfWeek) ? daysOfWeek : [])
+    .filter((day) => VALID_CLASS_SESSION_DAYS.includes(day))
+    .map((day) => dayLabels[day])
+    .join('-')
+}
+
+function getClassSessionDayIndex(label) {
+  const normalizedLabel = String(label || '').trim().toUpperCase()
+
+  if (normalizedLabel === 'CN') {
+    return 0
+  }
+
+  const match = normalizedLabel.match(/^T([2-7])$/)
+
+  return match ? Number(match[1]) - 1 : null
 }
 
 function normalizeStudentDeletionState(student) {
@@ -599,19 +856,14 @@ function normalizeStudentText(value) {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
-function normalizeNotifications(notifications) {
-  return notifications
-    .filter((notification) => notification && typeof notification === 'object')
-    .map((notification, index) => ({
-      id: String(notification.id || `notif-${String(index + 1).padStart(3, '0')}`),
-      type: normalizeNotificationType(notification.type),
-      level: normalizeNotificationLevel(notification.level),
-      title: String(notification.title || 'Thông báo'),
-      message: String(notification.message || ''),
-      sourceModule: String(notification.sourceModule || 'system'),
-      createdAt: normalizeNotificationCreatedAt(notification.createdAt),
-      read: Boolean(notification.read),
-    }))
+function normalizeStudentCode(value, index) {
+  const existingCode = String(value ?? '').trim()
+
+  if (existingCode) {
+    return existingCode
+  }
+
+  return `HV-${String(index + 1).padStart(4, '0')}`
 }
 
 function normalizeNotificationType(type) {
@@ -651,6 +903,78 @@ function mergeDemoNotificationReadState(defaultNotifications, storedNotification
   }))
 }
 
+function normalizeNotifications(notifications) {
+  return notifications
+    .filter((notification) => notification && typeof notification === 'object')
+    .map((notification, index) => {
+      const id = String(notification.id || `notif-${String(index + 1).padStart(3, '0')}`)
+      const createdAt = normalizeNotificationCreatedAt(notification.createdAt)
+      const readAt = normalizeNotificationReadAt(notification.readAt, notification.read, createdAt)
+      const severity = normalizeNotificationLevel(notification.severity || notification.level)
+      const sourceModule = normalizeNotificationSourceModule(notification.sourceModule)
+
+      return {
+        id,
+        dedupeKey: String(notification.dedupeKey || id),
+        sourceModule,
+        sourceLabel: String(notification.sourceLabel || getNotificationSourceLabel(sourceModule)),
+        type: normalizeNotificationType(notification.type),
+        severity,
+        level: severity,
+        title: String(notification.title || 'ThÄ‚Â´ng bÄ‚Â¡o'),
+        message: String(notification.message || ''),
+        entityId: notification.entityId ? String(notification.entityId) : '',
+        entityType: notification.entityType ? String(notification.entityType) : '',
+        entityLabel: notification.entityLabel ? String(notification.entityLabel) : '',
+        createdAt,
+        updatedAt: normalizeNotificationCreatedAt(notification.updatedAt || createdAt),
+        readAt,
+        read: Boolean(readAt),
+        meta: notification.meta && typeof notification.meta === 'object' ? notification.meta : {},
+      }
+    })
+}
+
+function normalizeNotificationReadAt(readAt, legacyRead, fallbackDate) {
+  if (readAt) {
+    const readDate = new Date(readAt)
+    return Number.isNaN(readDate.getTime()) ? '' : readDate.toISOString()
+  }
+
+  return legacyRead ? fallbackDate : ''
+}
+
+function normalizeNotificationSourceModule(sourceModule) {
+  const sourceModuleMap = {
+    system: 'he-thong',
+    student: 'hoc-vien',
+    tuition: 'hoc-phi',
+    inventory: 'kho-hang',
+    schedule: 'thoi-khoa-bieu',
+    report: 'he-thong',
+  }
+  const normalizedSourceModule = String(sourceModule || 'he-thong')
+
+  return sourceModuleMap[normalizedSourceModule] || normalizedSourceModule
+}
+
+function getNotificationSourceLabel(sourceModule) {
+  const sourceLabels = {
+    'hoc-vien': 'Há»c viĂªn',
+    'hoc-phi': 'Há»c phĂ­',
+    'phu-huynh-tu-van': 'Phá»¥ huynh / TÆ° váº¥n',
+    'kho-hang': 'Kho hĂ ng',
+    'giao-vien': 'GiĂ¡o viĂªn',
+    'thoi-khoa-bieu': 'Thá»i khĂ³a biá»ƒu',
+    'thu-chi': 'Thu chi',
+    'so-quy': 'Sá»• quá»¹',
+    'cai-dat-co-so': 'CĂ i Ä‘áº·t cÆ¡ sá»Ÿ',
+    'he-thong': 'Há»‡ thá»‘ng',
+  }
+
+  return sourceLabels[sourceModule] || sourceModule || sourceLabels['he-thong']
+}
+
 function normalizeTuitionRecords(tuitionRecords) {
   return tuitionRecords
     .filter((record) => record && typeof record === 'object')
@@ -682,7 +1006,7 @@ function normalizeTuitionRecords(tuitionRecords) {
         ...record,
         id: String(record.id || `tuition-${String(index + 1).padStart(3, '0')}`),
         studentId: String(record.studentId || ''),
-        packageName: String(record.packageName || 'Gói học'),
+        packageName: String(record.packageName || 'GĂ³i há»c'),
         totalSessions: normalizeNumber(record.totalSessions),
         usedSessions: normalizeNumber(record.usedSessions),
         hasTotalSessionsData,
@@ -722,7 +1046,7 @@ function normalizeTeachers(teachers) {
       return {
         ...teacher,
         id: String(teacher.id || `teacher-${String(index + 1).padStart(3, '0')}`),
-        fullName: String(teacher.fullName || teacher.name || 'Giáo viên'),
+        fullName: String(teacher.fullName || teacher.name || 'GiĂ¡o viĂªn'),
         displayName: String(teacher.displayName || ''),
         phone: String(teacher.phone || ''),
         email: String(teacher.email || ''),
@@ -730,6 +1054,7 @@ function normalizeTeachers(teachers) {
         teacherType,
         specialties: normalizeStringArray(teacher.specialties),
         levels: normalizeStringArray(teacher.levels ?? teacher.teachingLevels),
+        teachingLevels: normalizeStringArray(teacher.teachingLevels ?? teacher.levels),
         teachingGroups: normalizeStringArray(teacher.teachingGroups),
         teachingModes: normalizeStringArray(teacher.teachingModes).filter((mode) =>
           ['group', 'oneOnOne', 'competition', 'online'].includes(mode),
@@ -745,11 +1070,16 @@ function normalizeTeachers(teachers) {
         preferredTimeSlots: normalizeStringArray(teacher.preferredTimeSlots).filter((slot) =>
           ['morning', 'afternoon', 'evening', 'weekendMorning', 'weekendAfternoon'].includes(slot),
         ),
+        availableClassSessionIds: normalizeStringArray(teacher.availableClassSessionIds),
         maxSessionsPerWeek: normalizeNullablePositiveNumber(teacher.maxSessionsPerWeek),
         canTakeNewClass:
-          typeof teacher.canTakeNewClass === 'boolean' ? teacher.canTakeNewClass : true,
+          typeof teacher.canTakeNewClass === 'boolean'
+            ? teacher.canTakeNewClass
+            : typeof teacher.acceptNewStudents === 'boolean'
+              ? teacher.acceptNewStudents
+              : true,
         scheduleNote: String(teacher.scheduleNote || ''),
-        mainRole: String(teacher.mainRole || 'Giáo viên cờ vua'),
+        mainRole: String(teacher.mainRole || 'GiĂ¡o viĂªn cá» vua'),
         note: String(teacher.note || ''),
         createdAt: teacher.createdAt ? normalizeDateTime(teacher.createdAt) : now,
         updatedAt: teacher.updatedAt ? normalizeDateTime(teacher.updatedAt) : now,
@@ -764,11 +1094,12 @@ function normalizeScheduleSessions(sessions) {
       const now = new Date().toISOString()
 
       return {
+        ...session,
         id: String(session.id || `schedule-${String(index + 1).padStart(3, '0')}`),
         scheduleType: VALID_SCHEDULE_TYPES.includes(session.scheduleType)
           ? session.scheduleType
           : 'recurring',
-        title: String(session.title || 'Buổi học mẫu'),
+        title: String(session.title || 'Buá»•i há»c máº«u'),
         dayOfWeek: VALID_SCHEDULE_DAYS.includes(session.dayOfWeek)
           ? session.dayOfWeek
           : 'monday',
@@ -781,6 +1112,7 @@ function normalizeScheduleSessions(sessions) {
         startTime: normalizeScheduleTime(session.startTime),
         endTime: normalizeScheduleTime(session.endTime),
         room: String(session.room || ''),
+        classSessionId: String(session.classSessionId || ''),
         teacherId: normalizeNullableId(session.teacherId),
         teacherName: String(session.teacherName || ''),
         studentIds: normalizeStringArray(session.studentIds),
@@ -788,6 +1120,12 @@ function normalizeScheduleSessions(sessions) {
         level: VALID_SCHEDULE_LEVELS.includes(session.level) ? session.level : 'mixed',
         status: VALID_SCHEDULE_STATUSES.includes(session.status) ? session.status : 'scheduled',
         note: String(session.note || ''),
+        sourceModule: String(session.sourceModule || ''),
+        sourceTag: String(session.sourceTag || ''),
+        importBatchId: String(session.importBatchId || ''),
+        datasetId: String(session.datasetId || ''),
+        datasetVersion: String(session.datasetVersion || ''),
+        isControlledFixture: Boolean(session.isControlledFixture),
         createdAt: session.createdAt ? normalizeDateTime(session.createdAt) : now,
         updatedAt: session.updatedAt ? normalizeDateTime(session.updatedAt) : now,
       }
@@ -821,8 +1159,16 @@ function normalizeSessionReports(reports) {
       return {
         id: String(report.id || createSessionReportId(sessionId, occurrenceDate)),
         sessionId,
+        classSessionId: String(report.classSessionId || ''),
         occurrenceDate,
         attendance: normalizeSessionReportAttendance(report.attendance),
+        isDemoAttendance: Boolean(report.isDemoAttendance),
+        isImportedAttendance: Boolean(report.isImportedAttendance),
+        sourceModule: String(report.sourceModule || ''),
+        sourceTag: String(report.sourceTag || ''),
+        importBatchId: String(report.importBatchId || ''),
+        demoBatchId: String(report.demoBatchId || ''),
+        teacherName: String(report.teacherName || ''),
         learningGroups: normalizeSessionReportLearningGroups(report.learningGroups),
         guestParticipants: normalizeSessionReportGuestParticipants(report.guestParticipants),
         teachingAssistantNotes: String(report.teachingAssistantNotes || ''),
@@ -851,7 +1197,47 @@ function normalizeSessionReportAttendance(attendance) {
           ? item.attendanceStatus
           : 'present',
         note: String(item.note || ''),
+        isDemoAttendance: Boolean(item.isDemoAttendance),
+        isImportedAttendance: Boolean(item.isImportedAttendance),
+        sourceModule: String(item.sourceModule || ''),
+        sourceTag: String(item.sourceTag || ''),
+        importBatchId: String(item.importBatchId || ''),
+        demoPaymentStatus: String(item.demoPaymentStatus || ''),
+        studentName: String(item.studentName || ''),
+        status: String(item.status || ''),
+        displayValue: String(item.displayValue || ''),
+        credits: normalizeAttendanceCredits(item.credits),
+        countsTowardTuition: item.countsTowardTuition !== false,
       }
+    })
+    .filter(Boolean)
+}
+
+function normalizeAttendanceCredits(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) => {
+      if (value && typeof value === 'object') {
+        const sessionNumber = Number(value.sessionNumber ?? value.value ?? value.displayValue)
+
+        if (!Number.isFinite(sessionNumber) && !value.displayValue) {
+          return null
+        }
+
+        return {
+          displayValue: String(value.displayValue || sessionNumber),
+          sessionNumber: Number.isFinite(sessionNumber) ? sessionNumber : null,
+          creditType: String(value.creditType || ''),
+        }
+      }
+
+      const sessionNumber = Number(value)
+
+      return Number.isFinite(sessionNumber)
+        ? {
+            displayValue: String(value),
+            sessionNumber,
+          }
+        : null
     })
     .filter(Boolean)
 }
@@ -880,6 +1266,34 @@ function normalizeAttendanceAdvisoryNotes(notes) {
       careStatus,
       note: String(note.note || ''),
       updatedAt: note.updatedAt ? normalizeDateTime(note.updatedAt) : new Date().toISOString(),
+    })
+  })
+
+  return Array.from(notesByIdentity.values())
+}
+
+function normalizeAttendanceBoardNotes(notes) {
+  const notesByIdentity = new Map()
+
+  ;(Array.isArray(notes) ? notes : []).forEach((note) => {
+    const studentId = String(note?.studentId ?? '').trim()
+    const month = /^\d{4}-\d{2}$/.test(String(note?.month ?? note?.monthKey ?? ''))
+      ? String(note.month ?? note.monthKey)
+      : ''
+    const content = String(note?.note ?? note?.content ?? '').trim()
+
+    if (!studentId || !month) {
+      return
+    }
+
+    const updatedAt = note.updatedAt ? normalizeDateTime(note.updatedAt) : new Date().toISOString()
+    notesByIdentity.set(`${studentId}:${month}`, {
+      id: String(note.id || `attendance-board-note-${studentId}-${month}`),
+      studentId,
+      month,
+      note: content,
+      createdAt: note.createdAt ? normalizeDateTime(note.createdAt) : updatedAt,
+      updatedAt,
     })
   })
 
@@ -923,12 +1337,13 @@ function normalizeParentConsultations(contacts) {
     .map((contact, index) => {
       const now = new Date().toISOString()
       const createdAt = contact.createdAt ? normalizeDateTime(contact.createdAt) : now
+      const studentBirthYear = normalizeParentStudentBirthYear(contact.studentBirthYear)
+      const calculatedAge = calculateAgeFromBirthYear(studentBirthYear)
 
       return {
+        ...contact,
         id: String(contact.id || `contact-${String(index + 1).padStart(3, '0')}`),
-        contactType: VALID_PARENT_CONTACT_TYPES.includes(contact.contactType)
-          ? contact.contactType
-          : 'consultingLead',
+        contactType: normalizeParentContactType(contact.contactType),
         parentName: String(contact.parentName || contact.name || ''),
         phone: String(contact.phone || ''),
         secondaryPhone: String(contact.secondaryPhone || ''),
@@ -936,8 +1351,10 @@ function normalizeParentConsultations(contacts) {
         studentName: String(contact.studentName || ''),
         studentId: normalizeNullableId(contact.studentId),
         leadStudentName: String(contact.leadStudentName || ''),
-        leadStudentAge: String(contact.leadStudentAge || ''),
+        studentBirthYear,
+        leadStudentAge: String(contact.leadStudentAge || calculatedAge || ''),
         leadNeed: String(contact.leadNeed || ''),
+        parentFeedbackAboutChild: String(contact.parentFeedbackAboutChild || ''),
         consultationStatus: VALID_CONSULTATION_STATUSES.includes(contact.consultationStatus)
           ? contact.consultationStatus
           : 'newLead',
@@ -945,23 +1362,70 @@ function normalizeParentConsultations(contacts) {
         interestedProgram: String(contact.interestedProgram || ''),
         preferredSchedule: String(contact.preferredSchedule || ''),
         locationArea: String(contact.locationArea || ''),
+        consultedAt: isValidDateString(contact.consultedAt) ? String(contact.consultedAt) : '',
+        registeredAt: isValidDateString(contact.registeredAt) ? String(contact.registeredAt) : '',
         lastContactAt: contact.lastContactAt ? normalizeDateTime(contact.lastContactAt) : '',
         lastNote: String(contact.lastNote || ''),
         nextAction: String(contact.nextAction || ''),
-        careLogs: normalizeParentCareLogs(contact.careLogs),
+        careLogs: normalizeParentCareLogs(contact.careLogs, {
+          createdAt,
+          updatedAt: contact.updatedAt ? normalizeDateTime(contact.updatedAt) : createdAt,
+        }),
         appointments: normalizeParentAppointments(contact.appointments),
         enrollmentDraft: normalizeParentEnrollmentDraft(contact.enrollmentDraft, contact),
+        sourceModule: String(contact.sourceModule || ''),
+        sourceTag: String(contact.sourceTag || ''),
+        importBatchId: String(contact.importBatchId || ''),
+        datasetId: String(contact.datasetId || ''),
+        datasetVersion: String(contact.datasetVersion || ''),
+        isControlledFixture: Boolean(contact.isControlledFixture),
         createdAt,
         updatedAt: contact.updatedAt ? normalizeDateTime(contact.updatedAt) : createdAt,
       }
     })
 }
 
-function normalizeParentCareLogs(careLogs) {
+function normalizeParentContactType(contactType) {
+  const value = String(contactType || '').trim()
+  const normalizedText = normalizeStudentText(value)
+
+  if (value === 'formerParent' || normalizedText === 'phu huynh cu') {
+    return 'reservedParent'
+  }
+
+  return VALID_PARENT_CONTACT_TYPES.includes(value) ? value : 'consultingLead'
+}
+
+function normalizeParentStudentBirthYear(value) {
+  const birthYear = String(value || '').trim()
+  return /^\d{4}$/.test(birthYear) ? birthYear : ''
+}
+
+function calculateAgeFromBirthYear(birthYear) {
+  if (!birthYear) {
+    return ''
+  }
+
+  const year = Number.parseInt(birthYear, 10)
+  const currentYear = new Date().getFullYear()
+
+  if (!Number.isFinite(year) || year < 1900 || year > currentYear) {
+    return ''
+  }
+
+  return String(currentYear - year)
+}
+
+function normalizeParentCareLogs(careLogs, contactTimestamps = {}) {
   return (Array.isArray(careLogs) ? careLogs : [])
     .filter((log) => log && typeof log === 'object')
     .map((log, index) => {
-      const contactedAt = log.contactedAt ? normalizeDateTime(log.contactedAt) : new Date().toISOString()
+      const fallbackTime =
+        log.createdAt ||
+        contactTimestamps.updatedAt ||
+        contactTimestamps.createdAt ||
+        new Date().toISOString()
+      const contactedAt = log.contactedAt ? normalizeDateTime(log.contactedAt) : normalizeDateTime(fallbackTime)
 
       return {
         id: String(log.id || `care-log-${String(index + 1).padStart(3, '0')}`),
@@ -1003,6 +1467,8 @@ function normalizeParentAppointments(appointments) {
           ? appointment.status
           : 'scheduled',
         note: String(appointment.note || ''),
+        sourceType: String(appointment.sourceType || ''),
+        sourceDraftId: String(appointment.sourceDraftId || ''),
         createdAt,
         updatedAt: appointment.updatedAt ? normalizeDateTime(appointment.updatedAt) : createdAt,
       }
@@ -1032,6 +1498,12 @@ function normalizeParentEnrollmentDraft(enrollmentDraft, contact = {}) {
       ? enrollmentDraft
       : {}
   const hasSavedDraft = Boolean(draft.createdAt || draft.updatedAt)
+  const expectedStartDate = isValidDateString(draft.expectedStartDate)
+    ? String(draft.expectedStartDate)
+    : ''
+  const expectedTrialDate = isValidDateString(draft.expectedTrialDate)
+    ? String(draft.expectedTrialDate)
+    : expectedStartDate
 
   return {
     isReady: Boolean(draft.isReady),
@@ -1041,7 +1513,7 @@ function normalizeParentEnrollmentDraft(enrollmentDraft, contact = {}) {
     studentAge: String(
       hasSavedDraft ? draft.studentAge || '' : draft.studentAge || contact.leadStudentAge || '',
     ),
-    studentBirthYear: String(draft.studentBirthYear || ''),
+    studentBirthYear: String(hasSavedDraft ? draft.studentBirthYear || '' : draft.studentBirthYear || contact.studentBirthYear || ''),
     parentName: String(hasSavedDraft ? draft.parentName || '' : draft.parentName || contact.parentName || ''),
     phone: String(hasSavedDraft ? draft.phone || '' : draft.phone || contact.phone || ''),
     interestedProgram: String(
@@ -1051,9 +1523,14 @@ function normalizeParentEnrollmentDraft(enrollmentDraft, contact = {}) {
       hasSavedDraft ? draft.preferredSchedule || '' : draft.preferredSchedule || contact.preferredSchedule || '',
     ),
     learningGoal: String(hasSavedDraft ? draft.learningGoal || '' : draft.learningGoal || contact.leadNeed || ''),
-    expectedStartDate: isValidDateString(draft.expectedStartDate)
-      ? String(draft.expectedStartDate)
+    expectedStartDate,
+    expectedTrialDate,
+    childChessLevel: ['new', 'basic', 'advanced'].includes(draft.childChessLevel)
+      ? String(draft.childChessLevel)
       : '',
+    trialDraftId: String(draft.trialDraftId || ''),
+    trialAppointmentId: String(draft.trialAppointmentId || ''),
+    trialScheduledAt: draft.trialScheduledAt ? normalizeDateTime(draft.trialScheduledAt) : '',
     note: String(draft.note || ''),
     advisorName: String(draft.advisorName || ''),
     readyAt: draft.readyAt ? normalizeDateTime(draft.readyAt) : null,
@@ -1077,10 +1554,10 @@ function normalizeCashflowTransactions(transactions) {
     const normalizedTransaction = {
       id: String(transaction.id || `cashflow-${String(index + 1).padStart(3, '0')}`),
       type: transaction.type === 'expense' ? 'expense' : 'income',
-      category: String(transaction.category || 'Khác'),
+      category: String(transaction.category || 'KhĂ¡c'),
       amount: normalizeMoneyNumber(transaction.amount),
       transactionDate: transaction.transactionDate ? String(transaction.transactionDate) : '',
-      method: String(transaction.method || 'Khác'),
+      method: String(transaction.method || 'KhĂ¡c'),
       personName: String(transaction.personName || ''),
       recordedBy: String(transaction.recordedBy || 'Admin DreamHome'),
       note: String(transaction.note || ''),
@@ -1140,7 +1617,7 @@ function normalizeCashflowCategories(categories) {
           ? `cash-cat-${index + 1}`
           : category.id || `cash-cat-${index + 1}`,
       ),
-      name: String(categoryName || 'Khác'),
+      name: String(categoryName || 'KhĂ¡c'),
       type: ['income', 'expense', 'both'].includes(categoryType) ? categoryType : 'both',
       isArchived: Boolean(typeof category === 'string' ? false : category.isArchived),
       createdAt: typeof category === 'string' ? now : category.createdAt || now,
@@ -1218,12 +1695,12 @@ function normalizeInventoryItems(items) {
     .filter((item) => item && typeof item === 'object')
     .map((item, index) => ({
       id: String(item.id || `inventory-${String(index + 1).padStart(3, '0')}`),
-      name: String(item.name || 'Vật tư'),
-      category: String(item.category || 'Khác'),
-      unit: String(item.unit || 'cái'),
+      name: String(item.name || 'Váº­t tÆ°'),
+      category: String(item.category || 'KhĂ¡c'),
+      unit: String(item.unit || 'cĂ¡i'),
       quantity: normalizeInventoryNumber(item.quantity),
       lowStockThreshold: normalizeInventoryNumber(item.lowStockThreshold),
-      condition: String(item.condition || 'Đang dùng'),
+      condition: String(item.condition || 'Äang dĂ¹ng'),
       location: String(item.location || ''),
       note: String(item.note || ''),
       createdAt: item.createdAt ? normalizeDateTime(item.createdAt) : '',
@@ -1237,13 +1714,13 @@ function normalizeInventoryMovements(movements) {
     .map((movement, index) => ({
       id: String(movement.id || `inventory-movement-${String(index + 1).padStart(3, '0')}`),
       itemId: String(movement.itemId || ''),
-      itemName: String(movement.itemName || 'Vật tư'),
+      itemName: String(movement.itemName || 'Váº­t tÆ°'),
       type: movement.type === 'out' ? 'out' : 'in',
       quantity: normalizeInventoryNumber(movement.quantity),
       movementDate: isValidDateString(movement.movementDate)
         ? String(movement.movementDate)
         : new Date().toISOString().slice(0, 10),
-      reason: String(movement.reason || 'Khác'),
+      reason: String(movement.reason || 'KhĂ¡c'),
       handledBy: String(movement.handledBy || 'Admin'),
       note: String(movement.note || ''),
       costAmount: normalizeMoneyNumber(movement.costAmount),
@@ -1258,6 +1735,74 @@ function normalizeInventoryMovements(movements) {
       (firstMovement, secondMovement) =>
         new Date(secondMovement.createdAt) - new Date(firstMovement.createdAt),
     )
+}
+
+function normalizeInventoryRequests(requests) {
+  return (requests ?? [])
+    .filter((request) => request && typeof request === 'object')
+    .map((request, index) => {
+      const now = new Date().toISOString()
+      const createdAt = request.createdAt ? normalizeDateTime(request.createdAt) : now
+      const status = VALID_INVENTORY_REQUEST_STATUSES.includes(request.status)
+        ? request.status
+        : 'new'
+
+      return {
+        ...request,
+        id: String(request.id || `inventory-request-${String(index + 1).padStart(3, '0')}`),
+        requestCode: String(request.requestCode || createFallbackInventoryRequestCode(createdAt, index)),
+        requestedByName: String(request.requestedByName || ''),
+        requestedByRole: String(request.requestedByRole || ''),
+        requestedByPhone: String(request.requestedByPhone || ''),
+        studentName: String(request.studentName || ''),
+        linkedStudentId: String(request.linkedStudentId || ''),
+        itemTypes: normalizeInventoryRequestEnumArray(
+          request.itemTypes,
+          VALID_INVENTORY_REQUEST_ITEM_TYPES,
+        ),
+        otherItemText: String(request.otherItemText || ''),
+        itemDetails: String(request.itemDetails || ''),
+        usageModes: normalizeInventoryRequestEnumArray(
+          request.usageModes,
+          VALID_INVENTORY_REQUEST_USAGE_MODES,
+        ),
+        otherUsageText: String(request.otherUsageText || ''),
+        usageLocationDetail: String(request.usageLocationDetail || ''),
+        neededDate: isValidDateString(request.neededDate) ? String(request.neededDate) : '',
+        priority: ['low', 'normal', 'high', 'urgent'].includes(request.priority)
+          ? request.priority
+          : 'normal',
+        status,
+        adminNote: String(request.adminNote || ''),
+        handledBy: String(request.handledBy || ''),
+        handledAt: request.handledAt ? normalizeDateTime(request.handledAt) : '',
+        createdAt,
+        updatedAt: request.updatedAt ? normalizeDateTime(request.updatedAt) : createdAt,
+      }
+    })
+    .sort(
+      (firstRequest, secondRequest) =>
+        new Date(secondRequest.createdAt) - new Date(firstRequest.createdAt),
+    )
+}
+
+function normalizeInventoryRequestEnumArray(values, allowedValues) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => String(value ?? '').trim())
+        .filter((value) => allowedValues.includes(value)),
+    ),
+  )
+}
+
+function createFallbackInventoryRequestCode(createdAt, index) {
+  const date = new Date(createdAt)
+  const dateKey = Number.isNaN(date.getTime())
+    ? new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    : date.toISOString().slice(0, 10).replace(/-/g, '')
+
+  return `DXK-${dateKey}-${String(index + 1).padStart(4, '0')}`
 }
 
 function normalizeInventoryNumber(value) {
@@ -1285,7 +1830,7 @@ function normalizeTuitionTermHistory(termHistory) {
         ...term,
         id: String(term.id || `term-history-${String(index + 1).padStart(3, '0')}`),
         termNumber: Math.max(1, normalizeNumber(term.termNumber) || index + 1),
-        packageName: String(term.packageName || 'Gói học'),
+        packageName: String(term.packageName || 'GĂ³i há»c'),
         totalSessions: normalizeNumber(term.totalSessions),
         usedSessions: normalizeNumber(term.usedSessions),
         totalAmount,
@@ -1393,7 +1938,7 @@ function normalizeNullablePositiveNumber(value) {
 
 function normalizeStringArray(value) {
   return Array.isArray(value)
-    ? value.map((item) => String(item ?? '').trim()).filter(Boolean)
+    ? Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)))
     : []
 }
 
