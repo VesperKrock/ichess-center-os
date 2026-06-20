@@ -98,7 +98,8 @@ const mainHtml = renderAttendanceBoardModule(
 assert(mainHtml.includes('data-attendance-cell-detail'))
 assert(mainHtml.includes('>3</span>') && mainHtml.includes('>4</span>'), 'Combined credits should render as plain chips')
 assert(!mainHtml.includes('(3)') && !mainHtml.includes('(4)'), 'Combined credits should not render parentheses in main table')
-assert(!mainHtml.includes('3+4'), 'Combined credits should not render plus display in main table')
+const mainTableHtml = mainHtml.match(/<table class="attendance-board-sheet">[\s\S]*?<\/table>/)?.[0] || ''
+assert(!mainTableHtml.includes('3+4'), 'Combined credits should not render plus display in main table')
 assert(!mainHtml.includes('ANGEL WINGS'), 'Cells should not render uppercase source text')
 assert(mainHtml.includes('data-attendance-note-open'), 'Attendance note action should be available')
 

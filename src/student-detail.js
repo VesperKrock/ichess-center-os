@@ -49,7 +49,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = []) 
         </div>
         <div class="student-detail-hero-main">
           <h3>${student.fullName}</h3>
-          <p>${displayValue(student.currentStatus)} · ${getLevelLabel(student.level)} · Mốc bot: ${displayValue(student.highestBotMilestone)}</p>
+          <p>${displayValue(student.currentStatus)} · ${getEscapedLevelLabel(student.level)} · Mốc bot: ${displayValue(student.highestBotMilestone)}</p>
           <p>${formatBirthDate(student.birthDate)} · ${formatAgeLabel(student.birthDate)} · ${getGenderLabel(student.gender)}</p>
           <p>Trường: ${getSchoolLabel(student)} · PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(primaryParentPhone))}</p>
         </div>
@@ -83,7 +83,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = []) 
           ['Khu vực', student.parentArea],
         ])}
         ${renderOverviewTile('Trạng thái học', [
-          ['Cấp độ học', getLevelLabel(student.level)],
+          ['Cấp độ học', getEscapedLevelLabel(student.level)],
           ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
           ['Mốc bot', student.highestBotMilestone],
           ['Tính cách', student.personality],
@@ -104,7 +104,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = []) 
         ${renderOverviewTile(
           'Kết quả học tập',
           [
-            ['Cấp độ học hiện tại', getLevelLabel(student.level)],
+            ['Cấp độ học hiện tại', getEscapedLevelLabel(student.level)],
             ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
             ['Mốc bot', student.highestBotMilestone],
             ['Nhận xét GV', 'Sẽ cập nhật sau'],
@@ -196,7 +196,7 @@ export function renderStudentLearningResult(student) {
   return `
     <section class="student-learning-window" aria-label="Kết quả học tập học viên">
       <div class="student-learning-stats">
-        ${renderLearningStat('Cấp độ học hiện tại', getLevelLabel(student.level))}
+        ${renderLearningStat('Cấp độ học hiện tại', getEscapedLevelLabel(student.level))}
         ${renderLearningStat('Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore))}
         ${renderLearningStat('Mốc bot', displayValue(student.highestBotMilestone))}
       </div>
@@ -438,7 +438,11 @@ function getLevelLabel(level) {
 
   return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
     ? studentLevelOptions[legacyLevelNumber - 1]
-    : 'Dolphin 1'
+    : levelText || 'Dolphin 1'
+}
+
+function getEscapedLevelLabel(level) {
+  return escapeHtml(getLevelLabel(level))
 }
 
 function getSchoolLabel(student) {
@@ -536,4 +540,13 @@ function formatDateTime(value) {
 
 function escapeAttribute(value) {
   return String(value).replace(/"/g, '&quot;')
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }

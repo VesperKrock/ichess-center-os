@@ -5,23 +5,38 @@ import {
   scheduleStatuses,
   scheduleTypes,
 } from './schedule-data.js'
+import { buildScheduleDeadlineAlerts } from './schedule-deadline.js'
 
 const DAY_INDEX_BY_ID = new Map(scheduleDays.map((day, index) => [day.id, index]))
 
 export const attendanceStatuses = [
   ['present', 'Có mặt'],
-  ['excusedAbsent', 'Vắng có phép'],
-  ['unexcusedAbsent', 'Vắng không phép'],
+  ['absent', 'Vắng'],
+  ['excused', 'Có phép'],
   ['makeup', 'Học bù'],
   ['trial', 'Học thử'],
 ]
 
-const VALID_ATTENDANCE_STATUS_IDS = attendanceStatuses.map(([status]) => status)
+const LEGACY_ATTENDANCE_STATUS_ALIASES = {
+  excusedAbsent: 'excused',
+  unexcusedAbsent: 'absent',
+}
+const VALID_ATTENDANCE_STATUS_IDS = [
+  ...attendanceStatuses.map(([status]) => status),
+  ...Object.keys(LEGACY_ATTENDANCE_STATUS_ALIASES),
+]
 const guestParticipationTypes = [
   ['trial', 'Học thử'],
   ['makeup', 'Học bù'],
 ]
 const VALID_GUEST_PARTICIPATION_TYPE_IDS = guestParticipationTypes.map(([type]) => type)
+const adminAttendanceStatuses = [
+  ['present', 'Có mặt'],
+  ['absent', 'Vắng'],
+  ['excused', 'Có phép'],
+  ['makeup', 'Học bù'],
+  ['trial', 'Học thử'],
+]
 
 export const emptyScheduleFormValues = {
   scheduleType: 'recurring',
@@ -115,6 +130,8 @@ export function renderScheduleModule(
   teachers = [],
   students = [],
   weekStartDate = getCurrentScheduleWeekStartDate(),
+  adminAttendanceState = null,
+  deadlineOptions = {},
 ) {
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate()
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
@@ -123,6 +140,13 @@ export function renderScheduleModule(
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
   const stats = getScheduleStats(visibleSessions, conflictMap)
+  const scheduleDeadlineAlerts = buildScheduleDeadlineAlerts({
+    sessions: visibleSessions,
+    attendanceRecords: deadlineOptions.attendanceRecords,
+    sessionReports,
+    teachers,
+    now: deadlineOptions.now,
+  })
 
   return `
     <section class="schedule-module ${formState || reportState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
@@ -132,6 +156,7 @@ export function renderScheduleModule(
         ${renderStatCard('Lịch cố định', stats.recurringSessions)}
         ${renderStatCard('Buổi đột xuất', stats.oneOffSessions)}
         ${renderStatCard('Cảnh báo trùng lịch', stats.conflictSessions)}
+        ${renderScheduleAlertBellClean(scheduleDeadlineAlerts)}
         </div>
 
         <div class="schedule-toolbar" aria-label="Điều hướng tuần">
@@ -144,7 +169,6 @@ export function renderScheduleModule(
           <strong class="schedule-week-label">${escapeHtml(formatWeekRange(normalizedWeekStart))}</strong>
         </div>
       </div>
-
       <div class="schedule-week-scroll">
         <div class="schedule-week-grid">
           ${weekDays
@@ -176,6 +200,7 @@ export function renderScheduleModule(
               reportExtraState,
               isReportExtraExpanded,
               guestParticipantFormState,
+              adminAttendanceState,
             )
           : ''
       }
@@ -318,8 +343,14 @@ export function findSessionReport(sessionReports = [], sessionId, occurrenceDate
 export function createSessionReportDraft(session, existingReport = null, options = {}) {
   const identity = getSessionReportIdentity(session?.id, session?.occurrenceDate)
   const sessionStudentIds = normalizeIdArray(session?.studentIds)
+  const adminAttendance = normalizeTeacherLockAttendance(options.adminAttendanceRecords, sessionStudentIds)
+  const teacherAttendance = normalizeTeacherCanonicalAttendance(options.teacherAttendanceRecords, sessionStudentIds)
   const existingAttendance = new Map(
-    normalizeReportAttendance(existingReport?.attendance)
+    (adminAttendance.length
+      ? adminAttendance
+      : teacherAttendance.length
+        ? teacherAttendance
+        : normalizeReportAttendance(existingReport?.attendance))
       .map((item) => [item.studentId, item]),
   )
 
@@ -332,6 +363,8 @@ export function createSessionReportDraft(session, existingReport = null, options
       note: existingAttendance.get(studentId)?.note ?? '',
     })),
     guestParticipants: normalizeReportGuestParticipants(existingReport?.guestParticipants),
+    attendanceLockedByAdmin: adminAttendance.length > 0,
+    adminAttendanceCount: adminAttendance.length,
     saveState: options.saveState ?? '',
     error: options.error ?? '',
   }
@@ -621,7 +654,7 @@ export function buildTrelloReportText({
     })),
   ]
   const presentStatuses = new Set(['present', 'makeup', 'trial'])
-  const absentStatuses = new Set(['excusedAbsent', 'unexcusedAbsent'])
+  const absentStatuses = new Set(['absent', 'excused', 'excusedAbsent', 'unexcusedAbsent'])
   const presentRows = attendanceRows.filter((item) => presentStatuses.has(item.attendanceStatus))
   const absentRows = attendanceRows.filter((item) => absentStatuses.has(item.attendanceStatus))
   const presentNames = presentRows.map((item) => formatAttendanceStudentName(item, studentLookup))
@@ -864,6 +897,144 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
   `
 }
 
+function renderScheduleAlertBell(alerts = []) {
+  const alertItems = Array.isArray(alerts) ? alerts : []
+  const teacherCount = alertItems.filter((alert) => alert.group === 'teacher').length
+  const adminCount = alertItems.filter((alert) => alert.group === 'adminReview').length
+  const qtvCount = alertItems.filter((alert) => alert.status === 'qtvAttentionNeeded').length
+
+  return `
+    <details class="schedule-alert-bell" aria-label="ChuĂ´ng cáº£nh bĂ¡o TKB">
+      <summary aria-label="Má»Ÿ danh sĂ¡ch cáº£nh bĂ¡o TKB">
+        <span class="schedule-alert-bell-icon" aria-hidden="true">!</span>
+        <span>Cáº£nh bĂ¡o</span>
+        ${alertItems.length ? `<strong>${alertItems.length}</strong>` : ''}
+      </summary>
+      <div class="schedule-alert-popover" role="status">
+        <div class="schedule-alert-popover-header">
+          <strong>Cáº£nh bĂ¡o ca dáº¡y</strong>
+          <span>${alertItems.length ? `${alertItems.length} ca cáº§n kiá»ƒm tra` : '0 ca'}</span>
+        </div>
+        ${
+          alertItems.length
+            ? `
+              <div class="schedule-alert-popover-groups" aria-label="NhĂ³m cáº£nh bĂ¡o">
+                <span>GiĂ¡o viĂªn trá»… bĂ¡o cĂ¡o: ${teacherCount}</span>
+                <span>Admin/TÆ° váº¥n cáº§n kiá»ƒm tra: ${adminCount}</span>
+                <span>Cáº§n QTV/anh Háº£i chĂº Ă½: ${qtvCount || adminCount}</span>
+              </div>
+              <div class="schedule-alert-popover-list">${alertItems
+                .slice(0, 12)
+                .map((alert) => renderScheduleDeadlineAlertItemClean(alert))
+                .join('')}</div>
+            `
+            : '<p class="schedule-alert-empty">KhĂ´ng cĂ³ ca cáº§n cáº£nh bĂ¡o.</p>'
+        }
+      </div>
+    </details>
+  `
+}
+
+function renderScheduleAlertBellClean(alerts = []) {
+  const alertItems = Array.isArray(alerts) ? alerts : []
+  const teacherCount = alertItems.filter((alert) => alert.group === 'teacher').length
+  const adminCount = alertItems.filter((alert) => alert.group === 'adminReview').length
+  const qtvCount = alertItems.filter((alert) => alert.status === 'qtvAttentionNeeded').length
+
+  return `
+    <details class="schedule-alert-bell" aria-label="Chuông cảnh báo TKB">
+      <summary aria-label="Mở danh sách cảnh báo TKB">
+        <span class="schedule-alert-bell-icon" aria-hidden="true">!</span>
+        <span>Cảnh báo</span>
+        ${alertItems.length ? `<strong>${alertItems.length}</strong>` : ''}
+      </summary>
+      <div class="schedule-alert-popover" role="status">
+        <div class="schedule-alert-popover-header">
+          <strong>Cảnh báo ca dạy</strong>
+          <span>${alertItems.length ? `${alertItems.length} ca cần kiểm tra` : '0 ca'}</span>
+        </div>
+        ${
+          alertItems.length
+            ? `
+              <div class="schedule-alert-popover-groups" aria-label="Nhóm cảnh báo">
+                <span>Giáo viên trễ báo cáo: ${teacherCount}</span>
+                <span>Admin/Tư vấn cần kiểm tra: ${adminCount}</span>
+                <span>Cần QTV/anh Hải chú ý: ${qtvCount || adminCount}</span>
+              </div>
+              <div class="schedule-alert-popover-list">${alertItems
+                .slice(0, 12)
+                .map((alert) => renderScheduleDeadlineAlertItemClean(alert))
+                .join('')}</div>
+            `
+            : '<p class="schedule-alert-empty">Không có ca cần cảnh báo.</p>'
+        }
+      </div>
+    </details>
+  `
+}
+
+function renderScheduleDeadlineAlertItemClean(alert) {
+  return `
+    <div class="schedule-teacher-alert-item is-${escapeAttribute(alert.status)}">
+      <div class="schedule-teacher-alert-main">
+        <strong>${escapeHtml(alert.title)}</strong>
+        <span>${escapeHtml(formatReportDate(alert.occurrenceDate))} · ${escapeHtml(alert.timeLabel)}</span>
+      </div>
+      <div class="schedule-teacher-alert-meta">
+        <span>Giáo viên: ${escapeHtml(alert.teacherName)}</span>
+        <span>${escapeHtml(alert.deadlineTitle || 'Hạn gửi')}: ${escapeHtml(alert.deadlineLabel)}</span>
+      </div>
+      <p>${escapeHtml([alert.message, alert.escalationMessage].filter(Boolean).join(' '))}</p>
+    </div>
+  `
+}
+
+function renderTeacherDeadlineAlerts(alerts = []) {
+  const alertItems = Array.isArray(alerts) ? alerts : []
+  const teacherCount = alertItems.filter((alert) => alert.group === 'teacher').length
+  const adminCount = alertItems.filter((alert) => alert.group === 'adminReview').length
+
+  return `
+    <section class="schedule-teacher-alerts" aria-label="Cảnh báo ca dạy">
+      <div class="schedule-teacher-alerts-header">
+        <strong>Cảnh báo ca dạy</strong>
+        <span>${alertItems.length ? `${alertItems.length} ca cần kiểm tra` : 'Không có ca cần cảnh báo.'}</span>
+      </div>
+      ${
+        alertItems.length
+          ? `
+            <div class="schedule-teacher-alert-groups" aria-label="Nhóm cảnh báo">
+              <span>Giáo viên trễ báo cáo: ${teacherCount}</span>
+              <span>Admin/Tư vấn cần kiểm tra: ${adminCount}</span>
+              <span>Cần QTV/anh Hải chú ý: ${adminCount}</span>
+            </div>
+            <div class="schedule-teacher-alert-list" aria-label="Danh sĂ¡ch cáº£nh bĂ¡o ca dáº¡y">${alertItems
+              .slice(0, 8)
+              .map((alert) => renderTeacherDeadlineAlertItem(alert))
+              .join('')}</div>
+          `
+          : '<p>Không có ca cần cảnh báo. Không có ca Giáo viên trễ báo cáo.</p>'
+      }
+    </section>
+  `
+}
+
+function renderTeacherDeadlineAlertItem(alert) {
+  return `
+    <div class="schedule-teacher-alert-item is-${escapeAttribute(alert.status)}">
+      <div class="schedule-teacher-alert-main">
+        <strong>${escapeHtml(alert.title)}</strong>
+        <span>${escapeHtml(formatReportDate(alert.occurrenceDate))} · ${escapeHtml(alert.timeLabel)}</span>
+      </div>
+      <div class="schedule-teacher-alert-meta">
+        <span>Giáo viên: ${escapeHtml(alert.teacherName)}</span>
+        <span>${escapeHtml(alert.deadlineTitle || 'Hạn gửi')}: ${escapeHtml(alert.deadlineLabel)}</span>
+      </div>
+      <p>${escapeHtml([alert.message, alert.escalationMessage].filter(Boolean).join(' '))}</p>
+    </div>
+  `
+}
+
 function renderScheduleForm(formState, teachers, students, sessions, weekStartDate) {
   const isEdit = formState.mode === 'edit'
   const scheduleType = normalizeScheduleType(formState.values.scheduleType)
@@ -949,6 +1120,7 @@ function renderScheduleReportPanel(
   reportExtraState = null,
   isReportExtraExpanded = false,
   guestParticipantFormState = null,
+  adminAttendanceState = null,
 ) {
   const visibleSessions = getVisibleScheduleSessions(sessions, weekStartDate)
   const session = visibleSessions.find(
@@ -965,6 +1137,16 @@ function renderScheduleReportPanel(
   const studentLookup = createLookup(students)
   const teacher = session.teacherId ? teacherLookup.get(String(session.teacherId)) : null
   const teacherLabel = getSessionTeacherLabel(session, teacher)
+  const reportMode = reportState.mode || 'teacherReport'
+
+  if (reportMode === 'roleGateway') {
+    return renderScheduleReportRoleGateway(session, teacherLabel)
+  }
+
+  if (reportMode === 'adminPlaceholder') {
+    return renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup, adminAttendanceState)
+  }
+
   const existingReport = findSessionReport(sessionReports, session.id, session.occurrenceDate)
   const activeDraft =
     reportAttendanceState?.sessionId === session.id &&
@@ -1034,9 +1216,151 @@ function renderScheduleReportPanel(
   `
 }
 
+function renderScheduleReportRoleGateway(session, teacherLabel) {
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-report-panel schedule-role-gateway" aria-label="Chọn vai trò xử lý buổi học">
+      <div class="schedule-report-header">
+        <div class="schedule-report-compact-title">
+          <strong>Bạn là?</strong>
+          <span>${escapeHtml(session.title || 'Buổi học')}</span>
+          <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
+          <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
+        </div>
+        <div class="schedule-report-header-actions">
+          <button type="button" data-schedule-action="close-report">Đóng</button>
+          <button type="button" data-schedule-action="close-report" aria-label="Đóng chọn vai trò">×</button>
+        </div>
+      </div>
+
+      <div class="schedule-role-gateway-body">
+        <p>Chọn chế độ xử lý cho buổi học này.</p>
+        <div class="schedule-role-options">
+          <button type="button" data-schedule-report-role="admin">Admin cơ sở</button>
+          <button type="button" data-schedule-report-role="teacher">Giáo viên</button>
+        </div>
+      </div>
+    </section>
+  `
+}
+
+function renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup, adminAttendanceState = null) {
+  const studentIds = normalizeIdArray(session.studentIds)
+  const rowsByStudentId = new Map(
+    (Array.isArray(adminAttendanceState?.rows) ? adminAttendanceState.rows : [])
+      .map((row) => [String(row.studentId || ''), row]),
+  )
+  const studentRows = studentIds.map((studentId) => ({
+    studentId,
+    student: studentLookup.get(studentId),
+    row: rowsByStudentId.get(studentId) || {
+      studentId,
+      attendanceStatus: '',
+      note: '',
+    },
+  }))
+  const summary = getAdminAttendanceSummary(studentRows)
+  const statusMessage = adminAttendanceState?.error
+    ? `<p class="session-report-save-state error">${escapeHtml(adminAttendanceState.error)}</p>`
+    : adminAttendanceState?.saveState === 'saved'
+      ? '<p class="session-report-save-state">Đã lưu điểm danh Admin cơ sở.</p>'
+      : ''
+
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-report-panel schedule-admin-attendance-panel" aria-label="Điểm danh Admin cơ sở">
+      <div class="schedule-report-header">
+        <div class="schedule-report-compact-title">
+          <strong>Điểm danh Admin cơ sở</strong>
+          <span>${escapeHtml(session.title || 'Buổi học')}</span>
+          <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
+          <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
+          <span>Học viên trong ca: ${studentRows.length}</span>
+        </div>
+        <div class="schedule-report-header-actions">
+          <button type="button" data-schedule-report-role="gateway">Quay lại chọn vai trò</button>
+          <button type="button" data-schedule-action="close-report">Đóng</button>
+        </div>
+      </div>
+
+      <div class="schedule-admin-attendance-body">
+        <section class="schedule-report-section">
+          <div class="session-report-section-heading">
+            <h5>Thông tin điểm danh</h5>
+            <div>
+              <button type="button" data-admin-attendance-action="mark-all-present">Đánh dấu tất cả có mặt</button>
+              <button type="button" data-admin-attendance-action="clear">Xóa nhập liệu</button>
+              <button type="button" data-admin-attendance-action="save">Lưu điểm danh</button>
+            </div>
+          </div>
+          <div class="session-report-summary schedule-admin-attendance-summary" aria-label="Tổng quan điểm danh Admin">
+            <span>Học viên trong ca: ${studentRows.length}</span>
+            <span>Có mặt: ${summary.present}</span>
+            <span>Vắng: ${summary.absent}</span>
+            <span>Có phép: ${summary.excused}</span>
+            <span>Học bù: ${summary.makeup}</span>
+            <span>Học thử: ${summary.trial}</span>
+            <span>Chưa chọn: ${summary.empty}</span>
+          </div>
+          ${statusMessage}
+          ${
+            studentRows.length
+              ? `<div class="schedule-admin-attendance-rows">${studentRows
+                  .map(({ studentId, student, row }) => renderAdminAttendanceStudentRow(studentId, student, row))
+                  .join('')}</div>`
+              : '<p class="schedule-report-empty">Ca học này chưa có học viên.</p>'
+          }
+        </section>
+      </div>
+    </section>
+  `
+}
+
+function renderAdminAttendanceStudentRow(studentId, student, row = {}) {
+  const studentName = student?.fullName || student?.name || 'Học viên'
+  const studentMeta = [student?.level, student?.parentName].filter(Boolean).join(' · ')
+  const status = String(row.attendanceStatus || '')
+
+  return `
+    <div class="schedule-admin-attendance-row" data-admin-attendance-row="${escapeAttribute(studentId)}">
+      <div class="session-report-student-name">
+        <strong>${escapeHtml(studentName)}</strong>
+        <span>${escapeHtml(studentMeta || 'Trong ca học')}</span>
+      </div>
+      <select class="schedule-admin-attendance-status" data-admin-attendance-status data-admin-attendance-student-id="${escapeAttribute(studentId)}" aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}">
+        <option value=""${status ? '' : ' selected'}>Chưa chọn</option>
+        ${adminAttendanceStatuses
+          .map(([value, label]) => `<option value="${escapeAttribute(value)}"${status === value ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+          .join('')}
+      </select>
+      <input class="schedule-admin-attendance-note" type="text" maxlength="160" data-admin-attendance-note data-admin-attendance-student-id="${escapeAttribute(studentId)}" value="${escapeAttribute(row.note || '')}" aria-label="Ghi chú điểm danh của ${escapeAttribute(studentName)}">
+    </div>
+  `
+}
+
+function getAdminAttendanceSummary(studentRows = []) {
+  return studentRows.reduce((summary, { row }) => {
+    const status = String(row?.attendanceStatus || '')
+    if (Object.prototype.hasOwnProperty.call(summary, status)) {
+      summary[status] += 1
+    } else {
+      summary.empty += 1
+    }
+    return summary
+  }, {
+    present: 0,
+    absent: 0,
+    excused: 0,
+    makeup: 0,
+    trial: 0,
+    empty: 0,
+  })
+}
+
 function renderSessionReportAttendance(session, studentLookup, draft, guestFormState = null) {
   const attendance = normalizeReportAttendance(draft?.attendance)
   const guestParticipants = normalizeReportGuestParticipants(draft?.guestParticipants)
+  const isLockedByAdmin = Boolean(draft?.attendanceLockedByAdmin)
   const presentRows = [
     ...attendance.filter((item) => ['present', 'makeup', 'trial'].includes(item.attendanceStatus)),
     ...guestParticipants,
@@ -1046,9 +1370,10 @@ function renderSessionReportAttendance(session, studentLookup, draft, guestFormS
     return `
       <section class="schedule-report-section session-report-attendance">
         <div class="session-report-section-heading">
-          <h5>Điểm danh</h5>
-          <button type="button" data-session-guest-action="open-create">+ Học viên tạm</button>
+          <h5>Điểm danh giáo viên</h5>
+          <button type="button" data-session-guest-action="open-create" ${isLockedByAdmin ? 'disabled' : ''}>+ Học viên tạm</button>
         </div>
+        ${renderTeacherAttendanceLockNotice(draft)}
         ${guestFormState ? renderGuestParticipantForm(guestFormState) : ''}
         <p class="schedule-report-empty">Chưa có học viên trong buổi học.</p>
       </section>
@@ -1057,7 +1382,7 @@ function renderSessionReportAttendance(session, studentLookup, draft, guestFormS
 
   const presentCount = presentRows.length
   const absentCount = attendance.filter((item) =>
-    ['excusedAbsent', 'unexcusedAbsent'].includes(item.attendanceStatus),
+    ['absent', 'excused'].includes(item.attendanceStatus),
   ).length
   const makeupCount =
     attendance.filter((item) => item.attendanceStatus === 'makeup').length +
@@ -1070,12 +1395,14 @@ function renderSessionReportAttendance(session, studentLookup, draft, guestFormS
   return `
     <section class="schedule-report-section session-report-attendance">
       <div class="session-report-section-heading">
-        <h5>Điểm danh</h5>
+        <h5>Điểm danh giáo viên</h5>
         <div>
-          <button type="button" data-session-guest-action="open-create">+ Học viên tạm</button>
-          <button type="button" data-schedule-action="save-attendance">Lưu điểm danh</button>
+          <button type="button" data-session-guest-action="open-create" ${isLockedByAdmin ? 'disabled' : ''}>+ Học viên tạm</button>
+          <button type="button" data-schedule-action="save-attendance" ${isLockedByAdmin ? 'disabled' : ''}>Lưu điểm danh</button>
         </div>
       </div>
+
+      ${renderTeacherAttendanceLockNotice(draft)}
 
       <div class="session-report-summary" aria-label="Tổng quan điểm danh">
         <span>Sĩ số: ${presentCount}/${totalCount}</span>
@@ -1098,7 +1425,7 @@ function renderSessionReportAttendance(session, studentLookup, draft, guestFormS
 
       <div class="session-report-student-rows">
         ${attendance
-          .map((item) => renderAttendanceRow(item, studentLookup.get(item.studentId)))
+          .map((item) => renderAttendanceRow(item, studentLookup.get(item.studentId), { disabled: isLockedByAdmin }))
           .join('')}
         ${guestParticipants.map((guest) => renderGuestParticipantRow(guest)).join('')}
       </div>
@@ -1106,7 +1433,20 @@ function renderSessionReportAttendance(session, studentLookup, draft, guestFormS
   `
 }
 
-function renderAttendanceRow(attendanceItem, student) {
+function renderTeacherAttendanceLockNotice(draft = {}) {
+  if (!draft.attendanceLockedByAdmin) {
+    return ''
+  }
+
+  return `
+    <div class="session-report-admin-lock-notice" role="status">
+      <strong>Admin cơ sở đã điểm danh ca này.</strong>
+      <span>Phần điểm danh đã được Admin cơ sở ghi nhận. Giáo viên có thể bổ sung nội dung ca dạy và báo cáo.</span>
+    </div>
+  `
+}
+
+function renderAttendanceRow(attendanceItem, student, options = {}) {
   const studentName = getShortStudentName(student?.fullName || student?.name || 'Học viên không tìm thấy')
   const studentMeta = [
     student?.level,
@@ -1125,6 +1465,7 @@ function renderAttendanceRow(attendanceItem, student) {
         data-session-report-attendance-status
         data-session-report-student-id="${escapeAttribute(attendanceItem.studentId)}"
         aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}"
+        ${options.disabled ? 'disabled' : ''}
       >
         ${attendanceStatuses
           .map(
@@ -1142,8 +1483,8 @@ function renderAttendanceRow(attendanceItem, student) {
         data-session-report-student-id="${escapeAttribute(attendanceItem.studentId)}"
         value="${escapeAttribute(attendanceItem.note)}"
         maxlength="140"
-        placeholder="Ghi chú ngắn..."
         aria-label="Ghi chú điểm danh của ${escapeAttribute(studentName)}"
+        ${options.disabled ? 'disabled' : ''}
       />
     </div>
   `
@@ -1176,7 +1517,6 @@ function renderGuestParticipantForm(formState) {
           type="text"
           data-session-guest-field="displayName"
           value="${escapeAttribute(formState.values.displayName)}"
-          placeholder="Ví dụ: Minh Anh"
         />
       </label>
       <label>
@@ -1198,7 +1538,6 @@ function renderGuestParticipantForm(formState) {
           type="text"
           data-session-guest-field="note"
           value="${escapeAttribute(formState.values.note)}"
-          placeholder="Ghi chú ngắn..."
         />
       </label>
       ${renderGuestParticipantFormErrors(formState.errors)}
@@ -1290,7 +1629,6 @@ function renderLearningGroupForm(formState, sessionStudentIds, studentLookup, at
             type="text"
             value="${escapeAttribute(formState.values.title)}"
             data-session-learning-field="title"
-            placeholder="Ví dụ: Nhóm cờ tàn"
           />
         </label>
 
@@ -1300,7 +1638,6 @@ function renderLearningGroupForm(formState, sessionStudentIds, studentLookup, at
             type="text"
             value="${escapeAttribute(formState.values.note)}"
             data-session-learning-field="note"
-            placeholder="Ghi chú ngắn..."
           />
         </label>
 
@@ -1325,7 +1662,6 @@ function renderLearningGroupForm(formState, sessionStudentIds, studentLookup, at
           <textarea
             data-session-learning-field="contentText"
             rows="4"
-            placeholder="Mỗi dòng là một ý nội dung học..."
           >${escapeHtml(formState.values.contentText)}</textarea>
         </label>
       </div>
@@ -1471,7 +1807,6 @@ function renderExtraTextarea(fieldName, label, value) {
       <textarea
         data-session-report-extra-field="${escapeAttribute(fieldName)}"
         rows="3"
-        placeholder="Hiện tại chưa có"
       >${escapeHtml(value ?? '')}</textarea>
     </label>
   `
@@ -2085,11 +2420,47 @@ function normalizeReportAttendance(attendance) {
     .map((item) => ({
       studentId: String(item?.studentId ?? '').trim(),
       attendanceStatus: VALID_ATTENDANCE_STATUS_IDS.includes(item?.attendanceStatus)
-        ? item.attendanceStatus
+        ? normalizeTeacherAttendanceStatus(item.attendanceStatus)
         : 'present',
       note: String(item?.note ?? ''),
     }))
     .filter((item) => item.studentId)
+}
+
+function normalizeTeacherLockAttendance(records = [], allowedStudentIds = []) {
+  const allowedStudentSet = new Set(normalizeIdArray(allowedStudentIds))
+  return (Array.isArray(records) ? records : [])
+    .filter((record) =>
+      record?.source === 'admin' &&
+      allowedStudentSet.has(String(record.studentId || '')),
+    )
+    .map((record) => ({
+      studentId: String(record.studentId || '').trim(),
+      attendanceStatus: normalizeTeacherAttendanceStatus(record.attendanceStatus || record.status),
+      note: String(record.note || ''),
+    }))
+    .filter((item) => item.studentId)
+}
+
+function normalizeTeacherCanonicalAttendance(records = [], allowedStudentIds = []) {
+  const allowedStudentSet = new Set(normalizeIdArray(allowedStudentIds))
+  return (Array.isArray(records) ? records : [])
+    .filter((record) =>
+      record?.source === 'teacher' &&
+      allowedStudentSet.has(String(record.studentId || '')),
+    )
+    .map((record) => ({
+      studentId: String(record.studentId || '').trim(),
+      attendanceStatus: normalizeTeacherAttendanceStatus(record.attendanceStatus || record.status),
+      note: String(record.note || ''),
+    }))
+    .filter((item) => item.studentId)
+}
+
+function normalizeTeacherAttendanceStatus(status) {
+  const rawStatus = String(status || '').trim()
+  return LEGACY_ATTENDANCE_STATUS_ALIASES[rawStatus] ||
+    (attendanceStatuses.some(([itemStatus]) => itemStatus === rawStatus) ? rawStatus : 'present')
 }
 
 function normalizeReportLearningGroups(learningGroups, allowedStudentIds = null) {

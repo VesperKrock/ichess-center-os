@@ -2,7 +2,7 @@ import { botMilestones, sampleStudents, studentStatuses } from './student-data.j
 
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
-const studentLevelOptions = [
+export const studentLevelOptions = [
   'Dolphin 1',
   'Dolphin 2',
   'Dolphin 3',
@@ -453,7 +453,7 @@ function renderStudentForm(
                   renderField('nationality', 'Quốc tịch', formState, 'text'),
                 ])}
                 ${renderFormSection('C. Trạng thái học', [
-                  renderSelectField('level', 'Cấp độ học *', formState, studentLevelOptions),
+                  renderStudentLevelField(formState),
                   renderSelectField('highestBotMilestone', 'Mốc bot đã vượt qua', formState, botMilestones),
                   renderSelectField(
                     'assignedTeacherId',
@@ -571,6 +571,27 @@ function renderSelectField(name, label, formState, options) {
         }).join('')}
       </select>
       ${formState.errors[name] ? `<small>${formState.errors[name]}</small>` : ''}
+    </label>
+  `
+}
+
+function renderStudentLevelField(formState) {
+  return `
+    <label class="${formState.errors.level ? 'has-error' : ''}">
+      <span>Cấp độ học *</span>
+      <input
+        type="text"
+        list="student-level-options"
+        value="${escapeAttribute(formState.values.level ?? '')}"
+        data-student-form-field="level"
+        placeholder="Chọn hoặc nhập cấp độ riêng"
+      />
+      <datalist id="student-level-options">
+        ${studentLevelOptions
+          .map((level) => `<option value="${escapeAttribute(level)}"></option>`)
+          .join('')}
+      </datalist>
+      ${formState.errors.level ? `<small>${formState.errors.level}</small>` : ''}
     </label>
   `
 }
@@ -749,7 +770,7 @@ function renderStudentRow(student, teachers = [], classSessions = []) {
       <td title="${escapeAttribute(student.parentName)}">${getShortName(student.parentName)}</td>
       <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
       <td><span class="student-status">${student.currentStatus}</span></td>
-      <td>${getLevelLabel(student.level)}</td>
+      <td>${escapeHtml(getLevelLabel(student.level))}</td>
       <td>${student.elo ?? '—'}</td>
       <td title="${escapeAttribute(student.schoolName)}">${getShortSchoolName(student.schoolName)}</td>
       <td>${renderStudentTeacherCell(student, teachers)}</td>
@@ -1002,7 +1023,7 @@ function getShortName(value) {
   return parts.slice(-2).join(' ')
 }
 
-function getLevelLabel(level) {
+export function getLevelLabel(level) {
   const legacyLevelMap = {
     'nhap mon': 'Dolphin 1',
     'co ban': 'Dolphin 2',
@@ -1029,7 +1050,7 @@ function getLevelLabel(level) {
 
   return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
     ? studentLevelOptions[legacyLevelNumber - 1]
-    : 'Dolphin 1'
+    : levelText || 'Dolphin 1'
 }
 
 function getShortSchoolName(value) {

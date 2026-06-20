@@ -304,42 +304,51 @@ export async function pushLocalCoreEntitiesToCloud({
 }
 
 export async function pullCoreEntitiesFromCloud(centerId = CURRENT_CENTER_ID) {
-  const context = await checkCloudDbReadiness(centerId)
+  try {
+    const context = await checkCloudDbReadiness(centerId)
 
-  if (!context.ok) {
-    return context
-  }
+    if (!context.ok) {
+      return context
+    }
 
-  const studentsResult = await listCloudEntityPayloads({
-    supabase: context.supabase,
-    centerId,
-    entityType: CLOUD_ENTITY_TYPES.STUDENT,
-  })
-  const teachersResult = await listCloudEntityPayloads({
-    supabase: context.supabase,
-    centerId,
-    entityType: CLOUD_ENTITY_TYPES.TEACHER,
-  })
-  const classSessionsResult = await listCloudEntityPayloads({
-    supabase: context.supabase,
-    centerId,
-    entityType: CLOUD_ENTITY_TYPES.CLASS_SESSION,
-  })
-  const failedResult = [studentsResult, teachersResult, classSessionsResult].find(
-    (result) => !result.ok,
-  )
+    const studentsResult = await listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.STUDENT,
+    })
+    const teachersResult = await listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.TEACHER,
+    })
+    const classSessionsResult = await listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.CLASS_SESSION,
+    })
+    const failedResult = [studentsResult, teachersResult, classSessionsResult].find(
+      (result) => !result.ok,
+    )
 
-  if (failedResult) {
-    return failedResult
-  }
+    if (failedResult) {
+      return failedResult
+    }
 
-  return {
-    ok: true,
-    data: {
-      students: studentsResult.data,
-      teachers: teachersResult.data,
-      classSessions: classSessionsResult.data,
-    },
+    return {
+      ok: true,
+      data: {
+        students: studentsResult.data,
+        teachers: teachersResult.data,
+        classSessions: classSessionsResult.data,
+      },
+    }
+  } catch (error) {
+    console.warn(`Không thể pull Cloud DB C2. Local data được giữ nguyên. ${error?.message || ''}`.trim())
+    return {
+      ok: false,
+      error: getCloudDbErrorMessage(error),
+      detail: classifyCloudDbError(error, 'center_cloud_entities'),
+    }
   }
 }
 

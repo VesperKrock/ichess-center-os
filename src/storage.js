@@ -19,6 +19,8 @@ const CASHBOOK_RECONCILIATIONS_KEY = 'ichessCenterOS.cashbookReconciliations.dre
 const INVENTORY_KEY = 'ichessCenterOS.inventory.dreamhome'
 const INVENTORY_MOVEMENTS_KEY = 'ichessCenterOS.inventoryMovements.dreamhome'
 const INVENTORY_REQUESTS_KEY = 'ichessCenterOS.inventoryRequests.dreamhome'
+const CLOUD_PULL_BACKUP_PREFIX = 'ichessCenterOS.backup.beforeCloudPull.'
+const CLOUD_PULL_BACKUP_KEEP_COUNT = 2
 const CURRENT_NOTIFICATIONS_VERSION = '15J.1'
 const VALID_VIEW_MODES = ['grid', 'list']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
@@ -237,23 +239,94 @@ export function createCloudDbPullBackup(storage = localStorage) {
   }
 
   const createdAt = new Date().toISOString()
-  const backupKey = `ichessCenterOS.backup.beforeCloudPull.${createdAt.replace(/[:.]/g, '-')}`
+  const backupKey = `${CLOUD_PULL_BACKUP_PREFIX}${createdAt.replace(/[:.]/g, '-')}`
+  const backupPayload = JSON.stringify({
+    reason: 'before-cloud-db-pull-c1',
+    phase: 'c2-online-core',
+    createdAt,
+    keys: {
+      students: storage.getItem(STUDENTS_KEY),
+      teachers: storage.getItem(TEACHERS_KEY),
+      classSessions: storage.getItem(CLASS_SESSIONS_KEY),
+    },
+  })
 
-  storage.setItem(
-    backupKey,
-    JSON.stringify({
-      reason: 'before-cloud-db-pull-c1',
-      phase: 'c2-online-core',
-      createdAt,
-      keys: {
-        students: storage.getItem(STUDENTS_KEY),
-        teachers: storage.getItem(TEACHERS_KEY),
-        classSessions: storage.getItem(CLASS_SESSIONS_KEY),
-      },
-    }),
+  pruneCloudPullBackups(storage, CLOUD_PULL_BACKUP_KEEP_COUNT)
+
+  try {
+    storage.setItem(backupKey, backupPayload)
+    return backupKey
+  } catch (error) {
+    if (!isStorageQuotaExceededError(error)) {
+      console.warn(`Không thể tạo backup trước khi pull Cloud DB. ${error?.message || ''}`.trim())
+      return createCloudPullBackupFailure('backupWriteFailed', error)
+    }
+  }
+
+  pruneCloudPullBackups(storage, Math.max(0, CLOUD_PULL_BACKUP_KEEP_COUNT - 1))
+
+  try {
+    storage.setItem(backupKey, backupPayload)
+    return backupKey
+  } catch (retryError) {
+    console.warn(
+      `Không thể tạo bản sao lưu trước khi đồng bộ cloud vì bộ nhớ trình duyệt đã đầy. Pull cloud đã được dừng để bảo vệ dữ liệu local. ${retryError?.message || ''}`.trim(),
+    )
+    return createCloudPullBackupFailure('backupQuotaExceeded', retryError)
+  }
+}
+
+export function getCloudPullBackupKeys(storage = localStorage) {
+  if (!storage || typeof storage.length !== 'number' || typeof storage.key !== 'function') {
+    return []
+  }
+
+  const backupKeys = []
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index)
+    if (typeof key === 'string' && key.startsWith(CLOUD_PULL_BACKUP_PREFIX)) {
+      backupKeys.push(key)
+    }
+  }
+
+  return backupKeys.sort()
+}
+
+export function pruneCloudPullBackups(storage = localStorage, keepCount = CLOUD_PULL_BACKUP_KEEP_COUNT) {
+  if (!storage || typeof storage.removeItem !== 'function') {
+    return []
+  }
+
+  const normalizedKeepCount = Math.max(0, Number.isFinite(keepCount) ? keepCount : CLOUD_PULL_BACKUP_KEEP_COUNT)
+  const backupKeys = getCloudPullBackupKeys(storage)
+  const keysToRemove = backupKeys.slice(0, Math.max(0, backupKeys.length - normalizedKeepCount))
+
+  keysToRemove.forEach((key) => storage.removeItem(key))
+  return keysToRemove
+}
+
+function createCloudPullBackupFailure(reason, error) {
+  return {
+    ok: false,
+    reason,
+    error:
+      reason === 'backupQuotaExceeded'
+        ? 'Không thể tạo bản sao lưu trước khi đồng bộ cloud vì bộ nhớ trình duyệt đã đầy. Vui lòng dọn backup cũ hoặc xuất dữ liệu trước khi thử lại.'
+        : 'Không thể tạo bản sao lưu trước khi đồng bộ cloud. Pull cloud đã được dừng để bảo vệ dữ liệu local.',
+    detail: error?.message || String(error || ''),
+  }
+}
+
+function isStorageQuotaExceededError(error) {
+  return Boolean(
+    error &&
+      (
+        error.name === 'QuotaExceededError' ||
+        error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        error.code === 22 ||
+        error.code === 1014
+      ),
   )
-
-  return backupKey
 }
 
 export function getStoredNotifications(defaultNotifications) {
@@ -843,7 +916,7 @@ function normalizeStudentAssignedTeacherId(value) {
   return teacherId || null
 }
 
-function normalizeStudentLevel(value) {
+export function normalizeStudentLevel(value) {
   const levelText = String(value ?? '').trim()
   const normalizedLevelText = normalizeStudentText(levelText)
   const canonicalLevel = STUDENT_LEVELS.find(
@@ -870,7 +943,7 @@ function normalizeStudentLevel(value) {
 
   return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
     ? STUDENT_LEVELS[legacyLevelNumber - 1]
-    : 'Dolphin 1'
+    : levelText || 'Dolphin 1'
 }
 
 function normalizeStudentText(value) {

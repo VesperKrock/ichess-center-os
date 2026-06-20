@@ -6,6 +6,13 @@
 
 import { ANGEL_WINGS_SOURCE_MODULE, ANGEL_WINGS_SOURCE_TAG } from './attendance-board-angel-wings-data.js'
 import { computeAttendanceCycleState, getPaidCycleCountFromTuition } from './attendance-board-cycle.js'
+import {
+  buildUnifiedAttendanceRecords,
+  getBaselineEditableDateRange,
+  isDateInBaselineEditableRange,
+  loadAttendanceBaselineState,
+  loadStoredAttendanceRecords,
+} from './attendance-records.js'
 
 export const ATTENDANCE_BOARD_DEMO_BATCH_ID = 'attendance-board-demo-foundation'
 export const ATTENDANCE_BOARD_DEMO_SOURCE = 'bang-diem-danh-demo'
@@ -14,10 +21,19 @@ const weekdayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 const presentAttendanceStatuses = new Set(['present', 'makeup'])
 const attendanceStatusLabels = {
   present: 'Có mặt',
+  absent: 'Vắng',
   excusedAbsent: 'Vắng phép',
+  excused: 'Có phép',
   unexcusedAbsent: 'Vắng',
   makeup: 'Học bù',
   trial: 'Học thử',
+}
+
+const baselineStateLabels = {
+  notStarted: 'Chưa khởi tạo',
+  draft: 'Đang nhập dữ liệu nền',
+  locked: 'Đã khóa dữ liệu nền',
+  unlocked: 'Đã mở khóa để chỉnh sửa',
 }
 
 export function renderAttendanceBoardModule(
@@ -30,9 +46,14 @@ export function renderAttendanceBoardModule(
   detailState = null,
   attendanceBoardNotes = [],
   noteFormState = null,
+  baselineUndoAvailable = false,
+  draftRecords = null,
+  draftChangeCount = 0,
 ) {
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
+  const storedAttendanceRecords = Array.isArray(draftRecords) ? draftRecords : loadStoredAttendanceRecords()
+  const baselineState = loadAttendanceBaselineState()
   const filteredRows = buildAttendanceBoardRows(
     students,
     classSessions,
@@ -41,24 +62,13 @@ export function renderAttendanceBoardModule(
     attendanceAdvisoryNotes,
     normalizedFilters,
     attendanceBoardNotes,
+    storedAttendanceRecords,
   )
   const visibleDates = getVisibleAttendanceDates(filteredRows, classSessions, normalizedFilters)
   const stats = getAttendanceBoardStats(students, classSessions)
 
   return `
     <section class="attendance-board-module" aria-label="Bảng điểm danh">
-      <header class="attendance-board-header">
-        <div>
-          <h3>Bảng điểm danh</h3>
-        </div>
-        <div class="attendance-board-stats" aria-label="Tổng quan bảng điểm danh">
-          <span>Tổng học viên: <strong>${stats.totalStudents}</strong></span>
-          <span>Đã phân lớp: <strong>${stats.assignedStudents}</strong></span>
-          <span>Chưa phân lớp: <strong>${stats.unassignedStudents}</strong></span>
-          <span>Tổng ca học: <strong>${stats.totalClassSessions}</strong></span>
-        </div>
-      </header>
-
       <div class="attendance-board-toolbar" aria-label="Bộ lọc bảng điểm danh">
         <label>
           <span>Tháng/Năm</span>
@@ -89,11 +99,82 @@ export function renderAttendanceBoardModule(
             placeholder="Tên, mã học viên, phụ huynh, số điện thoại"
           >
         </label>
+        <div class="attendance-board-stats" aria-label="Tổng quan bảng điểm danh">
+          <span>Tổng học viên: <strong>${stats.totalStudents}</strong></span>
+          <span>Đã phân lớp: <strong>${stats.assignedStudents}</strong></span>
+          <span>Chưa phân lớp: <strong>${stats.unassignedStudents}</strong></span>
+          <span>Tổng ca học: <strong>${stats.totalClassSessions}</strong></span>
+        </div>
       </div>
 
-      ${renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students)}
+      ${renderAttendanceBaselinePanel(storedAttendanceRecords, baselineState, baselineUndoAvailable, draftChangeCount)}
+      ${renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState)}
       ${renderAttendanceDetailModal(detailState, filteredRows, classSessions)}
       ${renderAttendanceNoteModal(noteFormState, filteredRows, normalizedFilters)}
+    </section>
+  `
+}
+
+function renderAttendanceBaselinePanel(
+  storedAttendanceRecords = [],
+  baselineState = {},
+  baselineUndoAvailable = false,
+  draftChangeCount = 0,
+) {
+  const normalizedState = baselineState && typeof baselineState === 'object' ? baselineState : { status: 'notStarted' }
+  const status = normalizedState.status || 'notStarted'
+  const isLocked = status === 'locked'
+  const isInputMode = status === 'draft' || status === 'unlocked'
+  const editableRange = getBaselineEditableDateRange()
+  const baselineRecords = (Array.isArray(storedAttendanceRecords) ? storedAttendanceRecords : [])
+    .filter((record) => record?.source === 'initialBaseline')
+  const hasDraftChanges = Number(draftChangeCount) > 0
+
+  return `
+    <section class="attendance-baseline-toolbar" aria-label="Dữ liệu nền điểm danh">
+      <div class="attendance-baseline-summary">
+        <strong>Dữ liệu nền điểm danh</strong>
+        <span>Trạng thái: ${escapeHtml(baselineStateLabels[status] || baselineStateLabels.notStarted)}</span>
+        <span>${baselineRecords.length} bản ghi nền</span>
+        <span>${hasDraftChanges ? `${draftChangeCount} thay đổi chưa lưu` : 'Không có thay đổi chưa lưu'}</span>
+        <span>Nhập từ ${escapeHtml(formatAttendanceDate(editableRange.startDate))} đến ${escapeHtml(formatAttendanceDate(editableRange.endDate))}</span>
+      </div>
+      <div class="attendance-baseline-actions">
+        <button type="button" data-attendance-baseline-action="start" ${isLocked ? 'disabled' : ''}>
+          Bắt đầu nhập dữ liệu nền
+        </button>
+        <button type="button" data-attendance-baseline-action="undo" ${baselineUndoAvailable ? '' : 'disabled'}>
+          Hoàn tác nhập gần nhất
+        </button>
+        <button type="button" data-attendance-baseline-action="save" ${hasDraftChanges && !isLocked ? '' : 'disabled'}>
+          Lưu thay đổi
+        </button>
+        <button type="button" data-attendance-baseline-action="cancel" ${hasDraftChanges ? '' : 'disabled'}>
+          Hủy thay đổi
+        </button>
+        <button type="button" data-attendance-baseline-action="clear" ${isLocked ? 'disabled' : ''}>
+          Xóa dữ liệu nền đang nhập
+        </button>
+        <button type="button" data-attendance-baseline-action="lock" ${isLocked ? 'disabled' : ''}>
+          Chốt dữ liệu nền
+        </button>
+        <button type="button" data-attendance-baseline-action="unlock" ${isLocked ? '' : 'disabled'}>
+          Mở khóa dữ liệu nền
+        </button>
+      </div>
+      <p>Nhập trực tiếp vào ô ngày trong khoảng cho phép. Ví dụ: 1, 3+4, T, V, P, CP, B hoặc để trống để xóa dữ liệu nền.</p>
+      ${
+        normalizedState.lockedAt
+          ? `<p class="attendance-baseline-meta">Khóa lúc ${escapeHtml(formatDateTime(normalizedState.lockedAt))}${normalizedState.lockedBy ? ` bởi ${escapeHtml(normalizedState.lockedBy)}` : ''}.</p>`
+          : ''
+      }
+      ${
+        normalizedState.unlockedAt
+          ? `<p class="attendance-baseline-meta">Mở khóa lúc ${escapeHtml(formatDateTime(normalizedState.unlockedAt))}${normalizedState.unlockReason ? ` · Lý do: ${escapeHtml(normalizedState.unlockReason)}` : ''}.</p>`
+          : ''
+      }
+      ${isInputMode ? '' : '<p class="attendance-baseline-warning">Bấm “Bắt đầu nhập dữ liệu nền” để chỉnh trực tiếp trên các ô ngày hợp lệ.</p>'}
+      ${isLocked ? '<p class="attendance-baseline-warning">Dữ liệu nền đã khóa, cần mở khóa trước khi chỉnh sửa.</p>' : ''}
     </section>
   `
 }
@@ -106,11 +187,18 @@ export function buildAttendanceBoardRows(
   attendanceAdvisoryNotes = [],
   filters = initialAttendanceBoardFilters,
   attendanceBoardNotes = [],
+  storedAttendanceRecords = null,
 ) {
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
-  const classSessionById = buildAttendanceClassSessionMap(classSessions, sessionReports)
+  const attendanceRecords = buildUnifiedAttendanceRecords({
+    sessionReports,
+    storedRecords: Array.isArray(storedAttendanceRecords)
+      ? storedAttendanceRecords
+      : loadStoredAttendanceRecords(),
+  })
+  const classSessionById = buildAttendanceClassSessionMap(classSessions, sessionReports, attendanceRecords)
   const tuitionByStudentId = new Map(tuitionRecords.map((record) => [record.studentId, record]))
-  const reportLookup = buildAttendanceReportLookup(sessionReports, normalizedFilters.month)
+  const reportLookup = buildAttendanceReportLookup(attendanceRecords, normalizedFilters.month)
   const advisoryNoteByStudentId = buildAdvisoryNoteLookup(attendanceAdvisoryNotes, normalizedFilters.month)
   const attendanceBoardNoteByStudentId = buildAttendanceBoardNoteLookup(attendanceBoardNotes, normalizedFilters.month)
   const normalizedQuery = normalizeSearchText(normalizedFilters.query)
@@ -335,7 +423,7 @@ export function parseClassSessionDayIndexes(dayLabel = '') {
   return Array.from(indexes).sort((firstIndex, secondIndex) => firstIndex - secondIndex)
 }
 
-function renderAttendanceBoardContent(rows, dates, classSessions, students) {
+function renderAttendanceBoardContent(rows, dates, classSessions, students, baselineState = {}) {
   if (!students.length) {
     return '<p class="attendance-board-empty">Chưa có học viên để lập bảng điểm danh.</p>'
   }
@@ -370,14 +458,14 @@ function renderAttendanceBoardContent(rows, dates, classSessions, students) {
           </tr>
         </thead>
         <tbody>
-          ${rows.map((row, rowIndex) => renderAttendanceBoardRow(row, rowIndex, dates)).join('')}
+          ${rows.map((row, rowIndex) => renderAttendanceBoardRow(row, rowIndex, dates, baselineState)).join('')}
         </tbody>
       </table>
     </div>
   `
 }
 
-function renderAttendanceBoardRow(row, rowIndex, dates) {
+function renderAttendanceBoardRow(row, rowIndex, dates, baselineState) {
   return `
     <tr>
       <td class="is-sticky">${rowIndex + 1}</td>
@@ -385,7 +473,7 @@ function renderAttendanceBoardRow(row, rowIndex, dates) {
         <strong>${escapeHtml(cleanDisplayText(row.student.fullName || ''))}</strong>
       </td>
       <td>${renderClassSessionList(row.classSessions)}</td>
-      ${dates.map((dateItem) => renderAttendanceCell(row, dateItem)).join('')}
+      ${dates.map((dateItem, dateIndex) => renderAttendanceCell(row, dateItem, baselineState, rowIndex, dateIndex)).join('')}
       <td class="attendance-note-cell">${renderAttendanceNoteCell(row)}</td>
     </tr>
   `
@@ -409,12 +497,16 @@ function renderAttendanceNoteCell(row) {
   `
 }
 
-function renderAttendanceCell(row, dateItem) {
+function renderAttendanceCell(row, dateItem, baselineState = {}, rowIndex = 0, dateIndex = 0) {
   const attendance = row.attendanceSummary.byDate.get(dateItem.dateKey)
+  const canEditBaselineCell = canEditAttendanceBaselineCell(row, dateItem, attendance, baselineState)
 
   if (attendance) {
-    const isAngelWings = isAngelWingsAttendanceItem(attendance)
-    const sourceLabel = isAngelWings ? 'Angel Wings 06/2026' : 'Báo cáo buổi học'
+    if (canEditBaselineCell) {
+      return renderAttendanceBaselineEditableCell(row, dateItem, attendance, true, rowIndex, dateIndex)
+    }
+
+    const sourceLabel = getAttendanceSourceLabel(attendance)
     const titleParts = [
       attendance.warning || attendanceStatusLabels[attendance.attendanceStatus] || 'Có dữ liệu',
       attendance.cycleLabel,
@@ -449,9 +541,53 @@ function renderAttendanceCell(row, dateItem) {
       .some((sessionDate) => sessionDate.dateKey === dateItem.dateKey),
   )
 
+  if (canEditBaselineCell) {
+    return renderAttendanceBaselineEditableCell(row, dateItem, null, isPlanned, rowIndex, dateIndex)
+  }
+
   return `
     <td class="attendance-cell ${isPlanned ? 'is-planned' : 'is-empty'}" ${isPlanned ? 'title="Dự kiến theo Ca học / Lớp"' : ''}>
       ${isPlanned ? '<span>·</span>' : '<span>—</span>'}
+    </td>
+  `
+}
+
+function canEditAttendanceBaselineCell(row, dateItem, attendance, baselineState) {
+  const status = baselineState?.status || 'notStarted'
+
+  if (status !== 'draft' && status !== 'unlocked') {
+    return false
+  }
+
+  if (!row?.student?.id || !dateItem?.dateKey || !isDateInBaselineEditableRange(dateItem.dateKey)) {
+    return false
+  }
+
+  return true
+}
+
+function renderAttendanceBaselineEditableCell(row, dateItem, attendance, isPlanned = true, rowIndex = 0, dateIndex = 0) {
+  const value = attendance ? getBaselineCellInputValue(attendance) : ''
+  const label = value || (isPlanned ? '·' : '')
+  const title = [
+    attendance && !isInitialBaselineAttendanceItem(attendance) ? 'Ô này đang có dữ liệu nguồn; nhập mới sẽ tạo dữ liệu nền override.' : '',
+  ].filter(Boolean).join(' ')
+
+  return `
+    <td class="attendance-cell attendance-baseline-editable-cell ${attendance ? 'is-recorded' : isPlanned ? 'is-planned' : 'is-empty'} ${attendance && !isInitialBaselineAttendanceItem(attendance) ? 'has-source-record' : ''}" ${title ? `title="${escapeAttribute(title)}"` : ''}>
+      <input
+        type="text"
+        class="attendance-baseline-cell-input"
+        aria-label="Nhập dữ liệu nền cho ${escapeAttribute(cleanDisplayText(row.student.fullName || 'học viên'))} ngày ${escapeAttribute(formatAttendanceDate(dateItem.dateKey))}"
+        data-attendance-baseline-cell-input
+        data-student-id="${escapeAttribute(row.student.id)}"
+        data-date-key="${escapeAttribute(dateItem.dateKey)}"
+        data-row-index="${escapeAttribute(rowIndex)}"
+        data-column-index="${escapeAttribute(dateIndex)}"
+        value="${escapeAttribute(value)}"
+        placeholder="${escapeAttribute(label)}"
+        inputmode="text"
+      >
     </td>
   `
 }
@@ -497,6 +633,34 @@ function renderAttendanceCellDisplay(attendance) {
   return `<span class="attendance-credit-chip">${escapeHtml(attendance.displayValue || attendanceStatusLabels[attendance.attendanceStatus] || '✓')}</span>`
 }
 
+function getBaselineCellInputValue(attendance) {
+  if (!attendance) {
+    return ''
+  }
+
+  if (attendance.displayValue) {
+    return String(attendance.displayValue)
+  }
+
+  if (attendance.attendanceStatus === 'trial') {
+    return 'T'
+  }
+
+  if (attendance.attendanceStatus === 'absent' || attendance.attendanceStatus === 'unexcusedAbsent') {
+    return 'V'
+  }
+
+  if (attendance.attendanceStatus === 'excused' || attendance.attendanceStatus === 'excusedAbsent') {
+    return 'P'
+  }
+
+  if (attendance.attendanceStatus === 'makeup') {
+    return 'B'
+  }
+
+  return buildDisplayValueFromAttendanceRecordsFromCredits(attendance.credits) || ''
+}
+
 function renderAttendanceDetailModal(detailState, rows, classSessions) {
   if (!detailState?.studentId || !detailState?.dateKey) {
     return ''
@@ -512,8 +676,7 @@ function renderAttendanceDetailModal(detailState, rows, classSessions) {
   const classSessionById = new Map(classSessions.map((classSession) => [classSession.id, classSession]))
   const actualClassSession = classSessionById.get(attendance.classSessionId) || row.classSessions[0] || null
   const originalClassSession = row.classSessions[0] || actualClassSession
-  const isAngelWings = isAngelWingsAttendanceItem(attendance)
-  const sourceLabel = isAngelWings ? 'Angel Wings 06/2026' : 'Báo cáo buổi học'
+  const sourceLabel = getAttendanceSourceLabel(attendance)
   const typeLabel = getAttendanceDetailTypeLabel(attendance)
   const credits = Array.isArray(attendance.credits) ? attendance.credits : []
   const creditRows = credits.length
@@ -565,18 +728,14 @@ function renderAttendanceDetailModal(detailState, rows, classSessions) {
   `
 }
 
-function buildAttendanceClassSessionMap(classSessions = [], sessionReports = []) {
+function buildAttendanceClassSessionMap(classSessions = [], sessionReports = [], attendanceRecords = []) {
   const classSessionById = new Map(
     classSessions
       .filter((classSession) => classSession?.id)
       .map((classSession) => [String(classSession.id), classSession]),
   )
-
   ;(sessionReports || []).forEach((report) => {
-    const candidateClassSessionIds = [
-      report.classSessionId,
-      ...(report.attendance || []).map((attendanceItem) => attendanceItem.classSessionId),
-    ]
+    const candidateClassSessionIds = [report.classSessionId]
 
     candidateClassSessionIds.forEach((classSessionId) => {
       const id = String(classSessionId || '').trim()
@@ -587,6 +746,14 @@ function buildAttendanceClassSessionMap(classSessions = [], sessionReports = [])
 
       classSessionById.set(id, buildFallbackClassSessionFromId(id))
     })
+  })
+
+  attendanceRecords.forEach((record) => {
+    const id = String(record.classSessionId || '').trim()
+
+    if (id && !classSessionById.has(id)) {
+      classSessionById.set(id, buildFallbackClassSessionFromId(id))
+    }
   })
 
   return classSessionById
@@ -746,7 +913,7 @@ function renderDataLineagePanel() {
       <summary>Kiểm tra dây dữ liệu</summary>
       <div>
         <p><strong>Nguồn dữ liệu thật:</strong> tên, mã học viên, phụ huynh, số điện thoại và classSessionIds đọc từ Module Học viên; ca học/lớp đọc từ Cài đặt cơ sở; gói buổi và số buổi còn lại đọc từ Học phí.</p>
-        <p><strong>Ô ngày:</strong> số đã học đọc từ Báo cáo buổi học/sessionReports. Ô có badge Angel Wings là dữ liệu nhập từ bảng Angel Wings 06/2026; demo cũ không được dùng trong real mode.</p>
+        <p><strong>Ô ngày:</strong> số đã học đọc từ read-model điểm danh hợp nhất gồm Báo cáo buổi học/sessionReports và dữ liệu điểm danh canonical đã lưu. Ô có badge Angel Wings là dữ liệu nhập từ bảng Angel Wings 06/2026; demo cũ không được dùng trong real mode.</p>
         <ol>
           <li>Sửa ca học của một học viên trong Module Học viên, quay lại Bảng điểm danh để kiểm tra học viên xuất hiện theo filter.</li>
           <li>Sửa gói hoặc số buổi trong Module Học phí, quay lại Bảng điểm danh để kiểm tra mẫu số như 8/12/16/32 thay đổi đúng.</li>
@@ -853,7 +1020,8 @@ function getStudentAttendanceSummary(studentId, reportLookup, tuition) {
     studiedCount,
     hasReportData: attendanceItems.length > 0,
     hasAngelWingsData: attendanceItems.some(isAngelWingsAttendanceItem),
-    hasRealData: attendanceItems.some((item) => !isAngelWingsAttendanceItem(item)),
+    hasBaselineData: attendanceItems.some(isInitialBaselineAttendanceItem),
+    hasRealData: attendanceItems.some((item) => !isAngelWingsAttendanceItem(item) && !isInitialBaselineAttendanceItem(item)),
   }
 }
 
@@ -914,57 +1082,118 @@ function getAttendanceCellStatusClass(attendance) {
   return attendance.isWrapStart ? 'attendance-cell-paid is-wrap-start' : 'attendance-cell-paid'
 }
 
-function buildAttendanceReportLookup(sessionReports, monthValue) {
-  return (sessionReports ?? []).reduce((lookup, report) => {
-    if (isDemoAttendanceReport(report)) {
+function buildAttendanceReportLookup(attendanceRecords, monthValue) {
+  const groupedRecords = new Map()
+
+  attendanceRecords.forEach((record) => {
+    if (!record.date || !record.studentId || !record.date.startsWith(monthValue)) {
+      return
+    }
+
+    const groupKey = getAttendanceRecordBoardGroupKey(record)
+    const records = groupedRecords.get(groupKey) || []
+    records.push(record)
+    groupedRecords.set(groupKey, records)
+  })
+
+  return Array.from(groupedRecords.values()).reduce((lookup, records) => {
+    const firstRecord = records[0]
+
+    if (!firstRecord) {
       return lookup
     }
 
-    const dateKey = String(report.occurrenceDate || '')
+    const attendanceItem = firstRecord.raw?.attendanceItem || {}
+    const report = firstRecord.raw?.report || {}
+    const studentId = firstRecord.studentId
+    const dateKey = firstRecord.date
+    const items = lookup.get(studentId) || []
 
-    if (!dateKey || !shouldReadAttendanceReportForMonth(report, dateKey, monthValue)) {
-      return lookup
-    }
-
-    ;(report.attendance ?? []).forEach((attendanceItem) => {
-      const studentId = String(attendanceItem.studentId || '')
-
-      if (!studentId) {
-        return
-      }
-
-      const items = lookup.get(studentId) || []
-      items.push({
-        dateKey,
-        attendanceStatus: attendanceItem.attendanceStatus || 'present',
-        note: attendanceItem.note || '',
-        studentName: attendanceItem.studentName || '',
-        classSessionId: attendanceItem.classSessionId || report.classSessionId || '',
-        teacherId: attendanceItem.teacherId || report.teacherId || '',
-        teacherName: attendanceItem.teacherName || report.teacherName || '',
-        occurrenceDate: attendanceItem.occurrenceDate || report.occurrenceDate || dateKey,
-        status: attendanceItem.status || attendanceItem.attendanceStatus || 'present',
-        isDemoAttendance: Boolean(attendanceItem.isDemoAttendance || report.isDemoAttendance),
-        isImportedAttendance: Boolean(attendanceItem.isImportedAttendance || report.isImportedAttendance),
-        sourceModule: attendanceItem.sourceModule || report.sourceModule || '',
-        sourceTag: attendanceItem.sourceTag || report.sourceTag || '',
-        importBatchId: attendanceItem.importBatchId || report.importBatchId || '',
-        demoPaymentStatus: attendanceItem.demoPaymentStatus || '',
-        displayValue: attendanceItem.displayValue || '',
-        credits: Array.isArray(attendanceItem.credits) ? attendanceItem.credits : [],
-        countsTowardTuition: attendanceItem.countsTowardTuition !== false,
-        isCombinedCredit: Boolean(attendanceItem.isCombinedCredit),
-        needsMakeupReview: Boolean(attendanceItem.needsMakeupReview),
-      })
-      lookup.set(studentId, items)
+    items.push({
+      dateKey,
+      attendanceStatus: firstRecord.attendanceStatus || 'present',
+      note: firstRecord.note || '',
+      studentName: attendanceItem.studentName || '',
+      classSessionId: firstRecord.classSessionId || '',
+      teacherId: firstRecord.teacherId || '',
+      teacherName: firstRecord.teacherName || '',
+      occurrenceDate: firstRecord.date,
+      status: firstRecord.status || firstRecord.attendanceStatus || 'present',
+      isDemoAttendance: Boolean(attendanceItem.isDemoAttendance || report.isDemoAttendance),
+      isImportedAttendance: Boolean(attendanceItem.isImportedAttendance || report.isImportedAttendance),
+      isInitialBaseline: firstRecord.source === 'initialBaseline',
+      source: firstRecord.source || 'unknown',
+      sourceModule: attendanceItem.sourceModule || report.sourceModule || '',
+      sourceTag: attendanceItem.sourceTag || report.sourceTag || '',
+      importBatchId: attendanceItem.importBatchId || report.importBatchId || '',
+      demoPaymentStatus: attendanceItem.demoPaymentStatus || '',
+      displayValue: attendanceItem.displayValue || buildDisplayValueFromAttendanceRecords(records),
+      credits: buildCreditsFromAttendanceRecords(records),
+      countsTowardTuition: records.some((record) => record.counted),
+      isCombinedCredit: Boolean(attendanceItem.isCombinedCredit || records.length > 1 || buildCreditsFromAttendanceRecords(records).length > 1),
+      needsMakeupReview: Boolean(attendanceItem.needsMakeupReview),
     })
+    lookup.set(studentId, items)
 
     return lookup
   }, new Map())
 }
 
-function shouldReadAttendanceReportForMonth(report, dateKey, monthValue) {
-  return dateKey.startsWith(monthValue)
+function getAttendanceRecordBoardGroupKey(record) {
+  if (record?.sourceReportId && record.sourceAttendanceIndex !== null && record.sourceAttendanceIndex !== undefined) {
+    return [
+      record.studentId,
+      record.date,
+      record.sourceReportId,
+      record.sourceAttendanceIndex,
+    ].join('::')
+  }
+
+  return [
+    record.studentId,
+    record.date,
+    record.id || '',
+    record.source || 'unknown',
+  ].join('::')
+}
+
+function buildCreditsFromAttendanceRecords(records = []) {
+  return records
+    .flatMap((record) => {
+      const sourceCredits = Array.isArray(record.raw?.attendanceItem?.credits)
+        ? record.raw.attendanceItem.credits
+        : []
+
+      if (sourceCredits.length && record.sourceCreditIndex === null) {
+        return sourceCredits.map((credit) => ({ ...credit }))
+      }
+
+      const sourceCredit = sourceCredits[record.sourceCreditIndex]
+
+      if (sourceCredit && typeof sourceCredit === 'object') {
+        return [{ ...sourceCredit }]
+      }
+
+      return [{
+        displayValue: record.creditLabel || (record.creditNumber === null ? '' : String(record.creditNumber)),
+        sessionNumber: record.creditNumber,
+      }]
+    })
+    .filter((credit) => String(credit.displayValue ?? credit.sessionNumber ?? '').trim())
+}
+
+function buildDisplayValueFromAttendanceRecords(records = []) {
+  return buildCreditsFromAttendanceRecords(records)
+    .map((credit) => getAttendanceCreditDisplayValue(credit))
+    .filter(Boolean)
+    .join('+')
+}
+
+function buildDisplayValueFromAttendanceRecordsFromCredits(credits = []) {
+  return (Array.isArray(credits) ? credits : [])
+    .map((credit) => getAttendanceCreditDisplayValue(credit))
+    .filter(Boolean)
+    .join('+')
 }
 
 function shouldShowAttendanceReportDate(dateKey, monthValue) {
@@ -972,6 +1201,18 @@ function shouldShowAttendanceReportDate(dateKey, monthValue) {
 }
 
 function getAttendanceSummarySourceLabel(attendanceSummary) {
+  if (attendanceSummary.hasBaselineData && attendanceSummary.hasAngelWingsData) {
+    return 'Dữ liệu nền + Angel Wings'
+  }
+
+  if (attendanceSummary.hasBaselineData && attendanceSummary.hasRealData) {
+    return 'Dữ liệu nền + Báo cáo buổi học'
+  }
+
+  if (attendanceSummary.hasBaselineData) {
+    return 'Dữ liệu nền ban đầu'
+  }
+
   if (attendanceSummary.hasAngelWingsData && attendanceSummary.hasRealData) {
     return 'Báo cáo buổi học + Angel Wings'
   }
@@ -983,8 +1224,28 @@ function getAttendanceSummarySourceLabel(attendanceSummary) {
   return 'Báo cáo buổi học'
 }
 
+function getAttendanceSourceLabel(attendance) {
+  if (isAngelWingsAttendanceItem(attendance)) {
+    return 'Angel Wings 06/2026'
+  }
+
+  if (isInitialBaselineAttendanceItem(attendance)) {
+    return 'Dữ liệu nền ban đầu'
+  }
+
+  if (attendance?.source === 'correction') {
+    return 'Điều chỉnh điểm danh'
+  }
+
+  return 'Báo cáo buổi học'
+}
+
 function isAngelWingsAttendanceItem(item) {
   return Boolean(item?.sourceTag === ANGEL_WINGS_SOURCE_TAG || item?.sourceModule === ANGEL_WINGS_SOURCE_MODULE)
+}
+
+function isInitialBaselineAttendanceItem(item) {
+  return Boolean(item?.isInitialBaseline || item?.source === 'initialBaseline')
 }
 
 function buildAdvisoryNoteLookup(attendanceAdvisoryNotes, monthValue) {
@@ -1159,6 +1420,16 @@ function formatAttendanceDate(dateKey) {
   }
 
   return `${day}/${month}/${year}`
+}
+
+function formatDateTime(value) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value || '')
+  }
+
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function cleanDisplayText(value) {

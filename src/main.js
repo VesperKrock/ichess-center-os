@@ -199,6 +199,25 @@ import {
   renderAttendanceBoardModule,
 } from './attendance-board-module.js'
 import {
+  clearInitialBaselineAttendanceRecordsInMonth,
+  createInitialBaselineEditSnapshot,
+  isDateInBaselineEditableRange,
+  loadAttendanceBaselineState,
+  loadStoredAttendanceRecords,
+  lockAttendanceBaselineState,
+  parseInitialBaselineCellInput,
+  removeInitialBaselineAttendanceRecord,
+  restoreInitialBaselineEditSnapshot,
+  saveAttendanceBaselineState,
+  saveAttendanceBaselineDraftState,
+  saveStoredAttendanceRecords,
+  startAttendanceBaselineDraft,
+  unlockAttendanceBaselineState,
+  upsertAdminAttendanceRecords,
+  upsertInitialBaselineAttendanceRecord,
+  upsertTeacherAttendanceRecords,
+} from './attendance-records.js'
+import {
   ANGEL_WINGS_DATASET_ID,
   ANGEL_WINGS_IMPORT_BATCH_ID,
   ANGEL_WINGS_SOURCE_TAG,
@@ -324,6 +343,7 @@ let shortcutDragState = null
 let suppressNextModuleClick = false
 let shortcutDocumentDragBound = false
 let notificationOutsidePointerBound = false
+let moduleNotificationOutsidePointerBound = false
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
 let classSessions = getStoredClassSessions(sampleClassSessions)
@@ -341,8 +361,14 @@ let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 let sessionReports = getStoredSessionReports()
 let attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes()
 let attendanceBoardNotes = getStoredAttendanceBoardNotes()
+let attendanceBaselineUndoSnapshot = null
+let attendanceBaselineDraftRecords = null
+let attendanceBaselineDraftBaseRecords = null
+let attendanceBaselineDraftState = null
+let pendingAttendanceBaselineCellFocus = null
 let scheduleFormState = null
 let scheduleReportState = null
+let scheduleAdminAttendanceState = null
 let sessionReportAttendanceState = null
 let sessionReportLearningState = null
 let sessionReportLearningFormState = null
@@ -441,8 +467,430 @@ function render() {
   restoreScheduleFormScrollState(scheduleFormScrollState)
   restoreParentContactFormScrollTop()
   restorePreservedScrollPositions(preservedScrollState)
+  focusPendingAttendanceBaselineCell()
   skipNextParentContactScrollCapture = false
   updateClock()
+}
+
+function getBaselineInputFocusTarget(input) {
+  if (!input) {
+    return null
+  }
+
+  const rowIndex = Number.parseInt(input.dataset.rowIndex || '', 10)
+  const columnIndex = Number.parseInt(input.dataset.columnIndex || '', 10)
+
+  if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
+    return null
+  }
+
+  return { rowIndex, columnIndex }
+}
+
+function focusPendingAttendanceBaselineCell() {
+  if (!pendingAttendanceBaselineCellFocus) {
+    return
+  }
+
+  const { rowIndex, columnIndex } = pendingAttendanceBaselineCellFocus
+  pendingAttendanceBaselineCellFocus = null
+
+  const selector =
+    `[data-attendance-baseline-cell-input][data-row-index="${rowIndex}"][data-column-index="${columnIndex}"]`
+  const input = document.querySelector(selector)
+
+  if (!input) {
+    return
+  }
+
+  input.focus()
+  input.select?.()
+}
+
+function getAttendanceBaselineNavigationTarget(input, direction) {
+  const inputs = Array.from(document.querySelectorAll('[data-attendance-baseline-cell-input]'))
+  const currentIndex = inputs.indexOf(input)
+
+  if (currentIndex < 0) {
+    return getBaselineInputFocusTarget(input)
+  }
+
+  if (direction === 'next' || direction === 'previous') {
+    const nextIndex = direction === 'next'
+      ? Math.min(currentIndex + 1, inputs.length - 1)
+      : Math.max(currentIndex - 1, 0)
+
+    return getBaselineInputFocusTarget(inputs[nextIndex])
+  }
+
+  const currentTarget = getBaselineInputFocusTarget(input)
+
+  if (!currentTarget) {
+    return null
+  }
+
+  const columnInputs = inputs
+    .map((candidate) => ({
+      input: candidate,
+      target: getBaselineInputFocusTarget(candidate),
+    }))
+    .filter((candidate) =>
+      candidate.target &&
+      candidate.target.columnIndex === currentTarget.columnIndex,
+    )
+    .sort((first, second) => first.target.rowIndex - second.target.rowIndex)
+
+  const columnIndex = columnInputs.findIndex((candidate) => candidate.input === input)
+
+  if (columnIndex < 0) {
+    return currentTarget
+  }
+
+  const nextColumnIndex = direction === 'down'
+    ? Math.min(columnIndex + 1, columnInputs.length - 1)
+    : Math.max(columnIndex - 1, 0)
+
+  return getBaselineInputFocusTarget(columnInputs[nextColumnIndex].input)
+}
+
+function hasInitialBaselineAttendanceRecord(records, studentId, date) {
+  return records.some(
+    (record) =>
+      record?.source === 'initialBaseline' &&
+      String(record.studentId || '') === String(studentId || '') &&
+      String(record.date || '') === String(date || ''),
+  )
+}
+
+function createScheduleAdminAttendanceState(occurrence, records = loadStoredAttendanceRecords()) {
+  const existingRecords = Array.isArray(records) ? records : []
+  const rows = getScheduleAdminStudentIds(occurrence).map((studentId) => {
+    const existingRecord = existingRecords.find((record) => isScheduleAdminAttendanceRecord(record, occurrence, studentId))
+
+    return {
+      studentId,
+      attendanceStatus: existingRecord?.attendanceStatus || '',
+      note: existingRecord?.note || '',
+    }
+  })
+
+  return {
+    sessionId: occurrence?.id || null,
+    occurrenceDate: occurrence?.occurrenceDate || occurrence?.date || '',
+    rows,
+    error: '',
+    saveState: '',
+  }
+}
+
+function getScheduleAdminAttendanceRecords(occurrence, records = loadStoredAttendanceRecords()) {
+  return (Array.isArray(records) ? records : [])
+    .filter((record) =>
+      record?.source === 'admin' &&
+      String(record.date || '') === String(occurrence?.occurrenceDate || occurrence?.date || '') &&
+      getScheduleAdminAttendanceSessionKey(record) === String(occurrence?.id || '').trim(),
+    )
+}
+
+function getScheduleTeacherAttendanceRecords(occurrence, records = loadStoredAttendanceRecords()) {
+  return (Array.isArray(records) ? records : [])
+    .filter((record) =>
+      record?.source === 'teacher' &&
+      String(record.date || '') === String(occurrence?.occurrenceDate || occurrence?.date || '') &&
+      getScheduleAdminAttendanceSessionKey(record) === String(occurrence?.id || '').trim(),
+    )
+}
+
+function getScheduleAdminStudentIds(occurrence) {
+  return (Array.isArray(occurrence?.studentIds) ? occurrence.studentIds : [])
+    .map((studentId) => String(studentId || '').trim())
+    .filter(Boolean)
+}
+
+function getScheduleAdminAttendanceSessionKey(record = {}) {
+  return String(
+    record.sessionId ||
+      record.scheduleSessionId ||
+      record.classSessionId ||
+      '',
+  ).trim()
+}
+
+function isScheduleAdminAttendanceRecord(record, occurrence, studentId) {
+  const occurrenceDate = String(occurrence?.occurrenceDate || occurrence?.date || '').trim()
+  return record?.source === 'admin' &&
+    String(record.studentId || '') === String(studentId || '') &&
+    String(record.date || '') === occurrenceDate &&
+    getScheduleAdminAttendanceSessionKey(record) === String(occurrence?.id || '').trim()
+}
+
+function updateScheduleAdminAttendanceRow(studentId, patch = {}) {
+  if (!scheduleAdminAttendanceState) {
+    return
+  }
+
+  scheduleAdminAttendanceState = {
+    ...scheduleAdminAttendanceState,
+    rows: scheduleAdminAttendanceState.rows.map((row) =>
+      row.studentId === studentId ? { ...row, ...patch } : row,
+    ),
+    error: '',
+    saveState: '',
+  }
+}
+
+function getScheduleAdminAttendanceOccurrence() {
+  if (!scheduleReportState) {
+    return null
+  }
+
+  return getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
+    (item) =>
+      item.id === scheduleReportState.sessionId &&
+      item.occurrenceDate === scheduleReportState.occurrenceDate,
+  ) || null
+}
+
+function buildScheduleAdminAttendanceInputs(occurrence, rows = []) {
+  return rows
+    .filter((row) => row.attendanceStatus)
+    .map((row) => {
+      const counted = ['present', 'makeup'].includes(row.attendanceStatus)
+      return {
+        studentId: row.studentId,
+        date: occurrence.occurrenceDate,
+        classSessionId: occurrence.classSessionId || null,
+        scheduleSessionId: occurrence.id,
+        sessionId: occurrence.id,
+        teacherId: occurrence.teacherId || null,
+        teacherName: getScheduleAdminTeacherName(occurrence),
+        status: row.attendanceStatus,
+        attendanceStatus: row.attendanceStatus,
+        counted,
+        creditNumber: null,
+        creditLabel: '',
+        creditValue: counted ? 1 : 0,
+        source: 'admin',
+        submittedByRole: 'admin',
+        note: row.note || '',
+        raw: {
+          adminAttendance: {
+            sessionTitle: occurrence.title || '',
+            occurrenceDate: occurrence.occurrenceDate,
+          },
+        },
+      }
+    })
+}
+
+function buildScheduleTeacherAttendanceInputs(occurrence, rows = [], savedReport = null) {
+  return rows.map((row, index) => {
+    const attendanceStatus = normalizeScheduleTeacherAttendanceStatus(row.attendanceStatus)
+    const counted = ['present', 'makeup'].includes(attendanceStatus)
+    return {
+      studentId: row.studentId,
+      date: occurrence.occurrenceDate,
+      classSessionId: occurrence.classSessionId || null,
+      scheduleSessionId: occurrence.id,
+      sessionId: occurrence.id,
+      teacherId: occurrence.teacherId || null,
+      teacherName: getScheduleAdminTeacherName(occurrence),
+      sourceReportId: savedReport?.id || null,
+      sourceAttendanceIndex: index,
+      sourceCreditIndex: 0,
+      status: attendanceStatus,
+      attendanceStatus,
+      counted,
+      creditNumber: null,
+      creditLabel: '',
+      creditValue: counted ? 1 : 0,
+      source: 'teacher',
+      submittedByRole: 'teacher',
+      note: row.note || '',
+      raw: {
+        report: savedReport ? { id: savedReport.id, sessionId: savedReport.sessionId } : null,
+        attendanceItem: {
+          studentId: row.studentId,
+          attendanceStatus,
+          note: row.note || '',
+        },
+      },
+    }
+  })
+}
+
+function normalizeScheduleTeacherAttendanceStatus(status) {
+  const rawStatus = String(status || '').trim()
+  if (rawStatus === 'excusedAbsent') {
+    return 'excused'
+  }
+  if (rawStatus === 'unexcusedAbsent') {
+    return 'absent'
+  }
+  return rawStatus || 'present'
+}
+
+function getScheduleAdminTeacherName(occurrence) {
+  const teacher = teachers.find((item) => String(item.id || '') === String(occurrence?.teacherId || ''))
+  return teacher?.fullName || teacher?.name || teacher?.nickname || occurrence?.teacherName || null
+}
+
+function getAttendanceBaselineDraftRecords() {
+  return Array.isArray(attendanceBaselineDraftRecords)
+    ? attendanceBaselineDraftRecords
+    : loadStoredAttendanceRecords()
+}
+
+function getAttendanceBaselineDraftState() {
+  return attendanceBaselineDraftState || loadAttendanceBaselineState()
+}
+
+function ensureAttendanceBaselineDraft() {
+  if (!Array.isArray(attendanceBaselineDraftRecords)) {
+    const storedRecords = loadStoredAttendanceRecords()
+    attendanceBaselineDraftRecords = storedRecords
+    attendanceBaselineDraftBaseRecords = storedRecords
+    attendanceBaselineDraftState = loadAttendanceBaselineState()
+  }
+
+  return {
+    records: attendanceBaselineDraftRecords,
+    state: attendanceBaselineDraftState || loadAttendanceBaselineState(),
+  }
+}
+
+function clearAttendanceBaselineDraft() {
+  attendanceBaselineDraftRecords = null
+  attendanceBaselineDraftBaseRecords = null
+  attendanceBaselineDraftState = null
+}
+
+function getAttendanceBaselineDraftChangeCount() {
+  if (!Array.isArray(attendanceBaselineDraftRecords)) {
+    return 0
+  }
+
+  const baseRecords = Array.isArray(attendanceBaselineDraftBaseRecords)
+    ? attendanceBaselineDraftBaseRecords
+    : loadStoredAttendanceRecords()
+  const baseMap = new Map(baseRecords.map((record) => [record.id, JSON.stringify(record)]))
+  const draftMap = new Map(attendanceBaselineDraftRecords.map((record) => [record.id, JSON.stringify(record)]))
+  let changeCount = 0
+
+  draftMap.forEach((serializedRecord, recordId) => {
+    if (baseMap.get(recordId) !== serializedRecord) {
+      changeCount += 1
+    }
+  })
+
+  baseMap.forEach((_, recordId) => {
+    if (!draftMap.has(recordId)) {
+      changeCount += 1
+    }
+  })
+
+  return changeCount
+}
+
+function hasAttendanceBaselineDraftChanges() {
+  return getAttendanceBaselineDraftChangeCount() > 0
+}
+
+function createAttendanceBaselineDraftUndoSnapshot() {
+  return {
+    type: 'draft',
+    records: Array.isArray(attendanceBaselineDraftRecords)
+      ? attendanceBaselineDraftRecords
+      : null,
+    baseRecords: Array.isArray(attendanceBaselineDraftBaseRecords)
+      ? attendanceBaselineDraftBaseRecords
+      : null,
+    state: attendanceBaselineDraftState || null,
+  }
+}
+
+function restoreAttendanceBaselineDraftUndoSnapshot(snapshot = {}) {
+  attendanceBaselineDraftRecords = Array.isArray(snapshot.records) ? snapshot.records : null
+  attendanceBaselineDraftBaseRecords = Array.isArray(snapshot.baseRecords) ? snapshot.baseRecords : null
+  attendanceBaselineDraftState = snapshot.state || null
+}
+
+function commitAttendanceBaselineCellInput(input, { focusTarget = null } = {}) {
+  const studentId = input?.dataset?.studentId || ''
+  const date = input?.dataset?.dateKey || ''
+  const fallbackFocusTarget = focusTarget || getBaselineInputFocusTarget(input)
+
+  if (!studentId || !date) {
+    return false
+  }
+
+  if (!isDateInBaselineEditableRange(date)) {
+    pendingAttendanceBaselineCellFocus = fallbackFocusTarget
+    window.alert('Ô này nằm ngoài khoảng ngày cho phép nhập dữ liệu nền.')
+    render()
+    return false
+  }
+
+  const parsedInput = parseInitialBaselineCellInput(input.value)
+
+  if (!parsedInput.valid) {
+    pendingAttendanceBaselineCellFocus = fallbackFocusTarget
+    window.alert(parsedInput.error)
+    render()
+    return false
+  }
+
+  const draft = ensureAttendanceBaselineDraft()
+  const currentRecords = draft.records
+  const currentState = draft.state
+
+  if (parsedInput.action === 'delete' && !hasInitialBaselineAttendanceRecord(currentRecords, studentId, date)) {
+    pendingAttendanceBaselineCellFocus = fallbackFocusTarget
+    render()
+    return true
+  }
+
+  const snapshot = createAttendanceBaselineDraftUndoSnapshot()
+  const result = parsedInput.action === 'delete'
+    ? removeInitialBaselineAttendanceRecord({
+        records: currentRecords,
+        state: currentState,
+        studentId,
+        date,
+        byRole: 'admin',
+        byName: 'Admin cơ sở',
+      })
+    : upsertInitialBaselineAttendanceRecord({
+        records: currentRecords,
+        state: currentState,
+        input: {
+          ...parsedInput.input,
+          studentId,
+          date,
+        },
+        byRole: 'admin',
+        byName: 'Admin cơ sở',
+      })
+
+  if (result.blocked) {
+    attendanceBaselineUndoSnapshot = null
+    pendingAttendanceBaselineCellFocus = fallbackFocusTarget
+    window.alert(
+      result.reason === 'baselineLocked'
+        ? 'Dữ liệu nền đã khóa, cần mở khóa trước khi chỉnh sửa.'
+        : 'Không thể lưu dữ liệu nền. Vui lòng kiểm tra giá trị vừa nhập.',
+    )
+    render()
+    return false
+  }
+
+  attendanceBaselineUndoSnapshot = snapshot
+  attendanceBaselineDraftRecords = result.records
+  attendanceBaselineDraftState = result.state
+  attendanceBoardDetailState = null
+  pendingAttendanceBaselineCellFocus = fallbackFocusTarget
+  render()
+  return true
 }
 
 function rememberPreservedScrollPositions(root = app) {
@@ -664,6 +1112,7 @@ function renderModuleWindow(windowItem) {
       <div class="window-titlebar" data-drag-window-id="${windowItem.id}">
         <h2 id="${windowItem.id}-title">${headerTitle}</h2>
         <div class="window-controls">
+          ${renderModuleNotificationBell(windowItem)}
           <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${headerTitle}">-</button>
           <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${headerTitle}">□</button>
           <button type="button" data-window-action="close" data-window-id="${windowItem.id}" aria-label="Đóng ${headerTitle}">X</button>
@@ -673,6 +1122,45 @@ function renderModuleWindow(windowItem) {
         ${renderWindowBody(windowItem)}
       </div>
     </section>
+  `
+}
+
+function renderModuleNotificationBell(windowItem) {
+  const moduleId = windowItem.moduleId
+  if (!moduleId) {
+    return ''
+  }
+
+  const moduleNotifications = moduleId
+    ? notifications.filter((notification) => notification.sourceModule === moduleId)
+    : []
+  const unreadCount = moduleNotifications.filter((notification) => !notification.readAt).length
+  const moduleNotificationItems = moduleNotifications
+    .slice(0, 5)
+    .map(
+      (notification) => `
+        <article class="module-notification-item ${notification.readAt ? 'read' : 'unread'}">
+          <strong>${escapeHtml(notification.title)}</strong>
+          <p>${escapeHtml(notification.message)}</p>
+        </article>
+      `,
+    )
+    .join('')
+
+  return `
+    <details class="module-notification-bell" aria-label="Chuông thông báo module">
+      <summary aria-label="Mở thông báo của module">
+        <span class="module-notification-bell-icon" aria-hidden="true">!</span>
+        ${unreadCount ? `<strong>${unreadCount}</strong>` : ''}
+      </summary>
+      <div class="module-notification-popover" role="status">
+        <strong>Thông báo module</strong>
+        ${
+          moduleNotificationItems ||
+          '<p class="module-notification-empty">Không có thông báo cho module này.</p>'
+        }
+      </div>
+    </details>
   `
 }
 
@@ -755,6 +1243,10 @@ function renderWindowBody(windowItem) {
       teachers,
       students,
       scheduleWeekStartDate,
+      scheduleAdminAttendanceState,
+      {
+        attendanceRecords: loadStoredAttendanceRecords(),
+      },
     )
   }
 
@@ -849,6 +1341,9 @@ function renderWindowBody(windowItem) {
       attendanceBoardDetailState,
       attendanceBoardNotes,
       attendanceBoardNoteFormState,
+      Boolean(attendanceBaselineUndoSnapshot),
+      attendanceBaselineDraftRecords,
+      getAttendanceBaselineDraftChangeCount(),
     )
   }
 
@@ -1047,13 +1542,15 @@ function renderSystemOverlay() {
 
   return `
     <div class="system-overlay-root active" id="system-overlay-root">
-      ${renderNotificationCenterV15J(getUnreadNotificationCount())}
+      ${renderNotificationCenterHotfix(getUnreadNotificationCount())}
     </div>
   `
 }
 
 function renderNotificationCenterV15J(unreadCount) {
-  const visibleNotifications = filterNotifications(notifications, notificationFilters)
+  const visibleNotifications = filterNotifications(notifications, {
+    readState: notificationFilters.readState,
+  })
   const unreadVisibleCount = visibleNotifications.filter((notification) => !notification.readAt).length
   const moduleOptions = [
     ['all', 'Tất cả module'],
@@ -1120,20 +1617,6 @@ function renderNotificationCenterV15J(unreadCount) {
       </div>
       <div class="notification-center-filters" aria-label="Lọc thông báo">
         <label>
-          <span>Module</span>
-          <select data-notification-filter="sourceModule">
-            ${moduleOptions
-              .map(
-                ([value, label]) => `
-                  <option value="${escapeHtml(value)}" ${notificationFilters.sourceModule === value ? 'selected' : ''}>
-                    ${escapeHtml(label)}
-                  </option>
-                `,
-              )
-              .join('')}
-          </select>
-        </label>
-        <label>
           <span>Trạng thái</span>
           <select data-notification-filter="readState">
             <option value="unread" ${notificationFilters.readState === 'unread' ? 'selected' : ''}>Chưa đọc</option>
@@ -1147,6 +1630,178 @@ function renderNotificationCenterV15J(unreadCount) {
       </div>
     </section>
   `
+}
+
+function renderNotificationCenterHotfix(unreadCount) {
+  const visibleNotifications = filterNotifications(notifications, {
+    readState: notificationFilters.readState,
+  })
+  const unreadVisibleCount = visibleNotifications.filter((notification) => !notification.readAt).length
+  const notificationModuleSummaries = buildNotificationModuleSummaries(visibleNotifications)
+  const notificationSummaryItems = notificationModuleSummaries
+    .map(
+      (summary) => `
+        <button
+          type="button"
+          class="notification-module-summary level-${summary.severity} ${summary.canOpen ? 'can-open' : 'is-readonly'}"
+          ${summary.canOpen ? `data-notification-module-id="${escapeAttribute(summary.sourceModule)}"` : ''}
+          tabindex="0"
+          aria-label="${escapeAttribute(summary.title)}"
+        >
+          <div class="notification-module-summary-header">
+            <strong>${escapeHtml(summary.title)}</strong>
+            <span>${summary.count}</span>
+          </div>
+          <p>${escapeHtml(summary.message)}</p>
+          <span class="notification-module-summary-meta">
+            ${summary.canOpen ? 'Bấm để mở module' : 'Chi tiết nằm trong thông báo hệ thống'}
+          </span>
+        </button>
+      `,
+    )
+    .join('')
+  const emptyText = getNotificationEmptyText(notificationFilters.readState)
+
+  return `
+    <section
+      class="notification-center"
+      id="notification-center"
+      style="--notification-panel-right: ${notificationPanelPosition.right}px; --notification-panel-bottom: ${notificationPanelPosition.bottom}px;"
+      aria-label="Thông báo"
+    >
+      <div class="notification-center-header">
+        <div>
+          <h2>Thông báo</h2>
+          <p>${unreadCount} chưa đọc</p>
+        </div>
+        <div class="notification-center-actions">
+          <button
+            type="button"
+            data-notification-action="mark-all-read"
+            ${unreadVisibleCount ? '' : 'disabled'}
+          >
+            Đánh dấu tất cả đã đọc
+          </button>
+        </div>
+      </div>
+      <div class="notification-center-filters is-status-only" aria-label="Lọc thông báo">
+        <label>
+          <span>Trạng thái</span>
+          <select data-notification-filter="readState">
+            <option value="unread" ${notificationFilters.readState === 'unread' ? 'selected' : ''}>Chưa đọc</option>
+            <option value="all" ${notificationFilters.readState === 'all' ? 'selected' : ''}>Tất cả</option>
+            <option value="read" ${notificationFilters.readState === 'read' ? 'selected' : ''}>Đã đọc</option>
+          </select>
+        </label>
+      </div>
+      <div class="notification-list">
+        ${notificationSummaryItems || `<p class="notification-empty">${emptyText}</p>`}
+      </div>
+    </section>
+  `
+}
+
+function buildNotificationModuleSummaries(notificationItems = []) {
+  const moduleMap = new Map()
+
+  notificationItems.forEach((notification) => {
+    const sourceModule = notification.sourceModule || 'he-thong'
+    const existingSummary = moduleMap.get(sourceModule) || {
+      sourceModule,
+      label: getNotificationModuleLabel(sourceModule, notification),
+      count: 0,
+      unreadCount: 0,
+      warningCount: 0,
+      latestTime: '',
+      sampleMessages: [],
+      severity: 'info',
+      canOpen: modules.some((moduleItem) => moduleItem.id === sourceModule),
+    }
+
+    existingSummary.count += 1
+    if (!notification.readAt) {
+      existingSummary.unreadCount += 1
+    }
+    if (['warning', 'danger'].includes(notification.severity)) {
+      existingSummary.warningCount += 1
+    }
+    if (getSeverityRank(notification.severity) > getSeverityRank(existingSummary.severity)) {
+      existingSummary.severity = notification.severity
+    }
+    if (!existingSummary.latestTime || new Date(notification.createdAt).getTime() > new Date(existingSummary.latestTime).getTime()) {
+      existingSummary.latestTime = notification.createdAt
+    }
+    if (notification.title && existingSummary.sampleMessages.length < 2) {
+      existingSummary.sampleMessages.push(notification.title)
+    }
+
+    moduleMap.set(sourceModule, existingSummary)
+  })
+
+  return Array.from(moduleMap.values())
+    .sort((firstSummary, secondSummary) => {
+      const firstUnreadRank = firstSummary.unreadCount > 0 ? 1 : 0
+      const secondUnreadRank = secondSummary.unreadCount > 0 ? 1 : 0
+      if (firstUnreadRank !== secondUnreadRank) {
+        return secondUnreadRank - firstUnreadRank
+      }
+
+      return new Date(secondSummary.latestTime || 0).getTime() - new Date(firstSummary.latestTime || 0).getTime()
+    })
+    .map((summary) => ({
+      ...summary,
+      title: buildNotificationModuleSummaryTitle(summary),
+      message: buildNotificationModuleSummaryMessage(summary),
+    }))
+}
+
+function buildNotificationModuleSummaryTitle(summary) {
+  const readState = notificationFilters.readState || 'unread'
+  const noun = summary.warningCount ? 'cảnh báo' : 'thông báo'
+  const stateSuffix = readState === 'read'
+    ? 'đã đọc'
+    : readState === 'all'
+      ? ''
+      : 'mới'
+
+  return `${summary.label} có ${summary.count} ${noun}${stateSuffix ? ` ${stateSuffix}` : ''}`
+}
+
+function buildNotificationModuleSummaryMessage(summary) {
+  if (summary.sampleMessages.length) {
+    return `Có ${summary.sampleMessages.join('; ')}. Chi tiết nằm trong chuông riêng của module.`
+  }
+
+  return `Có ${summary.count} mục chi tiết trong chuông riêng của module.`
+}
+
+function getNotificationModuleLabel(sourceModule, notification = {}) {
+  const moduleItem = modules.find((item) => item.id === sourceModule)
+  return moduleItem?.name ||
+    notificationSourceLabels[sourceModule] ||
+    notification.sourceLabel ||
+    getNotificationSourceLabel(sourceModule)
+}
+
+function getNotificationEmptyText(readState = 'unread') {
+  if (readState === 'unread') {
+    return 'Không có thông báo chưa đọc.'
+  }
+
+  if (readState === 'read') {
+    return 'Không có thông báo đã đọc.'
+  }
+
+  return 'Không có thông báo.'
+}
+
+function getSeverityRank(severity) {
+  return {
+    info: 1,
+    success: 2,
+    warning: 3,
+    danger: 4,
+  }[severity] || 1
 }
 
 function renderNotificationCenter(unreadCount) {
@@ -2069,7 +2724,19 @@ function isCoreCloudSnapshotEmpty(snapshot = {}) {
 }
 
 function applyCoreCloudSnapshotToLocal(snapshot) {
-  const backupKey = createCloudDbPullBackup(window.localStorage)
+  const backupResult = createCloudDbPullBackup(window.localStorage)
+
+  if (backupResult && typeof backupResult === 'object' && backupResult.ok === false) {
+    return {
+      ok: false,
+      error: backupResult.error,
+      reason: backupResult.reason,
+      backupKey: null,
+      counts: getCoreCloudSnapshotCounts({ students, teachers, classSessions }),
+    }
+  }
+
+  const backupKey = typeof backupResult === 'string' ? backupResult : null
   students = Array.isArray(snapshot.students) ? snapshot.students : []
   teachers = Array.isArray(snapshot.teachers) ? snapshot.teachers : []
   classSessions = Array.isArray(snapshot.classSessions) ? snapshot.classSessions : []
@@ -2081,6 +2748,7 @@ function applyCoreCloudSnapshotToLocal(snapshot) {
   classSessions = getStoredClassSessions([])
 
   return {
+    ok: true,
     backupKey,
     counts: getCoreCloudSnapshotCounts({ students, teachers, classSessions }),
   }
@@ -2325,6 +2993,19 @@ async function pullCloudDbSnapshotToLocal() {
 
   const appliedSnapshot = applyCoreCloudSnapshotToLocal(result.data)
 
+  if (!appliedSnapshot.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      cloudCounts: counts,
+      message: appliedSnapshot.error,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
   cloudDbState = {
     ...cloudDbState,
     isLoading: false,
@@ -2389,6 +3070,20 @@ async function autoPullCoreCloudSnapshot(syncId = cloudUserSyncId) {
   }
 
   const appliedSnapshot = applyCoreCloudSnapshotToLocal(result.data)
+
+  if (!appliedSnapshot.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      cloudCounts: counts,
+      message: appliedSnapshot.error,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
   cloudDbState = {
     ...cloudDbState,
     isLoading: false,
@@ -2974,6 +3669,7 @@ async function initializeSupabaseAuth() {
 
 function bindEvents() {
   bindNotificationOutsidePointer()
+  bindModuleNotificationOutsidePointer()
 
   document.querySelectorAll('[data-view-mode]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -3098,6 +3794,18 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-notification-module-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const moduleId = button.dataset.notificationModuleId
+      if (!moduleId || !modules.some((moduleItem) => moduleItem.id === moduleId)) {
+        return
+      }
+
+      isNotificationCenterOpen = false
+      openModuleWindow(moduleId)
+    })
+  })
+
   document.querySelectorAll('[data-notification-action="mark-read"]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation()
@@ -3106,7 +3814,9 @@ function bindEvents() {
   })
 
   document.querySelector('[data-notification-action="mark-all-read"]')?.addEventListener('click', () => {
-    const visibleNotificationIds = filterNotifications(notifications, notificationFilters)
+    const visibleNotificationIds = filterNotifications(notifications, {
+      readState: notificationFilters.readState,
+    })
       .filter((notification) => !notification.readAt)
       .map((notification) => notification.id)
 
@@ -4966,6 +5676,223 @@ function bindEvents() {
     render()
   })
 
+  document.querySelector('[data-attendance-baseline-action="start"]')?.addEventListener('click', () => {
+    const nextState = startAttendanceBaselineDraft(loadAttendanceBaselineState(), {
+      byRole: 'admin',
+      byName: 'Admin cơ sở',
+      note: 'Bắt đầu nhập dữ liệu nền điểm danh.',
+    })
+    saveAttendanceBaselineState('dreamhome', nextState)
+    attendanceBaselineUndoSnapshot = null
+    render()
+  })
+
+  document.querySelectorAll('[data-attendance-baseline-cell-input]').forEach((input) => {
+    input.addEventListener('change', () => {
+      commitAttendanceBaselineCellInput(input)
+    })
+
+    input.addEventListener('keydown', (event) => {
+      const keyDirections = {
+        ArrowLeft: 'previous',
+        ArrowRight: 'next',
+        ArrowUp: 'up',
+        ArrowDown: 'down',
+        Enter: event.shiftKey ? 'up' : 'down',
+      }
+      const direction = event.key === 'Tab'
+        ? event.shiftKey ? 'previous' : 'next'
+        : keyDirections[event.key]
+
+      if (!direction) {
+        return
+      }
+
+      event.preventDefault()
+      const focusTarget = getAttendanceBaselineNavigationTarget(input, direction)
+      commitAttendanceBaselineCellInput(input, { focusTarget })
+    })
+  })
+
+  document.querySelector('[data-attendance-baseline-action="save"]')?.addEventListener('click', () => {
+    if (!hasAttendanceBaselineDraftChanges()) {
+      return
+    }
+
+    const currentState = getAttendanceBaselineDraftState()
+    if (currentState.status === 'locked') {
+      window.alert('Dữ liệu nền đã khóa, cần mở khóa trước khi lưu thay đổi.')
+      render()
+      return
+    }
+
+    const draftRecords = getAttendanceBaselineDraftRecords()
+    const nextState = saveAttendanceBaselineDraftState(currentState, {
+      byRole: 'admin',
+      byName: 'Admin cơ sở',
+      note: 'Lưu thay đổi dữ liệu nền điểm danh.',
+    })
+
+    saveStoredAttendanceRecords('dreamhome', draftRecords)
+    saveAttendanceBaselineState('dreamhome', nextState)
+    clearAttendanceBaselineDraft()
+    attendanceBaselineUndoSnapshot = null
+    attendanceBoardDetailState = null
+    render()
+  })
+
+  document.querySelector('[data-attendance-baseline-action="cancel"]')?.addEventListener('click', () => {
+    if (!hasAttendanceBaselineDraftChanges()) {
+      return
+    }
+
+    if (!window.confirm('Hủy các thay đổi dữ liệu nền chưa lưu?')) {
+      return
+    }
+
+    clearAttendanceBaselineDraft()
+    attendanceBaselineUndoSnapshot = null
+    attendanceBoardDetailState = null
+    render()
+  })
+
+  document.querySelector('[data-attendance-baseline-action="clear"]')?.addEventListener('click', () => {
+    const currentState = loadAttendanceBaselineState()
+
+    if (currentState.status === 'locked') {
+      window.alert('Dữ liệu nền đã khóa, cần mở khóa trước khi xóa dữ liệu nền đang nhập.')
+      render()
+      return
+    }
+
+    if (hasAttendanceBaselineDraftChanges()) {
+      const confirmedDraft = window.confirm(
+        'Bạn đang có thay đổi chưa lưu. Xóa dữ liệu nền sẽ hủy các thay đổi chưa lưu trong phạm vi này.',
+      )
+
+      if (!confirmedDraft) {
+        return
+      }
+    }
+
+    const confirmed = window.confirm(
+      'Bạn chắc chắn muốn xóa dữ liệu nền đang nhập trong tháng đang xem? Thao tác này chỉ xóa dữ liệu nền, không xóa dữ liệu điểm danh gốc/import.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    const storedRecords = loadStoredAttendanceRecords()
+    const storedState = loadAttendanceBaselineState()
+    const clearResult = clearInitialBaselineAttendanceRecordsInMonth({
+      records: storedRecords,
+      state: storedState,
+      month: attendanceBoardFilters.month,
+      byRole: 'admin',
+      byName: 'Admin cơ sở',
+    })
+
+    if (clearResult.blocked) {
+      window.alert('Không thể xóa dữ liệu nền khi dữ liệu nền đang khóa.')
+      render()
+      return
+    }
+
+    attendanceBaselineUndoSnapshot = {
+      type: 'clear',
+      records: storedRecords,
+      state: storedState,
+      draftRecords: attendanceBaselineDraftRecords,
+      draftBaseRecords: attendanceBaselineDraftBaseRecords,
+      draftState: attendanceBaselineDraftState,
+    }
+    saveStoredAttendanceRecords('dreamhome', clearResult.records)
+    saveAttendanceBaselineState('dreamhome', clearResult.state)
+    clearAttendanceBaselineDraft()
+    attendanceBoardDetailState = null
+    render()
+  })
+
+  document.querySelector('[data-attendance-baseline-action="undo"]')?.addEventListener('click', () => {
+    if (!attendanceBaselineUndoSnapshot) {
+      window.alert('Chưa có thao tác nào để hoàn tác.')
+      return
+    }
+
+    if (attendanceBaselineUndoSnapshot.type === 'draft') {
+      restoreAttendanceBaselineDraftUndoSnapshot(attendanceBaselineUndoSnapshot)
+    } else if (attendanceBaselineUndoSnapshot.type === 'clear') {
+      const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
+      saveStoredAttendanceRecords('dreamhome', restored.records)
+      saveAttendanceBaselineState('dreamhome', restored.state)
+      attendanceBaselineDraftRecords = Array.isArray(attendanceBaselineUndoSnapshot.draftRecords)
+        ? attendanceBaselineUndoSnapshot.draftRecords
+        : null
+      attendanceBaselineDraftBaseRecords = Array.isArray(attendanceBaselineUndoSnapshot.draftBaseRecords)
+        ? attendanceBaselineUndoSnapshot.draftBaseRecords
+        : null
+      attendanceBaselineDraftState = attendanceBaselineUndoSnapshot.draftState || null
+    } else {
+      const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
+      saveStoredAttendanceRecords('dreamhome', restored.records)
+      saveAttendanceBaselineState('dreamhome', restored.state)
+    }
+
+    attendanceBaselineUndoSnapshot = null
+    attendanceBoardDetailState = null
+    render()
+  })
+
+  document.querySelector('[data-attendance-baseline-action="lock"]')?.addEventListener('click', () => {
+    if (hasAttendanceBaselineDraftChanges()) {
+      window.alert('Bạn còn thay đổi dữ liệu nền chưa lưu. Vui lòng lưu hoặc hủy thay đổi trước khi chốt dữ liệu nền.')
+      return
+    }
+
+    const baselineRecords = loadStoredAttendanceRecords()
+      .filter((record) => record.source === 'initialBaseline')
+    const confirmMessage = baselineRecords.length
+      ? 'Bạn chắc chắn muốn chốt dữ liệu nền điểm danh? Sau khi khóa, dữ liệu nền sẽ không được sửa tự do.'
+      : 'Hiện chưa có bản ghi dữ liệu nền nào. Bạn vẫn muốn khóa dữ liệu nền?'
+
+    if (!window.confirm(confirmMessage)) {
+      return
+    }
+
+    const nextState = lockAttendanceBaselineState(loadAttendanceBaselineState(), {
+      byRole: 'admin',
+      byName: 'Admin cơ sở',
+      note: baselineRecords.length
+        ? 'Chốt dữ liệu nền điểm danh.'
+        : 'Chốt dữ liệu nền khi chưa có bản ghi nền.',
+    })
+    saveAttendanceBaselineState('dreamhome', nextState)
+    attendanceBaselineUndoSnapshot = null
+    render()
+  })
+
+  document.querySelector('[data-attendance-baseline-action="unlock"]')?.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Bạn chắc chắn muốn mở khóa dữ liệu điểm danh? Việc này có thể ảnh hưởng số buổi đã học, số buổi còn lại, học phí và bảng điểm danh.',
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    const reason = window.prompt('Lý do mở khóa', '') || ''
+    const nextState = unlockAttendanceBaselineState(loadAttendanceBaselineState(), {
+      byRole: 'admin',
+      byName: 'Admin cơ sở',
+      reason: reason.trim() || 'Không ghi lý do',
+      note: 'Mở khóa dữ liệu nền điểm danh.',
+    })
+    saveAttendanceBaselineState('dreamhome', nextState)
+    attendanceBaselineUndoSnapshot = null
+    render()
+  })
+
   document.querySelector('[data-attendance-board-angel-wings-action="load"]')?.addEventListener('click', () => {
     const confirmed = window.confirm(
       'N\u1ea1p controlled dataset Angel Wings 06/2026 v\u00e0 replace c\u00e1c key li\u00ean quan: H\u1ecdc vi\u00ean, Gi\u00e1o vi\u00ean, Ph\u1ee5 huynh, Ca h\u1ecdc/Gi\u00e1 g\u00f3i, H\u1ecdc ph\u00ed, Th\u1eddi kh\u00f3a bi\u1ec3u v\u00e0 sessionReports? H\u1ec7 th\u1ed1ng s\u1ebd backup tr\u01b0\u1edbc khi ghi.',
@@ -6099,6 +7026,7 @@ function bindEvents() {
       }
 
       scheduleReportState = null
+      scheduleAdminAttendanceState = null
       sessionReportAttendanceState = null
       sessionReportLearningState = null
       sessionReportLearningFormState = null
@@ -6112,6 +7040,7 @@ function bindEvents() {
   document.querySelector('[data-schedule-action="open-create"]')?.addEventListener('click', () => {
     scheduleFormState = createEmptyScheduleFormState()
     scheduleReportState = null
+    scheduleAdminAttendanceState = null
     sessionReportAttendanceState = null
     sessionReportLearningState = null
     sessionReportLearningFormState = null
@@ -6129,6 +7058,7 @@ function bindEvents() {
         button.dataset.scheduleDate,
       )
       scheduleReportState = null
+      scheduleAdminAttendanceState = null
       sessionReportAttendanceState = null
       sessionReportLearningState = null
       sessionReportLearningFormState = null
@@ -6159,24 +7089,18 @@ function bindEvents() {
         scheduleReportState = {
           sessionId: session.id,
           occurrenceDate: occurrence.occurrenceDate,
+          mode: 'roleGateway',
         }
-        sessionReportAttendanceState = createSessionReportDraft(
-          occurrence,
-          findSessionReport(sessionReports, session.id, occurrence.occurrenceDate),
-        )
-        sessionReportLearningState = createSessionReportLearningState(
-          occurrence,
-          findSessionReport(sessionReports, session.id, occurrence.occurrenceDate),
-        )
-        sessionReportExtraState = createSessionReportExtraState(
-          occurrence,
-          findSessionReport(sessionReports, session.id, occurrence.occurrenceDate),
-        )
+        sessionReportAttendanceState = null
+        scheduleAdminAttendanceState = null
+        sessionReportLearningState = null
+        sessionReportExtraState = null
         sessionReportLearningFormState = null
         isSessionReportExtraExpanded = false
         sessionReportGuestFormState = null
       } else {
         scheduleReportState = null
+        scheduleAdminAttendanceState = null
         sessionReportAttendanceState = null
         sessionReportLearningState = null
         sessionReportLearningFormState = null
@@ -6198,9 +7122,89 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-schedule-report-role]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!scheduleReportState) {
+        return
+      }
+
+      const role = button.dataset.scheduleReportRole
+
+      if (role === 'gateway') {
+        scheduleReportState = {
+          ...scheduleReportState,
+          mode: 'roleGateway',
+        }
+        sessionReportAttendanceState = null
+        scheduleAdminAttendanceState = null
+        sessionReportLearningState = null
+        sessionReportLearningFormState = null
+        sessionReportExtraState = null
+        isSessionReportExtraExpanded = false
+        sessionReportGuestFormState = null
+        render()
+        return
+      }
+
+      if (role === 'admin') {
+        const occurrence = getScheduleAdminAttendanceOccurrence()
+        scheduleReportState = {
+          ...scheduleReportState,
+          mode: 'adminPlaceholder',
+        }
+        scheduleAdminAttendanceState = occurrence
+          ? createScheduleAdminAttendanceState(occurrence, loadStoredAttendanceRecords())
+          : null
+        sessionReportAttendanceState = null
+        sessionReportLearningState = null
+        sessionReportLearningFormState = null
+        sessionReportExtraState = null
+        isSessionReportExtraExpanded = false
+        sessionReportGuestFormState = null
+        render()
+        return
+      }
+
+      if (role === 'teacher') {
+        const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
+          (item) =>
+            item.id === scheduleReportState.sessionId &&
+            item.occurrenceDate === scheduleReportState.occurrenceDate,
+        )
+
+        if (!occurrence) {
+          return
+        }
+
+        const existingReport = findSessionReport(
+          sessionReports,
+          occurrence.id,
+          occurrence.occurrenceDate,
+        )
+        const storedAttendanceRecords = loadStoredAttendanceRecords()
+        scheduleReportState = {
+          ...scheduleReportState,
+          mode: 'teacherReport',
+        }
+        sessionReportAttendanceState = createSessionReportDraft(occurrence, existingReport, {
+          adminAttendanceRecords: getScheduleAdminAttendanceRecords(occurrence, storedAttendanceRecords),
+          teacherAttendanceRecords: getScheduleTeacherAttendanceRecords(occurrence, storedAttendanceRecords),
+        })
+        scheduleAdminAttendanceState = null
+        sessionReportLearningState = createSessionReportLearningState(occurrence, existingReport)
+        sessionReportExtraState = createSessionReportExtraState(occurrence, existingReport)
+        sessionReportLearningFormState = null
+        isSessionReportExtraExpanded = false
+        sessionReportGuestFormState = null
+        render()
+      }
+    })
+  })
+
   document.querySelectorAll('[data-schedule-action="close-report"]').forEach((button) => {
     button.addEventListener('click', () => {
       scheduleReportState = null
+      scheduleAdminAttendanceState = null
       sessionReportAttendanceState = null
       sessionReportLearningState = null
       sessionReportLearningFormState = null
@@ -6221,6 +7225,7 @@ function bindEvents() {
     }
 
     scheduleReportState = null
+    scheduleAdminAttendanceState = null
     sessionReportAttendanceState = null
     sessionReportLearningState = null
     sessionReportLearningFormState = null
@@ -6243,6 +7248,104 @@ function bindEvents() {
         event.stopPropagation()
       })
     })
+
+  document.querySelectorAll('[data-admin-attendance-status]').forEach((control) => {
+    control.addEventListener('change', () => {
+      updateScheduleAdminAttendanceRow(control.dataset.adminAttendanceStudentId, {
+        attendanceStatus: control.value,
+      })
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-admin-attendance-note]').forEach((control) => {
+    control.addEventListener('input', () => {
+      updateScheduleAdminAttendanceRow(control.dataset.adminAttendanceStudentId, {
+        note: control.value,
+      })
+    })
+  })
+
+  document.querySelectorAll('[data-admin-attendance-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!scheduleAdminAttendanceState) {
+        return
+      }
+
+      const action = button.dataset.adminAttendanceAction
+
+      if (action === 'mark-all-present') {
+        scheduleAdminAttendanceState = {
+          ...scheduleAdminAttendanceState,
+          rows: scheduleAdminAttendanceState.rows.map((row) => ({
+            ...row,
+            attendanceStatus: 'present',
+          })),
+          error: '',
+          saveState: '',
+        }
+        render()
+        return
+      }
+
+      if (action === 'clear') {
+        scheduleAdminAttendanceState = {
+          ...scheduleAdminAttendanceState,
+          rows: scheduleAdminAttendanceState.rows.map((row) => ({
+            ...row,
+            attendanceStatus: '',
+            note: '',
+          })),
+          error: '',
+          saveState: '',
+        }
+        render()
+        return
+      }
+
+      if (action === 'save') {
+        const occurrence = getScheduleAdminAttendanceOccurrence()
+
+        if (!occurrence) {
+          scheduleAdminAttendanceState = {
+            ...scheduleAdminAttendanceState,
+            error: 'Không tìm thấy ca học để lưu điểm danh.',
+            saveState: '',
+          }
+          render()
+          return
+        }
+
+        const inputs = buildScheduleAdminAttendanceInputs(
+          occurrence,
+          scheduleAdminAttendanceState.rows,
+        )
+
+        if (!inputs.length) {
+          scheduleAdminAttendanceState = {
+            ...scheduleAdminAttendanceState,
+            error: 'Chưa có trạng thái điểm danh để lưu.',
+            saveState: '',
+          }
+          render()
+          return
+        }
+
+        const result = upsertAdminAttendanceRecords({
+          records: loadStoredAttendanceRecords(),
+          inputs,
+          byName: 'Admin cơ sở',
+        })
+
+        saveStoredAttendanceRecords('dreamhome', result.records)
+        scheduleAdminAttendanceState = {
+          ...createScheduleAdminAttendanceState(occurrence, result.records),
+          saveState: 'saved',
+        }
+        render()
+      }
+    })
+  })
 
   document.querySelectorAll('[data-session-report-attendance-status]').forEach((control) => {
     control.addEventListener('change', () => {
@@ -6272,6 +7375,24 @@ function bindEvents() {
       return
     }
 
+    const occurrence = getScheduleAdminAttendanceOccurrence()
+    const storedAttendanceRecords = loadStoredAttendanceRecords()
+    const adminAttendanceRecords = occurrence
+      ? getScheduleAdminAttendanceRecords(occurrence, storedAttendanceRecords)
+      : []
+
+    if (adminAttendanceRecords.length) {
+      sessionReportAttendanceState = {
+        ...sessionReportAttendanceState,
+        attendanceLockedByAdmin: true,
+        adminAttendanceCount: adminAttendanceRecords.length,
+        error: 'Admin cơ sở đã điểm danh ca này. Giáo viên có thể lưu nội dung báo cáo ca dạy.',
+        saveState: '',
+      }
+      render()
+      return
+    }
+
     const error = validateSessionReportAttendance(sessionReportAttendanceState.attendance)
 
     if (error) {
@@ -6293,17 +7414,32 @@ function bindEvents() {
       sessionReportAttendanceState,
       existingReport,
     )
+    const teacherAttendanceInputs = occurrence
+      ? buildScheduleTeacherAttendanceInputs(
+          occurrence,
+          savedReport.attendance,
+          savedReport,
+        )
+      : []
+    const teacherAttendanceResult = upsertTeacherAttendanceRecords({
+      records: storedAttendanceRecords,
+      inputs: teacherAttendanceInputs,
+      byName: getScheduleAdminTeacherName(occurrence) || 'Giáo viên',
+    })
 
     sessionReports = existingReport
       ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
       : [savedReport, ...sessionReports]
 
     saveStoredSessionReports(sessionReports)
+    saveStoredAttendanceRecords('dreamhome', teacherAttendanceResult.records)
     sessionReportAttendanceState = {
       ...sessionReportAttendanceState,
       attendance: savedReport.attendance,
       error: '',
       saveState: 'saved',
+      attendanceLockedByAdmin: false,
+      adminAttendanceCount: 0,
     }
     render()
   })
@@ -7546,6 +8682,29 @@ function bindNotificationOutsidePointer() {
   notificationOutsidePointerBound = true
 }
 
+function bindModuleNotificationOutsidePointer() {
+  if (moduleNotificationOutsidePointerBound) {
+    return
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    const target = event.target
+    const activeBell = target.closest?.('.module-notification-bell, .schedule-alert-bell') || null
+
+    document
+      .querySelectorAll('.module-notification-bell[open], .schedule-alert-bell[open]')
+      .forEach((bell) => {
+        if (bell === activeBell || bell.contains(target)) {
+          return
+        }
+
+        bell.removeAttribute('open')
+      })
+  })
+
+  moduleNotificationOutsidePointerBound = true
+}
+
 function getNotificationPanelPosition(bellButton) {
   const bellRect = bellButton.getBoundingClientRect()
   const panelWidth = Math.min(420, Math.max(320, window.innerWidth - 24))
@@ -7652,6 +8811,10 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;')
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value)
 }
 
 function bindShortcutDragging() {

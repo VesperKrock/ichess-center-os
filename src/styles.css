@@ -300,6 +300,103 @@ h3 {
   font-weight: 900;
 }
 
+.module-notification-bell {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.module-notification-bell summary {
+  display: inline-flex;
+  min-width: 30px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: #e8f1fb;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  list-style: none;
+}
+
+.module-notification-bell summary::-webkit-details-marker {
+  display: none;
+}
+
+.module-notification-bell summary:focus-visible {
+  outline: 2px solid rgba(116, 166, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.module-notification-bell-icon {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 999px;
+  color: #0f1720;
+  background: #b9d6ff;
+  font-size: 0.7rem;
+  font-weight: 950;
+}
+
+.module-notification-bell summary strong {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  padding: 0 5px;
+  color: #ffffff;
+  background: #d95050;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.module-notification-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  width: min(300px, calc(100vw - 32px));
+  max-height: 280px;
+  gap: 8px;
+  border: 1px solid rgba(180, 202, 232, 0.22);
+  border-radius: 8px;
+  padding: 10px;
+  overflow-y: auto;
+  background: rgba(15, 20, 27, 0.98);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.4);
+}
+
+.module-notification-popover > strong {
+  color: #f4f8ff;
+  font-size: 0.86rem;
+}
+
+.module-notification-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 7px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.module-notification-item p,
+.module-notification-empty {
+  margin: 0;
+  color: #aebed1;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .window-body {
   flex: 1;
   overflow: auto;
@@ -4649,20 +4746,20 @@ h3 {
 
 .schedule-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(92px, 1fr));
   gap: 6px;
 }
 
 .schedule-stat-card {
   display: flex;
   min-width: 0;
-  min-height: 42px;
-  gap: 7px;
+  min-height: 38px;
+  gap: 6px;
   align-items: center;
   justify-content: space-between;
   border: 1px solid rgba(160, 184, 214, 0.16);
   border-radius: 7px;
-  padding: 6px 8px;
+  padding: 5px 7px;
   background: rgba(255, 255, 255, 0.035);
 }
 
@@ -4680,8 +4777,146 @@ h3 {
 
 .schedule-stat-card strong {
   color: #ffffff;
-  font-size: 1.16rem;
+  font-size: 1.05rem;
   line-height: 1;
+}
+
+.schedule-alert-bell {
+  position: relative;
+  min-width: 0;
+}
+
+.schedule-alert-bell summary {
+  display: flex;
+  min-height: 38px;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 7px;
+  padding: 5px 7px;
+  color: #ffe8bd;
+  background: rgba(111, 71, 12, 0.2);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 900;
+  list-style: none;
+}
+
+.schedule-alert-bell summary::-webkit-details-marker {
+  display: none;
+}
+
+.schedule-alert-bell summary:focus-visible {
+  outline: 2px solid rgba(245, 158, 11, 0.45);
+  outline-offset: 2px;
+}
+
+.schedule-alert-bell-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  color: #2b1a04;
+  background: #f5c46b;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.schedule-alert-bell summary > span:not(.schedule-alert-bell-icon) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-alert-bell summary strong {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 5px;
+  color: #fff7ed;
+  background: #d65c2f;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.schedule-alert-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 12;
+  display: grid;
+  width: min(420px, calc(100vw - 48px));
+  max-height: 340px;
+  gap: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 8px;
+  padding: 10px;
+  overflow: hidden;
+  background: rgba(15, 20, 29, 0.98);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
+}
+
+.schedule-alert-popover-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.schedule-alert-popover-header strong {
+  color: #fff6df;
+  font-size: 0.86rem;
+}
+
+.schedule-alert-popover-header span,
+.schedule-alert-empty {
+  margin: 0;
+  color: #d7c3a3;
+  font-size: 0.78rem;
+  font-weight: 820;
+}
+
+.schedule-alert-popover-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-alert-popover-groups span {
+  max-width: 100%;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  overflow: hidden;
+  color: #f5dfb7;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.73rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-alert-popover-list {
+  display: grid;
+  max-height: 236px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.schedule-alert-popover .schedule-teacher-alert-item {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.schedule-alert-popover .schedule-teacher-alert-item p {
+  -webkit-line-clamp: 3;
 }
 
 .schedule-toolbar {
@@ -4944,6 +5179,150 @@ h3 {
   white-space: nowrap;
 }
 
+.schedule-teacher-alerts {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-width: 0;
+  max-height: 142px;
+  overflow: hidden;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(66, 44, 11, 0.2);
+}
+
+.schedule-teacher-alerts-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.schedule-teacher-alerts-header strong {
+  color: #fff6df;
+  font-size: 0.86rem;
+  font-weight: 950;
+}
+
+.schedule-teacher-alerts-header span,
+.schedule-teacher-alerts p {
+  margin: 0;
+  color: #d7c3a3;
+  font-size: 0.78rem;
+  font-weight: 820;
+  line-height: 1.35;
+}
+
+.schedule-teacher-alert-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-teacher-alert-groups span {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  overflow: hidden;
+  color: #f5dfb7;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-teacher-alert-list {
+  display: grid;
+  max-height: 76px;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 5px;
+  padding-right: 2px;
+}
+
+.schedule-teacher-alert-item {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(180px, 1fr) minmax(220px, 1.4fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(245, 158, 11, 0.26);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(20, 24, 33, 0.7);
+}
+
+.schedule-teacher-alert-item div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.schedule-teacher-alert-item strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-teacher-alert-item span {
+  overflow: hidden;
+  color: #d8c5a6;
+  font-size: 0.74rem;
+  font-weight: 820;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-teacher-alert-item p {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #ffd58f;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.schedule-teacher-alert-item.is-adminHandledMissingTeacherReport {
+  border-color: rgba(96, 165, 250, 0.28);
+  background: rgba(25, 47, 79, 0.38);
+}
+
+.schedule-teacher-alert-item.is-adminHandledMissingTeacherReport p {
+  color: #bfdbfe;
+}
+
+.schedule-teacher-alert-item.is-qtvAttentionNeeded {
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(87, 24, 24, 0.38);
+}
+
+.schedule-teacher-alert-item.is-qtvAttentionNeeded p {
+  color: #fecaca;
+}
+
+@media (max-width: 980px) {
+  .schedule-teacher-alerts {
+    max-height: 156px;
+  }
+
+  .schedule-teacher-alert-list {
+    max-height: 88px;
+  }
+
+  .schedule-teacher-alert-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .schedule-empty-day {
   display: grid;
   min-height: 90px;
@@ -5137,6 +5516,44 @@ h3 {
   padding: 12px;
 }
 
+.schedule-role-gateway-body,
+.schedule-admin-attendance-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.schedule-role-gateway-body p,
+.schedule-admin-attendance-body p {
+  margin: 0;
+  color: #aebdd0;
+}
+
+.schedule-role-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.schedule-role-options button {
+  min-height: 72px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.schedule-role-options button:hover,
+.schedule-role-options button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+  background: rgba(118, 164, 231, 0.14);
+}
+
 .schedule-report-column {
   display: grid;
   align-content: stretch;
@@ -5250,6 +5667,55 @@ h3 {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.schedule-admin-attendance-panel .schedule-report-section {
+  min-height: 0;
+}
+
+.schedule-admin-attendance-summary {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.schedule-admin-attendance-rows {
+  display: grid;
+  max-height: min(62vh, 620px);
+  overflow: auto;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.schedule-admin-attendance-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.42fr) minmax(180px, 0.72fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(160, 184, 214, 0.13);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.schedule-admin-attendance-status,
+.schedule-admin-attendance-note {
+  min-width: 0;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 7px;
+  color: #f4f7fb;
+  background: rgba(6, 12, 20, 0.56);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.schedule-admin-attendance-status {
+  padding: 5px 7px;
+}
+
+.schedule-admin-attendance-note {
+  padding: 6px 8px;
+}
+
 .session-report-attendance {
   height: 100%;
   min-height: 0;
@@ -5309,6 +5775,23 @@ h3 {
 
 .session-report-save-state.error {
   color: #ffb4a8;
+}
+
+.session-report-admin-lock-notice {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(245, 158, 11, 0.26);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #fdecc8;
+  background: rgba(111, 71, 12, 0.22);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.session-report-admin-lock-notice span {
+  color: #e5cfa5;
+  font-weight: 750;
 }
 
 .session-report-student-rows {
@@ -11843,6 +12326,11 @@ h3 {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.notification-center-filters.is-status-only {
+  grid-template-columns: minmax(160px, 220px);
+  justify-content: end;
+}
+
 .notification-center-filters label {
   display: grid;
   gap: 4px;
@@ -11958,6 +12446,85 @@ h3 {
   opacity: 0.7;
 }
 
+.attendance-baseline-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(16, 26, 38, 0.72);
+}
+
+.attendance-baseline-summary,
+.attendance-baseline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.attendance-baseline-summary {
+  flex: 1 1 320px;
+}
+
+.attendance-baseline-summary strong {
+  color: #ffffff;
+}
+
+.attendance-baseline-summary span {
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #c8d4e3;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.attendance-baseline-toolbar p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: #aebdd0;
+  font-size: 0.8rem;
+}
+
+.attendance-baseline-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.26);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.attendance-baseline-actions button:hover,
+.attendance-baseline-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+  background: rgba(118, 164, 231, 0.14);
+}
+
+.attendance-baseline-actions button:disabled {
+  color: #738195;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.attendance-baseline-meta,
+.attendance-baseline-warning {
+  color: #c8d4e3;
+  font-size: 0.8rem;
+}
+
+.attendance-baseline-warning {
+  color: #f6c67a;
+}
+
 .attendance-board-toolbar {
   flex: 0 0 auto;
   align-items: end;
@@ -11970,11 +12537,17 @@ h3 {
 .attendance-board-toolbar label {
   display: grid;
   min-width: 190px;
+  flex: 0 1 210px;
   gap: 6px;
 }
 
-.attendance-board-toolbar label:last-child {
+.attendance-board-toolbar label:nth-of-type(3) {
   flex: 1 1 260px;
+}
+
+.attendance-board-toolbar .attendance-board-stats {
+  flex: 1 1 360px;
+  justify-content: flex-end;
 }
 
 .attendance-board-toolbar span {
@@ -12129,6 +12702,38 @@ h3 {
   border-color: rgba(111, 210, 138, 0.38);
   color: #c8f6d4;
   background: rgba(37, 130, 69, 0.22);
+}
+
+.attendance-baseline-editable-cell {
+  padding: 3px;
+}
+
+.attendance-baseline-cell-input {
+  width: 36px;
+  height: 30px;
+  border: 1px solid rgba(160, 184, 214, 0.26);
+  border-radius: 7px;
+  color: #edf4fc;
+  background: rgba(8, 13, 20, 0.88);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-align: center;
+  outline: none;
+}
+
+.attendance-baseline-cell-input:focus {
+  border-color: rgba(118, 164, 231, 0.78);
+  box-shadow: 0 0 0 2px rgba(118, 164, 231, 0.18);
+}
+
+.attendance-baseline-editable-cell.has-source-record .attendance-baseline-cell-input {
+  border-color: rgba(245, 158, 11, 0.58);
+  background: rgba(42, 30, 10, 0.92);
+}
+
+.attendance-baseline-cell-input::placeholder {
+  color: #7890ac;
+  opacity: 1;
 }
 
 .attendance-cell.attendance-cell-paid span {
@@ -12635,6 +13240,92 @@ h3 {
   color: #c8d4e3;
   font-size: 0.86rem;
   line-height: 1.45;
+}
+
+.notification-module-summary {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 10px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.notification-module-summary:hover,
+.notification-module-summary:focus-visible {
+  border-color: rgba(118, 164, 231, 0.7);
+  outline: none;
+  background: rgba(118, 164, 231, 0.08);
+}
+
+.notification-module-summary.is-readonly {
+  cursor: default;
+}
+
+.notification-module-summary.level-info {
+  border-left-color: #6ca8ff;
+}
+
+.notification-module-summary.level-warning {
+  border-left-color: #f0b45b;
+}
+
+.notification-module-summary.level-danger {
+  border-left-color: #ff7878;
+}
+
+.notification-module-summary.level-success {
+  border-left-color: #6fd28a;
+}
+
+.notification-module-summary-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notification-module-summary-header strong {
+  min-width: 0;
+  color: #ffffff;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.notification-module-summary-header span {
+  display: inline-grid;
+  min-width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(118, 164, 231, 0.42);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: #ffffff;
+  background: rgba(31, 93, 153, 0.42);
+  font-size: 0.74rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.notification-module-summary p,
+.notification-module-summary-meta {
+  margin: 0;
+  color: #c8d4e3;
+  font-size: 0.84rem;
+  line-height: 1.42;
+}
+
+.notification-module-summary-meta {
+  color: #9fb1c7;
+  font-size: 0.76rem;
+  font-weight: 850;
 }
 
 .notification-meta {
