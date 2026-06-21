@@ -237,6 +237,28 @@ import {
   pushLocalCoreEntitiesToCloud,
 } from './cloud-db-sync.js'
 import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
+import {
+  NEEDS_SUPABASE_REALTIME_PATCH,
+  mergeRealtimeStudentIntoList,
+  subscribeToStudentCloudRealtime,
+  upsertStudentCloudEntity,
+} from './cloud-realtime-students.js'
+import {
+  mergeRealtimeTeacherIntoList,
+  subscribeToTeacherCloudRealtime,
+  upsertTeacherCloudEntity,
+} from './cloud-realtime-teachers.js'
+import {
+  mergeScheduleSessionRealtimePayload,
+  subscribeToScheduleSessionCloudRealtime,
+  upsertScheduleSessionCloudEntity,
+} from './cloud-realtime-schedule-sessions.js'
+import { buildScheduleSessionBridgePreview } from './cloud-schedule-session-bridge.js'
+import {
+  buildOnlineAccessState,
+  canWriteEntity,
+  getOnlineAccessMessage,
+} from './online-access-control.js'
 import { sampleStudents } from './student-data.js'
 import { sampleTeachers } from './teacher-data.js'
 import {
@@ -428,6 +450,15 @@ let cloudUserSyncId = 0
 let cloudDbAutoPullUserId = ''
 let coreCloudSyncTimer = null
 let coreCloudSyncRunId = 0
+let studentRealtimeSubscription = null
+let studentRealtimeCenterId = ''
+let studentCloudWriteRunId = 0
+let teacherRealtimeSubscription = null
+let teacherRealtimeCenterId = ''
+let teacherCloudWriteRunId = 0
+let scheduleSessionRealtimeSubscription = null
+let scheduleSessionRealtimeCenterId = ''
+let scheduleSessionCloudWriteRunId = 0
 let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
 let cloudGalleryState = null
@@ -1417,6 +1448,10 @@ function getWindowHeaderTitle(windowItem) {
 
 function getStudentById(studentId) {
   return students.find((student) => student.id === studentId)
+}
+
+function getTeacherById(teacherId) {
+  return teachers.find((teacher) => teacher.id === teacherId)
 }
 
 function getLatestCareNoteContent(careNotes) {
@@ -2438,6 +2473,7 @@ function softDeleteStudent(studentId) {
   )
   saveStoredStudents(students)
   queueCoreCloudSync('student-delete')
+  writeStudentThroughCloud(getStudentById(studentId), 'student-delete')
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
@@ -2480,6 +2516,9 @@ async function syncCloudUser(user) {
   const syncId = ++cloudUserSyncId
 
   if (!user) {
+    stopStudentRealtimeSubscription()
+    stopTeacherRealtimeSubscription()
+    stopScheduleSessionRealtimeSubscription()
     transactionImageManagerState = null
     cloudGalleryState = null
     cloudDbState = createInitialCloudDbState()
@@ -2573,6 +2612,9 @@ async function syncCloudUser(user) {
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await autoPullCoreCloudSnapshot(syncId)
+    await startStudentRealtimeSubscription(syncId)
+    await startTeacherRealtimeSubscription(syncId)
+    await startScheduleSessionRealtimeSubscription(syncId)
   }
 }
 
@@ -2641,20 +2683,554 @@ function isAngelWingsEntity(entity) {
 }
 
 function canUseCoreCloudDb() {
-  return (
-    cloudStatus.configStatus === 'configured' &&
-    cloudStatus.authStatus === 'signed-in' &&
-    cloudStatus.membershipStatus === 'loaded' &&
-    Boolean(cloudStatus.role)
-  )
+  return buildCurrentOnlineAccessState({ cloudReady: true }).canRead
 }
 
 function isCoreCloudDbReady() {
   return (
-    canUseCoreCloudDb() &&
+    canWriteCoreCloudDb() &&
     cloudDbState.readinessStatus === 'ready' &&
     getLocalAngelWingsStatus().isReadyForCloudPush
   )
+}
+
+function buildCurrentOnlineAccessState({ cloudReady = false } = {}) {
+  return buildOnlineAccessState({
+    isSupabaseConfigured: cloudStatus.configStatus === 'configured',
+    isSignedIn: cloudStatus.authStatus === 'signed-in',
+    user: cloudStatus.user,
+    centerId: 'dreamhome',
+    membership:
+      cloudStatus.membershipStatus === 'loaded'
+        ? { role: cloudStatus.role }
+        : null,
+    role: cloudStatus.role,
+    cloudReady,
+    membershipUnavailable:
+      cloudStatus.membershipStatus === 'missing' || cloudStatus.membershipStatus === 'error',
+  })
+}
+
+function canWriteCoreCloudDb(entityType = CLOUD_ENTITY_TYPES.STUDENT) {
+  return canWriteEntity(
+    buildCurrentOnlineAccessState({ cloudReady: cloudDbState.readinessStatus === 'ready' }),
+    entityType,
+  )
+}
+
+async function writeStudentThroughCloud(student, reason = 'student-save') {
+  const accessState = buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  })
+
+  if (!canWriteEntity(accessState, CLOUD_ENTITY_TYPES.STUDENT)) {
+    if (cloudStatus.authStatus === 'signed-in') {
+      cloudDbState = {
+        ...cloudDbState,
+        message: getOnlineAccessMessage(accessState),
+        messageTone: 'error',
+      }
+    }
+    return { ok: false, skipped: true, error: getOnlineAccessMessage(accessState) }
+  }
+
+  const runId = ++studentCloudWriteRunId
+  const readiness = await checkCloudDbReadiness()
+
+  if (!readiness.ok) {
+    if (runId === studentCloudWriteRunId) {
+      cloudDbState = {
+        ...cloudDbState,
+        readinessStatus: 'error',
+        message: readiness.error,
+        messageTone: 'error',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      render()
+    }
+    return readiness
+  }
+
+  const writeAccessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: readiness.ready !== false,
+  })
+  const result = await upsertStudentCloudEntity({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    student,
+    userId: readiness.user?.id,
+    accessState: writeAccessState,
+  })
+
+  if (runId !== studentCloudWriteRunId) {
+    return result
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
+    message: result.ok
+      ? `Da luu cloud Hoc vien (${reason}).`
+      : result.error || 'Chua the dong bo cloud Hoc vien.',
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
+  }
+  render()
+  return result
+}
+
+async function startStudentRealtimeSubscription(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || studentRealtimeCenterId === 'dreamhome') {
+    return
+  }
+
+  const readiness = await checkCloudDbReadiness()
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  if (!readiness.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: readiness.error,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  stopStudentRealtimeSubscription()
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: true,
+  })
+  const subscription = subscribeToStudentCloudRealtime({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    accessState,
+    onStudentRecord: handleStudentRealtimeRecord,
+    onStatusChange: handleStudentRealtimeStatus,
+  })
+
+  if (!subscription.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: subscription.message,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  studentRealtimeSubscription = subscription
+  studentRealtimeCenterId = readiness.centerId
+}
+
+function stopStudentRealtimeSubscription() {
+  studentRealtimeSubscription?.cleanup?.()
+  studentRealtimeSubscription = null
+  studentRealtimeCenterId = ''
+}
+
+function handleStudentRealtimeStatus(status) {
+  if (!status || status.status !== 'CHANNEL_ERROR' && status.status !== 'TIMED_OUT') {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    message: status.needsRealtimePatch
+      ? NEEDS_SUPABASE_REALTIME_PATCH
+      : status.message || 'Online Hoc vien chua san sang.',
+    messageTone: 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+function handleStudentRealtimeRecord(record) {
+  const mergeResult = mergeRealtimeStudentIntoList(students, record)
+
+  if (!mergeResult.ok || !mergeResult.changed) {
+    return
+  }
+
+  students = mergeResult.students
+  saveStoredStudents(students)
+  render()
+}
+
+async function writeTeacherThroughCloud(teacher, reason = 'teacher-save') {
+  const accessState = buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  })
+
+  if (!canWriteEntity(accessState, CLOUD_ENTITY_TYPES.TEACHER)) {
+    if (cloudStatus.authStatus === 'signed-in') {
+      cloudDbState = {
+        ...cloudDbState,
+        message: getOnlineAccessMessage(accessState),
+        messageTone: 'error',
+      }
+    }
+    return { ok: false, skipped: true, error: getOnlineAccessMessage(accessState) }
+  }
+
+  const runId = ++teacherCloudWriteRunId
+  const readiness = await checkCloudDbReadiness()
+
+  if (!readiness.ok) {
+    if (runId === teacherCloudWriteRunId) {
+      cloudDbState = {
+        ...cloudDbState,
+        readinessStatus: 'error',
+        message: readiness.error,
+        messageTone: 'error',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      render()
+    }
+    return readiness
+  }
+
+  const writeAccessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: readiness.ready !== false,
+  })
+  const result = await upsertTeacherCloudEntity({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    teacher,
+    userId: readiness.user?.id,
+    accessState: writeAccessState,
+  })
+
+  if (runId !== teacherCloudWriteRunId) {
+    return result
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
+    message: result.ok
+      ? `Da luu cloud Giao vien (${reason}).`
+      : result.error || 'Chua the dong bo cloud Giao vien.',
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
+  }
+  render()
+  return result
+}
+
+async function startTeacherRealtimeSubscription(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || teacherRealtimeCenterId === 'dreamhome') {
+    return
+  }
+
+  const readiness = await checkCloudDbReadiness()
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  if (!readiness.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: readiness.error,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  stopTeacherRealtimeSubscription()
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: true,
+  })
+  const subscription = subscribeToTeacherCloudRealtime({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    accessState,
+    onTeacherRecord: handleTeacherRealtimeRecord,
+    onStatusChange: handleTeacherRealtimeStatus,
+  })
+
+  if (!subscription.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: subscription.message,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  teacherRealtimeSubscription = subscription
+  teacherRealtimeCenterId = readiness.centerId
+}
+
+function stopTeacherRealtimeSubscription() {
+  teacherRealtimeSubscription?.cleanup?.()
+  teacherRealtimeSubscription = null
+  teacherRealtimeCenterId = ''
+}
+
+function handleTeacherRealtimeStatus(status) {
+  if (!status || status.status !== 'CHANNEL_ERROR' && status.status !== 'TIMED_OUT') {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    message: status.needsRealtimePatch
+      ? NEEDS_SUPABASE_REALTIME_PATCH
+      : status.message || 'Online Giao vien chua san sang.',
+    messageTone: 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+function handleTeacherRealtimeRecord(record) {
+  const mergeResult = mergeRealtimeTeacherIntoList(teachers, record)
+
+  if (!mergeResult.ok || !mergeResult.changed) {
+    return
+  }
+
+  teachers = mergeResult.teachers
+  saveStoredTeachers(teachers)
+  render()
+}
+
+async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'schedule-save') {
+  const accessState = buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  })
+  const localPreview = buildScheduleSessionBridgePreview(
+    scheduleSession ? [scheduleSession] : [],
+    buildScheduleSessionRuntimeContext({
+      accessState,
+      cloudReady: cloudDbState.readinessStatus === 'ready',
+    }),
+  )
+
+  if (!localPreview.readiness.readyForRuntimeWrite) {
+    if (cloudStatus.authStatus === 'signed-in') {
+      cloudDbState = {
+        ...cloudDbState,
+        message: 'Chua the dong bo lich len cloud.',
+        messageTone: 'error',
+      }
+    }
+    return {
+      ok: false,
+      skipped: true,
+      error: localPreview.readiness.blockers[0] || 'Chua the dong bo lich len cloud.',
+      readiness: localPreview.readiness,
+    }
+  }
+
+  const runId = ++scheduleSessionCloudWriteRunId
+  const readiness = await checkCloudDbReadiness()
+
+  if (!readiness.ok) {
+    if (runId === scheduleSessionCloudWriteRunId) {
+      cloudDbState = {
+        ...cloudDbState,
+        readinessStatus: 'error',
+        message: readiness.error,
+        messageTone: 'error',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      render()
+    }
+    return readiness
+  }
+
+  const writeAccessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: readiness.ready !== false,
+  })
+  const preview = buildScheduleSessionBridgePreview(
+    scheduleSession ? [scheduleSession] : [],
+    buildScheduleSessionRuntimeContext({
+      accessState: writeAccessState,
+      centerId: readiness.centerId,
+      cloudReady: readiness.ready !== false,
+      signedIn: Boolean(readiness.user),
+      membershipReady: Boolean(readiness.membership),
+    }),
+  )
+  const result = await upsertScheduleSessionCloudEntity({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    scheduleSession,
+    userId: readiness.user?.id,
+    accessState: writeAccessState,
+    readiness: {
+      ...preview.readiness,
+      dryRunPreview: preview.dryRun,
+      cloudReady: readiness.ready !== false,
+      signedIn: Boolean(readiness.user),
+      membershipReady: Boolean(readiness.membership),
+      membershipSqlReady: false,
+      scheduleSessionSqlReady: false,
+      realtimeReady: false,
+    },
+  })
+
+  if (runId !== scheduleSessionCloudWriteRunId) {
+    return result
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
+    message: result.ok
+      ? `Da luu cloud TKB (${reason}).`
+      : 'Chua the dong bo lich len cloud.',
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
+  }
+  render()
+  return result
+}
+
+async function startScheduleSessionRealtimeSubscription(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || scheduleSessionRealtimeCenterId === 'dreamhome') {
+    return
+  }
+
+  const readiness = await checkCloudDbReadiness()
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  if (!readiness.ok) {
+    return
+  }
+
+  stopScheduleSessionRealtimeSubscription()
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: true,
+  })
+  const subscription = subscribeToScheduleSessionCloudRealtime({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    accessState,
+    readiness: buildScheduleSessionRuntimeContext({
+      accessState,
+      centerId: readiness.centerId,
+      cloudReady: true,
+      signedIn: Boolean(readiness.user),
+      membershipReady: Boolean(readiness.membership),
+    }),
+    onScheduleSessionRecord: handleScheduleSessionRealtimeRecord,
+    onStatusChange: handleScheduleSessionRealtimeStatus,
+  })
+
+  if (!subscription.ok) {
+    return
+  }
+
+  scheduleSessionRealtimeSubscription = subscription
+  scheduleSessionRealtimeCenterId = readiness.centerId
+}
+
+function stopScheduleSessionRealtimeSubscription() {
+  scheduleSessionRealtimeSubscription?.cleanup?.()
+  scheduleSessionRealtimeSubscription = null
+  scheduleSessionRealtimeCenterId = ''
+}
+
+function handleScheduleSessionRealtimeStatus(status) {
+  if (!status || status.status !== 'CHANNEL_ERROR' && status.status !== 'TIMED_OUT') {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    message: 'Online TKB chua san sang.',
+    messageTone: 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+function handleScheduleSessionRealtimeRecord(record) {
+  const mergeResult = mergeScheduleSessionRealtimePayload(scheduleSessions, record)
+
+  if (!mergeResult.ok || !mergeResult.changed) {
+    return
+  }
+
+  scheduleSessions = mergeResult.scheduleSessions
+  saveStoredSchedule(scheduleSessions)
+  render()
+}
+
+function buildScheduleSessionRuntimeContext({
+  accessState,
+  centerId = 'dreamhome',
+  cloudReady = false,
+  signedIn = cloudStatus.authStatus === 'signed-in',
+  membershipReady = cloudStatus.membershipStatus === 'loaded',
+} = {}) {
+  return {
+    accessState,
+    centerId,
+    classSessions,
+    cloudReady,
+    signedIn,
+    membershipReady,
+    membershipSqlReady: false,
+    scheduleSessionSqlReady: false,
+    realtimeReady: false,
+    explicitUserAction: true,
+  }
 }
 
 function queueCoreCloudSync(reason = 'auto') {
@@ -2674,6 +3250,19 @@ function queueCoreCloudSync(reason = 'auto') {
 
 async function syncCoreEntitiesToCloud(reason = 'auto') {
   if (!isCoreCloudDbReady()) {
+    return
+  }
+
+  const writeAccess = buildCurrentOnlineAccessState({ cloudReady: true })
+
+  if (!canWriteEntity(writeAccess, CLOUD_ENTITY_TYPES.STUDENT)) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      message: getOnlineAccessMessage(writeAccess),
+      messageTone: 'error',
+    }
+    render()
     return
   }
 
@@ -2894,6 +3483,19 @@ async function pushCloudDbSnapshot() {
   const readiness = await refreshCloudDbReadiness({ showLoading: true })
 
   if (!readiness.ok) {
+    return
+  }
+
+  const writeAccess = buildCurrentOnlineAccessState({ cloudReady: true })
+
+  if (!canWriteEntity(writeAccess, CLOUD_ENTITY_TYPES.STUDENT)) {
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      message: getOnlineAccessMessage(writeAccess),
+      messageTone: 'error',
+    }
+    render()
     return
   }
 
@@ -6844,6 +7446,7 @@ function bindEvents() {
       )
       saveStoredTeachers(teachers)
       queueCoreCloudSync('teacher-status')
+      writeTeacherThroughCloud(getTeacherById(teacher.id), 'teacher-status')
       render()
     })
   })
@@ -6978,8 +7581,10 @@ function bindEvents() {
       return
     }
 
+    let savedTeacher = null
+
     if (teacherFormState.mode === 'edit') {
-      const existingTeacher = teachers.find((teacher) => teacher.id === teacherFormState.teacherId)
+      const existingTeacher = getTeacherById(teacherFormState.teacherId)
 
       if (!existingTeacher) {
         teacherFormState = {
@@ -6997,14 +7602,17 @@ function bindEvents() {
         teacher.id === updatedTeacher.id ? updatedTeacher : teacher,
       )
       selectedTeacherId = updatedTeacher.id
+      savedTeacher = updatedTeacher
     } else {
       const createdTeacher = buildTeacherFromForm(teacherFormState.values)
       teachers = [createdTeacher, ...teachers]
       selectedTeacherId = createdTeacher.id
+      savedTeacher = createdTeacher
     }
 
     saveStoredTeachers(teachers)
     queueCoreCloudSync('teacher-save')
+    writeTeacherThroughCloud(savedTeacher, 'teacher-save')
     teacherFormState = null
     render()
   })
@@ -7993,6 +8601,8 @@ function bindEvents() {
       return
     }
 
+    let savedScheduleSession = null
+
     if (scheduleFormState.mode === 'edit') {
       const existingSession = scheduleSessions.find(
         (session) => session.id === scheduleFormState.sessionId,
@@ -8017,12 +8627,15 @@ function bindEvents() {
       scheduleSessions = scheduleSessions.map((session) =>
         session.id === updatedSession.id ? updatedSession : session,
       )
+      savedScheduleSession = updatedSession
     } else {
       const createdSession = buildScheduleSessionFromForm(scheduleFormState.values, null, teachers)
       scheduleSessions = [createdSession, ...scheduleSessions]
+      savedScheduleSession = createdSession
     }
 
     saveStoredSchedule(scheduleSessions)
+    writeScheduleSessionThroughCloud(savedScheduleSession, 'schedule-save')
     scheduleFormState = null
     scheduleReportState = null
     sessionReportAttendanceState = null
@@ -8045,10 +8658,26 @@ function bindEvents() {
       return
     }
 
+    const deletedScheduleSession = scheduleSessions.find(
+      (session) => session.id === scheduleFormState.sessionId,
+    )
+
     scheduleSessions = scheduleSessions.filter(
       (session) => session.id !== scheduleFormState.sessionId,
     )
     saveStoredSchedule(scheduleSessions)
+    writeScheduleSessionThroughCloud(
+      deletedScheduleSession
+        ? {
+            ...deletedScheduleSession,
+            status: 'cancelled',
+            isDeleted: true,
+            deletedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+        : null,
+      'schedule-delete',
+    )
     scheduleFormState = null
     scheduleReportState = null
     sessionReportAttendanceState = null
@@ -8161,6 +8790,7 @@ function bindEvents() {
         )
         saveStoredStudents(students)
         queueCoreCloudSync('student-avatar')
+        writeStudentThroughCloud(getStudentById(studentId), 'student-avatar')
         render()
       }
     })
@@ -8357,6 +8987,7 @@ function bindEvents() {
       })
       saveStoredStudents(students)
       queueCoreCloudSync('student-care-note')
+      writeStudentThroughCloud(getStudentById(careNoteStudentId), 'student-care-note')
       careNoteDrafts = {
         ...careNoteDrafts,
         [careNoteStudentId]: { ...emptyCareNoteDraft },
@@ -8420,6 +9051,7 @@ function bindEvents() {
       })
       saveStoredStudents(students)
       queueCoreCloudSync('student-care-note')
+      writeStudentThroughCloud(getStudentById(studentId), 'student-care-note')
       careNoteDrafts = {
         ...careNoteDrafts,
         [studentId]: { ...emptyCareNoteDraft },
@@ -8465,9 +9097,12 @@ function bindEvents() {
       return
     }
 
+    let savedStudent = null
+
     if (studentFormState.mode === 'edit') {
       const existingStudent = students.find((student) => student.id === studentFormState.studentId)
       const updatedStudent = buildStudentFromForm(studentFormState.values, existingStudent)
+      savedStudent = updatedStudent
       students = students.map((student) =>
         student.id === updatedStudent.id ? updatedStudent : student,
       )
@@ -8477,6 +9112,7 @@ function bindEvents() {
       }
     } else {
       const newStudent = buildStudentFromForm(studentFormState.values)
+      savedStudent = newStudent
       students = [newStudent, ...students]
       studentFilters = {
         ...studentFilters,
@@ -8486,6 +9122,7 @@ function bindEvents() {
 
     saveStoredStudents(students)
     queueCoreCloudSync('student-save')
+    writeStudentThroughCloud(savedStudent, 'student-save')
     studentFormState = null
     render()
   })

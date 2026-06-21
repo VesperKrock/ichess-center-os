@@ -10,6 +10,11 @@ import {
   buildCloudEntityRecords,
   isAllowedCloudEntityType,
 } from './cloud-db-entities.js'
+import {
+  buildOnlineAccessState,
+  canWriteEntity,
+  getOnlineAccessMessage,
+} from './online-access-control.js'
 
 const CLOUD_ENTITY_SELECT_FIELDS =
   'center_id, entity_type, local_id, payload, source_module, source_version, updated_at, deleted_at'
@@ -275,6 +280,30 @@ export async function pushLocalCoreEntitiesToCloud({
 
   if (!context.ok) {
     return context
+  }
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(context.user),
+    user: context.user,
+    centerId: context.centerId,
+    membership: context.membership,
+    role: context.membership?.role,
+    cloudReady: context.ready !== false,
+  })
+
+  if (!canWriteEntity(accessState, CLOUD_ENTITY_TYPES.STUDENT)) {
+    return {
+      ok: false,
+      error: getOnlineAccessMessage(accessState),
+      detail: {
+        category: 'cloud-write-read-only',
+        target: 'center_cloud_entities',
+        role: accessState.role,
+        reason: accessState.reason,
+        needsMembershipPatch: accessState.needsMembershipPatch,
+      },
+    }
   }
 
   const groups = [
