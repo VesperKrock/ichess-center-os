@@ -56,6 +56,165 @@ button {
   padding: 18px;
 }
 
+.app-shell.is-login-gated {
+  min-height: 100vh;
+}
+
+.desktop-area.is-login-gated {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+}
+
+.desktop-area.is-login-gated .app-auth-entry {
+  position: static;
+  width: min(520px, 100%);
+}
+
+.desktop-area.is-login-gated .window-layer {
+  display: none;
+}
+
+.app-auth-entry {
+  position: absolute;
+  z-index: 25;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100% - 32px));
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.34);
+  color: #f8fafc;
+}
+
+.app-auth-heading,
+.app-auth-form,
+.app-auth-account {
+  display: grid;
+  gap: 8px;
+}
+
+.app-auth-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.app-auth-eyebrow {
+  margin: 0 0 2px;
+  color: #93c5fd;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.app-auth-heading h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.app-auth-state {
+  justify-self: end;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(248, 113, 113, 0.16);
+  color: #fecaca;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.app-auth-state.is-signed-in {
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+}
+
+.app-auth-form {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.app-auth-form label {
+  display: grid;
+  gap: 4px;
+  color: #dbeafe;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.app-auth-form input {
+  min-width: 0;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #020617;
+  color: #f8fafc;
+  font: inherit;
+}
+
+.app-auth-form input:focus {
+  border-color: #93c5fd;
+  outline: 2px solid rgba(147, 197, 253, 0.28);
+  outline-offset: 1px;
+}
+
+.app-auth-form button,
+.app-auth-account button {
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 12px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.app-auth-form button:disabled,
+.app-auth-account button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.app-auth-account {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.app-auth-account span,
+.app-auth-account strong,
+.app-auth-message {
+  display: block;
+}
+
+.app-auth-account span {
+  color: #bfdbfe;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.app-auth-account strong {
+  overflow-wrap: anywhere;
+  color: #f8fafc;
+  font-size: 0.9rem;
+}
+
+.app-auth-account small {
+  display: block;
+  margin-top: 3px;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+}
+
+.app-auth-message {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+}
+
 .dashboard {
   width: min(1180px, 100%);
   margin: 0 auto;
@@ -8796,6 +8955,38 @@ h3 {
   width: 94px;
 }
 
+.cashflow-cloud-auth-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.cashflow-cloud-auth-note.is-ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.cashflow-cloud-auth-note button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #166534;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .cashflow-table th:nth-child(5),
 .cashflow-table td:nth-child(5),
 .cashflow-table th:nth-child(7),
@@ -13381,12 +13572,34 @@ h3 {
 .window-overflow-menu button {
   width: 100%;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   justify-content: flex-start;
   border-color: rgba(255, 255, 255, 0.08);
   color: #e6eef8;
   text-align: left;
+}
+
+.window-overflow-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.window-overflow-state {
+  flex: 0 0 auto;
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.window-overflow-empty {
+  display: block;
+  color: #9fb1c7;
+  font-size: 0.86rem;
 }
 
 .window-overflow-menu button + button {

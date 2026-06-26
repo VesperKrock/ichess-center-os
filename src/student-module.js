@@ -40,6 +40,32 @@ const parentNoteSuggestions = [
   'Phụ huynh muốn theo dõi tiến độ sát hơn',
 ]
 
+export const studentFormTabOrder = {
+  fullName: 1,
+  birthDate: 2,
+  schoolName: 3,
+  hometown: 4,
+  gender: 5,
+  schoolLevel: 6,
+  nationality: 7,
+  level: 8,
+  highestBotMilestone: 9,
+  assignedTeacherId: 10,
+  classSessionIds: 11,
+  personality: 12,
+  hobbies: 13,
+  testScore: 14,
+  parentName: 101,
+  parentBirthYear: 102,
+  fatherPhone: 103,
+  motherPhone: 104,
+  parentJob: 105,
+  parentArea: 106,
+  currentStatus: 107,
+  achievements: 108,
+  parentNotes: 109,
+}
+
 export const initialStudentFilters = {
   query: '',
   status: 'all',
@@ -537,6 +563,7 @@ function renderField(name, label, formState, type, options = {}) {
         type="${type}"
         value="${escapeAttribute(formState.values[name] ?? '')}"
         data-student-form-field="${name}"
+        ${renderStudentFormTabIndex(name)}
         ${options.placeholder ? `placeholder="${escapeAttribute(options.placeholder)}"` : ''}
         ${options.inputmode ? `inputmode="${options.inputmode}"` : ''}
         ${options.maxlength ? `maxlength="${options.maxlength}"` : ''}
@@ -553,7 +580,7 @@ function renderTextareaField(name, label, formState, options = {}) {
   return `
     <label class="${options.className ?? ''}">
       <span>${label}</span>
-      <textarea data-student-form-field="${name}">${formState.values[name] ?? ''}</textarea>
+      <textarea data-student-form-field="${name}" ${renderStudentFormTabIndex(name)}>${formState.values[name] ?? ''}</textarea>
       ${options.after ?? ''}
     </label>
   `
@@ -563,7 +590,7 @@ function renderSelectField(name, label, formState, options) {
   return `
     <label class="${formState.errors[name] ? 'has-error' : ''}">
       <span>${label}</span>
-      <select data-student-form-field="${name}">
+      <select data-student-form-field="${name}" ${renderStudentFormTabIndex(name)}>
         ${options.map((option) => {
           const value = typeof option === 'object' ? option.value : option
           const optionLabel = typeof option === 'object' ? option.label : option
@@ -584,6 +611,7 @@ function renderStudentLevelField(formState) {
         list="student-level-options"
         value="${escapeAttribute(formState.values.level ?? '')}"
         data-student-form-field="level"
+        ${renderStudentFormTabIndex('level')}
         placeholder="Chọn hoặc nhập cấp độ riêng"
       />
       <datalist id="student-level-options">
@@ -623,6 +651,7 @@ function renderClassSessionCheckboxes(formState, classSessions = []) {
                         type="checkbox"
                         value="${escapeAttribute(classSession.id)}"
                         data-student-class-session-id="${escapeAttribute(classSession.id)}"
+                        ${renderStudentFormTabIndex('classSessionIds')}
                         ${selectedIds.has(classSession.id) ? 'checked' : ''}
                       />
                       <span>
@@ -654,6 +683,16 @@ function renderParentNoteSuggestions() {
         .join('')}
     </div>
   `
+}
+
+function renderStudentFormTabIndex(fieldKey) {
+  const tabIndex = studentFormTabOrder[fieldKey]
+
+  if (!Number.isInteger(tabIndex) || tabIndex <= 0) {
+    return ''
+  }
+
+  return `tabindex="${tabIndex}"`
 }
 
 function renderStatCard(label, value, tone = '') {

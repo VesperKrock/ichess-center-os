@@ -1,6 +1,9 @@
 import './styles.css'
+import { resolveAppCenterBinding } from './app-center-binding.js'
+import { renderAppAuthEntry } from './app-auth.js'
+import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import { modules } from './modules.js'
-import { createInitialCloudStatus, renderCloudStatus } from './cloud-status.js'
+import { createInitialCloudStatus } from './cloud-status.js'
 import {
   getCurrentCenterMembership,
   getCurrentSupabaseUser,
@@ -233,9 +236,18 @@ import {
   checkCloudDbReadiness,
   createEmptyCloudEntityCounts,
   getCloudEntityCounts,
+  pullCloudBootstrapCoreEntities,
   pullCoreEntitiesFromCloud,
   pushLocalCoreEntitiesToCloud,
 } from './cloud-db-sync.js'
+import {
+  CLOUD_BOOTSTRAP_STATUS,
+  canRunCloudBootstrap,
+  createInitialCloudBootstrapState,
+  getCloudBootstrapSnapshotCounts,
+  getCloudBootstrapStatusLabel,
+  hasCloudBootstrapSnapshotData,
+} from './cloud-bootstrap.js'
 import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
 import {
   NEEDS_SUPABASE_REALTIME_PATCH,
@@ -259,7 +271,7 @@ import {
   canWriteEntity,
   getOnlineAccessMessage,
 } from './online-access-control.js'
-import { sampleStudents } from './student-data.js'
+import { sampleStudents, shouldReplaceLegacyEightSeed } from './student-data.js'
 import { sampleTeachers } from './teacher-data.js'
 import {
   buildTeacherFromForm,
@@ -351,6 +363,7 @@ const preservedScrollTargets = [
   ['.attendance-board-sheet-wrap', 'attendance-board-sheet'],
 ]
 const preservedScrollSelector = preservedScrollTargets.map(([selector]) => selector).join(',')
+const lastKnownPreservedScrollPositions = new Map()
 
 let currentViewMode = getViewMode()
 let isStartMenuOpen = false
@@ -364,10 +377,16 @@ let desktopModuleOrder = getDesktopModuleOrder(modules.map((moduleItem) => modul
 let shortcutDragState = null
 let suppressNextModuleClick = false
 let shortcutDocumentDragBound = false
+let startMenuOutsidePointerBound = false
+let windowOverflowOutsidePointerBound = false
 let notificationOutsidePointerBound = false
 let moduleNotificationOutsidePointerBound = false
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
+if (shouldReplaceLegacyEightSeed(students)) {
+  students = sampleStudents
+  saveStoredStudents(students)
+}
 let classSessions = getStoredClassSessions(sampleClassSessions)
 let teacherFilters = { ...initialTeacherFilters }
 let teachers = getStoredTeachers(sampleTeachers)
@@ -446,6 +465,7 @@ let isInventoryRequestsPanelOpen = false
 let careNoteDrafts = {}
 let cloudStatus = createInitialCloudStatus(getSupabaseConfigStatus().status)
 let cloudDbState = createInitialCloudDbState()
+let cloudBootstrapState = createInitialCloudBootstrapState()
 let cloudUserSyncId = 0
 let cloudDbAutoPullUserId = ''
 let coreCloudSyncTimer = null
@@ -468,6 +488,8 @@ function render() {
   const scheduleReportScrollState = getScheduleReportScrollState()
   const scheduleFormScrollState = getScheduleFormScrollState()
   const parentContactFormScrollTop = getParentContactFormScrollTop()
+  const currentCenterBinding = resolveAppCenterBinding(cloudStatus)
+  const isLoginGateOpen = !isDashboardUnlockedByCenter(cloudStatus, currentCenterBinding)
 
   if (
     parentConsultationFormState &&
@@ -481,15 +503,16 @@ function render() {
   }
 
   app.innerHTML = `
-    <div class="app-shell">
-      <main class="desktop-area">
-        ${renderDashboard()}
+    <div class="app-shell ${isLoginGateOpen ? 'is-login-gated' : ''}">
+      <main class="desktop-area ${isLoginGateOpen ? 'is-login-gated' : ''}">
+        ${isLoginGateOpen ? renderAppAuthEntry(cloudStatus, currentCenterBinding) : ''}
+        ${isLoginGateOpen ? '' : renderDashboard()}
         <div class="window-layer" aria-label="Các cửa sổ đang mở">
-          ${renderOpenWindows()}
+          ${isLoginGateOpen ? '' : renderOpenWindows()}
         </div>
       </main>
-      ${renderTaskbar()}
-      ${renderSystemOverlay()}
+      ${isLoginGateOpen ? '' : renderTaskbar()}
+      ${isLoginGateOpen ? '' : renderSystemOverlay()}
     </div>
   `
 
@@ -952,14 +975,16 @@ function rememberPreservedScrollPositions(root = app) {
 }
 
 function restorePreservedScrollPositions(scrollState, root = app) {
-  if (!root || !scrollState?.size) {
+  const mergedScrollState = mergePreservedScrollState(scrollState)
+
+  if (!root || !mergedScrollState.size) {
     return
   }
 
   const restore = () => {
     root.querySelectorAll(preservedScrollSelector).forEach((element) => {
       const key = getPreservedScrollKey(element)
-      const savedPosition = key ? scrollState.get(key) : null
+      const savedPosition = key ? mergedScrollState.get(key) : null
 
       if (!savedPosition) {
         return
@@ -976,6 +1001,43 @@ function restorePreservedScrollPositions(scrollState, root = app) {
   }
 
   restore()
+}
+
+function mergePreservedScrollState(scrollState) {
+  const mergedScrollState = new Map(lastKnownPreservedScrollPositions)
+
+  if (scrollState?.size) {
+    scrollState.forEach((position, key) => {
+      mergedScrollState.set(key, position)
+    })
+  }
+
+  return mergedScrollState
+}
+
+function bindPreservedScrollRetentionEvents(root = app) {
+  if (!root) {
+    return
+  }
+
+  root.querySelectorAll(preservedScrollSelector).forEach((element) => {
+    element.addEventListener(
+      'scroll',
+      () => {
+        const key = getPreservedScrollKey(element)
+
+        if (!key) {
+          return
+        }
+
+        lastKnownPreservedScrollPositions.set(key, {
+          left: element.scrollLeft,
+          top: element.scrollTop,
+        })
+      },
+      { passive: true },
+    )
+  })
 }
 
 function getPreservedScrollKey(element) {
@@ -1304,7 +1366,7 @@ function renderWindowBody(windowItem) {
       cashflowCategories,
       isCashflowCategoryPanelOpen,
       cashflowCategoryFormState,
-      renderCloudStatus(cloudStatus),
+      renderCashflowCloudAuthNotice(cloudStatus),
       {
         canUpload:
           cloudStatus.configStatus === 'configured' &&
@@ -1472,8 +1534,7 @@ function renderPlannedList(title, items) {
 }
 
 function renderTaskbar() {
-  const visibleWindows = openWindows.slice(0, 4)
-  const overflowWindows = openWindows.slice(4)
+  const { visibleWindows, overflowWindows } = getTaskbarWindowGroups(openWindows)
   const activeWindowId = getActiveWindowId()
   const unreadCount = getUnreadNotificationCount()
   const windowButtons = visibleWindows
@@ -1509,6 +1570,7 @@ function renderTaskbar() {
           Start
         </button>
         <span class="taskbar-item app-name">iChess Center OS</span>
+        <span class="taskbar-item">${escapeHtml(getCloudBootstrapStatusLabel(cloudBootstrapState))}</span>
         <span class="taskbar-item">Cơ sở: DreamHome</span>
         <span class="taskbar-item">Vai trò: Quản lý cơ sở</span>
       </div>
@@ -1568,6 +1630,26 @@ function renderTaskbar() {
       ${isWindowOverflowOpen ? renderWindowOverflowMenu(overflowWindows, activeWindowId) : ''}
     </footer>
   `
+}
+
+function getTaskbarWindowGroups(windowItems = []) {
+  if (!windowItems.length) {
+    return {
+      visibleWindows: [],
+      overflowWindows: [],
+    }
+  }
+
+  const recentWindow = windowItems.reduce(
+    (latestWindow, windowItem) =>
+      !latestWindow || windowItem.zIndex > latestWindow.zIndex ? windowItem : latestWindow,
+    null,
+  )
+
+  return {
+    visibleWindows: recentWindow ? [recentWindow] : [],
+    overflowWindows: windowItems.filter((windowItem) => windowItem.id !== recentWindow?.id),
+  }
 }
 
 function renderSystemOverlay() {
@@ -1914,8 +1996,8 @@ function renderNotificationCenter(unreadCount) {
   `
 }
 
-function renderWindowOverflowMenu(overflowWindows, activeWindowId) {
-  const windowItems = overflowWindows
+function renderWindowOverflowMenu(openWindowItems, activeWindowId) {
+  const windowItems = openWindowItems
     .map((windowItem) => {
       const title = getWindowTitle(windowItem)
 
@@ -1929,7 +2011,10 @@ function renderWindowOverflowMenu(overflowWindows, activeWindowId) {
           type="button"
           data-taskbar-window-id="${windowItem.id}"
         >
-          ${title}
+          <span class="window-overflow-title">${title}</span>
+          <span class="window-overflow-state">
+            ${windowItem.minimized ? 'Đã thu nhỏ' : 'Đang mở'}
+          </span>
         </button>
       `
     })
@@ -1938,7 +2023,7 @@ function renderWindowOverflowMenu(overflowWindows, activeWindowId) {
   return `
     <nav class="window-overflow-menu" id="window-overflow-menu" aria-label="Cửa sổ khác">
       <p>Cửa sổ</p>
-      ${windowItems}
+      ${windowItems || '<span class="window-overflow-empty">Chưa có module đang mở.</span>'}
     </nav>
   `
 }
@@ -1970,6 +2055,7 @@ function renderStartMenu() {
         <button type="button" data-action="show-desktop">Về desktop</button>
         <button type="button" data-view-mode="grid">Dạng ô vuông</button>
         <button type="button" data-view-mode="list">Dạng danh sách</button>
+        <button type="button" data-cloud-action="logout">Đăng xuất</button>
       </div>
       <div class="start-menu-section">
         <p>Danh sách module</p>
@@ -2522,6 +2608,7 @@ async function syncCloudUser(user) {
     transactionImageManagerState = null
     cloudGalleryState = null
     cloudDbState = createInitialCloudDbState()
+    cloudBootstrapState = createInitialCloudBootstrapState()
     cloudDbAutoPullUserId = ''
     cloudStatus = {
       ...cloudStatus,
@@ -2566,6 +2653,7 @@ async function syncCloudUser(user) {
     profileMessageTone: '',
   }
   cloudDbState = createInitialCloudDbState()
+  cloudBootstrapState = createInitialCloudBootstrapState()
   cloudDbAutoPullUserId = ''
   render()
 
@@ -2607,11 +2695,11 @@ async function syncCloudUser(user) {
   }
 
   render()
+  await bootstrapCoreCloudDataForCurrentCenter(syncId)
 
   if (cloudStatus.membershipStatus === 'loaded') {
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
-    await autoPullCoreCloudSnapshot(syncId)
     await startStudentRealtimeSubscription(syncId)
     await startTeacherRealtimeSubscription(syncId)
     await startScheduleSessionRealtimeSubscription(syncId)
@@ -2627,6 +2715,42 @@ function createInitialCloudDbState() {
     messageTone: '',
     lastUpdatedAt: '',
   }
+}
+
+function getCurrentCloudBootstrapContext() {
+  return {
+    authStatus: cloudStatus.authStatus,
+    user: cloudStatus.user,
+    centerBinding: resolveAppCenterBinding(cloudStatus),
+    configStatus: cloudStatus.configStatus,
+  }
+}
+
+function renderCashflowCloudAuthNotice(status) {
+  const isSignedIn = status.authStatus === 'signed-in' && status.user
+  const hasMembership = status.membershipStatus === 'loaded' && status.role
+
+  if (isSignedIn && hasMembership) {
+    return `
+      <aside class="cashflow-cloud-auth-note is-ready" role="note">
+        <span>Đã đăng nhập ở cổng hệ thống. Tính năng ảnh cloud của Thu Chi sẵn sàng.</span>
+        <button type="button" data-cloud-action="open-gallery">
+          Mở kho ảnh cloud
+        </button>
+      </aside>
+    `
+  }
+
+  const message =
+    status.configStatus !== 'configured'
+      ? 'Chưa cấu hình Supabase Cloud. Thu Chi vẫn dùng dữ liệu local như cũ.'
+      : 'Vui lòng đăng nhập ở cổng hệ thống để dùng tính năng cloud.'
+
+  return `
+    <aside class="cashflow-cloud-auth-note" role="note">
+      ${escapeHtml(message)}
+    </aside>
+  `
 }
 
 function getSettingsCloudDbPanelState() {
@@ -3343,6 +3467,46 @@ function applyCoreCloudSnapshotToLocal(snapshot) {
   }
 }
 
+function applyCloudBootstrapSnapshotToLocal(snapshot) {
+  const backupResult = createCloudDbPullBackup(window.localStorage)
+
+  if (backupResult && typeof backupResult === 'object' && backupResult.ok === false) {
+    return {
+      ok: false,
+      error: backupResult.error,
+      reason: backupResult.reason,
+      backupKey: null,
+      counts: getCloudBootstrapSnapshotCounts({ students, teachers, scheduleSessions }),
+    }
+  }
+
+  const backupKey = typeof backupResult === 'string' ? backupResult : null
+
+  if (Array.isArray(snapshot.students) && snapshot.students.length > 0) {
+    students = snapshot.students
+    saveStoredStudents(students)
+    students = getStoredStudents([])
+  }
+
+  if (Array.isArray(snapshot.teachers) && snapshot.teachers.length > 0) {
+    teachers = snapshot.teachers
+    saveStoredTeachers(teachers)
+    teachers = getStoredTeachers([])
+  }
+
+  if (Array.isArray(snapshot.scheduleSessions) && snapshot.scheduleSessions.length > 0) {
+    scheduleSessions = snapshot.scheduleSessions
+    saveStoredSchedule(scheduleSessions)
+    scheduleSessions = getStoredSchedule([])
+  }
+
+  return {
+    ok: true,
+    backupKey,
+    counts: getCloudBootstrapSnapshotCounts({ students, teachers, scheduleSessions }),
+  }
+}
+
 function restoreAngelWingsLocalDataset() {
   const backup = createF15K5BackupSnapshot(window.localStorage)
   const result = upsertAngelWingsAttendanceData()
@@ -3615,6 +3779,126 @@ async function pullCloudDbSnapshotToLocal() {
     message: `Pulled Cloud DB C2 to local. Backup: ${appliedSnapshot.backupKey || 'not created'}.`,
     messageTone: 'success',
     lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) {
+  const context = getCurrentCloudBootstrapContext()
+
+  if (!canRunCloudBootstrap(context) || cloudDbAutoPullUserId === cloudStatus.user?.id) {
+    return
+  }
+
+  cloudDbAutoPullUserId = cloudStatus.user?.id || ''
+  cloudBootstrapState = {
+    ...cloudBootstrapState,
+    status: CLOUD_BOOTSTRAP_STATUS.LOADING,
+    source: 'loading',
+    message: 'Đang tải dữ liệu cloud...',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: true,
+    message: 'Đang tải dữ liệu cloud cho Học viên, Giáo viên và TKB...',
+    messageTone: '',
+  }
+  render()
+
+  const centerId = context.centerBinding.currentCenterId
+  const result = await pullCloudBootstrapCoreEntities(centerId)
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  if (!result.ok) {
+    cloudBootstrapState = {
+      ...cloudBootstrapState,
+      status: CLOUD_BOOTSTRAP_STATUS.ERROR,
+      source: 'local-cache',
+      message: 'Không thể tải dữ liệu cloud. Đang dùng cache cục bộ.',
+      counts: null,
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      readinessStatus: 'error',
+      cloudCounts: null,
+      message: result.error || cloudBootstrapState.message,
+      messageTone: 'error',
+      lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
+    }
+    render()
+    return
+  }
+
+  const counts = result.counts || getCloudBootstrapSnapshotCounts(result.data)
+
+  if (result.empty || !hasCloudBootstrapSnapshotData(result.data)) {
+    cloudBootstrapState = {
+      ...cloudBootstrapState,
+      status: CLOUD_BOOTSTRAP_STATUS.EMPTY,
+      source: 'local-cache',
+      message: 'Cloud chưa có dữ liệu cho center này. Đang dùng cache/staging local.',
+      counts,
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      readinessStatus: 'ready',
+      cloudCounts: cloudDbState.cloudCounts,
+      message: cloudBootstrapState.message,
+      messageTone: '',
+      lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
+    }
+    render()
+    return
+  }
+
+  const appliedSnapshot = applyCloudBootstrapSnapshotToLocal(result.data)
+
+  if (!appliedSnapshot.ok) {
+    cloudBootstrapState = {
+      ...cloudBootstrapState,
+      status: CLOUD_BOOTSTRAP_STATUS.ERROR,
+      source: 'local-cache',
+      message: 'Không thể lưu cache cloud. Đang giữ dữ liệu cục bộ hiện tại.',
+      counts,
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      readinessStatus: 'ready',
+      cloudCounts: cloudDbState.cloudCounts,
+      message: appliedSnapshot.error,
+      messageTone: 'error',
+      lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
+    }
+    render()
+    return
+  }
+
+  cloudBootstrapState = {
+    ...cloudBootstrapState,
+    status: CLOUD_BOOTSTRAP_STATUS.CLOUD,
+    source: 'cloud',
+    message: 'Dữ liệu: Cloud',
+    counts: appliedSnapshot.counts,
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  cloudDbState = {
+    ...cloudDbState,
+    isLoading: false,
+    readinessStatus: 'ready',
+    cloudCounts: cloudDbState.cloudCounts,
+    message: `Đã tải dữ liệu cloud vào cache local. Backup: ${appliedSnapshot.backupKey || 'không tạo được'}.`,
+    messageTone: 'success',
+    lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
   }
   render()
 }
@@ -4270,8 +4554,11 @@ async function initializeSupabaseAuth() {
 }
 
 function bindEvents() {
+  bindStartMenuOutsidePointer()
+  bindWindowOverflowOutsidePointer()
   bindNotificationOutsidePointer()
   bindModuleNotificationOutsidePointer()
+  bindPreservedScrollRetentionEvents()
 
   document.querySelectorAll('[data-view-mode]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -9317,6 +9604,56 @@ function bindNotificationOutsidePointer() {
     render()
   })
   notificationOutsidePointerBound = true
+}
+
+function bindStartMenuOutsidePointer() {
+  if (startMenuOutsidePointerBound) {
+    return
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!isStartMenuOpen) {
+      return
+    }
+
+    const target = event.target
+
+    if (
+      target.closest?.('.start-menu') ||
+      target.closest?.('[data-action="toggle-start"]')
+    ) {
+      return
+    }
+
+    isStartMenuOpen = false
+    render()
+  })
+  startMenuOutsidePointerBound = true
+}
+
+function bindWindowOverflowOutsidePointer() {
+  if (windowOverflowOutsidePointerBound) {
+    return
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!isWindowOverflowOpen) {
+      return
+    }
+
+    const target = event.target
+
+    if (
+      target.closest?.('.window-overflow-menu') ||
+      target.closest?.('[data-action="toggle-window-overflow"]')
+    ) {
+      return
+    }
+
+    isWindowOverflowOpen = false
+    render()
+  })
+  windowOverflowOutsidePointerBound = true
 }
 
 function bindModuleNotificationOutsidePointer() {

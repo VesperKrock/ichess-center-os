@@ -1,3 +1,5 @@
+import { buildAngelWingsRealDataset } from './attendance-board-angel-wings-data.js'
+
 export const studentStatuses = ['Đang theo học', 'Bảo lưu', 'Ngưng học']
 
 export const studentLevels = ['Nhập môn', 'Cơ bản', 'Trung cấp', 'Nâng cao']
@@ -13,7 +15,7 @@ export const botMilestones = [
   'Bee 3',
 ]
 
-export const sampleStudents = [
+export const legacyEightStudentSeed = [
   {
     id: 'stu-001',
     fullName: 'Nguyễn Minh An',
@@ -306,3 +308,28 @@ export const sampleStudents = [
     updatedAt: '2026-05-29',
   },
 ]
+
+export const sampleStudents = buildAngelWingsRealDataset().students
+
+export function isLegacyEightStudentSeed(students) {
+  if (!Array.isArray(students) || students.length !== legacyEightStudentSeed.length) {
+    return false
+  }
+
+  return legacyEightStudentSeed.every((legacyStudent, index) => {
+    const candidate = students[index]
+
+    return (
+      candidate &&
+      candidate.id === legacyStudent.id &&
+      candidate.fullName === legacyStudent.fullName &&
+      candidate.createdAt === legacyStudent.createdAt &&
+      candidate.updatedAt === legacyStudent.updatedAt &&
+      candidate.latestCareNote === legacyStudent.latestCareNote
+    )
+  })
+}
+
+export function shouldReplaceLegacyEightSeed(students) {
+  return isLegacyEightStudentSeed(students)
+}

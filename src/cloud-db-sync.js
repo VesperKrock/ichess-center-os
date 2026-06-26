@@ -10,6 +10,12 @@ import {
   buildCloudEntityRecords,
   isAllowedCloudEntityType,
 } from './cloud-db-entities.js'
+import { SCHEDULE_SESSION_CLOUD_ENTITY_TYPE } from './cloud-schedule-sessions.js'
+import {
+  createEmptyCloudBootstrapCounts,
+  getCloudBootstrapSnapshotCounts,
+  hasCloudBootstrapSnapshotData,
+} from './cloud-bootstrap.js'
 import {
   buildOnlineAccessState,
   canWriteEntity,
@@ -158,6 +164,38 @@ export async function listCloudEntityPayloads({
   return {
     ok: true,
     data: result.data
+      .map((record) => record.payload)
+      .filter((payload) => payload && typeof payload === 'object'),
+  }
+}
+
+export async function listScheduleSessionCloudPayloads({
+  supabase,
+  centerId = CURRENT_CENTER_ID,
+} = {}) {
+  if (!supabase) {
+    return { ok: false, error: 'Thiếu Supabase client.' }
+  }
+
+  const { data, error } = await supabase
+    .from('center_cloud_entities')
+    .select(CLOUD_ENTITY_SELECT_FIELDS)
+    .eq('center_id', centerId)
+    .eq('entity_type', SCHEDULE_SESSION_CLOUD_ENTITY_TYPE)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: true })
+
+  if (error) {
+    return {
+      ok: false,
+      error: getCloudDbErrorMessage(error),
+      detail: classifyCloudDbError(error, 'center_cloud_entities'),
+    }
+  }
+
+  return {
+    ok: true,
+    data: (data || [])
       .map((record) => record.payload)
       .filter((payload) => payload && typeof payload === 'object'),
   }
@@ -373,6 +411,62 @@ export async function pullCoreEntitiesFromCloud(centerId = CURRENT_CENTER_ID) {
     }
   } catch (error) {
     console.warn(`Không thể pull Cloud DB C2. Local data được giữ nguyên. ${error?.message || ''}`.trim())
+    return {
+      ok: false,
+      error: getCloudDbErrorMessage(error),
+      detail: classifyCloudDbError(error, 'center_cloud_entities'),
+    }
+  }
+}
+
+export async function pullCloudBootstrapCoreEntities(centerId = CURRENT_CENTER_ID) {
+  try {
+    const context = await checkCloudDbReadiness(centerId)
+
+    if (!context.ok) {
+      return context
+    }
+
+    const studentsResult = await listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.STUDENT,
+    })
+    const teachersResult = await listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.TEACHER,
+    })
+    const scheduleSessionsResult = await listScheduleSessionCloudPayloads({
+      supabase: context.supabase,
+      centerId,
+    })
+    const failedResult = [studentsResult, teachersResult, scheduleSessionsResult].find(
+      (result) => !result.ok,
+    )
+
+    if (failedResult) {
+      return failedResult
+    }
+
+    const data = {
+      students: studentsResult.data,
+      teachers: teachersResult.data,
+      scheduleSessions: scheduleSessionsResult.data,
+    }
+    const counts = {
+      ...createEmptyCloudBootstrapCounts(),
+      ...getCloudBootstrapSnapshotCounts(data),
+    }
+
+    return {
+      ok: true,
+      data,
+      counts,
+      empty: !hasCloudBootstrapSnapshotData(data),
+    }
+  } catch (error) {
+    console.warn(`Không thể bootstrap dữ liệu cloud. Local cache được giữ nguyên. ${error?.message || ''}`.trim())
     return {
       ok: false,
       error: getCloudDbErrorMessage(error),
