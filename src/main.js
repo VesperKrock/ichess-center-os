@@ -204,6 +204,7 @@ import {
 import {
   clearInitialBaselineAttendanceRecordsInMonth,
   createInitialBaselineEditSnapshot,
+  buildUnifiedAttendanceRecords,
   isDateInBaselineEditableRange,
   loadAttendanceBaselineState,
   loadStoredAttendanceRecords,
@@ -220,6 +221,18 @@ import {
   upsertInitialBaselineAttendanceRecord,
   upsertTeacherAttendanceRecords,
 } from './attendance-records.js'
+import {
+  buildReportDownloadText,
+  buildReportPrintHtml,
+  createInitialReportState,
+  getReportDownloadFilename,
+  getWeekStartDate,
+  renderReportModule,
+} from './report-module.js'
+import {
+  initialStaffFilters,
+  renderStaffModule,
+} from './staff-module.js'
 import {
   ANGEL_WINGS_DATASET_ID,
   ANGEL_WINGS_IMPORT_BATCH_ID,
@@ -353,6 +366,7 @@ const preservedScrollTargets = [
   ['.cashflow-category-panel', 'cashflow-category-panel'],
   ['.cashflow-category-list', 'cashflow-category-list'],
   ['.cashbook-table-wrap', 'cashbook-table'],
+  ['.report-module', 'report-module'],
   ['.inventory-table-wrap', 'inventory-table'],
   ['.inventory-history-panel .inventory-movement-history', 'inventory-movement-history'],
   ['.inventory-history-panel .inventory-history-list', 'inventory-history-list'],
@@ -398,6 +412,7 @@ let parentConsultationFormState = null
 let skipNextParentContactScrollCapture = false
 let parentQuickNoteState = null
 let parentNoteHistoryContactId = null
+let staffFilters = { ...initialStaffFilters }
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 let sessionReports = getStoredSessionReports()
 let attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes()
@@ -462,12 +477,16 @@ let selectedInventoryMovementId = null
 let selectedInventoryRequestId = null
 let isInventoryHistoryPanelOpen = false
 let isInventoryRequestsPanelOpen = false
+let reportState = createInitialReportState()
 let careNoteDrafts = {}
 let cloudStatus = createInitialCloudStatus(getSupabaseConfigStatus().status)
 let cloudDbState = createInitialCloudDbState()
 let cloudBootstrapState = createInitialCloudBootstrapState()
 let cloudUserSyncId = 0
 let cloudDbAutoPullUserId = ''
+let cloudLastSyncedUserId = ''
+let cloudBootstrapRetryBlockedUntil = 0
+let cloudBootstrapLastFailureSignature = ''
 let coreCloudSyncTimer = null
 let coreCloudSyncRunId = 0
 let studentRealtimeSubscription = null
@@ -996,7 +1015,10 @@ function restorePreservedScrollPositions(scrollState, root = app) {
   }
 
   if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(restore)
+    requestAnimationFrame(() => {
+      restore()
+      requestAnimationFrame(restore)
+    })
     return
   }
 
@@ -1321,6 +1343,15 @@ function renderWindowBody(windowItem) {
     )
   }
 
+  if (moduleItem.id === 'nhan-vien') {
+    return renderStaffModule({
+      teachers,
+      scheduleSessions,
+      sessionReports,
+      filters: staffFilters,
+    })
+  }
+
   if (moduleItem.id === 'thoi-khoa-bieu') {
     return renderScheduleModule(
       scheduleSessions,
@@ -1413,6 +1444,20 @@ function renderWindowBody(windowItem) {
     )
   }
 
+  if (moduleItem.id === 'bao-cao') {
+    return renderReportModule({
+      filters: reportState.filters,
+      draft: reportState.draft,
+      selectedBarDetail: reportState.selectedBarDetail,
+      students,
+      cashflowTransactions,
+      attendanceRecords: buildUnifiedAttendanceRecords({
+        sessionReports,
+        storedRecords: loadStoredAttendanceRecords(),
+      }),
+    })
+  }
+
   if (moduleItem.id === 'cai-dat-co-so') {
     return renderSettingsModule(
       classSessions,
@@ -1456,7 +1501,7 @@ function renderWindowBody(windowItem) {
 }
 
 function renderStudentDetailWithDeleteAction(student, classSessions = []) {
-  const detailHtml = renderStudentDetail(student, teachers, classSessions)
+  const detailHtml = renderStudentDetail(student, teachers, classSessions, tuitionRecords)
 
   if (!student || student.isDeleted) {
     return detailHtml
@@ -2598,7 +2643,44 @@ function getActiveCashbookSystemClosingBalance() {
   ).closingBalance
 }
 
-async function syncCloudUser(user) {
+function getNextReportWeekStartDate(currentWeekStartDate, action) {
+  if (action === 'current') {
+    return getWeekStartDate(new Date())
+  }
+
+  const currentWeekDate = new Date(`${currentWeekStartDate}T00:00:00`)
+  const safeCurrentWeekDate = Number.isNaN(currentWeekDate.getTime()) ? new Date() : currentWeekDate
+  const nextWeekDate = new Date(safeCurrentWeekDate)
+
+  if (action === 'previous') {
+    nextWeekDate.setDate(nextWeekDate.getDate() - 7)
+  } else if (action === 'next') {
+    nextWeekDate.setDate(nextWeekDate.getDate() + 7)
+  }
+
+  return getWeekStartDate(nextWeekDate)
+}
+
+function shouldSkipDuplicateCloudUserSync(user, reason = '') {
+  const nextUserId = user?.id || ''
+
+  if (!nextUserId) {
+    return cloudStatus.authStatus === 'signed-out' && !cloudStatus.user
+  }
+
+  const isSameUser = nextUserId === cloudStatus.user?.id && nextUserId === cloudLastSyncedUserId
+  const hasSettledMembership = ['loading', 'loaded', 'missing', 'error'].includes(
+    cloudStatus.membershipStatus,
+  )
+
+  return isSameUser && hasSettledMembership && reason !== 'manual-sign-in'
+}
+
+async function syncCloudUser(user, { force = false, reason = '' } = {}) {
+  if (!force && shouldSkipDuplicateCloudUserSync(user, reason)) {
+    return
+  }
+
   const syncId = ++cloudUserSyncId
 
   if (!user) {
@@ -2610,6 +2692,9 @@ async function syncCloudUser(user) {
     cloudDbState = createInitialCloudDbState()
     cloudBootstrapState = createInitialCloudBootstrapState()
     cloudDbAutoPullUserId = ''
+    cloudLastSyncedUserId = ''
+    cloudBootstrapRetryBlockedUntil = 0
+    cloudBootstrapLastFailureSignature = ''
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -2633,6 +2718,10 @@ async function syncCloudUser(user) {
     return
   }
 
+  const previousUserId = cloudLastSyncedUserId
+  const isNewUser = previousUserId !== user.id
+  cloudLastSyncedUserId = user.id
+
   cloudStatus = {
     ...cloudStatus,
     authStatus: 'signed-in',
@@ -2652,9 +2741,13 @@ async function syncCloudUser(user) {
     profileMessage: '',
     profileMessageTone: '',
   }
-  cloudDbState = createInitialCloudDbState()
-  cloudBootstrapState = createInitialCloudBootstrapState()
-  cloudDbAutoPullUserId = ''
+  if (isNewUser) {
+    cloudDbState = createInitialCloudDbState()
+    cloudBootstrapState = createInitialCloudBootstrapState()
+    cloudDbAutoPullUserId = ''
+    cloudBootstrapRetryBlockedUntil = 0
+    cloudBootstrapLastFailureSignature = ''
+  }
   render()
 
   try {
@@ -3785,26 +3878,52 @@ async function pullCloudDbSnapshotToLocal() {
 
 async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) {
   const context = getCurrentCloudBootstrapContext()
+  const now = Date.now()
 
   if (!canRunCloudBootstrap(context) || cloudDbAutoPullUserId === cloudStatus.user?.id) {
     return
   }
 
+  if (cloudBootstrapRetryBlockedUntil > now) {
+    cloudBootstrapState = {
+      ...cloudBootstrapState,
+      status:
+        cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.LOADING
+          ? CLOUD_BOOTSTRAP_STATUS.ERROR
+          : cloudBootstrapState.status,
+      source: cloudBootstrapState.source || 'local-cache',
+      message: cloudBootstrapState.message || 'Cloud pull đang tạm dừng sau lỗi 400; giữ cache/local.',
+    }
+    return
+  }
+
   cloudDbAutoPullUserId = cloudStatus.user?.id || ''
-  cloudBootstrapState = {
-    ...cloudBootstrapState,
-    status: CLOUD_BOOTSTRAP_STATUS.LOADING,
-    source: 'loading',
-    message: 'Đang tải dữ liệu cloud...',
-    lastUpdatedAt: new Date().toISOString(),
+  const hasUsableLocalCache = hasCloudBootstrapSnapshotData({ students, teachers, scheduleSessions })
+
+  if (!hasUsableLocalCache) {
+    cloudBootstrapState = {
+      ...cloudBootstrapState,
+      status: CLOUD_BOOTSTRAP_STATUS.LOADING,
+      source: 'loading',
+      message: 'Đang tải dữ liệu cloud...',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: true,
+      message: 'Đang tải dữ liệu cloud cho Học viên, Giáo viên và TKB...',
+      messageTone: '',
+    }
+    render()
+  } else {
+    cloudBootstrapState = {
+      ...cloudBootstrapState,
+      status: CLOUD_BOOTSTRAP_STATUS.IDLE,
+      source: 'local-cache',
+      message: 'Dữ liệu: Cache cục bộ (đang kiểm cloud nền)',
+      lastUpdatedAt: new Date().toISOString(),
+    }
   }
-  cloudDbState = {
-    ...cloudDbState,
-    isLoading: true,
-    message: 'Đang tải dữ liệu cloud cho Học viên, Giáo viên và TKB...',
-    messageTone: '',
-  }
-  render()
 
   const centerId = context.centerBinding.currentCenterId
   const result = await pullCloudBootstrapCoreEntities(centerId)
@@ -3814,11 +3933,22 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
   }
 
   if (!result.ok) {
+    const failureSignature = `${result.detail?.status || ''}:${result.detail?.code || ''}:${result.detail?.category || ''}:${result.error || ''}`
+    const isSchemaOrBadRequest =
+      result.detail?.status === 400 || result.detail?.category === 'schema-not-ready'
+
+    if (isSchemaOrBadRequest) {
+      cloudBootstrapRetryBlockedUntil = Date.now() + 5 * 60 * 1000
+      cloudBootstrapLastFailureSignature = failureSignature
+    }
+
     cloudBootstrapState = {
       ...cloudBootstrapState,
       status: CLOUD_BOOTSTRAP_STATUS.ERROR,
       source: 'local-cache',
-      message: 'Không thể tải dữ liệu cloud. Đang dùng cache cục bộ.',
+      message: isSchemaOrBadRequest
+        ? 'Dữ liệu: Cache cục bộ (cloud lỗi 400/schema, tạm dừng pull)'
+        : 'Dữ liệu: Cache cục bộ (cloud lỗi, đang giữ local)',
       counts: null,
       lastUpdatedAt: new Date().toISOString(),
     }
@@ -4522,15 +4652,22 @@ async function initializeSupabaseAuth() {
     return
   }
 
-  onSupabaseAuthStateChange((_event, user) => {
+  onSupabaseAuthStateChange((event, user) => {
+    if (
+      ['INITIAL_SESSION', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event) &&
+      shouldSkipDuplicateCloudUserSync(user, event)
+    ) {
+      return
+    }
+
     window.setTimeout(() => {
-      syncCloudUser(user)
+      syncCloudUser(user, { reason: event })
     }, 0)
   })
 
   try {
     const user = await getCurrentSupabaseUser()
-    await syncCloudUser(user)
+    await syncCloudUser(user, { reason: 'initial-get-user' })
   } catch (error) {
     cloudStatus = {
       ...cloudStatus,
@@ -4923,6 +5060,143 @@ function bindEvents() {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
     })
+  })
+
+  document.querySelectorAll('[data-report-filter]').forEach((control) => {
+    control.addEventListener('input', () => {
+      const value =
+        control.dataset.reportFilter === 'weekStartDate'
+          ? getWeekStartDate(control.value)
+          : control.value
+
+      reportState = {
+        ...reportState,
+        filters: {
+          ...reportState.filters,
+          [control.dataset.reportFilter]: value,
+        },
+        selectedBarDetail: null,
+      }
+      render()
+    })
+  })
+
+  document.querySelector('.report-module')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-report-week-action]')
+
+    if (!button) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const weekStartDate = getNextReportWeekStartDate(
+      reportState.filters.weekStartDate,
+      button.dataset.reportWeekAction,
+    )
+
+    reportState = {
+      ...reportState,
+      filters: {
+        ...reportState.filters,
+        weekStartDate,
+      },
+      selectedBarDetail: null,
+    }
+    render()
+  })
+
+  document.querySelectorAll('[data-staff-filter]').forEach((control) => {
+    const eventName = control.tagName === 'SELECT' ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      staffFilters = {
+        ...staffFilters,
+        [control.dataset.staffFilter]: control.value,
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-report-draft-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      reportState = {
+        ...reportState,
+        draft: {
+          ...reportState.draft,
+          [control.dataset.reportDraftField]: control.value,
+        },
+      }
+    })
+  })
+
+  document.querySelector('[data-report-action="print"]')?.addEventListener('click', () => {
+    const attendanceRecords = buildUnifiedAttendanceRecords({
+      sessionReports,
+      storedRecords: loadStoredAttendanceRecords(),
+    })
+    const printWindow = window.open('', 'ichess-report-print', 'width=960,height=720')
+
+    if (!printWindow) {
+      return
+    }
+
+    printWindow.document.open()
+    printWindow.document.write(
+      buildReportPrintHtml({
+        filters: reportState.filters,
+        draft: reportState.draft,
+        students,
+        cashflowTransactions,
+        attendanceRecords,
+      }),
+    )
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
+  })
+
+  document.querySelectorAll('[data-report-bar-detail]').forEach((button) => {
+    button.addEventListener('click', () => {
+      reportState = {
+        ...reportState,
+        selectedBarDetail: {
+          type: button.dataset.reportBarType,
+          label: button.dataset.reportBarLabel,
+          weekLabel: button.dataset.reportBarWeek,
+          value: Number(button.dataset.reportBarValue || 0),
+          source: button.dataset.reportBarSource,
+        },
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-report-action="download"]')?.addEventListener('click', () => {
+    const attendanceRecords = buildUnifiedAttendanceRecords({
+      sessionReports,
+      storedRecords: loadStoredAttendanceRecords(),
+    })
+    const content = buildReportDownloadText({
+      filters: reportState.filters,
+      draft: reportState.draft,
+      students,
+      cashflowTransactions,
+      attendanceRecords,
+    })
+    const blob = new Blob([`\uFEFF${content}`], {
+      type: 'text/plain;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = getReportDownloadFilename(reportState.filters.reportDate)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
   })
 
   document.querySelectorAll('[data-inventory-stock-alert]').forEach((button) => {

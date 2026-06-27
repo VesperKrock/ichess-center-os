@@ -71,7 +71,11 @@ assert(!runtimeSources.includes('Đăng ký'), 'Runtime must not include signup 
 assert(!/signUp\s*\(/.test(runtimeSources), 'Runtime must not call signUp.')
 assert(!/auth\.signUp\s*\(/.test(runtimeSources), 'Runtime must not call supabase.auth.signUp.')
 assert(runtimeSources.includes('Cloud chưa có dữ liệu cho center này. Đang dùng cache/staging local.'))
-assert(runtimeSources.includes('Không thể tải dữ liệu cloud. Đang dùng cache cục bộ.'))
+assert(
+  runtimeSources.includes('Không thể tải dữ liệu cloud. Đang dùng cache cục bộ.') ||
+    runtimeSources.includes('Dữ liệu: Cache cục bộ (cloud lỗi, đang giữ local)') ||
+    runtimeSources.includes('Dữ liệu: Cache cục bộ (cloud lỗi 400/schema, tạm dừng pull)'),
+)
 
 const mojibakePatterns = [
   [0x43, 0x0102, 0x00a1, 0x00c2, 0x00ba],

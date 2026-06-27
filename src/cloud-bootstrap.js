@@ -69,7 +69,7 @@ export function getCloudBootstrapStatusLabel(state = {}) {
   }
 
   if (state.status === CLOUD_BOOTSTRAP_STATUS.ERROR) {
-    return 'Dữ liệu: Cache cục bộ'
+    return state.message || 'Dữ liệu: Cache cục bộ (lỗi cloud)'
   }
 
   return state.message || 'Dữ liệu: Cache cục bộ'

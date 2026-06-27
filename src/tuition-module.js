@@ -3,6 +3,7 @@ import {
   buildAttendanceAdvisoryRows,
   getCurrentMonthKey,
 } from './attendance-advisory.js'
+import { buildStudentTuitionLink } from './student-tuition-links.js'
 
 export const initialTuitionFilters = {
   query: '',
@@ -343,11 +344,13 @@ export function buildTuitionRows(students, tuitionRecords) {
 
   return students.map((student) => {
     const tuition = tuitionByStudentId.get(student.id)
+    const familyTuitionLink = buildStudentTuitionLink(student, tuitionRecords)
 
     if (!tuition) {
       return {
         student,
         tuition: null,
+        familyTuitionLink,
         packageKind: 'no-package',
         status: {
           key: 'no-package',
@@ -357,7 +360,7 @@ export function buildTuitionRows(students, tuitionRecords) {
         remainingSessions: null,
         debtAmount: null,
         searchableText: normalizeSearchText(
-          `${student.fullName} ${student.parentName} ${student.parentPhone} Cần gán gói học phí`,
+          `${student.fullName} ${student.parentName} ${student.parentPhone} ${student.fatherPhone} ${student.motherPhone} ${familyTuitionLink.warnings.map((warning) => warning.label).join(' ')} Cần gán gói học phí`,
         ),
       }
     }
@@ -374,8 +377,9 @@ export function buildTuitionRows(students, tuitionRecords) {
       status,
       remainingSessions,
       debtAmount,
+      familyTuitionLink,
       searchableText: normalizeSearchText(
-        `${student.fullName} ${student.parentName} ${student.parentPhone} ${tuition.note}`,
+        `${student.fullName} ${student.parentName} ${student.parentPhone} ${student.fatherPhone} ${student.motherPhone} ${familyTuitionLink.warnings.map((warning) => warning.label).join(' ')} ${tuition.note}`,
       ),
     }
   })
@@ -628,6 +632,7 @@ function renderTuitionRow(row) {
   const rowTitle = tuition ? 'Bấm để cập nhật gói học phí' : 'Bấm để gán gói học phí'
   const termNumber = tuition?.currentTermNumber || 1
   const amounts = tuition ? calculateTuitionAmounts(tuition) : null
+  const familyLink = row.familyTuitionLink
 
   return `
     <tr
@@ -637,7 +642,9 @@ function renderTuitionRow(row) {
       title="${rowTitle}"
     >
       <td title="${escapeHtml(row.student.fullName)}"><strong>${escapeHtml(compactStudentName)}</strong></td>
-      <td title="${escapeHtml(row.student.parentPhone || '')}">${escapeHtml(row.student.parentName || '—')}</td>
+      <td title="${escapeHtml(familyLink.parent.primaryPhone || '')}">
+        ${renderTuitionFamilyLink(familyLink)}
+      </td>
       <td>
         ${
           tuition
@@ -687,8 +694,44 @@ function renderTuitionRow(row) {
       </td>
       <td title="${escapeHtml(note)}">
         <span class="tuition-note-text">${escapeHtml(note)}</span>
+        ${renderTuitionCareBadges(familyLink)}
       </td>
     </tr>
+  `
+}
+
+function renderTuitionFamilyLink(link) {
+  const parentLabel = link.parent.hasContact
+    ? link.parent.parentName
+    : 'Chưa có thông tin phụ huynh/người liên hệ.'
+  const phoneLabel = link.parent.primaryPhone || 'Chưa có SĐT'
+
+  return `
+    <div class="tuition-family-link">
+      <strong>Học viên & phụ huynh</strong>
+      <span>${escapeHtml(parentLabel)}</span>
+      <small>${escapeHtml(phoneLabel)} · ${escapeHtml(link.studentStatus)}</small>
+    </div>
+  `
+}
+
+function renderTuitionCareBadges(link) {
+  const warnings = link.warnings.slice(0, 2)
+
+  if (!warnings.length) {
+    return ''
+  }
+
+  return `
+    <div class="tuition-care-badges" aria-label="Cảnh báo chăm sóc">
+      ${warnings
+        .map(
+          (warning) => `
+            <span class="is-${escapeHtml(warning.tone)}">${escapeHtml(warning.label)}</span>
+          `,
+        )
+        .join('')}
+    </div>
   `
 }
 

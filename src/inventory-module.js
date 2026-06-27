@@ -56,10 +56,27 @@ const inventoryRequestPriorityOptions = [
   ['urgent', 'Gấp'],
 ]
 
+const inventoryUnitOptions = [
+  'Cái',
+  'Chiếc',
+  'Bộ',
+  'Quyển',
+  'Hộp',
+  'Gói',
+  'Thùng',
+  'Đôi',
+  'Cuốn',
+  'Kg',
+  'Lít',
+  'Mét',
+  'Buổi',
+  'Khác',
+]
+
 const emptyInventoryFormValues = {
   name: '',
   category: inventoryCategories[0] ?? 'Khác',
-  unit: 'cái',
+  unit: 'Cái',
   quantity: '0',
   lowStockThreshold: '0',
   condition: inventoryConditions[0] ?? 'Đang dùng',
@@ -131,7 +148,7 @@ export function createEditInventoryFormState(item) {
     values: {
       name: item.name ?? '',
       category: item.category ?? inventoryCategories[0] ?? 'Khác',
-      unit: item.unit ?? 'cái',
+      unit: item.unit ?? 'Cái',
       quantity: String(getSafeQuantity(item.quantity)),
       lowStockThreshold: String(getSafeQuantity(item.lowStockThreshold)),
       condition: item.condition ?? inventoryConditions[0] ?? 'Đang dùng',
@@ -224,7 +241,7 @@ export function renderInventoryModule(
           <button type="button" data-inventory-open-subwindow="movements">Mở lịch sử nhập/xuất</button>
           <button type="button" data-inventory-request-action="open-panel">Đề xuất vật tư</button>
           <button class="inventory-add-button" type="button" data-inventory-action="open-create">
-            + Thêm vật tư
+            + Thêm sản phẩm
           </button>
         </div>
       </div>
@@ -276,15 +293,15 @@ export function renderInventoryListWindow(
     <section class="inventory-module inventory-list-window" aria-labelledby="inventory-list-window-title">
       <div class="inventory-toolbar">
         <div>
-          <h3 id="inventory-list-window-title">Danh sách vật tư</h3>
+          <h3 id="inventory-list-window-title">Danh sách vật tư / tài sản / sản phẩm</h3>
         </div>
-        <div class="inventory-filter-grid" aria-label="Tìm kiếm và lọc vật tư kho">
+        <div class="inventory-filter-grid" aria-label="Tìm kiếm và lọc vật tư, tài sản, sản phẩm kho">
           <label class="inventory-search-field">
             <span>Tìm kiếm</span>
             <input
               type="search"
               value="${escapeAttribute(activeFilters.query)}"
-              placeholder="Tên, nhóm, vị trí, ghi chú, tình trạng"
+              placeholder="Tìm vật tư/tài sản/sản phẩm theo tên, nhóm, mã, vị trí"
               data-inventory-filter="query"
             />
           </label>
@@ -311,7 +328,7 @@ export function renderInventoryListWindow(
             type="button"
             data-inventory-action="open-create"
           >
-            + Thêm vật tư
+            + Thêm sản phẩm
           </button>
         </div>
       </div>
@@ -373,14 +390,14 @@ function renderInventoryHistoryPanel(
 
 function renderInventoryListSection(filteredItems, activeFilters, categories = []) {
   return `
-    <section class="inventory-list-section" aria-label="Danh sách vật tư">
-      <div class="inventory-list-filters" aria-label="Tìm kiếm và lọc danh sách vật tư">
+    <section class="inventory-list-section" aria-label="Danh sách vật tư, tài sản, sản phẩm">
+      <div class="inventory-list-filters" aria-label="Tìm kiếm và lọc danh sách vật tư, tài sản, sản phẩm">
         <label class="inventory-search-field">
           <span>Tìm kiếm</span>
           <input
             type="search"
             value="${escapeAttribute(activeFilters.query)}"
-            placeholder="Tên, nhóm, vị trí, ghi chú, tình trạng"
+            placeholder="Tìm vật tư/tài sản/sản phẩm theo tên, nhóm, mã, vị trí"
             data-inventory-filter="query"
           />
         </label>
@@ -425,7 +442,14 @@ function renderInventoryListSection(filteredItems, activeFilters, categories = [
               </table>
             </div>
           `
-          : '<div class="inventory-empty">Không có vật tư phù hợp.</div>'
+          : `
+            <div class="inventory-empty">
+              <p>Không tìm thấy vật tư/tài sản/sản phẩm phù hợp.</p>
+              <button class="inventory-add-button" type="button" data-inventory-action="open-create">
+                + Thêm sản phẩm
+              </button>
+            </div>
+          `
       }
     </section>
   `
@@ -446,7 +470,7 @@ export function getFilteredInventoryItems(items, filters = initialInventoryFilte
         getStockState(item).key === activeFilters.stockAlert
       const matchesQuery =
         !normalizedQuery ||
-        [item.name, item.category, item.location, item.note, item.condition].some((value) =>
+        [item.id, item.name, item.category, item.location, item.note, item.condition].some((value) =>
           normalizeText(value).includes(normalizedQuery),
         )
 
@@ -937,23 +961,24 @@ function renderInventoryForm(formState, items) {
   const isEditMode = formState.mode === 'edit'
   const categories = getInventoryFormCategories(items, formState.values.category)
   const conditions = getInventoryFormConditions(formState.values.condition)
+  const units = getInventoryFormUnits(items, formState.values.unit)
 
   return `
     <div class="inventory-form-backdrop" role="presentation">
-      <form class="inventory-form-panel" data-inventory-form>
+      <form class="inventory-form-panel inventory-item-form-panel" data-inventory-form>
         <div class="inventory-form-header">
           <div>
-            <h4>${isEditMode ? 'Sửa vật tư' : 'Thêm vật tư'}</h4>
+            <h4>${isEditMode ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}</h4>
           </div>
           <button type="button" data-inventory-action="cancel-form" aria-label="Đóng form">×</button>
         </div>
         <div class="inventory-form-grid">
-          ${renderInventoryInputField('Tên vật tư / tài sản', 'name', formState, 'text', 'Ví dụ: Bộ bàn cờ tiêu chuẩn')}
+          ${renderInventoryInputField('Tên vật tư / tài sản / sản phẩm', 'name', formState, 'text', 'Ví dụ: Bộ bàn cờ tiêu chuẩn')}
           ${renderInventorySelectField('Nhóm', 'category', formState, categories)}
-          ${renderInventoryInputField('Đơn vị tính', 'unit', formState, 'text', 'quyển, bộ, cái, tờ')}
+          ${renderInventoryUnitField(formState, units)}
           ${renderInventoryInputField('Số lượng tồn', 'quantity', formState, 'number', '0')}
-          ${renderInventoryInputField('Định mức tối thiểu', 'lowStockThreshold', formState, 'number', '0')}
           ${renderInventorySelectField('Tình trạng', 'condition', formState, conditions)}
+          ${renderInventoryInputField('Định mức tối thiểu', 'lowStockThreshold', formState, 'number', '0')}
           ${renderInventoryInputField('Vị trí', 'location', formState, 'text', 'Tủ tài liệu lớp 1')}
           <label class="inventory-field span-full ${formState.errors.note ? 'has-error' : ''}">
             <span>Ghi chú</span>
@@ -975,11 +1000,30 @@ function renderInventoryForm(formState, items) {
           }
           <div>
             <button type="button" data-inventory-action="cancel-form">Hủy</button>
-            <button class="inventory-save-button" type="submit">${isEditMode ? 'Lưu thay đổi' : 'Lưu vật tư'}</button>
+            <button class="inventory-save-button" type="submit">${isEditMode ? 'Lưu thay đổi' : 'Lưu sản phẩm'}</button>
           </div>
         </div>
       </form>
     </div>
+  `
+}
+
+function renderInventoryUnitField(formState, units) {
+  return `
+    <label class="inventory-field ${formState.errors.unit ? 'has-error' : ''}">
+      <span>Đơn vị tính</span>
+      <input
+        type="text"
+        list="inventory-unit-options"
+        value="${escapeAttribute(formState.values.unit ?? '')}"
+        placeholder="Chọn hoặc gõ đơn vị mới"
+        data-inventory-form-field="unit"
+      />
+      <datalist id="inventory-unit-options">
+        ${units.map((unit) => `<option value="${escapeAttribute(unit)}"></option>`).join('')}
+      </datalist>
+      ${renderFieldError(formState.errors.unit)}
+    </label>
   `
 }
 
@@ -1582,6 +1626,16 @@ function getInventoryFormConditions(currentCondition = '') {
   }
 
   return Array.from(conditions)
+}
+
+function getInventoryFormUnits(items = [], currentUnit = '') {
+  const units = new Set(inventoryUnitOptions)
+
+  if (String(currentUnit ?? '').trim()) {
+    units.add(String(currentUnit).trim())
+  }
+
+  return Array.from(units)
 }
 
 function getStockState(item) {

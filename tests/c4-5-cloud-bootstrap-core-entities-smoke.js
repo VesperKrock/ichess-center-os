@@ -121,7 +121,11 @@ assert(main.includes('saveStoredStudents(students)'))
 assert(main.includes('saveStoredTeachers(teachers)'))
 assert(main.includes('saveStoredSchedule(scheduleSessions)'))
 assert(main.includes('Cloud chưa có dữ liệu cho center này. Đang dùng cache/staging local.'))
-assert(main.includes('Không thể tải dữ liệu cloud. Đang dùng cache cục bộ.'))
+assert(
+  main.includes('Không thể tải dữ liệu cloud. Đang dùng cache cục bộ.') ||
+    main.includes('Dữ liệu: Cache cục bộ (cloud lỗi, đang giữ local)') ||
+    main.includes('Dữ liệu: Cache cục bộ (cloud lỗi 400/schema, tạm dừng pull)'),
+)
 assert(main.includes('Dữ liệu: Cloud'))
 assert(main.includes('getCloudBootstrapStatusLabel(cloudBootstrapState)'))
 

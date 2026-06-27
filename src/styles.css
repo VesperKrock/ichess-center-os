@@ -2093,6 +2093,673 @@ h3 {
   text-align: center;
 }
 
+.staff-module {
+  display: grid;
+  min-height: 0;
+  gap: 12px;
+  color: #d8e2ef;
+}
+
+.staff-header,
+.staff-filters,
+.staff-panel {
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 13, 20, 0.68);
+}
+
+.staff-header {
+  padding: 14px;
+}
+
+.staff-header h3,
+.staff-header p,
+.staff-panel-heading h4 {
+  margin: 0;
+}
+
+.staff-header h3 {
+  color: #ffffff;
+  font-size: 1.12rem;
+}
+
+.staff-header p {
+  margin-top: 5px;
+  color: #9fb1c7;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.staff-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.staff-filters label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.staff-filters span {
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.staff-filters input,
+.staff-filters select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+  font: inherit;
+}
+
+.staff-filters select {
+  color-scheme: dark;
+}
+
+.staff-filters option {
+  color: #f4f7fb;
+  background: #101923;
+}
+
+.staff-filters input:focus,
+.staff-filters select:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.staff-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.staff-stat {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.staff-stat span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.staff-stat strong {
+  color: #ffffff;
+  font-size: 0.94rem;
+  line-height: 1.3;
+}
+
+.staff-stat.is-sessions strong,
+.staff-stat.is-top strong {
+  color: #9be8bd;
+}
+
+.staff-stat.is-location strong {
+  color: #cfe0ff;
+}
+
+.staff-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.82fr) minmax(460px, 1.18fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.staff-panel {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+}
+
+.staff-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.staff-panel-heading h4 {
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.staff-panel-heading span {
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.staff-table-wrap {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+}
+
+.staff-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 620px;
+}
+
+.staff-attendance-table {
+  min-width: 760px;
+}
+
+.staff-table th,
+.staff-table td {
+  border-bottom: 1px solid rgba(160, 184, 214, 0.12);
+  padding: 9px 10px;
+  color: #d8e2ef;
+  font-size: 0.84rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.staff-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: #9fb1c7;
+  background: #101923;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.staff-table td strong {
+  color: #ffffff;
+}
+
+.staff-table td span {
+  display: block;
+  margin-top: 3px;
+  color: #9fb1c7;
+  font-size: 0.76rem;
+}
+
+.staff-status {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.staff-status.is-present {
+  border-color: rgba(82, 209, 139, 0.36);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.staff-status.is-absent,
+.staff-status.is-leave {
+  border-color: rgba(255, 138, 138, 0.38);
+  color: #ffb4b4;
+  background: rgba(120, 32, 32, 0.18);
+}
+
+.staff-status.is-makeup {
+  border-color: rgba(250, 204, 21, 0.36);
+  color: #fef3c7;
+  background: rgba(146, 64, 14, 0.22);
+}
+
+.staff-status.is-pending {
+  border-color: rgba(160, 184, 214, 0.22);
+  color: #c8d4e3;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.staff-empty {
+  margin: 0;
+  border: 1px dashed rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  padding: 12px;
+  color: #9fb1c7;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.report-module {
+  display: grid;
+  min-height: 0;
+  gap: 12px;
+  color: #d8e2ef;
+}
+
+.report-filters,
+.report-panel,
+.report-chart-card {
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 13, 20, 0.68);
+}
+
+.report-panel-heading h4,
+.report-chart-heading h5 {
+  margin: 0;
+}
+
+.report-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.report-actions button,
+.report-week-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(118, 164, 231, 0.48);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #edf4fc;
+  background: rgba(31, 93, 153, 0.38);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.report-actions button:last-child,
+.report-week-actions button:nth-child(2) {
+  background: #1f5d99;
+}
+
+.report-actions button:hover,
+.report-actions button:focus-visible,
+.report-week-actions button:hover,
+.report-week-actions button:focus-visible {
+  border-color: rgba(178, 213, 255, 0.82);
+  outline: none;
+}
+
+.report-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.72fr) minmax(220px, 1fr) minmax(250px, auto) minmax(190px, auto);
+  align-items: end;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.report-filters label,
+.report-week-control,
+.report-daily-form label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.report-filters span,
+.report-week-control span,
+.report-daily-form span {
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.report-filters input,
+.report-week-control input,
+.report-daily-form input,
+.report-daily-form textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+  font: inherit;
+}
+
+.report-daily-form textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.report-filters input:focus,
+.report-week-control input:focus,
+.report-daily-form input:focus,
+.report-daily-form textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.report-week-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(420px, 1.35fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.report-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.report-panel-heading,
+.report-chart-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.report-panel-heading h4,
+.report-chart-heading h5 {
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.report-panel-heading span,
+.report-chart-heading span {
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.report-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-weekly-panel .report-stat-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.report-stat {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.report-stat span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.report-stat strong {
+  color: #ffffff;
+  font-size: 0.96rem;
+}
+
+.report-stat.is-income strong {
+  color: #9be8bd;
+}
+
+.report-stat.is-expense strong {
+  color: #ffb4b4;
+}
+
+.report-stat.is-balance strong {
+  color: #cfe0ff;
+}
+
+.report-daily-form,
+.report-chart-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.report-chart-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+}
+
+.report-chart-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.report-bar-chart {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  min-height: 220px;
+  gap: 10px;
+  border-left: 1px solid rgba(160, 184, 214, 0.2);
+  border-bottom: 1px solid rgba(160, 184, 214, 0.2);
+  padding: 10px 0 0 10px;
+}
+
+.report-y-axis {
+  display: grid;
+  height: 190px;
+  align-content: space-between;
+  color: #9fb1c7;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-align: right;
+}
+
+.report-bar-plot {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.report-bar-group {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 1fr auto;
+  gap: 7px;
+}
+
+.report-bars {
+  display: flex;
+  min-height: 190px;
+  align-items: end;
+  justify-content: center;
+  gap: 6px;
+}
+
+.report-bar {
+  width: min(28px, 38%);
+  min-height: 3px;
+  border: 0;
+  border-radius: 6px 6px 0 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.report-bar.is-income {
+  background: #52d18b;
+}
+
+.report-bar.is-expense {
+  background: #ff8a8a;
+}
+
+.report-bar:hover,
+.report-bar:focus-visible {
+  outline: 2px solid rgba(237, 244, 252, 0.75);
+  outline-offset: 2px;
+}
+
+.report-bar-detail,
+.report-bar-detail-empty {
+  margin: 0;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 9px;
+  color: #c8d4e3;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.report-bar-detail {
+  display: grid;
+  gap: 4px;
+}
+
+.report-bar-detail strong {
+  color: #ffffff;
+}
+
+.report-bar-detail p {
+  margin: 0;
+}
+
+.report-bar-detail small {
+  color: #9fb1c7;
+}
+
+.report-bar-label {
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-chart-legend,
+.report-pie-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #c8d4e3;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.report-chart-legend i,
+.report-pie-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-right: 5px;
+}
+
+.report-chart-legend .is-income,
+.report-pie-legend .is-present {
+  background: #52d18b;
+}
+
+.report-chart-legend .is-expense,
+.report-pie-legend .is-absent {
+  background: #ff8a8a;
+}
+
+.report-pie-legend .is-total {
+  background: #76a4e7;
+}
+
+.report-attendance-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.report-pie {
+  width: 150px;
+  aspect-ratio: 1;
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 999px;
+  background: conic-gradient(#52d18b 0 var(--present-percent), #ff8a8a var(--present-percent) 100%);
+  box-shadow: inset 0 0 0 24px #101923;
+}
+
+.report-pie-legend {
+  display: grid;
+}
+
+.report-transaction-list {
+  display: grid;
+  gap: 7px;
+}
+
+.report-transaction-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  border: 1px solid rgba(160, 184, 214, 0.14);
+  border-radius: 7px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.report-transaction-item span,
+.report-transaction-item small {
+  min-width: 0;
+  overflow: hidden;
+  color: #9fb1c7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-transaction-item strong {
+  color: #ffffff;
+}
+
+.report-transaction-item.is-income strong {
+  color: #9be8bd;
+}
+
+.report-transaction-item.is-expense strong {
+  color: #ffb4b4;
+}
+
+.report-transaction-item small {
+  grid-column: 1 / -1;
+  font-size: 0.76rem;
+}
+
+.report-empty {
+  margin: 0;
+  border: 1px dashed rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+  color: #9fb1c7;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 .inventory-module {
   position: relative;
   display: flex;
@@ -2758,11 +3425,22 @@ h3 {
   display: grid;
   min-height: 160px;
   place-items: center;
+  gap: 10px;
   border: 0;
   border-radius: 0;
+  padding: 20px;
   color: #9fb1c7;
   background: rgba(8, 12, 18, 0.78);
   text-align: center;
+}
+
+.inventory-empty p {
+  margin: 0;
+}
+
+.inventory-empty .inventory-add-button {
+  width: max-content;
+  max-width: 100%;
 }
 
 .inventory-movement-history {
@@ -3413,6 +4091,11 @@ h3 {
   width: min(680px, 100%);
 }
 
+.inventory-item-form-panel {
+  width: min(640px, 100%);
+  max-height: min(82vh, 560px);
+}
+
 .inventory-movement-detail-panel {
   width: min(720px, 100%);
 }
@@ -3537,8 +4220,8 @@ h3 {
 .inventory-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px;
+  gap: 7px 8px;
+  padding: 9px 10px;
 }
 
 .inventory-field {
@@ -3582,7 +4265,7 @@ h3 {
 }
 
 .inventory-field textarea {
-  min-height: 58px;
+  min-height: 54px;
   resize: vertical;
 }
 
@@ -8224,6 +8907,65 @@ h3 {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.student-link-warning-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.student-link-warning-list strong {
+  color: #edf4fc;
+  font-size: 0.78rem;
+}
+
+.student-link-warning-list div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.student-link-warning,
+.tuition-care-badges span {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: normal;
+}
+
+.student-link-warning.is-danger,
+.tuition-care-badges span.is-danger {
+  border-color: rgba(242, 116, 116, 0.52);
+  color: #ffd6d6;
+  background: rgba(242, 116, 116, 0.13);
+}
+
+.student-link-warning.is-warning,
+.tuition-care-badges span.is-warning {
+  border-color: rgba(245, 185, 85, 0.5);
+  color: #ffe2aa;
+  background: rgba(245, 185, 85, 0.12);
+}
+
+.student-link-warning.is-info,
+.tuition-care-badges span.is-info {
+  border-color: rgba(118, 164, 231, 0.5);
+  color: #cfe0ff;
+  background: rgba(118, 164, 231, 0.12);
+}
+
+.student-family-tuition-empty {
+  margin: 8px 0 0;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .cashflow-module {
   position: relative;
   display: flex;
@@ -11479,6 +12221,43 @@ h3 {
   color: #ffffff;
 }
 
+.tuition-family-link {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tuition-family-link strong {
+  color: #9fb1c7;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.tuition-family-link span,
+.tuition-family-link small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tuition-family-link span {
+  color: #edf4fc;
+  font-weight: 900;
+}
+
+.tuition-family-link small {
+  color: #9fb1c7;
+  font-size: 0.74rem;
+}
+
+.tuition-care-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
 .tuition-term-chip {
   display: inline;
   margin-left: 2px;
@@ -13705,6 +14484,15 @@ h3 {
     .parent-appointment-layout,
     .parent-enrollment-form,
     .parent-care-layout,
+    .staff-filters,
+    .staff-summary,
+    .staff-layout,
+    .report-filters,
+    .report-grid,
+    .report-stat-row,
+    .report-weekly-panel .report-stat-row,
+    .report-chart-grid,
+    .report-attendance-chart,
     .inventory-toolbar,
     .inventory-filter-grid,
     .inventory-stats,
@@ -13798,6 +14586,22 @@ h3 {
 
   .inventory-add-button {
     width: 100%;
+  }
+
+  .report-header,
+  .staff-panel-heading,
+  .report-panel-heading,
+  .report-chart-heading {
+    display: grid;
+  }
+
+  .report-actions,
+  .report-actions button {
+    width: 100%;
+  }
+
+  .report-pie {
+    width: min(150px, 100%);
   }
 
   .inventory-history-backdrop {
@@ -14097,5 +14901,52 @@ h3 {
 
   .notification-center-header button {
     flex: 1 1 150px;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .desktop-shell,
+  .window-frame,
+  .window-body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  .report-module {
+    color: #111827;
+  }
+
+  .report-actions,
+  .titlebar,
+  .taskbar,
+  .desktop-shortcuts,
+  .start-menu {
+    display: none !important;
+  }
+
+  .report-header,
+  .report-filters,
+  .report-panel,
+  .report-chart-card,
+  .report-stat,
+  .report-empty,
+  .report-transaction-item {
+    border-color: #d1d5db;
+    color: #111827;
+    background: #ffffff;
+  }
+
+  .report-header h3,
+  .report-panel-heading h4,
+  .report-chart-heading h5,
+  .report-stat strong,
+  .report-transaction-item strong {
+    color: #111827;
   }
 }

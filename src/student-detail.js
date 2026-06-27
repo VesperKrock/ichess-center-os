@@ -1,3 +1,5 @@
+import { buildStudentTuitionLink } from './student-tuition-links.js'
+
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
 
@@ -21,7 +23,7 @@ export const emptyCareNoteDraft = {
   editingNoteId: '',
 }
 
-export function renderStudentDetail(student, teachers = [], classSessions = []) {
+export function renderStudentDetail(student, teachers = [], classSessions = [], tuitionRecords = []) {
   if (!student) {
     return renderStudentNotFound()
   }
@@ -31,6 +33,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = []) 
   const assignedTeacherLabel = getAssignedTeacherLabel(student, teachers)
   const classSessionLabel = getStudentClassSessionLabel(student, classSessions)
   const primaryParentPhone = student.motherPhone || student.fatherPhone || student.parentPhone
+  const studentTuitionLink = buildStudentTuitionLink(student, tuitionRecords, classSessions)
 
   return `
     <section class="student-detail student-detail-overview" aria-label="Hồ sơ tổng quan học viên">
@@ -82,6 +85,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = []) 
           ['Nghề nghiệp', student.parentJob],
           ['Khu vực', student.parentArea],
         ])}
+        ${renderStudentFamilyTuitionTile(studentTuitionLink)}
         ${renderOverviewTile('Trạng thái học', [
           ['Cấp độ học', getEscapedLevelLabel(student.level)],
           ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
@@ -257,6 +261,49 @@ function renderOverviewTile(title, rows, action = '') {
       </dl>
     </section>
   `
+}
+
+function renderStudentFamilyTuitionTile(link) {
+  const warningHtml = link.warnings.length
+    ? `
+      <div class="student-link-warning-list" aria-label="Cảnh báo chăm sóc">
+        <strong>Cảnh báo chăm sóc</strong>
+        <div>
+          ${link.warnings
+            .map(
+              (warning) => `
+                <span class="student-link-warning is-${warning.tone}">
+                  ${warning.label}
+                </span>
+              `,
+            )
+            .join('')}
+        </div>
+      </div>
+    `
+    : '<p class="student-family-tuition-empty">Không có cảnh báo chăm sóc nổi bật.</p>'
+  const contactEmpty = link.parent.hasContact
+    ? ''
+    : '<p class="student-family-tuition-empty">Chưa có thông tin phụ huynh/người liên hệ.</p>'
+  const tuitionEmpty = link.tuition.hasTuition
+    ? ''
+    : '<p class="student-family-tuition-empty">Chưa có dữ liệu học phí liên kết cho học viên này.</p>'
+
+  return renderOverviewTile(
+    'Liên kết phụ huynh & học phí',
+    [
+      ['Phụ huynh/người chăm sóc', link.parent.parentName],
+      ['SĐT ba', formatPhoneNumber(link.parent.fatherPhone)],
+      ['SĐT mẹ', formatPhoneNumber(link.parent.motherPhone)],
+      ['Số liên hệ chính', formatPhoneNumber(link.parent.primaryPhone)],
+      ['Trạng thái học viên', link.studentStatus],
+      ['Tổng quan học phí', link.tuition.label],
+      ['Còn lại', Number.isFinite(link.tuition.remainingSessions) ? `${link.tuition.remainingSessions} buổi` : '—'],
+      ['Cần thanh toán', link.tuition.hasTuition ? formatMoney(link.tuition.payableAmount) : '—'],
+      ['Đã thanh toán', link.tuition.hasTuition ? formatMoney(link.tuition.paidAmount) : '—'],
+    ],
+    '',
+  ).replace('</section>', `${contactEmpty}${tuitionEmpty}${warningHtml}</section>`)
 }
 
 function renderLearningStat(label, value) {
@@ -507,6 +554,14 @@ function formatPhoneNumber(value) {
   }
 
   return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0)
 }
 
 function summarizeText(value, maxLength = 110) {
