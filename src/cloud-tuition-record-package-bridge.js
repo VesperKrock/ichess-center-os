@@ -1,5 +1,9 @@
 import { sanitizeCloudPayload } from './cloud-db-entities.js'
 import { buildOnlineAccessState, getOnlineAccessMessage } from './online-access-control.js'
+import {
+  mergeTuitionRecordWithConflictGuard,
+  normalizeConflictMarker,
+} from './cloud-conflict-markers.js'
 
 export const TUITION_RECORD_PACKAGE_ENTITY_TYPE = 'tuition_record_package'
 export const C52_TUITION_SOURCE_VERSION = 'c5-2c-tuition-record-package-v1'
@@ -323,6 +327,8 @@ export function normalizeTuitionRecordPackagePayload(tuitionRecord = {}, { cente
       deletedAt: normalizeNullableText(tuitionRecord.deletedAt) || null,
       source: 'tuition_record_package',
       schemaVersion: C52_TUITION_SOURCE_VERSION,
+      syncConflict: Boolean(tuitionRecord.syncConflict || tuitionRecord.conflictMarker?.syncConflict),
+      conflictMarker: normalizeConflictMarker(tuitionRecord.conflictMarker),
       attendanceLinked: false,
       attendanceAutoUpdateEnabled: false,
       usedSessionsAutoUpdateFromAttendance: false,
@@ -370,9 +376,30 @@ function mergeTuitionRecordPackageCloudRecord(tuitionRecords = [], cloudRecord =
       return createMergeResult(currentRecords, false)
     }
 
+    const guardedMerge = mergeTuitionRecordWithConflictGuard({
+      localRecord: current,
+      cloudRecord: incoming,
+      cloudUpdatedAt: cloudRecord.updated_at || incoming.updatedAt || '',
+    })
     const nextRecords = [...currentRecords]
-    nextRecords[byLocalIdIndex] = { ...current, ...incoming }
-    return createMergeResult(nextRecords, JSON.stringify(current) !== JSON.stringify(nextRecords[byLocalIdIndex]))
+    nextRecords[byLocalIdIndex] = guardedMerge.record
+
+    if (guardedMerge.conflict) {
+      return {
+        records: normalizeTuitionRecordPackageList(nextRecords),
+        changed: guardedMerge.changed,
+        skipped: [],
+        conflicts: [{
+          entityType: TUITION_RECORD_PACKAGE_ENTITY_TYPE,
+          localId,
+          conflictSeverity: guardedMerge.conflict.conflictSeverity,
+          conflictFields: guardedMerge.conflict.conflictFields,
+          reason: guardedMerge.conflict.conflictReason,
+        }],
+      }
+    }
+
+    return createMergeResult(nextRecords, guardedMerge.changed)
   }
 
   return createMergeResult([incoming, ...currentRecords], true)

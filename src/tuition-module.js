@@ -147,6 +147,7 @@ export function renderTuitionModule(
   sessionReports = [],
   advisoryNotes = [],
   advisoryMonthKey = getCurrentMonthKey(),
+  rollbackPreviewState = null,
 ) {
   const rows = buildTuitionRows(students, tuitionRecords)
   const visibleRows = filterTuitionRows(rows, filters)
@@ -164,7 +165,7 @@ export function renderTuitionModule(
   const detailTuition = detailState
     ? tuitionRecords.find((record) => record.studentId === detailState.studentId)
     : null
-  const hasPanel = Boolean(formState || paymentFormState || detailState)
+  const hasPanel = Boolean(formState || paymentFormState || detailState || rollbackPreviewState)
   const advisoryRows = buildAttendanceAdvisoryRows(
     students,
     tuitionRecords,
@@ -245,6 +246,7 @@ export function renderTuitionModule(
           : ''
       }
       ${detailState && detailStudent ? renderTuitionDetailPanel(detailStudent, detailTuition) : ''}
+      ${rollbackPreviewState ? renderRollbackPreviewPanel(rollbackPreviewState) : ''}
     </section>
   `
 }
@@ -629,6 +631,8 @@ function renderTuitionRow(row) {
   const compactStudentName = getCompactStudentName(row.student.fullName)
   const note = tuition?.note || 'Cần gán gói học phí'
   const hasOverpayment = tuition ? getTuitionOverpaidAmount(tuition) > 0 : false
+  const conflictMarker = tuition?.conflictMarker || null
+  const hasSyncConflict = Boolean(tuition?.syncConflict || conflictMarker?.syncConflict)
   const rowTitle = tuition ? 'Bấm để cập nhật gói học phí' : 'Bấm để gán gói học phí'
   const termNumber = tuition?.currentTermNumber || 1
   const amounts = tuition ? calculateTuitionAmounts(tuition) : null
@@ -636,7 +640,7 @@ function renderTuitionRow(row) {
 
   return `
     <tr
-      class="tuition-clickable-row"
+      class="tuition-clickable-row ${hasSyncConflict ? 'has-sync-conflict' : ''}"
       data-tuition-row-student-id="${row.student.id}"
       tabindex="0"
       title="${rowTitle}"
@@ -648,7 +652,12 @@ function renderTuitionRow(row) {
       <td>
         ${
           tuition
-            ? escapeHtml(tuition.packageName)
+            ? `
+              <div class="tuition-package-cell">
+                <span>${escapeHtml(tuition.packageName)}</span>
+                ${hasSyncConflict ? renderTuitionConflictBadge(conflictMarker) : ''}
+              </div>
+            `
             : '<span class="tuition-muted">Chưa có gói</span>'
         }
       </td>
@@ -694,9 +703,121 @@ function renderTuitionRow(row) {
       </td>
       <td title="${escapeHtml(note)}">
         <span class="tuition-note-text">${escapeHtml(note)}</span>
+        ${
+          tuition
+            ? `
+              <button
+                class="tuition-history-button"
+                type="button"
+                data-tuition-action="open-rollback-preview"
+                data-tuition-id="${escapeHtml(tuition.id)}"
+                title="Xem lịch sử thay đổi"
+              >
+                Xem lịch sử
+              </button>
+            `
+            : ''
+        }
         ${renderTuitionCareBadges(familyLink)}
       </td>
     </tr>
+  `
+}
+
+function renderRollbackPreviewPanel(state) {
+  const previews = Array.isArray(state.previews) ? state.previews : []
+
+  return `
+    <div class="tuition-form-backdrop" data-tuition-rollback-preview-action="close"></div>
+    <section class="tuition-form-panel tuition-rollback-preview-panel" aria-label="Lịch sử thay đổi học phí">
+      <div class="tuition-form-header">
+        <div>
+          <h4>Lịch sử thay đổi</h4>
+          <p>Chỉ xem trước, chưa khôi phục dữ liệu</p>
+        </div>
+        <button type="button" data-tuition-rollback-preview-action="close" aria-label="Đóng lịch sử thay đổi">X</button>
+      </div>
+      <div class="tuition-rollback-preview-note">
+        <strong>Bản xem trước khôi phục</strong>
+        <span>Không có nút khôi phục, không ghi ngược dữ liệu học phí.</span>
+      </div>
+      ${state.message ? `<p class="tuition-rollback-preview-message is-${escapeHtml(state.status || 'ready')}">${escapeHtml(state.message)}</p>` : ''}
+      ${
+        previews.length
+          ? `
+            <div class="tuition-rollback-preview-list">
+              ${previews.map((preview) => renderRollbackPreviewItem(preview)).join('')}
+            </div>
+          `
+          : '<p class="tuition-payment-empty">Không có bản ghi audit để xem trước.</p>'
+      }
+      <div class="tuition-form-actions">
+        <button type="button" data-tuition-rollback-preview-action="close">Đóng</button>
+      </div>
+    </section>
+  `
+}
+
+function renderRollbackPreviewItem(preview) {
+  const diffSummary = Array.isArray(preview.diffSummary) ? preview.diffSummary.slice(0, 8) : []
+  const changedFields = Array.isArray(preview.changedFields) ? preview.changedFields : []
+
+  return `
+    <article class="tuition-rollback-preview-item">
+      <div class="tuition-rollback-preview-item-header">
+        <strong>${escapeHtml(getRollbackActionLabel(preview.action))}</strong>
+        <span>${escapeHtml(formatCompactDateTime(preview.auditCreatedAt))}</span>
+      </div>
+      <p>${escapeHtml(preview.actorRole || 'unknown')} · ${escapeHtml(preview.entityLocalId || '')}</p>
+      <div class="tuition-rollback-preview-fields">
+        ${
+          changedFields.length
+            ? changedFields.map((field) => `<span>${escapeHtml(field)}</span>`).join('')
+            : '<span>Không có danh sách trường thay đổi</span>'
+        }
+      </div>
+      ${
+        diffSummary.length
+          ? `
+            <dl class="tuition-rollback-preview-diff">
+              ${diffSummary.map((item) => `
+                <div>
+                  <dt>${escapeHtml(item.field)}</dt>
+                  <dd><span>Trước thay đổi</span>${escapeHtml(item.before)}</dd>
+                  <dd><span>Sau thay đổi</span>${escapeHtml(item.after)}</dd>
+                </div>
+              `).join('')}
+            </dl>
+          `
+          : '<p class="tuition-payment-empty">Không có snapshot trước thay đổi hoặc sau thay đổi đủ để so sánh.</p>'
+      }
+    </article>
+  `
+}
+
+function getRollbackActionLabel(action) {
+  const labels = {
+    create: 'Tạo bản ghi',
+    update: 'Cập nhật',
+    payment_update: 'Cập nhật thanh toán',
+    unknown_update: 'Cập nhật',
+  }
+
+  return labels[action] || action || 'Cập nhật'
+}
+
+function renderTuitionConflictBadge(conflictMarker) {
+  const fields = Array.isArray(conflictMarker?.conflictFields)
+    ? conflictMarker.conflictFields.filter(Boolean)
+    : []
+  const title = fields.length
+    ? `Dữ liệu cloud/local khác nhau ở trường nhạy cảm: ${fields.join(', ')}`
+    : 'Dữ liệu cloud/local khác nhau ở trường nhạy cảm'
+
+  return `
+    <span class="tuition-conflict-badge" title="${escapeHtml(title)}">
+      Có xung đột dữ liệu
+    </span>
   `
 }
 
@@ -1424,6 +1545,24 @@ function formatCompactDate(dateValue) {
     month: '2-digit',
     year: 'numeric',
   })
+}
+
+function formatCompactDateTime(dateValue) {
+  if (!dateValue) {
+    return 'Chưa rõ thời gian'
+  }
+
+  const date = new Date(dateValue)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Chưa rõ thời gian'
+  }
+
+  return `${date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function normalizeSearchText(value) {

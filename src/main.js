@@ -291,11 +291,20 @@ import {
 import {
   C52_TEACHER_CONSULTANT_WRITE_HOLD,
   canWriteC52TuitionRecordPackageEntity,
+  createTuitionRecordPackageLocalId,
   mergeC52TuitionCloudRecordsIntoLocal,
   pullC52TuitionRecordPackageCloudEntities,
   subscribeToC52TuitionRecordPackageRealtime,
   upsertC52TuitionRecordPackageCloudEntities,
 } from './cloud-tuition-record-package-bridge.js'
+import {
+  getChangedFields,
+  writeC53AuditLogEntry,
+} from './cloud-audit-log.js'
+import {
+  buildRollbackPreviewFromAuditEntry,
+  loadAuditEntriesForEntity,
+} from './cloud-rollback-preview.js'
 import { buildScheduleSessionBridgePreview } from './cloud-schedule-session-bridge.js'
 import {
   buildOnlineAccessState,
@@ -469,6 +478,7 @@ let tuitionFilters = { ...initialTuitionFilters }
 let tuitionFormState = null
 let tuitionPaymentFormState = null
 let tuitionDetailState = null
+let tuitionRollbackPreviewState = null
 let cashflowTransactions = getStoredCashflow(sampleCashflowTransactions)
 let cashflowCategories = getStoredCashflowCategories(sampleCashflowCategories)
 let cashflowFilters = { ...initialCashflowFilters }
@@ -1410,6 +1420,8 @@ function renderWindowBody(windowItem) {
       tuitionDetailState,
       sessionReports,
       attendanceAdvisoryNotes,
+      getCurrentMonthKey(),
+      tuitionRollbackPreviewState,
     )
   }
 
@@ -3783,7 +3795,11 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
   render()
 }
 
-async function writeC52TuitionRecordPackageThroughCloud(tuitionRecord, reason = 'tuition-local-save') {
+async function writeC52TuitionRecordPackageThroughCloud(
+  tuitionRecord,
+  reason = 'tuition-local-save',
+  auditContext = {},
+) {
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
   })
@@ -3835,6 +3851,18 @@ async function writeC52TuitionRecordPackageThroughCloud(tuitionRecord, reason = 
     accessState: writeAccessState,
   })
 
+  if (result.ok && tuitionRecord) {
+    void writeC53TuitionAuditLogEntry({
+      supabase: readiness.supabase,
+      centerId: readiness.centerId,
+      userId: readiness.user?.id,
+      accessState: writeAccessState,
+      tuitionRecord,
+      beforePayload: auditContext.beforePayload || null,
+      reason,
+    })
+  }
+
   if (runId !== c52TuitionCloudWriteRunId) {
     return result
   }
@@ -3850,6 +3878,138 @@ async function writeC52TuitionRecordPackageThroughCloud(tuitionRecord, reason = 
   }
   render()
   return result
+}
+
+async function writeC53TuitionAuditLogEntry({
+  supabase,
+  centerId,
+  userId,
+  accessState,
+  tuitionRecord,
+  beforePayload = null,
+  reason = 'tuition-local-save',
+} = {}) {
+  if (!tuitionRecord) {
+    return { ok: false, skipped: true, error: 'Missing tuition record.' }
+  }
+
+  const entityLocalId = createTuitionRecordPackageLocalId(tuitionRecord)
+  const afterPayload = tuitionRecord && typeof tuitionRecord === 'object' ? { ...tuitionRecord } : null
+  const changedFields = getChangedFields(beforePayload, afterPayload)
+  const action = getC53TuitionAuditAction(reason, beforePayload)
+
+  const result = await writeC53AuditLogEntry({
+    supabase,
+    centerId,
+    userId,
+    accessState,
+    entry: {
+      entityType: 'tuition_record_package',
+      entityLocalId,
+      action,
+      beforePayload,
+      afterPayload,
+      changedFields,
+      reason,
+    },
+  })
+
+  if (!result.ok && !result.skipped) {
+    console.warn('C5.3C audit_log_entry write failed; tuition save remains local/cloud safe.', result.error || result)
+  }
+
+  return result
+}
+
+function getC53TuitionAuditAction(reason, beforePayload) {
+  if (reason === 'tuition-payment-save') {
+    return 'payment_update'
+  }
+
+  if (!beforePayload) {
+    return 'create'
+  }
+
+  if (reason === 'tuition-package-save') {
+    return 'update'
+  }
+
+  return 'unknown_update'
+}
+
+async function openTuitionRollbackPreview(tuitionRecord) {
+  const entityLocalId = createTuitionRecordPackageLocalId(tuitionRecord)
+
+  tuitionRollbackPreviewState = {
+    status: 'loading',
+    tuitionId: tuitionRecord.id,
+    entityLocalId,
+    entries: [],
+    previews: [],
+    message: 'Đang tải lịch sử thay đổi...',
+  }
+  tuitionFormState = null
+  tuitionPaymentFormState = null
+  tuitionDetailState = null
+  render()
+
+  const readiness = await checkCloudDbReadiness()
+
+  if (!readiness.ok) {
+    tuitionRollbackPreviewState = {
+      status: 'error',
+      tuitionId: tuitionRecord.id,
+      entityLocalId,
+      entries: [],
+      previews: [],
+      message: readiness.error || 'Không đọc được audit log để xem trước.',
+    }
+    render()
+    return
+  }
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: readiness.ready !== false,
+  })
+  const result = await loadAuditEntriesForEntity({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    entityType: 'tuition_record_package',
+    entityLocalId,
+    accessState,
+  })
+
+  if (!result.ok) {
+    tuitionRollbackPreviewState = {
+      status: 'error',
+      tuitionId: tuitionRecord.id,
+      entityLocalId,
+      entries: [],
+      previews: [],
+      message: result.error || 'Không có quyền xem bản xem trước khôi phục.',
+    }
+    render()
+    return
+  }
+
+  const previews = result.entries.map((entry) => buildRollbackPreviewFromAuditEntry(entry))
+  tuitionRollbackPreviewState = {
+    status: result.empty ? 'empty' : 'ready',
+    tuitionId: tuitionRecord.id,
+    entityLocalId,
+    entries: result.entries,
+    previews,
+    message: result.empty
+      ? 'Không có bản ghi audit để xem trước.'
+      : `Đã tải ${previews.length} bản ghi lịch sử thay đổi.`,
+  }
+  render()
 }
 
 async function startC52TuitionRealtimeSubscription(syncId = cloudUserSyncId) {
@@ -6853,6 +7013,7 @@ function bindEvents() {
         : createEmptyTuitionFormState(student)
       tuitionPaymentFormState = null
       tuitionDetailState = null
+      tuitionRollbackPreviewState = null
       render()
     })
   })
@@ -6861,7 +7022,8 @@ function bindEvents() {
     row.addEventListener('click', (event) => {
       if (
         event.target.closest('[data-tuition-action="open-debt"]') ||
-        event.target.closest('[data-tuition-action="open-detail"]')
+        event.target.closest('[data-tuition-action="open-detail"]') ||
+        event.target.closest('[data-tuition-action="open-rollback-preview"]')
       ) {
         return
       }
@@ -6876,7 +7038,8 @@ function bindEvents() {
 
       if (
         event.target.closest('[data-tuition-action="open-debt"]') ||
-        event.target.closest('[data-tuition-action="open-detail"]')
+        event.target.closest('[data-tuition-action="open-detail"]') ||
+        event.target.closest('[data-tuition-action="open-rollback-preview"]')
       ) {
         return
       }
@@ -6897,6 +7060,7 @@ function bindEvents() {
 
       tuitionPaymentFormState = createPaymentFormState(student, tuitionRecord)
       tuitionFormState = null
+      tuitionRollbackPreviewState = null
       render()
     })
   })
@@ -6919,6 +7083,7 @@ function bindEvents() {
       )
       tuitionFormState = null
       tuitionDetailState = null
+      tuitionRollbackPreviewState = null
       render()
     })
   })
@@ -6931,13 +7096,28 @@ function bindEvents() {
       }
       tuitionFormState = null
       tuitionPaymentFormState = null
+      tuitionRollbackPreviewState = null
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="open-rollback-preview"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const tuitionRecord = tuitionRecords.find((record) => record.id === button.dataset.tuitionId)
+
+      if (!tuitionRecord) {
+        return
+      }
+
+      void openTuitionRollbackPreview(tuitionRecord)
     })
   })
 
   document.querySelectorAll('[data-tuition-action="cancel-form"]').forEach((button) => {
     button.addEventListener('click', () => {
       tuitionFormState = null
+      tuitionRollbackPreviewState = null
       render()
     })
   })
@@ -6945,6 +7125,7 @@ function bindEvents() {
   document.querySelectorAll('[data-tuition-payment-action="cancel-payment"]').forEach((button) => {
     button.addEventListener('click', () => {
       tuitionPaymentFormState = null
+      tuitionRollbackPreviewState = null
       render()
     })
   })
@@ -6952,6 +7133,13 @@ function bindEvents() {
   document.querySelectorAll('[data-tuition-detail-action="close-detail"]').forEach((button) => {
     button.addEventListener('click', () => {
       tuitionDetailState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-rollback-preview-action="close"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      tuitionRollbackPreviewState = null
       render()
     })
   })
@@ -7088,7 +7276,9 @@ function bindEvents() {
     }
     notifications = syncTuitionNotifications(notifications)
     tuitionFormState = null
-    void writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save')
+    void writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save', {
+      beforePayload: currentRecord ? { ...currentRecord } : null,
+    })
     render()
   })
 
@@ -7143,6 +7333,8 @@ function bindEvents() {
       ...normalizedPayment,
       createdAt: savedAt,
     }
+    const beforePaymentTuitionRecord =
+      tuitionRecords.find((record) => record.id === tuitionPaymentFormState.tuitionId) || null
     let updatedTuitionRecord = null
 
     tuitionRecords = tuitionRecords.map((record) => {
@@ -7167,7 +7359,9 @@ function bindEvents() {
     )
     notifications = syncTuitionNotifications(notifications)
     tuitionPaymentFormState = null
-    void writeC52TuitionRecordPackageThroughCloud(updatedTuitionRecord, 'tuition-payment-save')
+    void writeC52TuitionRecordPackageThroughCloud(updatedTuitionRecord, 'tuition-payment-save', {
+      beforePayload: beforePaymentTuitionRecord ? { ...beforePaymentTuitionRecord } : null,
+    })
     render()
   })
 

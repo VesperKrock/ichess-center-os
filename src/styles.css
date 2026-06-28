@@ -12207,6 +12207,10 @@ h3 {
   cursor: pointer;
 }
 
+.tuition-clickable-row.has-sync-conflict td {
+  background: rgba(245, 158, 11, 0.06);
+}
+
 .tuition-clickable-row:hover td,
 .tuition-clickable-row:focus-visible td {
   background: rgba(118, 164, 231, 0.055);
@@ -12219,6 +12223,193 @@ h3 {
 
 .tuition-table td strong {
   color: #ffffff;
+}
+
+.tuition-package-cell {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.tuition-package-cell > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tuition-conflict-badge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  border-radius: 999px;
+  padding: 3px 7px;
+  overflow: hidden;
+  color: #fff7ed;
+  background: rgba(245, 158, 11, 0.18);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tuition-history-button {
+  display: inline-flex;
+  max-width: 100%;
+  margin-top: 5px;
+  border: 1px solid rgba(118, 164, 231, 0.24);
+  border-radius: 999px;
+  padding: 3px 7px;
+  overflow: hidden;
+  color: #dbeafe;
+  background: rgba(37, 99, 235, 0.14);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tuition-history-button:hover,
+.tuition-history-button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.5);
+  color: #ffffff;
+}
+
+.tuition-rollback-preview-panel {
+  max-width: min(760px, calc(100vw - 32px));
+}
+
+.tuition-rollback-preview-note {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(118, 164, 231, 0.2);
+  border-radius: 8px;
+  padding: 9px;
+  color: #cbd7e6;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.tuition-rollback-preview-note strong {
+  color: #eff6ff;
+}
+
+.tuition-rollback-preview-note span,
+.tuition-rollback-preview-message,
+.tuition-rollback-preview-item p {
+  margin: 0;
+  color: #aab8c9;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.tuition-rollback-preview-message.is-error {
+  color: #fecaca;
+}
+
+.tuition-rollback-preview-list {
+  display: grid;
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  gap: 9px;
+  padding-right: 2px;
+}
+
+.tuition-rollback-preview-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.tuition-rollback-preview-item-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tuition-rollback-preview-item-header strong {
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.tuition-rollback-preview-item-header span {
+  color: #9fb1c7;
+  font-size: 0.76rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.tuition-rollback-preview-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tuition-rollback-preview-fields span {
+  max-width: 100%;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 999px;
+  padding: 3px 7px;
+  overflow: hidden;
+  color: #dbeafe;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tuition-rollback-preview-diff {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.tuition-rollback-preview-diff div {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+}
+
+.tuition-rollback-preview-diff dt,
+.tuition-rollback-preview-diff dd {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  padding: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tuition-rollback-preview-diff dt {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 900;
+}
+
+.tuition-rollback-preview-diff dd {
+  color: #cbd7e6;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.76rem;
+}
+
+.tuition-rollback-preview-diff dd span {
+  display: block;
+  margin-bottom: 2px;
+  color: #7f91a8;
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .tuition-family-link {
