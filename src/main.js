@@ -288,6 +288,14 @@ import {
   subscribeToC51AttendanceSessionReportRealtime,
   upsertC51AttendanceSessionReportCloudEntities,
 } from './cloud-attendance-realtime.js'
+import {
+  C52_TEACHER_CONSULTANT_WRITE_HOLD,
+  canWriteC52TuitionRecordPackageEntity,
+  mergeC52TuitionCloudRecordsIntoLocal,
+  pullC52TuitionRecordPackageCloudEntities,
+  subscribeToC52TuitionRecordPackageRealtime,
+  upsertC52TuitionRecordPackageCloudEntities,
+} from './cloud-tuition-record-package-bridge.js'
 import { buildScheduleSessionBridgePreview } from './cloud-schedule-session-bridge.js'
 import {
   buildOnlineAccessState,
@@ -512,6 +520,10 @@ let c51AttendanceRealtimeSubscription = null
 let c51AttendanceRealtimeCenterId = ''
 let c51AttendanceCloudWriteRunId = 0
 let c51AttendanceAutoPullUserId = ''
+let c52TuitionRealtimeSubscription = null
+let c52TuitionRealtimeCenterId = ''
+let c52TuitionCloudWriteRunId = 0
+let c52TuitionAutoPullUserId = ''
 let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
 let cloudGalleryState = null
@@ -2702,12 +2714,14 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     stopTeacherRealtimeSubscription()
     stopScheduleSessionRealtimeSubscription()
     stopC51AttendanceRealtimeSubscription()
+    stopC52TuitionRealtimeSubscription()
     transactionImageManagerState = null
     cloudGalleryState = null
     cloudDbState = createInitialCloudDbState()
     cloudBootstrapState = createInitialCloudBootstrapState()
     cloudDbAutoPullUserId = ''
     c51AttendanceAutoPullUserId = ''
+    c52TuitionAutoPullUserId = ''
     cloudLastSyncedUserId = ''
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
@@ -2762,6 +2776,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     cloudBootstrapState = createInitialCloudBootstrapState()
     cloudDbAutoPullUserId = ''
     c51AttendanceAutoPullUserId = ''
+    c52TuitionAutoPullUserId = ''
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
   }
@@ -2815,6 +2830,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await startScheduleSessionRealtimeSubscription(syncId)
     await bootstrapC51AttendanceSessionReportCloudData(syncId)
     await startC51AttendanceRealtimeSubscription(syncId)
+    await bootstrapC52TuitionRecordPackageCloudData(syncId)
+    await startC52TuitionRealtimeSubscription(syncId)
   }
 }
 
@@ -3698,6 +3715,221 @@ function handleC51AttendanceRealtimeRecord(record) {
   saveAttendanceBaselineState('dreamhome', mergeResult.baselineState)
   sessionReports = mergeResult.sessionReports
   saveStoredSessionReports(sessionReports)
+  render()
+}
+
+async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || c52TuitionAutoPullUserId === cloudStatus.user?.id) {
+    return
+  }
+
+  c52TuitionAutoPullUserId = cloudStatus.user?.id || ''
+  const readiness = await checkCloudDbReadiness()
+
+  if (syncId !== cloudUserSyncId || !readiness.ok) {
+    return
+  }
+
+  const result = await pullC52TuitionRecordPackageCloudEntities({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+  })
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  if (!result.ok || result.empty) {
+    cloudDbState = {
+      ...cloudDbState,
+      readinessStatus: readiness.ready === false ? cloudDbState.readinessStatus : 'ready',
+      message: result.ok
+        ? 'C5.2C tuition cloud ready; cloud empty, giu cache Hoc phi local.'
+        : result.error || 'C5.2C tuition cloud degraded; giu cache Hoc phi local.',
+      messageTone: result.ok ? '' : 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  const mergeResult = mergeC52TuitionCloudRecordsIntoLocal({
+    tuitionRecords,
+    cloudRecords: result.records,
+  })
+
+  if (!mergeResult.changed) {
+    cloudDbState = {
+      ...cloudDbState,
+      readinessStatus: 'ready',
+      message: 'C5.2C tuition cloud ready; Hoc phi local da moi nhat.',
+      messageTone: '',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  tuitionRecords = mergeResult.tuitionRecords
+  saveStoredTuition(tuitionRecords)
+  notifications = syncTuitionNotifications(notifications)
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: 'ready',
+    message: `Da tai Hoc phi tu cloud (${result.records.length} tuition_record_package).`,
+    messageTone: 'success',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+async function writeC52TuitionRecordPackageThroughCloud(tuitionRecord, reason = 'tuition-local-save') {
+  const accessState = buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  })
+  const access = canWriteC52TuitionRecordPackageEntity(accessState)
+
+  if (!access.canWrite) {
+    if (cloudStatus.authStatus === 'signed-in') {
+      cloudDbState = {
+        ...cloudDbState,
+        message: access.teacherConsultantHold || C52_TEACHER_CONSULTANT_WRITE_HOLD,
+        messageTone: 'error',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+    }
+    return { ok: false, skipped: true, error: access.teacherConsultantHold || access.message }
+  }
+
+  const runId = ++c52TuitionCloudWriteRunId
+  const readiness = await checkCloudDbReadiness()
+
+  if (!readiness.ok) {
+    if (runId === c52TuitionCloudWriteRunId) {
+      cloudDbState = {
+        ...cloudDbState,
+        readinessStatus: 'error',
+        message: readiness.error,
+        messageTone: 'error',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      render()
+    }
+    return readiness
+  }
+
+  const writeAccessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: readiness.ready !== false,
+  })
+  const result = await upsertC52TuitionRecordPackageCloudEntities({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    tuitionRecords: tuitionRecord ? [tuitionRecord] : [],
+    userId: readiness.user?.id,
+    accessState: writeAccessState,
+  })
+
+  if (runId !== c52TuitionCloudWriteRunId) {
+    return result
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
+    message: result.ok
+      ? `Da ghi cloud Hoc phi (${reason}): ${result.count || 0} tuition_record_package.`
+      : result.error || 'C5.2C tuition cloud degraded; local da duoc giu.',
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+  return result
+}
+
+async function startC52TuitionRealtimeSubscription(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || c52TuitionRealtimeCenterId === 'dreamhome') {
+    return
+  }
+
+  const readiness = await checkCloudDbReadiness()
+
+  if (syncId !== cloudUserSyncId || !readiness.ok) {
+    return
+  }
+
+  stopC52TuitionRealtimeSubscription()
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: true,
+  })
+  const subscription = subscribeToC52TuitionRecordPackageRealtime({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    accessState,
+    onCloudRecord: handleC52TuitionRealtimeRecord,
+    onStatusChange: handleC52TuitionRealtimeStatus,
+  })
+
+  if (!subscription.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: subscription.message,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  c52TuitionRealtimeSubscription = subscription
+  c52TuitionRealtimeCenterId = readiness.centerId
+}
+
+function stopC52TuitionRealtimeSubscription() {
+  c52TuitionRealtimeSubscription?.cleanup?.()
+  c52TuitionRealtimeSubscription = null
+  c52TuitionRealtimeCenterId = ''
+}
+
+function handleC52TuitionRealtimeStatus(status) {
+  if (!status || status.status !== 'CHANNEL_ERROR' && status.status !== 'TIMED_OUT') {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    message: status.message || 'C5.2C tuition realtime degraded; giu cache local.',
+    messageTone: 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+function handleC52TuitionRealtimeRecord(record) {
+  const mergeResult = mergeC52TuitionCloudRecordsIntoLocal({
+    tuitionRecords,
+    cloudRecords: [record],
+  })
+
+  if (!mergeResult.ok || !mergeResult.changed) {
+    return
+  }
+
+  tuitionRecords = mergeResult.tuitionRecords
+  saveStoredTuition(tuitionRecords)
+  notifications = syncTuitionNotifications(notifications)
   render()
 }
 
@@ -6821,8 +7053,12 @@ function bindEvents() {
 
     const normalizedValues = normalizeTuitionFormValues(tuitionFormState.values)
     const currentRecord = tuitionRecords.find((record) => record.id === tuitionFormState.tuitionId)
+    const savedAt = new Date().toISOString()
     const nextRecord = tuitionFormState.mode === 'renew' && currentRecord
-      ? createRenewedTuitionRecord(currentRecord, normalizedValues)
+      ? {
+          ...createRenewedTuitionRecord(currentRecord, normalizedValues),
+          updatedAt: savedAt,
+        }
       : {
           id: tuitionFormState.tuitionId || `tuition-${tuitionFormState.studentId}-${Date.now()}`,
           studentId: tuitionFormState.studentId,
@@ -6832,8 +7068,10 @@ function bindEvents() {
           currentTermId:
             currentRecord?.currentTermId ??
             `term-${tuitionFormState.tuitionId || tuitionFormState.studentId}-${Date.now()}`,
-          startedAt: currentRecord?.startedAt ?? new Date().toISOString(),
+          startedAt: currentRecord?.startedAt ?? savedAt,
           termHistory: currentRecord?.termHistory ?? [],
+          createdAt: currentRecord?.createdAt ?? savedAt,
+          updatedAt: savedAt,
         }
 
     tuitionRecords = tuitionFormState.mode === 'edit' || tuitionFormState.mode === 'renew'
@@ -6850,6 +7088,7 @@ function bindEvents() {
     }
     notifications = syncTuitionNotifications(notifications)
     tuitionFormState = null
+    void writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save')
     render()
   })
 
@@ -6898,10 +7137,11 @@ function bindEvents() {
     }
 
     const normalizedPayment = normalizePaymentFormValues(tuitionPaymentFormState.values)
+    const savedAt = new Date().toISOString()
     const paymentRecord = {
       id: `payment-${tuitionPaymentFormState.tuitionId}-${Date.now()}`,
       ...normalizedPayment,
-      createdAt: new Date().toISOString(),
+      createdAt: savedAt,
     }
     let updatedTuitionRecord = null
 
@@ -6914,6 +7154,7 @@ function bindEvents() {
         ...record,
         paidAmount: record.paidAmount + normalizedPayment.amount,
         payments: [paymentRecord, ...(record.payments ?? [])],
+        updatedAt: savedAt,
       }
 
       return updatedTuitionRecord
@@ -6926,6 +7167,7 @@ function bindEvents() {
     )
     notifications = syncTuitionNotifications(notifications)
     tuitionPaymentFormState = null
+    void writeC52TuitionRecordPackageThroughCloud(updatedTuitionRecord, 'tuition-payment-save')
     render()
   })
 
