@@ -278,6 +278,16 @@ import {
   subscribeToScheduleSessionCloudRealtime,
   upsertScheduleSessionCloudEntity,
 } from './cloud-realtime-schedule-sessions.js'
+import { backfillLocalScheduleSessionsToCloud } from './cloud-schedule-session-backfill.js'
+import {
+  C51_ATTENDANCE_REALTIME_ENTITY_TYPES,
+  C51_TEACHER_CONSULTANT_WRITE_HOLD,
+  canWriteC51AttendanceEntity,
+  mergeC51CloudRecordsIntoLocal,
+  pullC51AttendanceSessionReportCloudEntities,
+  subscribeToC51AttendanceSessionReportRealtime,
+  upsertC51AttendanceSessionReportCloudEntities,
+} from './cloud-attendance-realtime.js'
 import { buildScheduleSessionBridgePreview } from './cloud-schedule-session-bridge.js'
 import {
   buildOnlineAccessState,
@@ -498,6 +508,10 @@ let teacherCloudWriteRunId = 0
 let scheduleSessionRealtimeSubscription = null
 let scheduleSessionRealtimeCenterId = ''
 let scheduleSessionCloudWriteRunId = 0
+let c51AttendanceRealtimeSubscription = null
+let c51AttendanceRealtimeCenterId = ''
+let c51AttendanceCloudWriteRunId = 0
+let c51AttendanceAutoPullUserId = ''
 let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
 let cloudGalleryState = null
@@ -2687,11 +2701,13 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
     stopScheduleSessionRealtimeSubscription()
+    stopC51AttendanceRealtimeSubscription()
     transactionImageManagerState = null
     cloudGalleryState = null
     cloudDbState = createInitialCloudDbState()
     cloudBootstrapState = createInitialCloudBootstrapState()
     cloudDbAutoPullUserId = ''
+    c51AttendanceAutoPullUserId = ''
     cloudLastSyncedUserId = ''
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
@@ -2745,6 +2761,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     cloudDbState = createInitialCloudDbState()
     cloudBootstrapState = createInitialCloudBootstrapState()
     cloudDbAutoPullUserId = ''
+    c51AttendanceAutoPullUserId = ''
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
   }
@@ -2796,6 +2813,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await startStudentRealtimeSubscription(syncId)
     await startTeacherRealtimeSubscription(syncId)
     await startScheduleSessionRealtimeSubscription(syncId)
+    await bootstrapC51AttendanceSessionReportCloudData(syncId)
+    await startC51AttendanceRealtimeSubscription(syncId)
   }
 }
 
@@ -3325,9 +3344,9 @@ async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'sched
       cloudReady: readiness.ready !== false,
       signedIn: Boolean(readiness.user),
       membershipReady: Boolean(readiness.membership),
-      membershipSqlReady: false,
-      scheduleSessionSqlReady: false,
-      realtimeReady: false,
+      membershipSqlReady: true,
+      scheduleSessionSqlReady: true,
+      realtimeReady: true,
     },
   })
 
@@ -3443,11 +3462,243 @@ function buildScheduleSessionRuntimeContext({
     cloudReady,
     signedIn,
     membershipReady,
-    membershipSqlReady: false,
-    scheduleSessionSqlReady: false,
-    realtimeReady: false,
+    membershipSqlReady: true,
+    scheduleSessionSqlReady: true,
+    realtimeReady: true,
     explicitUserAction: true,
   }
+}
+
+async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || c51AttendanceAutoPullUserId === cloudStatus.user?.id) {
+    return
+  }
+
+  c51AttendanceAutoPullUserId = cloudStatus.user?.id || ''
+  const readiness = await checkCloudDbReadiness()
+
+  if (syncId !== cloudUserSyncId || !readiness.ok) {
+    return
+  }
+
+  const result = await pullC51AttendanceSessionReportCloudEntities({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+  })
+
+  if (syncId !== cloudUserSyncId) {
+    return
+  }
+
+  if (!result.ok || result.empty) {
+    cloudDbState = {
+      ...cloudDbState,
+      readinessStatus: readiness.ready === false ? cloudDbState.readinessStatus : 'ready',
+      message: result.ok
+        ? 'C5.1 realtime ready; attendance/session report cloud empty, giữ cache local.'
+        : result.error || 'C5.1 realtime degraded; giữ cache local.',
+      messageTone: result.ok ? '' : 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  const mergeResult = mergeC51CloudRecordsIntoLocal({
+    attendanceRecords: loadStoredAttendanceRecords(),
+    baselineState: loadAttendanceBaselineState(),
+    sessionReports,
+    cloudRecords: result.records,
+  })
+
+  if (!mergeResult.changed) {
+    cloudDbState = {
+      ...cloudDbState,
+      readinessStatus: 'ready',
+      message: 'C5.1 realtime ready; attendance/session report local đã mới nhất.',
+      messageTone: '',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  saveStoredAttendanceRecords('dreamhome', mergeResult.attendanceRecords)
+  saveAttendanceBaselineState('dreamhome', mergeResult.baselineState)
+  sessionReports = mergeResult.sessionReports
+  saveStoredSessionReports(sessionReports)
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: 'ready',
+    message: `Đã tải C5.1 attendance/session report từ cloud (${result.records.length} entity).`,
+    messageTone: 'success',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+async function writeC51AttendanceSessionReportThroughCloud({
+  attendanceRecords = [],
+  baselineState = null,
+  sessionReports: reportsToWrite = [],
+  reason = 'c5-1c-local-save',
+} = {}) {
+  const accessState = buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  })
+  const access = canWriteC51AttendanceEntity(accessState)
+
+  if (!access.canWrite) {
+    if (cloudStatus.authStatus === 'signed-in') {
+      cloudDbState = {
+        ...cloudDbState,
+        message: access.teacherConsultantHold || C51_TEACHER_CONSULTANT_WRITE_HOLD,
+        messageTone: 'error',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+    }
+    return { ok: false, skipped: true, error: access.teacherConsultantHold || access.message }
+  }
+
+  const runId = ++c51AttendanceCloudWriteRunId
+  const readiness = await checkCloudDbReadiness()
+
+  if (!readiness.ok) {
+    if (runId === c51AttendanceCloudWriteRunId) {
+      cloudDbState = {
+        ...cloudDbState,
+        readinessStatus: 'error',
+        message: readiness.error,
+        messageTone: 'error',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      render()
+    }
+    return readiness
+  }
+
+  const writeAccessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: readiness.ready !== false,
+  })
+  const result = await upsertC51AttendanceSessionReportCloudEntities({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    attendanceRecords,
+    baselineState,
+    sessionReports: reportsToWrite,
+    userId: readiness.user?.id,
+    accessState: writeAccessState,
+  })
+
+  if (runId !== c51AttendanceCloudWriteRunId) {
+    return result
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
+    message: result.ok
+      ? `Đã ghi cloud C5.1 (${reason}): ${result.count || 0} entity.`
+      : result.error || 'C5.1 realtime degraded; local đã được giữ.',
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+  return result
+}
+
+async function startC51AttendanceRealtimeSubscription(syncId = cloudUserSyncId) {
+  if (!canUseCoreCloudDb() || c51AttendanceRealtimeCenterId === 'dreamhome') {
+    return
+  }
+
+  const readiness = await checkCloudDbReadiness()
+
+  if (syncId !== cloudUserSyncId || !readiness.ok) {
+    return
+  }
+
+  stopC51AttendanceRealtimeSubscription()
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: true,
+  })
+  const subscription = subscribeToC51AttendanceSessionReportRealtime({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    accessState,
+    onCloudRecord: handleC51AttendanceRealtimeRecord,
+    onStatusChange: handleC51AttendanceRealtimeStatus,
+  })
+
+  if (!subscription.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: subscription.message,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  c51AttendanceRealtimeSubscription = subscription
+  c51AttendanceRealtimeCenterId = readiness.centerId
+}
+
+function stopC51AttendanceRealtimeSubscription() {
+  c51AttendanceRealtimeSubscription?.cleanup?.()
+  c51AttendanceRealtimeSubscription = null
+  c51AttendanceRealtimeCenterId = ''
+}
+
+function handleC51AttendanceRealtimeStatus(status) {
+  if (!status || status.status !== 'CHANNEL_ERROR' && status.status !== 'TIMED_OUT') {
+    return
+  }
+
+  cloudDbState = {
+    ...cloudDbState,
+    message: status.message || 'C5.1 realtime degraded; giữ cache local.',
+    messageTone: 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+function handleC51AttendanceRealtimeRecord(record) {
+  if (!record || !C51_ATTENDANCE_REALTIME_ENTITY_TYPES.includes(record.entity_type)) {
+    return
+  }
+
+  const mergeResult = mergeC51CloudRecordsIntoLocal({
+    attendanceRecords: loadStoredAttendanceRecords(),
+    baselineState: loadAttendanceBaselineState(),
+    sessionReports,
+    cloudRecords: [record],
+  })
+
+  if (!mergeResult.ok || !mergeResult.changed) {
+    return
+  }
+
+  saveStoredAttendanceRecords('dreamhome', mergeResult.attendanceRecords)
+  saveAttendanceBaselineState('dreamhome', mergeResult.baselineState)
+  sessionReports = mergeResult.sessionReports
+  saveStoredSessionReports(sessionReports)
+  render()
 }
 
 function queueCoreCloudSync(reason = 'auto') {
@@ -3966,6 +4217,8 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
   }
 
   const counts = result.counts || getCloudBootstrapSnapshotCounts(result.data)
+  const hasCloudScheduleSessions = Array.isArray(result.data?.scheduleSessions) &&
+    result.data.scheduleSessions.length > 0
 
   if (result.empty || !hasCloudBootstrapSnapshotData(result.data)) {
     cloudBootstrapState = {
@@ -4007,6 +4260,28 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
       cloudCounts: cloudDbState.cloudCounts,
       message: appliedSnapshot.error,
       messageTone: 'error',
+      lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
+    }
+    render()
+    return
+  }
+
+  if (!hasCloudScheduleSessions) {
+    cloudBootstrapState = {
+      ...cloudBootstrapState,
+      status: CLOUD_BOOTSTRAP_STATUS.FALLBACK,
+      source: 'local-cache',
+      message: 'Dữ liệu: Cache cục bộ (cloud schedule_session trống; TKB dùng local fallback)',
+      counts,
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    cloudDbState = {
+      ...cloudDbState,
+      isLoading: false,
+      readinessStatus: 'ready',
+      cloudCounts: cloudDbState.cloudCounts,
+      message: cloudBootstrapState.message,
+      messageTone: '',
       lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
     }
     render()
@@ -6846,6 +7121,10 @@ function bindEvents() {
       note: 'Bắt đầu nhập dữ liệu nền điểm danh.',
     })
     saveAttendanceBaselineState('dreamhome', nextState)
+    void writeC51AttendanceSessionReportThroughCloud({
+      baselineState: nextState,
+      reason: 'baseline-start',
+    })
     attendanceBaselineUndoSnapshot = null
     render()
   })
@@ -6898,6 +7177,11 @@ function bindEvents() {
 
     saveStoredAttendanceRecords('dreamhome', draftRecords)
     saveAttendanceBaselineState('dreamhome', nextState)
+    void writeC51AttendanceSessionReportThroughCloud({
+      attendanceRecords: draftRecords.filter((record) => record.source === 'initialBaseline'),
+      baselineState: nextState,
+      reason: 'baseline-save',
+    })
     clearAttendanceBaselineDraft()
     attendanceBaselineUndoSnapshot = null
     attendanceBoardDetailState = null
@@ -6972,6 +7256,11 @@ function bindEvents() {
     }
     saveStoredAttendanceRecords('dreamhome', clearResult.records)
     saveAttendanceBaselineState('dreamhome', clearResult.state)
+    void writeC51AttendanceSessionReportThroughCloud({
+      attendanceRecords: clearResult.records.filter((record) => record.source === 'initialBaseline'),
+      baselineState: clearResult.state,
+      reason: 'baseline-clear',
+    })
     clearAttendanceBaselineDraft()
     attendanceBoardDetailState = null
     render()
@@ -6989,6 +7278,11 @@ function bindEvents() {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
       saveStoredAttendanceRecords('dreamhome', restored.records)
       saveAttendanceBaselineState('dreamhome', restored.state)
+      void writeC51AttendanceSessionReportThroughCloud({
+        attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
+        baselineState: restored.state,
+        reason: 'baseline-undo-clear',
+      })
       attendanceBaselineDraftRecords = Array.isArray(attendanceBaselineUndoSnapshot.draftRecords)
         ? attendanceBaselineUndoSnapshot.draftRecords
         : null
@@ -7000,6 +7294,11 @@ function bindEvents() {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
       saveStoredAttendanceRecords('dreamhome', restored.records)
       saveAttendanceBaselineState('dreamhome', restored.state)
+      void writeC51AttendanceSessionReportThroughCloud({
+        attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
+        baselineState: restored.state,
+        reason: 'baseline-undo',
+      })
     }
 
     attendanceBaselineUndoSnapshot = null
@@ -7031,6 +7330,10 @@ function bindEvents() {
         : 'Chốt dữ liệu nền khi chưa có bản ghi nền.',
     })
     saveAttendanceBaselineState('dreamhome', nextState)
+    void writeC51AttendanceSessionReportThroughCloud({
+      baselineState: nextState,
+      reason: 'baseline-lock',
+    })
     attendanceBaselineUndoSnapshot = null
     render()
   })
@@ -7052,6 +7355,10 @@ function bindEvents() {
       note: 'Mở khóa dữ liệu nền điểm danh.',
     })
     saveAttendanceBaselineState('dreamhome', nextState)
+    void writeC51AttendanceSessionReportThroughCloud({
+      baselineState: nextState,
+      reason: 'baseline-unlock',
+    })
     attendanceBaselineUndoSnapshot = null
     render()
   })
@@ -8507,6 +8814,10 @@ function bindEvents() {
         })
 
         saveStoredAttendanceRecords('dreamhome', result.records)
+        void writeC51AttendanceSessionReportThroughCloud({
+          attendanceRecords: result.savedRecords,
+          reason: 'admin-attendance-save',
+        })
         scheduleAdminAttendanceState = {
           ...createScheduleAdminAttendanceState(occurrence, result.records),
           saveState: 'saved',
@@ -8602,6 +8913,11 @@ function bindEvents() {
 
     saveStoredSessionReports(sessionReports)
     saveStoredAttendanceRecords('dreamhome', teacherAttendanceResult.records)
+    void writeC51AttendanceSessionReportThroughCloud({
+      attendanceRecords: teacherAttendanceResult.savedRecords,
+      sessionReports: [savedReport],
+      reason: 'teacher-session-report-attendance',
+    })
     sessionReportAttendanceState = {
       ...sessionReportAttendanceState,
       attendance: savedReport.attendance,
@@ -8706,6 +9022,10 @@ function bindEvents() {
       : [savedReport, ...sessionReports]
 
     saveStoredSessionReports(sessionReports)
+    void writeC51AttendanceSessionReportThroughCloud({
+      sessionReports: [savedReport],
+      reason: 'session-report-guest-add',
+    })
     sessionReportAttendanceState = {
       ...nextAttendanceState,
       guestParticipants: savedReport.guestParticipants,
@@ -8740,6 +9060,10 @@ function bindEvents() {
         : [savedReport, ...sessionReports]
 
       saveStoredSessionReports(sessionReports)
+      void writeC51AttendanceSessionReportThroughCloud({
+        sessionReports: [savedReport],
+        reason: 'session-report-guest-delete',
+      })
       sessionReportAttendanceState = {
         ...nextAttendanceState,
         guestParticipants: savedReport.guestParticipants,
@@ -8815,6 +9139,10 @@ function bindEvents() {
         : [savedReport, ...sessionReports]
 
       saveStoredSessionReports(sessionReports)
+      void writeC51AttendanceSessionReportThroughCloud({
+        sessionReports: [savedReport],
+        reason: 'session-report-learning-delete',
+      })
       sessionReportLearningState = {
         ...nextLearningState,
         groups: savedReport.learningGroups,
@@ -8944,6 +9272,10 @@ function bindEvents() {
       : [savedReport, ...sessionReports]
 
     saveStoredSessionReports(sessionReports)
+    void writeC51AttendanceSessionReportThroughCloud({
+      sessionReports: [savedReport],
+      reason: 'session-report-learning-save',
+    })
     sessionReportLearningState = {
       ...nextLearningState,
       groups: savedReport.learningGroups,
@@ -9002,6 +9334,10 @@ function bindEvents() {
       : [savedReport, ...sessionReports]
 
     saveStoredSessionReports(sessionReports)
+    void writeC51AttendanceSessionReportThroughCloud({
+      sessionReports: [savedReport],
+      reason: 'session-report-extra-save',
+    })
     sessionReportExtraState = nextExtraState
     render()
   })
@@ -10312,6 +10648,19 @@ function updateClock() {
   clock.textContent = `${date} ${time}`
 }
 
+function installManualCloudBackfillHelpers() {
+  window.__ichessCenterOS = {
+    ...(window.__ichessCenterOS || {}),
+    backfillScheduleSessionsToCloud: (options = {}) =>
+      backfillLocalScheduleSessionsToCloud({
+        ...options,
+        scheduleSessions,
+        visibleScheduleSessions: getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate),
+      }),
+  }
+}
+
+installManualCloudBackfillHelpers()
 render()
 initializeSupabaseAuth()
 
