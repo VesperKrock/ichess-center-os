@@ -3,11 +3,23 @@ export const initialReportFilters = {
   weekStartDate: getWeekStartDate(getTodayDate()),
 }
 
+export const reportPendingTaskItems = [
+  { key: 'diemDanh', label: 'Điểm danh' },
+  { key: 'tbhp', label: 'TBHP' },
+  { key: 'nhacThuHp', label: 'Nhắc thu HP' },
+  { key: 'chamSocPhuHuynhDinhKy', label: 'Chăm sóc phụ huynh định kỳ' },
+  { key: 'duaDonBe', label: 'Đưa đón bé' },
+  { key: 'trucNhatVeSinh', label: 'Trực nhật vệ sinh' },
+  { key: 'dangBaiDuaTin', label: 'Đăng bài đưa tin' },
+]
+
 export const initialReportDraft = {
   dailyTasks: '',
   dailyIssues: '',
   operationNote: '',
   ownerName: 'Admin DreamHome',
+  pendingTasks: {},
+  otherPendingTasks: '',
 }
 
 const DATA_SOURCE_NOTE =
@@ -140,6 +152,12 @@ export function buildReportDownloadText({
     '',
     'Báo cáo ngày',
     `Công việc ngày: ${activeDraft.dailyTasks || 'Chưa nhập công việc ngày.'}`,
+    'VIỆC CHƯA THỰC HIỆN',
+    ...reportPendingTaskItems.map((item) => {
+      const status = activeDraft.pendingTasks?.[item.key] ? 'Đã xong' : 'Chưa xong'
+      return `- [${status}] ${item.label}`
+    }),
+    `Công việc khác: ${activeDraft.otherPendingTasks || 'Chưa nhập công việc khác.'}`,
     `Tình huống/vấn đề: ${activeDraft.dailyIssues || 'Chưa ghi nhận tình huống/vấn đề.'}`,
     `Doanh thu trong ngày: ${formatMoney(data.dailyIncome)}`,
     `Chi phí trong ngày: ${formatMoney(data.dailyExpense)}`,
@@ -150,7 +168,7 @@ export function buildReportDownloadText({
     `Tuần đang xem: ${data.weekLabel}`,
     `Tổng doanh thu: ${formatMoney(data.weeklyIncome)}`,
     `Tổng chi phí: ${formatMoney(data.weeklyExpense)}`,
-    `Chênh lệch thu - chi: ${formatMoney(data.weeklyBalance)}`,
+    `Còn lại: ${formatMoney(data.weeklyBalance)}`,
     `Tổng học viên: ${data.studentCount}`,
     `Học viên đi học trong tuần: ${data.attendanceSummary.presentCount}`,
     `Học viên vắng/nghỉ trong tuần: ${data.attendanceSummary.absentCount}`,
@@ -207,13 +225,23 @@ export function buildReportPrintHtml({
         <p>Tuần đang xem: ${escapeHtml(data.weekLabel)}</p>
         <h2>Báo cáo ngày</h2>
         <p>Công việc ngày: ${escapeHtml(activeDraft.dailyTasks || 'Chưa nhập công việc ngày.')}</p>
+        <h2>VIỆC CHƯA THỰC HIỆN</h2>
+        <ul>
+          ${reportPendingTaskItems
+            .map((item) => {
+              const status = activeDraft.pendingTasks?.[item.key] ? 'Đã xong' : 'Chưa xong'
+              return `<li>${escapeHtml(status)} - ${escapeHtml(item.label)}</li>`
+            })
+            .join('')}
+        </ul>
+        <p>Công việc khác: ${escapeHtml(activeDraft.otherPendingTasks || 'Chưa nhập công việc khác.')}</p>
         <p>Tình huống/vấn đề: ${escapeHtml(activeDraft.dailyIssues || 'Chưa ghi nhận tình huống/vấn đề.')}</p>
         <p>Doanh thu trong ngày: ${escapeHtml(formatMoney(data.dailyIncome))}</p>
         <p>Chi phí trong ngày: ${escapeHtml(formatMoney(data.dailyExpense))}</p>
         <h2>Báo cáo tuần</h2>
         <p>Tổng doanh thu: ${escapeHtml(formatMoney(data.weeklyIncome))}</p>
         <p>Tổng chi phí: ${escapeHtml(formatMoney(data.weeklyExpense))}</p>
-        <p>Thu - chi: ${escapeHtml(formatMoney(data.weeklyBalance))}</p>
+        <p>Còn lại: ${escapeHtml(formatMoney(data.weeklyBalance))}</p>
         <table>
           <thead><tr><th>Tuần</th><th>Doanh thu</th><th>Chi phí</th></tr></thead>
           <tbody>
@@ -247,7 +275,7 @@ function renderDailyReport(data, draft) {
       <div class="report-stat-row">
         ${renderReportStat('Doanh thu trong ngày', formatMoney(data.dailyIncome), 'income')}
         ${renderReportStat('Chi phí trong ngày', formatMoney(data.dailyExpense), 'expense')}
-        ${renderReportStat('Chênh lệch', formatMoney(data.dailyIncome - data.dailyExpense), 'balance')}
+        ${renderReportStat('Còn lại', formatMoney(data.dailyIncome - data.dailyExpense), 'balance')}
       </div>
       ${
         data.dailyTransactions.length
@@ -258,6 +286,7 @@ function renderDailyReport(data, draft) {
         ${renderReportTextarea('Công việc ngày', 'dailyTasks', draft.dailyTasks, 'Các việc đã xử lý trong ngày')}
         ${renderReportTextarea('Tình huống/vấn đề xảy ra trong ngày', 'dailyIssues', draft.dailyIssues, 'Tình huống phát sinh, việc cần theo dõi')}
         ${renderReportTextarea('Ghi chú vận hành', 'operationNote', draft.operationNote, 'Ghi chú bàn giao hoặc lưu ý nội bộ')}
+        ${renderPendingTaskBox(draft)}
         <label>
           <span>Người phụ trách</span>
           <input
@@ -285,7 +314,7 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
       <div class="report-stat-row">
         ${renderReportStat('Tổng doanh thu', formatMoney(data.weeklyIncome), 'income')}
         ${renderReportStat('Tổng chi phí', formatMoney(data.weeklyExpense), 'expense')}
-        ${renderReportStat('Thu - chi', formatMoney(data.weeklyBalance), 'balance')}
+        ${renderReportStat('Còn lại', formatMoney(data.weeklyBalance), 'balance')}
         ${renderReportStat('Tổng học viên', data.studentCount.toLocaleString('vi-VN'), 'neutral')}
       </div>
       <div class="report-chart-grid">
@@ -322,6 +351,36 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
           }
         </section>
       </div>
+    </section>
+  `
+}
+
+function renderPendingTaskBox(draft) {
+  const pendingTasks = draft.pendingTasks && typeof draft.pendingTasks === 'object' ? draft.pendingTasks : {}
+
+  return `
+    <section class="report-pending-tasks" aria-labelledby="report-pending-tasks-title">
+      <div class="report-pending-tasks-heading">
+        <h5 id="report-pending-tasks-title">VIỆC CHƯA THỰC HIỆN</h5>
+        <span>Checklist công việc ngày</span>
+      </div>
+      <div class="report-pending-task-list">
+        ${reportPendingTaskItems
+          .map(
+            (item) => `
+              <label class="report-pending-task-item">
+                <input
+                  type="checkbox"
+                  ${pendingTasks[item.key] ? 'checked' : ''}
+                  data-report-pending-task="${escapeAttribute(item.key)}"
+                />
+                <span>${escapeHtml(item.label)}</span>
+              </label>
+            `,
+          )
+          .join('')}
+      </div>
+      ${renderReportTextarea('Công việc khác', 'otherPendingTasks', draft.otherPendingTasks, 'Công việc khác...')}
     </section>
   `
 }

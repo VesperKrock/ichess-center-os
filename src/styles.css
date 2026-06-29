@@ -1,5 +1,14 @@
 :root {
   --app-bottom-safe-area: 56px;
+  --ichess-bg: #050607;
+  --ichess-surface: #10151c;
+  --ichess-surface-soft: #151b24;
+  --ichess-border: rgba(180, 202, 232, 0.18);
+  --ichess-text: #f4f7fb;
+  --ichess-muted: #9fb1c7;
+  --ichess-accent: #1f5d99;
+  --ichess-accent-soft: rgba(31, 93, 153, 0.18);
+  --ichess-designer-slot-border: rgba(160, 184, 214, 0.16);
   color: #f4f7fb;
   background: #050607;
   font-family:
@@ -301,9 +310,35 @@ h3 {
 }
 
 .desktop-surface {
+  position: relative;
   min-height: calc(100vh - 84px);
   padding: 4px;
   background: transparent;
+}
+
+.designer-theme-hook {
+  --designer-surface-accent: var(--ichess-accent);
+}
+
+.designer-image-slot,
+.module-visual-placeholder {
+  pointer-events: none;
+}
+
+.center-brand-slot {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.center-logo-slot,
+.center-banner-slot,
+.module-window-hero-slot {
+  display: block;
+  width: 0;
+  height: 0;
 }
 
 .window-layer {
@@ -356,6 +391,35 @@ h3 {
   justify-content: center;
 }
 
+.module-button .module-card-label {
+  position: relative;
+  z-index: 1;
+  min-height: 78px;
+}
+
+.module-button .module-card-icon-slot,
+.module-button .module-card-visual-slot {
+  position: absolute;
+  z-index: 0;
+  display: block;
+  min-height: 0;
+  border-color: var(--ichess-designer-slot-border);
+}
+
+.module-button .module-card-icon-slot {
+  top: 8px;
+  left: 8px;
+  width: 14px;
+  height: 14px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.module-button .module-card-visual-slot {
+  inset: 8px;
+  border-radius: 8px;
+}
+
 .module-button .module-notification-badge {
   position: absolute;
   top: 8px;
@@ -406,6 +470,15 @@ h3 {
   justify-content: flex-start;
 }
 
+.module-list.list .module-button .module-card-label {
+  min-height: 26px;
+}
+
+.module-list.list .module-button .module-card-icon-slot,
+.module-list.list .module-button .module-card-visual-slot {
+  display: none;
+}
+
 .desktop-window {
   position: absolute;
   display: flex;
@@ -428,6 +501,7 @@ h3 {
 
 .window-titlebar {
   display: flex;
+  position: relative;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -457,6 +531,12 @@ h3 {
   border-color: rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.055);
   font-weight: 900;
+}
+
+.module-window-hero-slot {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
 }
 
 .module-notification-bell {
@@ -2541,6 +2621,69 @@ h3 {
   gap: 10px;
 }
 
+.report-pending-tasks {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.report-pending-tasks-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.report-pending-tasks-heading h5 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.88rem;
+}
+
+.report-pending-tasks-heading span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.report-pending-task-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.report-pending-task-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(160, 184, 214, 0.14);
+  border-radius: 7px;
+  padding: 8px;
+  color: #d8e2ef;
+  background: rgba(8, 13, 20, 0.52);
+  font-size: 0.83rem;
+  font-weight: 850;
+}
+
+.report-pending-task-item input {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  accent-color: #76a4e7;
+}
+
+.report-pending-task-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #d8e2ef;
+  text-transform: none;
+}
+
 .report-chart-grid {
   grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
 }
@@ -2758,6 +2901,113 @@ h3 {
   background: rgba(255, 255, 255, 0.025);
   font-size: 0.84rem;
   line-height: 1.4;
+}
+
+.finance-workspace-module {
+  display: grid;
+  gap: 14px;
+  color: #d8e2ef;
+}
+
+.finance-workspace-header,
+.finance-workspace-overview article,
+.finance-workspace-card {
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 13, 20, 0.68);
+}
+
+.finance-workspace-header {
+  padding: 14px;
+}
+
+.finance-workspace-header h3,
+.finance-workspace-card h4 {
+  margin: 0;
+  color: #ffffff;
+}
+
+.finance-workspace-header p,
+.finance-workspace-card p,
+.finance-workspace-overview p {
+  margin: 6px 0 0;
+  color: #9fb1c7;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.finance-workspace-card small {
+  display: block;
+  margin-top: 7px;
+  color: #cfe0ff;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.4;
+}
+
+.finance-workspace-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.finance-workspace-overview article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.finance-workspace-overview span,
+.finance-workspace-card span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.finance-workspace-overview strong {
+  color: #ffffff;
+  font-size: 1rem;
+}
+
+.finance-workspace-sections {
+  display: grid;
+  gap: 10px;
+}
+
+.finance-workspace-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.finance-workspace-card.is-primary {
+  border-color: rgba(118, 164, 231, 0.38);
+  background: rgba(31, 93, 153, 0.22);
+}
+
+.finance-workspace-card.is-note {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.finance-workspace-card button {
+  min-height: 36px;
+  border: 1px solid rgba(118, 164, 231, 0.48);
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: #edf4fc;
+  background: #1f5d99;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.finance-workspace-card button:hover,
+.finance-workspace-card button:focus-visible {
+  border-color: rgba(178, 213, 255, 0.82);
+  outline: none;
 }
 
 .inventory-module {

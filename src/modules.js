@@ -113,6 +113,24 @@ export const modules = [
     ],
   },
   {
+    id: 'nhom-tai-chinh',
+    name: 'Nhóm Tài chính',
+    shortDescription: 'Wrapper UI an toàn cho Sổ quỹ và Thu chi; Sổ quỹ đặt trước Thu chi, không merge logic.',
+    status: 'in-progress',
+    plannedFeatures: [
+      'Tổng quan tài chính nhẹ',
+      'Lối vào Sổ quỹ',
+      'Lối vào Thu chi',
+      'Ghi chú dashboard nâng cao cho phase sau',
+    ],
+    plannedData: [
+      'Không tạo storage mới',
+      'Không đổi logic Thu chi',
+      'Không đổi logic Sổ quỹ',
+      'Không merge dữ liệu tài chính',
+    ],
+  },
+  {
     id: 'thu-chi',
     name: 'Thu chi',
     shortDescription: 'Ghi nhận khoản thu, khoản chi và tổng hợp giao dịch theo ngày.',

@@ -108,6 +108,7 @@ import {
   validateCashflowCategoryForm,
   validateCashflowForm,
 } from './cashflow-module.js'
+import { renderFinanceWorkspaceModule } from './finance-workspace-module.js'
 import { sampleInventoryItems } from './inventory-data.js'
 import { sampleInventoryRequests } from './inventory-request-data.js'
 import { sampleParentConsultations } from './parent-consultation-data.js'
@@ -1196,12 +1197,16 @@ function renderDashboard() {
 
         return `
           <button
-            class="module-button"
+            class="module-button designer-theme-hook"
             type="button"
             data-module-id="${moduleItem.id}"
             data-shortcut-id="${moduleItem.id}"
+            data-module-title="${escapeAttribute(moduleItem.name)}"
+            data-designer-hook="module-card"
           >
-            <span>${moduleItem.name}</span>
+            <span class="module-card-icon-slot designer-image-slot" aria-hidden="true"></span>
+            <span class="module-card-label">${moduleItem.name}</span>
+            <span class="module-card-visual-slot module-visual-placeholder" aria-hidden="true"></span>
             ${
               unreadCount
                 ? `<span class="module-notification-badge" aria-label="${unreadCount} thông báo chưa đọc">${unreadCount}</span>`
@@ -1217,6 +1222,10 @@ function renderDashboard() {
     <section class="dashboard" aria-labelledby="dashboard-title">
       <h1 class="sr-only" id="dashboard-title">Desktop DreamHome</h1>
       <div class="desktop-surface">
+        <div class="center-brand-slot designer-theme-hook" data-designer-hook="center-brand" aria-hidden="true">
+          <span class="center-logo-slot designer-image-slot"></span>
+          <span class="center-banner-slot designer-image-slot"></span>
+        </div>
         <div class="module-list ${currentViewMode}" aria-label="Danh sách chức năng">
           ${moduleButtons}
         </div>
@@ -1255,12 +1264,16 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window ${windowItem.maximized ? 'maximized' : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
+      data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
+      data-module-title="${escapeAttribute(headerTitle)}"
+      data-designer-hook="module-window"
       aria-labelledby="${windowItem.id}-title"
     >
       <div class="window-titlebar" data-drag-window-id="${windowItem.id}">
+        <span class="module-window-hero-slot designer-image-slot" aria-hidden="true"></span>
         <h2 id="${windowItem.id}-title">${headerTitle}</h2>
         <div class="window-controls">
           ${renderModuleNotificationBell(windowItem)}
@@ -1423,6 +1436,10 @@ function renderWindowBody(windowItem) {
       getCurrentMonthKey(),
       tuitionRollbackPreviewState,
     )
+  }
+
+  if (moduleItem.id === 'nhom-tai-chinh') {
+    return renderFinanceWorkspaceModule()
   }
 
   if (moduleItem.id === 'thu-chi') {
@@ -5795,6 +5812,27 @@ function bindEvents() {
           [control.dataset.reportDraftField]: control.value,
         },
       }
+    })
+  })
+
+  document.querySelectorAll('[data-report-pending-task]').forEach((control) => {
+    control.addEventListener('change', () => {
+      reportState = {
+        ...reportState,
+        draft: {
+          ...reportState.draft,
+          pendingTasks: {
+            ...(reportState.draft.pendingTasks || {}),
+            [control.dataset.reportPendingTask]: control.checked,
+          },
+        },
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-finance-open-module]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openModuleWindow(button.dataset.financeOpenModule)
     })
   })
 
