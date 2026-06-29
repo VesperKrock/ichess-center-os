@@ -500,6 +500,7 @@ let inventoryItems = getStoredInventory(sampleInventoryItems)
 let inventoryMovements = getStoredInventoryMovements()
 let inventoryRequests = getStoredInventoryRequests(sampleInventoryRequests)
 notifications = syncAppNotifications(notifications)
+let activeNotificationDataCenterId = getCurrentStorageCenterId()
 let inventoryFilters = { ...initialInventoryFilters }
 let inventoryMovementFilters = { ...initialInventoryMovementFilters }
 let inventoryRequestFilters = { ...initialInventoryRequestFilters }
@@ -543,6 +544,7 @@ let c52TuitionAutoPullUserId = ''
 let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
 let cloudGalleryState = null
+let activeLocalDataCenterId = getCurrentStorageCenterId()
 
 function getCurrentResolvedCenterId() {
   const binding = resolveAppCenterBinding(cloudStatus)
@@ -551,6 +553,26 @@ function getCurrentResolvedCenterId() {
 
 function isProductionCenter(centerId = getCurrentResolvedCenterId()) {
   return centerId === PRODUCTION_CENTER_ID
+}
+
+function canRenderCenterScopedModuleBadges() {
+  const storageCenterId = getCurrentStorageCenterId()
+
+  if (cloudStatus.authStatus === 'signed-in') {
+    const binding = resolveAppCenterBinding(cloudStatus)
+
+    return Boolean(binding.currentCenterId) &&
+      binding.status === 'bound' &&
+      activeLocalDataCenterId === binding.currentCenterId &&
+      activeNotificationDataCenterId === binding.currentCenterId &&
+      storageCenterId === binding.currentCenterId
+  }
+
+  return activeLocalDataCenterId === storageCenterId && activeNotificationDataCenterId === storageCenterId
+}
+
+function getCenterScopedNotificationsForRender() {
+  return canRenderCenterScopedModuleBadges() ? notifications : []
 }
 
 function resetTransientStateForCenterSwitch() {
@@ -611,10 +633,6 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes([])
   attendanceBoardNotes = getStoredAttendanceBoardNotes([])
   tuitionRecords = getStoredTuition(useSampleFallback ? createSampleTuitionRecords(students) : [])
-  notifications = syncAppNotifications(
-    getStoredNotifications(useSampleFallback ? createSampleNotifications() : []),
-  )
-  deletedNotificationIds = getDeletedNotificationIds()
   cashflowTransactions = getStoredCashflow(useSampleFallback ? sampleCashflowTransactions : [])
   cashflowCategories = getStoredCashflowCategories(useSampleFallback ? sampleCashflowCategories : [])
   cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
@@ -623,6 +641,12 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   inventoryItems = getStoredInventory(useSampleFallback ? sampleInventoryItems : [])
   inventoryMovements = getStoredInventoryMovements([])
   inventoryRequests = getStoredInventoryRequests(useSampleFallback ? sampleInventoryRequests : [])
+  notifications = syncAppNotifications(
+    getStoredNotifications(useSampleFallback ? createSampleNotifications() : []),
+  )
+  deletedNotificationIds = getDeletedNotificationIds()
+  activeLocalDataCenterId = getCurrentStorageCenterId()
+  activeNotificationDataCenterId = getCurrentStorageCenterId()
   resetTransientStateForCenterSwitch()
 }
 
@@ -1276,7 +1300,9 @@ function restoreParentContactFormScrollTop() {
 }
 
 function renderDashboard() {
-  const unreadCountsByModule = getUnreadNotificationCountsByModule(notifications)
+  const unreadCountsByModule = canRenderCenterScopedModuleBadges()
+    ? getUnreadNotificationCountsByModule(getCenterScopedNotificationsForRender())
+    : {}
   const moduleButtons = getOrderedModules()
     .map(
       (moduleItem) => {
@@ -1382,8 +1408,9 @@ function renderModuleNotificationBell(windowItem) {
     return ''
   }
 
+  const renderableNotifications = getCenterScopedNotificationsForRender()
   const moduleNotifications = moduleId
-    ? notifications.filter((notification) => notification.sourceModule === moduleId)
+    ? renderableNotifications.filter((notification) => notification.sourceModule === moduleId)
     : []
   const unreadCount = moduleNotifications.filter((notification) => !notification.readAt).length
   const moduleNotificationItems = moduleNotifications
@@ -1941,7 +1968,7 @@ function renderSystemOverlay() {
 }
 
 function renderNotificationCenterV15J(unreadCount) {
-  const visibleNotifications = filterNotifications(notifications, {
+  const visibleNotifications = filterNotifications(getCenterScopedNotificationsForRender(), {
     readState: notificationFilters.readState,
   })
   const unreadVisibleCount = visibleNotifications.filter((notification) => !notification.readAt).length
@@ -2026,7 +2053,7 @@ function renderNotificationCenterV15J(unreadCount) {
 }
 
 function renderNotificationCenterHotfix(unreadCount) {
-  const visibleNotifications = filterNotifications(notifications, {
+  const visibleNotifications = filterNotifications(getCenterScopedNotificationsForRender(), {
     readState: notificationFilters.readState,
   })
   const unreadVisibleCount = visibleNotifications.filter((notification) => !notification.readAt).length
@@ -2198,8 +2225,9 @@ function getSeverityRank(severity) {
 }
 
 function renderNotificationCenter(unreadCount) {
-  const readCount = notifications.length - unreadCount
-  const notificationItems = notifications
+  const renderableNotifications = getCenterScopedNotificationsForRender()
+  const readCount = renderableNotifications.length - unreadCount
+  const notificationItems = renderableNotifications
     .map(
       (notification) => `
         <article
@@ -5792,7 +5820,7 @@ function bindEvents() {
   })
 
   document.querySelector('[data-notification-action="mark-all-read"]')?.addEventListener('click', () => {
-    const visibleNotificationIds = filterNotifications(notifications, {
+    const visibleNotificationIds = filterNotifications(getCenterScopedNotificationsForRender(), {
       readState: notificationFilters.readState,
     })
       .filter((notification) => !notification.readAt)
@@ -11074,7 +11102,7 @@ function getNotificationPanelPosition(bellButton) {
 }
 
 function getUnreadNotificationCount() {
-  return countUnreadNotifications(notifications)
+  return countUnreadNotifications(getCenterScopedNotificationsForRender())
 }
 
 function syncTuitionNotifications(currentNotifications) {

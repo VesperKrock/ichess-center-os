@@ -1,4 +1,4 @@
-﻿import assert from 'assert'
+import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
@@ -73,7 +73,7 @@ const docs = readUtf8(docPath)
   'read-only verification plan',
   'SQL/manual Supabase plan',
   'Teacher Portal / Super Admin internal hold',
-  'anh Háº£i',
+  'anh Hải',
   'INTERNAL ONLY',
   "NOT CUSTOMER-FACING",
   'C6.1A',
@@ -117,8 +117,8 @@ const docs = readUtf8(docPath)
   '## 12.',
   '## 13.',
   '## 14. Safety rules cho C6.1',
-  '## 15. Read-only verification plan cho C6.1 náº¿u cáº§n',
-  '## 16. SQL/manual Supabase plan náº¿u cáº§n',
+  '## 15. Read-only verification plan cho C6.1 nếu cần',
+  '## 16. SQL/manual Supabase plan nếu cần',
   '## 17. Teacher Portal / Super Admin internal hold',
   '## 18. C6.1 proposal',
   '## 19. PASS / NEEDS REVIEW criteria',
@@ -148,6 +148,14 @@ const allowedChangedPaths = new Set([
   'tests/supabase-c6-1d-1-taskbar-profile-wording-polish-smoke.js',
   'docs/supabase-c6-1e-checkpoint-review-dreamhome-production-empty-center.md',
   'tests/supabase-c6-1e-checkpoint-review-dreamhome-production-empty-center-smoke.js',
+  'docs/supabase-c6-2a-online-local-production-staging-qa-audit.md',
+  'docs/supabase-c6-2b-startup-badge-cache-flicker-hotfix.md',
+  'docs/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang.md',
+  'docs/supabase-c6-2e-checkpoint-review-production-staging-hardening.md',
+  'tests/supabase-c6-2a-online-local-production-staging-qa-audit-smoke.js',
+  'tests/supabase-c6-2b-startup-badge-cache-flicker-hotfix-smoke.js',
+  'tests/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang-smoke.js',
+  'tests/supabase-c6-2e-checkpoint-review-production-staging-hardening-smoke.js',
   'src/styles.css',
   'src/supabase-auth.js',
   'src/app-center-binding.js',

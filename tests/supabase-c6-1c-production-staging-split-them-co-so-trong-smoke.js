@@ -1,4 +1,4 @@
-﻿import assert from 'assert'
+import assert from 'assert'
 import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
@@ -68,12 +68,12 @@ const applyBody = stripSqlComments(applySql)
   'production/staging split',
   'dreamhome` = staging/test sandbox',
   'dreamhome_prod',
-  'thĂªm cÆ¡ sá»Ÿ trá»‘ng',
-  'khĂ´ng nhĂ¢n báº£n cÆ¡ sá»Ÿ',
-  'KhĂ´ng xĂ³a Angel Wings',
-  'KhĂ´ng migrate Angel Wings',
-  'Chá»‹ BĂ­ch lĂ  admin cÆ¡ sá»Ÿ DreamHome production',
-  'C6.1C chÆ°a táº¡o Auth user cho chá»‹ BĂ­ch',
+  'thêm cơ sở trống',
+  'không nhân bản cơ sở',
+  'Không xóa Angel Wings',
+  'Không migrate Angel Wings',
+  'Chị Bích là admin cơ sở DreamHome production',
+  'C6.1C chưa tạo Auth user cho chị Bích',
   '<BICH_AUTH_USER_ID>',
   'center_members',
   'center_cloud_entities',
@@ -165,6 +165,14 @@ const allowedChangedPaths = new Set([
   'tests/supabase-c6-1d-1-taskbar-profile-wording-polish-smoke.js',
   'docs/supabase-c6-1e-checkpoint-review-dreamhome-production-empty-center.md',
   'tests/supabase-c6-1e-checkpoint-review-dreamhome-production-empty-center-smoke.js',
+  'docs/supabase-c6-2a-online-local-production-staging-qa-audit.md',
+  'docs/supabase-c6-2b-startup-badge-cache-flicker-hotfix.md',
+  'docs/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang.md',
+  'docs/supabase-c6-2e-checkpoint-review-production-staging-hardening.md',
+  'tests/supabase-c6-2a-online-local-production-staging-qa-audit-smoke.js',
+  'tests/supabase-c6-2b-startup-badge-cache-flicker-hotfix-smoke.js',
+  'tests/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang-smoke.js',
+  'tests/supabase-c6-2e-checkpoint-review-production-staging-hardening-smoke.js',
   'src/styles.css',
   'src/supabase-auth.js',
   'src/app-center-binding.js',
