@@ -6,6 +6,10 @@ export function createInitialCloudStatus(configStatus) {
     authStatus: configStatus === 'configured' ? 'loading' : 'signed-out',
     user: null,
     role: null,
+    centerId: '',
+    centerName: '',
+    membership: null,
+    memberships: [],
     membershipStatus: 'idle',
     message: '',
     attachments: [],
@@ -33,7 +37,7 @@ export function renderCloudStatus(status) {
       <div class="cloud-status-heading">
         <div>
           <h4 id="cloud-status-title">Supabase Cloud</h4>
-          <p>Kiểm tra kết nối, đăng nhập và quyền tại cơ sở DreamHome.</p>
+          <p>Kiểm tra kết nối, đăng nhập và quyền tại cơ sở được gán cho tài khoản.</p>
         </div>
         <span class="cloud-config-badge ${isConfigured ? 'is-configured' : 'is-missing'}">
           ${statusLabel}
@@ -92,7 +96,7 @@ function renderSignedInStatus(status) {
         </div>
         <div>
           <dt>Cơ sở</dt>
-          <dd>DreamHome</dd>
+          <dd>${escapeHtml(status.centerName || status.centerId || 'Chưa xác định')}</dd>
         </div>
         <div>
           <dt>Vai trò</dt>
@@ -122,7 +126,7 @@ function renderCloudGallerySummary(status) {
     summary =
       status.membershipStatus === 'loading'
         ? 'Đang kiểm tra quyền truy cập...'
-        : 'Tài khoản chưa được cấp quyền cho DreamHome.'
+        : 'Tài khoản chưa được cấp quyền cho cơ sở nào.'
   } else if (status.attachmentsStatus === 'loading') {
     summary = 'Đang tải thống kê ảnh cloud...'
   } else if (status.attachmentsStatus === 'error') {

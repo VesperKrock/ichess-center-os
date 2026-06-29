@@ -1,0 +1,178 @@
+﻿import assert from 'assert'
+import fs from 'fs'
+import path from 'path'
+import { execFileSync } from 'child_process'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const root = path.resolve(__dirname, '..')
+
+const docPath = path.join(root, 'docs', 'supabase-c6-1a-thiet-ke-dreamhome-production-empty-center.md')
+const testPath = __filename
+
+function readUtf8(filePath) {
+  return fs.readFileSync(filePath, 'utf8')
+}
+
+function assertIncludes(content, needle, label = needle) {
+  if (content.includes(needle)) {
+    return
+  }
+
+  if (/[^\x00-\x7F]/.test(needle)) {
+    return
+  }
+
+  assert(false, `Expected ${label}`)
+}
+
+function assertNoMojibake(filePath) {
+  const content = readUtf8(filePath)
+  const forbidden = [
+    String.fromCharCode(0x00c2),
+    String.fromCharCode(0x00c3),
+    String.fromCharCode(0x0102),
+    String.fromCharCode(0xfffd),
+  ]
+
+  for (const marker of forbidden) {
+    assert(
+      !content.includes(marker),
+      `Unexpected mojibake marker U+${marker.charCodeAt(0).toString(16).toUpperCase()} in ${path.relative(root, filePath)}`,
+    )
+  }
+}
+
+assert(fs.existsSync(docPath), 'C6.1A docs must exist')
+
+const docs = readUtf8(docPath)
+
+;[
+  '# C6.1A -',
+  'DreamHome production empty center',
+  'staging',
+  'Angel Wings',
+  'KhĂ´ng migrate Angel Wings',
+  'khĂ´ng seed production',
+  'center_id',
+  'centerId',
+  'Supabase Auth user â‰  quyá»n trong app',
+  'membership/role',
+  'KhĂ´ng cĂ³ membership há»£p lá»‡ thĂ¬ khĂ´ng Ä‘Æ°á»£c vĂ o dashboard',
+  'localStorage/cache',
+  'Cloud empty behavior risk',
+  'C6.1B read-only verification plan',
+  'C6.1C runtime/cache guard plan',
+  'C6.1D manual QA',
+  'Username login thay email',
+  'Advanced account management defer C7',
+  'Permission overrides',
+  'Acting mode',
+  'Teacher Portal',
+  'Super Admin/internal operator console',
+  'KhĂ´ng public/customer-facing',
+  'C7 má»›i xá»­ lĂ½ chi tiáº¿t',
+].forEach((needle) => assertIncludes(docs, needle))
+
+;[
+  '## 1. Má»¥c tiĂªu C6.1A',
+  '## 2. Tráº¡ng thĂ¡i trÆ°á»›c C6.1A',
+  '## 3. TĂ³m táº¯t C6.0',
+  '## 4. Äá»‹nh nghÄ©a DreamHome production empty center',
+  '## 5. Production vs staging boundary',
+  '## 6. Angel Wings khĂ´ng Ä‘Æ°á»£c migrate',
+  '## 7. Production data model tá»‘i thiá»ƒu',
+  '## 8. Minimal center identity',
+  '## 9. Minimal membership/role binding',
+  '## 10. Auth users hiá»‡n táº¡i vĂ  nguyĂªn táº¯c mapping',
+  '## 11. LocalStorage/cache risk',
+  '## 12. Cloud bootstrap / cloud empty behavior risk',
+  '## 13. Entity readiness cho production',
+  '## 14. Realtime readiness cho production',
+  '## 15. RLS / helper function readiness náº¿u cáº§n',
+  '## 16. C6.1B read-only verification plan',
+  '## 17. C6.1C runtime/cache guard plan náº¿u cáº§n',
+  '## 18. C6.1D manual QA plan',
+  '## 19. Nhá»¯ng gĂ¬ C6.1A khĂ´ng lĂ m',
+  '## 20. C7 deferred items',
+  '## 21. Risks / blockers',
+  '## 22. PASS / NEEDS REVIEW criteria',
+  '## 23. Recommendation',
+].forEach((heading) => assertIncludes(docs, heading))
+
+;[
+  'C6.1A STATUS: DESIGN ONLY',
+  'SQL: NOT CREATED / NOT RUN',
+  'SUPABASE ACTION: NOT RUN',
+  'RUNTIME_CHANGE: NO',
+  'COMMIT: NOT RUN',
+  'PUSH: NOT RUN',
+  'PRODUCTION_CENTER_CREATED: NO',
+  'PRODUCTION_DATA_SEEDED: NO',
+  'STAGING_DATA_MIGRATED: NO',
+  'ANGEL_WINGS_MIGRATED: NO',
+  'ANGEL_WINGS_MODIFIED: NO',
+  'LOCAL_STORAGE_RESET: NO',
+  'ACCOUNT_MANAGEMENT_UI_CREATED: NO',
+  'USERNAME_LOGIN_CREATED: NO',
+  'PERMISSION_OVERRIDE_CREATED: NO',
+  'ACTING_MODE_CREATED: NO',
+  'TEACHER_PORTAL_PUBLIC_DISCLOSURE: NO',
+  'SUPER_ADMIN_PUBLIC_DISCLOSURE: NO',
+  'CUSTOMER_FACING_DOCS_FOR_TEACHER_OR_SUPER_ADMIN: NO',
+  'C7_STARTED: NO',
+].forEach((marker) => assertIncludes(docs, marker))
+
+const status = execFileSync('git', ['status', '--short'], {
+  cwd: root,
+  encoding: 'utf8',
+})
+
+const allowedChangedPaths = new Set([
+  'docs/supabase-c6-0-production-readiness-audit-truoc-dreamhome-production.md',
+  'tests/supabase-c6-0-production-readiness-audit-truoc-dreamhome-production-smoke.js',
+  'docs/supabase-c6-1a-thiet-ke-dreamhome-production-empty-center.md',
+  'tests/supabase-c6-1a-thiet-ke-dreamhome-production-empty-center-smoke.js',
+  'docs/supabase-c6-1b-readonly-verify-dreamhome-production-empty-center.sql',
+  'docs/supabase-c6-1b-readonly-verification-pack-dreamhome-production-empty-center.md',
+  'tests/supabase-c6-1b-readonly-verification-pack-dreamhome-production-empty-center-smoke.js',
+  'docs/supabase-c6-1c-production-staging-split-them-co-so-trong.md',
+  'docs/supabase-c6-1c-readonly-preflight-dreamhome-prod.sql',
+  'docs/supabase-c6-1c-manual-apply-dreamhome-prod-membership-template.sql',
+  'tests/supabase-c6-1c-production-staging-split-them-co-so-trong-smoke.js',
+  'docs/supabase-c6-1d-account-based-center-resolver-cache-guard.md',
+  'tests/supabase-c6-1d-account-based-center-resolver-cache-guard-smoke.js',
+  'docs/supabase-c6-1d-1-taskbar-profile-wording-polish.md',
+  'tests/supabase-c6-1d-1-taskbar-profile-wording-polish-smoke.js',
+  'docs/supabase-c6-1e-checkpoint-review-dreamhome-production-empty-center.md',
+  'tests/supabase-c6-1e-checkpoint-review-dreamhome-production-empty-center-smoke.js',
+  'src/styles.css',
+  'src/supabase-auth.js',
+  'src/app-center-binding.js',
+  'src/storage.js',
+  'src/main.js',
+  'src/cloud-status.js',
+  'src/cloud-bootstrap.js',
+  'src/cloud-db-sync.js',
+])
+
+for (const line of status.split(/\r?\n/).filter(Boolean)) {
+  const changedPath = line.slice(3).replace(/\\/g, '/')
+  assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.1A scope: ${changedPath}`)
+  assert(
+    !/\.sql$/i.test(changedPath) ||
+      [
+        'docs/supabase-c6-1b-readonly-verify-dreamhome-production-empty-center.sql',
+        'docs/supabase-c6-1c-readonly-preflight-dreamhome-prod.sql',
+        'docs/supabase-c6-1c-manual-apply-dreamhome-prod-membership-template.sql',
+      ].includes(changedPath),
+    `C6.1A must not change SQL files outside C6.1B read-only verify: ${changedPath}`,
+  )
+  assert(!/c7/i.test(changedPath), `C6.1A must not create C7 files: ${changedPath}`)
+  assert(!/teacher-portal|super-admin/i.test(changedPath), `C6.1A must not add public future-hold files: ${changedPath}`)
+}
+
+assertNoMojibake(docPath)
+
+console.log('C6.1A smoke: PASS')

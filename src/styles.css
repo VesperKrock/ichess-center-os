@@ -13528,6 +13528,7 @@ h3 {
 }
 
 .taskbar-left {
+  position: relative;
   display: flex;
   flex: 0 1 auto;
   min-width: 0;
@@ -13596,6 +13597,74 @@ h3 {
 
 .app-name {
   font-weight: 800;
+}
+
+.center-profile-chip {
+  cursor: pointer;
+  font: inherit;
+}
+
+.center-profile-chip.active,
+.center-profile-chip:hover,
+.center-profile-chip:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  color: #ffffff;
+  background: rgba(31, 93, 153, 0.48);
+}
+
+.center-profile-popover {
+  position: absolute;
+  left: 112px;
+  bottom: calc(100% + 10px);
+  z-index: 2147483001;
+  width: min(340px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid rgba(180, 202, 232, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 20, 27, 0.98);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.48);
+}
+
+.center-profile-popover-header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.center-profile-popover-header strong {
+  color: #f7fbff;
+  font-size: 1rem;
+}
+
+.center-profile-popover-header span,
+.center-profile-popover dt {
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.center-profile-popover dl {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 8px 16px 14px;
+}
+
+.center-profile-popover dl div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.center-profile-popover dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #edf5ff;
+  font-size: 0.88rem;
 }
 
 .taskbar-clock {
@@ -15316,6 +15385,11 @@ h3 {
 
   .taskbar-item {
     flex: 1 1 auto;
+  }
+
+  .center-profile-popover {
+    left: 0;
+    bottom: calc(100% + 8px);
   }
 
   .start-menu {

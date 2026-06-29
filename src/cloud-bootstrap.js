@@ -65,7 +65,7 @@ export function getCloudBootstrapStatusLabel(state = {}) {
   }
 
   if (state.status === CLOUD_BOOTSTRAP_STATUS.EMPTY) {
-    return 'Dữ liệu: Cache/staging local'
+    return state.message || 'Dữ liệu: Cloud trống'
   }
 
   if (state.status === CLOUD_BOOTSTRAP_STATUS.ERROR) {

@@ -1,24 +1,60 @@
 ﻿const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
-const STUDENTS_KEY = 'ichessCenterOS.students.dreamhome'
-const CLASS_SESSIONS_KEY = 'ichessCenterOS.classSessions.dreamhome'
-const NOTIFICATIONS_KEY = 'ichessCenterOS.notifications.dreamhome'
-const NOTIFICATIONS_VERSION_KEY = 'ichessCenterOS.notifications.version.dreamhome'
-const DELETED_NOTIFICATION_IDS_KEY = 'ichessCenterOS.notifications.deletedIds.dreamhome'
-const TUITION_KEY = 'ichessCenterOS.tuition.dreamhome'
-const TEACHERS_KEY = 'ichessCenterOS.teachers.dreamhome'
-const SCHEDULE_KEY = 'ichessCenterOS.schedule.dreamhome'
-const SESSION_REPORTS_KEY = 'ichessCenterOS.sessionReports.dreamhome'
-const ATTENDANCE_ADVISORY_NOTES_KEY = 'ichessCenterOS.attendanceAdvisoryNotes.dreamhome'
-const ATTENDANCE_BOARD_NOTES_KEY = 'ichessCenterOS.attendanceBoardNotes.dreamhome'
-const PARENT_CONSULTATIONS_KEY = 'ichessCenterOS.parentConsultations.dreamhome'
-const CASHFLOW_KEY = 'ichessCenterOS.cashflow.dreamhome'
-const CASHFLOW_CATEGORIES_KEY = 'ichessCenterOS.cashflowCategories.dreamhome'
-const CASHBOOK_SETTINGS_KEY = 'ichessCenterOS.cashbookSettings.dreamhome'
-const CASHBOOK_RECONCILIATIONS_KEY = 'ichessCenterOS.cashbookReconciliations.dreamhome'
-const INVENTORY_KEY = 'ichessCenterOS.inventory.dreamhome'
-const INVENTORY_MOVEMENTS_KEY = 'ichessCenterOS.inventoryMovements.dreamhome'
-const INVENTORY_REQUESTS_KEY = 'ichessCenterOS.inventoryRequests.dreamhome'
+const DEFAULT_STORAGE_CENTER_ID = 'dreamhome'
+let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
+
+export function normalizeStorageCenterId(centerId) {
+  const normalized = String(centerId ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  return normalized || DEFAULT_STORAGE_CENTER_ID
+}
+
+export function setCurrentStorageCenterId(centerId) {
+  currentStorageCenterId = normalizeStorageCenterId(centerId)
+  return currentStorageCenterId
+}
+
+export function getCurrentStorageCenterId() {
+  return currentStorageCenterId
+}
+
+function createCenterScopedStorageKey(scope) {
+  return {
+    toString() {
+      return `ichessCenterOS.${scope}.${currentStorageCenterId}`
+    },
+    valueOf() {
+      return this.toString()
+    },
+    [Symbol.toPrimitive]() {
+      return this.toString()
+    },
+  }
+}
+
+const STUDENTS_KEY = createCenterScopedStorageKey('students')
+const CLASS_SESSIONS_KEY = createCenterScopedStorageKey('classSessions')
+const NOTIFICATIONS_KEY = createCenterScopedStorageKey('notifications')
+const NOTIFICATIONS_VERSION_KEY = createCenterScopedStorageKey('notifications.version')
+const DELETED_NOTIFICATION_IDS_KEY = createCenterScopedStorageKey('notifications.deletedIds')
+const TUITION_KEY = createCenterScopedStorageKey('tuition')
+const TEACHERS_KEY = createCenterScopedStorageKey('teachers')
+const SCHEDULE_KEY = createCenterScopedStorageKey('schedule')
+const SESSION_REPORTS_KEY = createCenterScopedStorageKey('sessionReports')
+const ATTENDANCE_ADVISORY_NOTES_KEY = createCenterScopedStorageKey('attendanceAdvisoryNotes')
+const ATTENDANCE_BOARD_NOTES_KEY = createCenterScopedStorageKey('attendanceBoardNotes')
+const PARENT_CONSULTATIONS_KEY = createCenterScopedStorageKey('parentConsultations')
+const CASHFLOW_KEY = createCenterScopedStorageKey('cashflow')
+const CASHFLOW_CATEGORIES_KEY = createCenterScopedStorageKey('cashflowCategories')
+const CASHBOOK_SETTINGS_KEY = createCenterScopedStorageKey('cashbookSettings')
+const CASHBOOK_RECONCILIATIONS_KEY = createCenterScopedStorageKey('cashbookReconciliations')
+const INVENTORY_KEY = createCenterScopedStorageKey('inventory')
+const INVENTORY_MOVEMENTS_KEY = createCenterScopedStorageKey('inventoryMovements')
+const INVENTORY_REQUESTS_KEY = createCenterScopedStorageKey('inventoryRequests')
 const CLOUD_PULL_BACKUP_PREFIX = 'ichessCenterOS.backup.beforeCloudPull.'
 const CLOUD_PULL_BACKUP_KEEP_COUNT = 2
 const CURRENT_NOTIFICATIONS_VERSION = '15J.1'

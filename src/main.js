@@ -5,9 +5,10 @@ import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import { modules } from './modules.js'
 import { createInitialCloudStatus } from './cloud-status.js'
 import {
-  getCurrentCenterMembership,
   getCurrentSupabaseUser,
   onSupabaseAuthStateChange,
+  PRODUCTION_CENTER_ID,
+  resolveActiveCenterMembership,
   signInWithEmailPassword,
   signOutSupabase,
 } from './supabase-auth.js'
@@ -38,6 +39,7 @@ import {
 import { getUploaderDisplayName } from './uploader-display.js'
 import {
   getDeletedNotificationIds,
+  getCurrentStorageCenterId,
   getDesktopModuleOrder,
   getStoredCashflow,
   getStoredCashflowCategories,
@@ -60,6 +62,7 @@ import {
   createCloudDbPullBackup,
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
+  setCurrentStorageCenterId,
   saveStoredCashflow,
   saveStoredCashflowCategories,
   saveStoredCashbookReconciliations,
@@ -411,6 +414,7 @@ let currentViewMode = getViewMode()
 let isStartMenuOpen = false
 let isWindowOverflowOpen = false
 let isNotificationCenterOpen = false
+let isCenterProfilePopoverOpen = false
 let notificationPanelPosition = { right: 12, bottom: 56 }
 let openWindows = []
 let nextWindowNumber = 1
@@ -422,6 +426,7 @@ let shortcutDocumentDragBound = false
 let startMenuOutsidePointerBound = false
 let windowOverflowOutsidePointerBound = false
 let notificationOutsidePointerBound = false
+let centerProfileOutsidePointerBound = false
 let moduleNotificationOutsidePointerBound = false
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
@@ -538,6 +543,88 @@ let c52TuitionAutoPullUserId = ''
 let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
 let cloudGalleryState = null
+
+function getCurrentResolvedCenterId() {
+  const binding = resolveAppCenterBinding(cloudStatus)
+  return binding.currentCenterId || getCurrentStorageCenterId()
+}
+
+function isProductionCenter(centerId = getCurrentResolvedCenterId()) {
+  return centerId === PRODUCTION_CENTER_ID
+}
+
+function resetTransientStateForCenterSwitch() {
+  studentFilters = { ...initialStudentFilters }
+  teacherFilters = { ...initialTeacherFilters }
+  parentConsultationFilters = { ...initialParentConsultationFilters }
+  staffFilters = { ...initialStaffFilters }
+  settingsFilters = { ...initialSettingsFilters }
+  tuitionFilters = { ...initialTuitionFilters }
+  cashflowFilters = { ...initialCashflowFilters }
+  inventoryFilters = { ...initialInventoryFilters }
+  inventoryMovementFilters = { ...initialInventoryMovementFilters }
+  inventoryRequestFilters = { ...initialInventoryRequestFilters }
+  studentFormState = null
+  teacherFormState = null
+  selectedTeacherId = null
+  parentConsultationFormState = null
+  parentQuickNoteState = null
+  parentNoteHistoryContactId = null
+  scheduleFormState = null
+  scheduleReportState = null
+  scheduleAdminAttendanceState = null
+  sessionReportAttendanceState = null
+  sessionReportLearningState = null
+  sessionReportLearningFormState = null
+  sessionReportExtraState = null
+  sessionReportGuestFormState = null
+  tuitionFormState = null
+  tuitionPaymentFormState = null
+  tuitionDetailState = null
+  tuitionRollbackPreviewState = null
+  cashflowFormState = null
+  cashbookSettingsFormState = null
+  cashbookReconciliationFormState = null
+  inventoryFormState = null
+  inventoryMovementFormState = null
+  inventoryRequestFormState = null
+  inventoryRequestStatusFormState = null
+  attendanceBoardDetailState = null
+  attendanceBoardNoteFormState = null
+}
+
+function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
+  const nextStudents = getStoredStudents(useSampleFallback ? sampleStudents : [])
+  students = shouldReplaceLegacyEightSeed(nextStudents) && useSampleFallback
+    ? sampleStudents
+    : nextStudents
+  if (students === sampleStudents) {
+    saveStoredStudents(students)
+  }
+  classSessions = getStoredClassSessions(useSampleFallback ? sampleClassSessions : [])
+  teachers = getStoredTeachers(useSampleFallback ? sampleTeachers : [])
+  parentConsultations = getStoredParentConsultations(
+    useSampleFallback ? sampleParentConsultations : [],
+  )
+  scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
+  sessionReports = getStoredSessionReports([])
+  attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes([])
+  attendanceBoardNotes = getStoredAttendanceBoardNotes([])
+  tuitionRecords = getStoredTuition(useSampleFallback ? createSampleTuitionRecords(students) : [])
+  notifications = syncAppNotifications(
+    getStoredNotifications(useSampleFallback ? createSampleNotifications() : []),
+  )
+  deletedNotificationIds = getDeletedNotificationIds()
+  cashflowTransactions = getStoredCashflow(useSampleFallback ? sampleCashflowTransactions : [])
+  cashflowCategories = getStoredCashflowCategories(useSampleFallback ? sampleCashflowCategories : [])
+  cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
+  cashbookSettings = getStoredCashbookSettings(createDefaultCashbookSettings(cashflowTransactions))
+  cashbookReconciliations = getStoredCashbookReconciliations([])
+  inventoryItems = getStoredInventory(useSampleFallback ? sampleInventoryItems : [])
+  inventoryMovements = getStoredInventoryMovements([])
+  inventoryRequests = getStoredInventoryRequests(useSampleFallback ? sampleInventoryRequests : [])
+  resetTransientStateForCenterSwitch()
+}
 
 function render() {
   const preservedScrollState = rememberPreservedScrollPositions()
@@ -672,7 +759,7 @@ function hasInitialBaselineAttendanceRecord(records, studentId, date) {
   )
 }
 
-function createScheduleAdminAttendanceState(occurrence, records = loadStoredAttendanceRecords()) {
+function createScheduleAdminAttendanceState(occurrence, records = loadStoredAttendanceRecords(getCurrentResolvedCenterId())) {
   const existingRecords = Array.isArray(records) ? records : []
   const rows = getScheduleAdminStudentIds(occurrence).map((studentId) => {
     const existingRecord = existingRecords.find((record) => isScheduleAdminAttendanceRecord(record, occurrence, studentId))
@@ -693,7 +780,7 @@ function createScheduleAdminAttendanceState(occurrence, records = loadStoredAtte
   }
 }
 
-function getScheduleAdminAttendanceRecords(occurrence, records = loadStoredAttendanceRecords()) {
+function getScheduleAdminAttendanceRecords(occurrence, records = loadStoredAttendanceRecords(getCurrentResolvedCenterId())) {
   return (Array.isArray(records) ? records : [])
     .filter((record) =>
       record?.source === 'admin' &&
@@ -702,7 +789,7 @@ function getScheduleAdminAttendanceRecords(occurrence, records = loadStoredAtten
     )
 }
 
-function getScheduleTeacherAttendanceRecords(occurrence, records = loadStoredAttendanceRecords()) {
+function getScheduleTeacherAttendanceRecords(occurrence, records = loadStoredAttendanceRecords(getCurrentResolvedCenterId())) {
   return (Array.isArray(records) ? records : [])
     .filter((record) =>
       record?.source === 'teacher' &&
@@ -848,24 +935,24 @@ function getScheduleAdminTeacherName(occurrence) {
 function getAttendanceBaselineDraftRecords() {
   return Array.isArray(attendanceBaselineDraftRecords)
     ? attendanceBaselineDraftRecords
-    : loadStoredAttendanceRecords()
+    : loadStoredAttendanceRecords(getCurrentResolvedCenterId())
 }
 
 function getAttendanceBaselineDraftState() {
-  return attendanceBaselineDraftState || loadAttendanceBaselineState()
+  return attendanceBaselineDraftState || loadAttendanceBaselineState(getCurrentResolvedCenterId())
 }
 
 function ensureAttendanceBaselineDraft() {
   if (!Array.isArray(attendanceBaselineDraftRecords)) {
-    const storedRecords = loadStoredAttendanceRecords()
+    const storedRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
     attendanceBaselineDraftRecords = storedRecords
     attendanceBaselineDraftBaseRecords = storedRecords
-    attendanceBaselineDraftState = loadAttendanceBaselineState()
+    attendanceBaselineDraftState = loadAttendanceBaselineState(getCurrentResolvedCenterId())
   }
 
   return {
     records: attendanceBaselineDraftRecords,
-    state: attendanceBaselineDraftState || loadAttendanceBaselineState(),
+    state: attendanceBaselineDraftState || loadAttendanceBaselineState(getCurrentResolvedCenterId()),
   }
 }
 
@@ -882,7 +969,7 @@ function getAttendanceBaselineDraftChangeCount() {
 
   const baseRecords = Array.isArray(attendanceBaselineDraftBaseRecords)
     ? attendanceBaselineDraftBaseRecords
-    : loadStoredAttendanceRecords()
+    : loadStoredAttendanceRecords(getCurrentResolvedCenterId())
   const baseMap = new Map(baseRecords.map((record) => [record.id, JSON.stringify(record)]))
   const draftMap = new Map(attendanceBaselineDraftRecords.map((record) => [record.id, JSON.stringify(record)]))
   let changeCount = 0
@@ -1418,7 +1505,7 @@ function renderWindowBody(windowItem) {
       scheduleWeekStartDate,
       scheduleAdminAttendanceState,
       {
-        attendanceRecords: loadStoredAttendanceRecords(),
+        attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
       },
     )
   }
@@ -1508,7 +1595,7 @@ function renderWindowBody(windowItem) {
       cashflowTransactions,
       attendanceRecords: buildUnifiedAttendanceRecords({
         sessionReports,
-        storedRecords: loadStoredAttendanceRecords(),
+        storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
       }),
     })
   }
@@ -1633,10 +1720,92 @@ function renderPlannedList(title, items) {
   `
 }
 
+function getTaskbarCenterProfileState() {
+  const binding = resolveAppCenterBinding(cloudStatus)
+  const centerName = binding.centerName || cloudStatus.centerName || 'DreamHome'
+  const centerId = binding.currentCenterId || cloudStatus.centerId || getCurrentResolvedCenterId()
+  const role = cloudStatus.role || binding.role || ''
+  const dataLabel = cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.CLOUD ||
+    cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.EMPTY
+      ? 'Cloud'
+      : 'Cache cục bộ'
+
+  return {
+    centerName,
+    centerId,
+    accountLabel: cloudStatus.user?.email || 'Đang đăng nhập',
+    roleLabel: getCenterProfileRoleLabel(role),
+    dataLabel,
+    statusLabel: getCenterProfileStatusLabel(),
+  }
+}
+
+function getCenterProfileRoleLabel(role) {
+  const labels = {
+    center_admin: 'Quản lý cơ sở',
+    admin: 'Quản lý cơ sở',
+    teacher: 'Giáo viên',
+    consultant: 'Tư vấn',
+  }
+
+  return labels[role] || role || 'Chưa xác định'
+}
+
+function getCenterProfileStatusLabel() {
+  if (cloudStatus.membershipStatus === 'loaded' && cloudStatus.authStatus === 'signed-in') {
+    return 'Sẵn sàng'
+  }
+
+  if (cloudStatus.membershipStatus === 'loading') {
+    return 'Đang kiểm tra'
+  }
+
+  return 'Cần kiểm tra'
+}
+
+function renderCenterProfilePopover(profile) {
+  return `
+    <div
+      class="center-profile-popover"
+      id="center-profile-popover"
+      role="dialog"
+      aria-label="Thông tin tài khoản và cơ sở"
+    >
+      <div class="center-profile-popover-header">
+        <strong>${escapeHtml(profile.centerName)}</strong>
+        <span>Phiên làm việc</span>
+      </div>
+      <dl>
+        <div>
+          <dt>Tài khoản</dt>
+          <dd>${escapeHtml(profile.accountLabel)}</dd>
+        </div>
+        <div>
+          <dt>Vai trò</dt>
+          <dd>${escapeHtml(profile.roleLabel)}</dd>
+        </div>
+        <div>
+          <dt>Dữ liệu</dt>
+          <dd>${escapeHtml(profile.dataLabel)}</dd>
+        </div>
+        <div>
+          <dt>Trạng thái</dt>
+          <dd>${escapeHtml(profile.statusLabel)}</dd>
+        </div>
+        <div>
+          <dt>Mã cơ sở</dt>
+          <dd>${escapeHtml(profile.centerId || 'Chưa xác định')}</dd>
+        </div>
+      </dl>
+    </div>
+  `
+}
+
 function renderTaskbar() {
   const { visibleWindows, overflowWindows } = getTaskbarWindowGroups(openWindows)
   const activeWindowId = getActiveWindowId()
   const unreadCount = getUnreadNotificationCount()
+  const centerProfile = getTaskbarCenterProfileState()
   const windowButtons = visibleWindows
     .map((windowItem) => {
       const title = getWindowTitle(windowItem)
@@ -1670,9 +1839,16 @@ function renderTaskbar() {
           Start
         </button>
         <span class="taskbar-item app-name">iChess Center OS</span>
-        <span class="taskbar-item">${escapeHtml(getCloudBootstrapStatusLabel(cloudBootstrapState))}</span>
-        <span class="taskbar-item">Cơ sở: DreamHome</span>
-        <span class="taskbar-item">Vai trò: Quản lý cơ sở</span>
+        <button
+          class="taskbar-item center-profile-chip ${isCenterProfilePopoverOpen ? 'active' : ''}"
+          type="button"
+          data-action="toggle-center-profile"
+          aria-expanded="${isCenterProfilePopoverOpen}"
+          aria-controls="center-profile-popover"
+        >
+          Cơ sở: ${escapeHtml(centerProfile.centerName)}
+        </button>
+        ${isCenterProfilePopoverOpen ? renderCenterProfilePopover(centerProfile) : ''}
       </div>
       <div class="taskbar-windows" aria-label="Cửa sổ đang mở">
         ${windowButtons}
@@ -2754,11 +2930,16 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     cloudLastSyncedUserId = ''
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
+    isCenterProfilePopoverOpen = false
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
       user: null,
       role: null,
+      centerId: '',
+      centerName: '',
+      membership: null,
+      memberships: [],
       membershipStatus: 'idle',
       message: '',
       attachments: [],
@@ -2786,6 +2967,10 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     authStatus: 'signed-in',
     user,
     role: null,
+    centerId: '',
+    centerName: '',
+    membership: null,
+    memberships: [],
     membershipStatus: 'loading',
     message: '',
     attachments: [],
@@ -2808,25 +2993,35 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     c52TuitionAutoPullUserId = ''
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
+    isCenterProfilePopoverOpen = false
   }
   render()
 
   try {
-    const membership = await getCurrentCenterMembership(user.id)
+    const resolvedMembership = await resolveActiveCenterMembership(user.id)
 
     if (syncId !== cloudUserSyncId) {
       return
     }
 
+    if (resolvedMembership.ok) {
+      setCurrentStorageCenterId(resolvedMembership.centerId)
+      reloadLocalDataForResolvedCenter({
+        useSampleFallback: !isProductionCenter(resolvedMembership.centerId),
+      })
+    }
+
     cloudStatus = {
       ...cloudStatus,
-      role: membership?.role ?? null,
-      membershipStatus: membership ? 'loaded' : 'missing',
-      message: membership
-        ? ''
-        : 'Tài khoản chưa được cấp quyền cho cơ sở DreamHome.',
+      role: resolvedMembership.role ?? null,
+      centerId: resolvedMembership.centerId,
+      centerName: resolvedMembership.centerName,
+      membership: resolvedMembership.membership,
+      memberships: resolvedMembership.memberships,
+      membershipStatus: resolvedMembership.ok ? 'loaded' : 'missing',
+      message: resolvedMembership.message,
       attachments: [],
-      attachmentsStatus: membership ? 'loading' : 'idle',
+      attachmentsStatus: resolvedMembership.ok ? 'loading' : 'idle',
       attachmentsError: '',
     }
   } catch (error) {
@@ -2837,6 +3032,10 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     cloudStatus = {
       ...cloudStatus,
       role: null,
+      centerId: '',
+      centerName: '',
+      membership: null,
+      memberships: [],
       membershipStatus: 'error',
       message: getCloudErrorMessage(
         error,
@@ -2981,10 +3180,10 @@ function buildCurrentOnlineAccessState({ cloudReady = false } = {}) {
     isSupabaseConfigured: cloudStatus.configStatus === 'configured',
     isSignedIn: cloudStatus.authStatus === 'signed-in',
     user: cloudStatus.user,
-    centerId: 'dreamhome',
+    centerId: getCurrentResolvedCenterId(),
     membership:
       cloudStatus.membershipStatus === 'loaded'
-        ? { role: cloudStatus.role }
+        ? cloudStatus.membership || { role: cloudStatus.role, center_id: getCurrentResolvedCenterId() }
         : null,
     role: cloudStatus.role,
     cloudReady,
@@ -3017,7 +3216,7 @@ async function writeStudentThroughCloud(student, reason = 'student-save') {
   }
 
   const runId = ++studentCloudWriteRunId
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (!readiness.ok) {
     if (runId === studentCloudWriteRunId) {
@@ -3068,11 +3267,11 @@ async function writeStudentThroughCloud(student, reason = 'student-save') {
 }
 
 async function startStudentRealtimeSubscription(syncId = cloudUserSyncId) {
-  if (!canUseCoreCloudDb() || studentRealtimeCenterId === 'dreamhome') {
+  if (!canUseCoreCloudDb() || studentRealtimeCenterId === getCurrentResolvedCenterId()) {
     return
   }
 
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId) {
     return
@@ -3174,7 +3373,7 @@ async function writeTeacherThroughCloud(teacher, reason = 'teacher-save') {
   }
 
   const runId = ++teacherCloudWriteRunId
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (!readiness.ok) {
     if (runId === teacherCloudWriteRunId) {
@@ -3225,11 +3424,11 @@ async function writeTeacherThroughCloud(teacher, reason = 'teacher-save') {
 }
 
 async function startTeacherRealtimeSubscription(syncId = cloudUserSyncId) {
-  if (!canUseCoreCloudDb() || teacherRealtimeCenterId === 'dreamhome') {
+  if (!canUseCoreCloudDb() || teacherRealtimeCenterId === getCurrentResolvedCenterId()) {
     return
   }
 
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId) {
     return
@@ -3343,7 +3542,7 @@ async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'sched
   }
 
   const runId = ++scheduleSessionCloudWriteRunId
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (!readiness.ok) {
     if (runId === scheduleSessionCloudWriteRunId) {
@@ -3414,11 +3613,11 @@ async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'sched
 }
 
 async function startScheduleSessionRealtimeSubscription(syncId = cloudUserSyncId) {
-  if (!canUseCoreCloudDb() || scheduleSessionRealtimeCenterId === 'dreamhome') {
+  if (!canUseCoreCloudDb() || scheduleSessionRealtimeCenterId === getCurrentResolvedCenterId()) {
     return
   }
 
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId) {
     return
@@ -3496,7 +3695,7 @@ function handleScheduleSessionRealtimeRecord(record) {
 
 function buildScheduleSessionRuntimeContext({
   accessState,
-  centerId = 'dreamhome',
+  centerId = getCurrentResolvedCenterId(),
   cloudReady = false,
   signedIn = cloudStatus.authStatus === 'signed-in',
   membershipReady = cloudStatus.membershipStatus === 'loaded',
@@ -3521,7 +3720,7 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
   }
 
   c51AttendanceAutoPullUserId = cloudStatus.user?.id || ''
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId || !readiness.ok) {
     return
@@ -3551,8 +3750,8 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
   }
 
   const mergeResult = mergeC51CloudRecordsIntoLocal({
-    attendanceRecords: loadStoredAttendanceRecords(),
-    baselineState: loadAttendanceBaselineState(),
+    attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+    baselineState: loadAttendanceBaselineState(getCurrentResolvedCenterId()),
     sessionReports,
     cloudRecords: result.records,
   })
@@ -3569,8 +3768,8 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
     return
   }
 
-  saveStoredAttendanceRecords('dreamhome', mergeResult.attendanceRecords)
-  saveAttendanceBaselineState('dreamhome', mergeResult.baselineState)
+  saveStoredAttendanceRecords(getCurrentResolvedCenterId(), mergeResult.attendanceRecords)
+  saveAttendanceBaselineState(getCurrentResolvedCenterId(), mergeResult.baselineState)
   sessionReports = mergeResult.sessionReports
   saveStoredSessionReports(sessionReports)
   cloudDbState = {
@@ -3607,7 +3806,7 @@ async function writeC51AttendanceSessionReportThroughCloud({
   }
 
   const runId = ++c51AttendanceCloudWriteRunId
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (!readiness.ok) {
     if (runId === c51AttendanceCloudWriteRunId) {
@@ -3660,11 +3859,11 @@ async function writeC51AttendanceSessionReportThroughCloud({
 }
 
 async function startC51AttendanceRealtimeSubscription(syncId = cloudUserSyncId) {
-  if (!canUseCoreCloudDb() || c51AttendanceRealtimeCenterId === 'dreamhome') {
+  if (!canUseCoreCloudDb() || c51AttendanceRealtimeCenterId === getCurrentResolvedCenterId()) {
     return
   }
 
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId || !readiness.ok) {
     return
@@ -3730,8 +3929,8 @@ function handleC51AttendanceRealtimeRecord(record) {
   }
 
   const mergeResult = mergeC51CloudRecordsIntoLocal({
-    attendanceRecords: loadStoredAttendanceRecords(),
-    baselineState: loadAttendanceBaselineState(),
+    attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+    baselineState: loadAttendanceBaselineState(getCurrentResolvedCenterId()),
     sessionReports,
     cloudRecords: [record],
   })
@@ -3740,8 +3939,8 @@ function handleC51AttendanceRealtimeRecord(record) {
     return
   }
 
-  saveStoredAttendanceRecords('dreamhome', mergeResult.attendanceRecords)
-  saveAttendanceBaselineState('dreamhome', mergeResult.baselineState)
+  saveStoredAttendanceRecords(getCurrentResolvedCenterId(), mergeResult.attendanceRecords)
+  saveAttendanceBaselineState(getCurrentResolvedCenterId(), mergeResult.baselineState)
   sessionReports = mergeResult.sessionReports
   saveStoredSessionReports(sessionReports)
   render()
@@ -3753,7 +3952,7 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
   }
 
   c52TuitionAutoPullUserId = cloudStatus.user?.id || ''
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId || !readiness.ok) {
     return
@@ -3835,7 +4034,7 @@ async function writeC52TuitionRecordPackageThroughCloud(
   }
 
   const runId = ++c52TuitionCloudWriteRunId
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (!readiness.ok) {
     if (runId === c52TuitionCloudWriteRunId) {
@@ -3970,7 +4169,7 @@ async function openTuitionRollbackPreview(tuitionRecord) {
   tuitionDetailState = null
   render()
 
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (!readiness.ok) {
     tuitionRollbackPreviewState = {
@@ -4030,11 +4229,11 @@ async function openTuitionRollbackPreview(tuitionRecord) {
 }
 
 async function startC52TuitionRealtimeSubscription(syncId = cloudUserSyncId) {
-  if (!canUseCoreCloudDb() || c52TuitionRealtimeCenterId === 'dreamhome') {
+  if (!canUseCoreCloudDb() || c52TuitionRealtimeCenterId === getCurrentResolvedCenterId()) {
     return
   }
 
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId || !readiness.ok) {
     return
@@ -4153,6 +4352,7 @@ async function syncCoreEntitiesToCloud(reason = 'auto') {
   render()
 
   const result = await pushLocalCoreEntitiesToCloud({
+    centerId: getCurrentResolvedCenterId(),
     students,
     teachers,
     classSessions,
@@ -4311,8 +4511,8 @@ async function refreshCloudDbReadiness({ showLoading = false } = {}) {
       readinessStatus: 'blocked',
       cloudCounts: null,
       message: cloudStatus.membershipStatus === 'loaded'
-        ? 'Không đọc được Cloud DB do quyền DreamHome/RLS. Kiểm tra center_members và policy.'
-        : 'User hiện tại chưa có membership center_members với center_id = dreamhome.',
+        ? `Không đọc được Cloud DB do quyền/RLS của center ${getCurrentResolvedCenterId()}. Kiểm tra center_members và policy.`
+        : `User hiện tại chưa có membership center_members với center_id = ${getCurrentResolvedCenterId()}.`,
       messageTone: 'error',
     }
     if (showLoading) {
@@ -4333,7 +4533,7 @@ async function refreshCloudDbReadiness({ showLoading = false } = {}) {
     render()
   }
 
-  const result = await checkCloudDbReadiness()
+  const result = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   cloudDbState = {
     ...cloudDbState,
@@ -4363,7 +4563,7 @@ async function refreshCloudDbCounts() {
   }
   render()
 
-  const readiness = await checkCloudDbReadiness()
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (!readiness.ok) {
     cloudDbState = {
@@ -4440,6 +4640,7 @@ async function pushCloudDbSnapshot() {
   render()
 
   const result = await pushLocalCoreEntitiesToCloud({
+    centerId: getCurrentResolvedCenterId(),
     students,
     teachers,
     classSessions,
@@ -4482,7 +4683,7 @@ async function pullCloudDbSnapshotToLocal() {
   }
   render()
 
-  const result = await pullCoreEntitiesFromCloud()
+  const result = await pullCoreEntitiesFromCloud(getCurrentResolvedCenterId())
 
   if (!result.ok) {
     cloudDbState = {
@@ -4498,6 +4699,20 @@ async function pullCloudDbSnapshotToLocal() {
   const counts = getCoreCloudSnapshotCounts(result.data)
 
   if (isCoreCloudSnapshotEmpty(result.data)) {
+    if (isProductionCenter(readiness.centerId)) {
+      reloadLocalDataForResolvedCenter({ useSampleFallback: false })
+      cloudDbState = {
+        ...cloudDbState,
+        isLoading: false,
+        cloudCounts: counts,
+        message: 'Cloud DB C2 production empty. Local cache for this center was reset to empty.',
+        messageTone: 'success',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      render()
+      return
+    }
+
     cloudDbState = {
       ...cloudDbState,
       isLoading: false,
@@ -4630,6 +4845,29 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
     result.data.scheduleSessions.length > 0
 
   if (result.empty || !hasCloudBootstrapSnapshotData(result.data)) {
+    if (isProductionCenter(centerId)) {
+      reloadLocalDataForResolvedCenter({ useSampleFallback: false })
+      cloudBootstrapState = {
+        ...cloudBootstrapState,
+        status: CLOUD_BOOTSTRAP_STATUS.EMPTY,
+        source: 'cloud-empty',
+        message: 'Dữ liệu: Cloud',
+        counts,
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      cloudDbState = {
+        ...cloudDbState,
+        isLoading: false,
+        readinessStatus: 'ready',
+        cloudCounts: cloudDbState.cloudCounts,
+        message: cloudBootstrapState.message,
+        messageTone: '',
+        lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
+      }
+      render()
+      return
+    }
+
     cloudBootstrapState = {
       ...cloudBootstrapState,
       status: CLOUD_BOOTSTRAP_STATUS.EMPTY,
@@ -4737,7 +4975,7 @@ async function autoPullCoreCloudSnapshot(syncId = cloudUserSyncId) {
   }
   render()
 
-  const result = await pullCoreEntitiesFromCloud()
+  const result = await pullCoreEntitiesFromCloud(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId) {
     return
@@ -4757,6 +4995,20 @@ async function autoPullCoreCloudSnapshot(syncId = cloudUserSyncId) {
   const counts = getCoreCloudSnapshotCounts(result.data)
 
   if (isCoreCloudSnapshotEmpty(result.data)) {
+    if (isProductionCenter(readiness.centerId)) {
+      reloadLocalDataForResolvedCenter({ useSampleFallback: false })
+      cloudDbState = {
+        ...cloudDbState,
+        isLoading: false,
+        cloudCounts: counts,
+        message: 'Cloud DB C2 production empty after sign-in. Local cache for this center was reset to empty.',
+        messageTone: 'success',
+        lastUpdatedAt: new Date().toISOString(),
+      }
+      render()
+      return
+    }
+
     cloudDbState = {
       ...cloudDbState,
       isLoading: false,
@@ -5358,6 +5610,10 @@ async function initializeSupabaseAuth() {
       authStatus: 'signed-out',
       user: null,
       role: null,
+      centerId: '',
+      centerName: '',
+      membership: null,
+      memberships: [],
       membershipStatus: 'idle',
       message: getCloudErrorMessage(error, 'Không thể kiểm tra phiên đăng nhập Supabase.'),
       attachments: [],
@@ -5378,6 +5634,7 @@ function bindEvents() {
   bindStartMenuOutsidePointer()
   bindWindowOverflowOutsidePointer()
   bindNotificationOutsidePointer()
+  bindCenterProfileOutsidePointer()
   bindModuleNotificationOutsidePointer()
   bindPreservedScrollRetentionEvents()
 
@@ -5407,6 +5664,7 @@ function bindEvents() {
     isStartMenuOpen = !isStartMenuOpen
     isWindowOverflowOpen = false
     isNotificationCenterOpen = false
+    isCenterProfilePopoverOpen = false
     render()
   })
 
@@ -5414,6 +5672,7 @@ function bindEvents() {
     isWindowOverflowOpen = !isWindowOverflowOpen
     isStartMenuOpen = false
     isNotificationCenterOpen = false
+    isCenterProfilePopoverOpen = false
     render()
   })
 
@@ -5422,6 +5681,15 @@ function bindEvents() {
     isNotificationCenterOpen = !isNotificationCenterOpen
     isStartMenuOpen = false
     isWindowOverflowOpen = false
+    isCenterProfilePopoverOpen = false
+    render()
+  })
+
+  document.querySelector('[data-action="toggle-center-profile"]')?.addEventListener('click', () => {
+    isCenterProfilePopoverOpen = !isCenterProfilePopoverOpen
+    isStartMenuOpen = false
+    isWindowOverflowOpen = false
+    isNotificationCenterOpen = false
     render()
   })
 
@@ -5643,6 +5911,10 @@ function bindEvents() {
         authStatus: 'signed-out',
         user: null,
         role: null,
+        centerId: '',
+        centerName: '',
+        membership: null,
+        memberships: [],
         membershipStatus: 'idle',
         message: getCloudErrorMessage(error, 'Không thể đăng nhập. Vui lòng kiểm tra email và mật khẩu.'),
         attachments: [],
@@ -5839,7 +6111,7 @@ function bindEvents() {
   document.querySelector('[data-report-action="print"]')?.addEventListener('click', () => {
     const attendanceRecords = buildUnifiedAttendanceRecords({
       sessionReports,
-      storedRecords: loadStoredAttendanceRecords(),
+      storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
     })
     const printWindow = window.open('', 'ichess-report-print', 'width=960,height=720')
 
@@ -5881,7 +6153,7 @@ function bindEvents() {
   document.querySelector('[data-report-action="download"]')?.addEventListener('click', () => {
     const attendanceRecords = buildUnifiedAttendanceRecords({
       sessionReports,
-      storedRecords: loadStoredAttendanceRecords(),
+      storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
     })
     const content = buildReportDownloadText({
       filters: reportState.filters,
@@ -7589,12 +7861,12 @@ function bindEvents() {
   })
 
   document.querySelector('[data-attendance-baseline-action="start"]')?.addEventListener('click', () => {
-    const nextState = startAttendanceBaselineDraft(loadAttendanceBaselineState(), {
+    const nextState = startAttendanceBaselineDraft(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
       byRole: 'admin',
       byName: 'Admin cơ sở',
       note: 'Bắt đầu nhập dữ liệu nền điểm danh.',
     })
-    saveAttendanceBaselineState('dreamhome', nextState)
+    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
     void writeC51AttendanceSessionReportThroughCloud({
       baselineState: nextState,
       reason: 'baseline-start',
@@ -7649,8 +7921,8 @@ function bindEvents() {
       note: 'Lưu thay đổi dữ liệu nền điểm danh.',
     })
 
-    saveStoredAttendanceRecords('dreamhome', draftRecords)
-    saveAttendanceBaselineState('dreamhome', nextState)
+    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), draftRecords)
+    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
     void writeC51AttendanceSessionReportThroughCloud({
       attendanceRecords: draftRecords.filter((record) => record.source === 'initialBaseline'),
       baselineState: nextState,
@@ -7678,7 +7950,7 @@ function bindEvents() {
   })
 
   document.querySelector('[data-attendance-baseline-action="clear"]')?.addEventListener('click', () => {
-    const currentState = loadAttendanceBaselineState()
+    const currentState = loadAttendanceBaselineState(getCurrentResolvedCenterId())
 
     if (currentState.status === 'locked') {
       window.alert('Dữ liệu nền đã khóa, cần mở khóa trước khi xóa dữ liệu nền đang nhập.')
@@ -7704,8 +7976,8 @@ function bindEvents() {
       return
     }
 
-    const storedRecords = loadStoredAttendanceRecords()
-    const storedState = loadAttendanceBaselineState()
+    const storedRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    const storedState = loadAttendanceBaselineState(getCurrentResolvedCenterId())
     const clearResult = clearInitialBaselineAttendanceRecordsInMonth({
       records: storedRecords,
       state: storedState,
@@ -7728,8 +8000,8 @@ function bindEvents() {
       draftBaseRecords: attendanceBaselineDraftBaseRecords,
       draftState: attendanceBaselineDraftState,
     }
-    saveStoredAttendanceRecords('dreamhome', clearResult.records)
-    saveAttendanceBaselineState('dreamhome', clearResult.state)
+    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), clearResult.records)
+    saveAttendanceBaselineState(getCurrentResolvedCenterId(), clearResult.state)
     void writeC51AttendanceSessionReportThroughCloud({
       attendanceRecords: clearResult.records.filter((record) => record.source === 'initialBaseline'),
       baselineState: clearResult.state,
@@ -7750,8 +8022,8 @@ function bindEvents() {
       restoreAttendanceBaselineDraftUndoSnapshot(attendanceBaselineUndoSnapshot)
     } else if (attendanceBaselineUndoSnapshot.type === 'clear') {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      saveStoredAttendanceRecords('dreamhome', restored.records)
-      saveAttendanceBaselineState('dreamhome', restored.state)
+      saveStoredAttendanceRecords(getCurrentResolvedCenterId(), restored.records)
+      saveAttendanceBaselineState(getCurrentResolvedCenterId(), restored.state)
       void writeC51AttendanceSessionReportThroughCloud({
         attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
         baselineState: restored.state,
@@ -7766,8 +8038,8 @@ function bindEvents() {
       attendanceBaselineDraftState = attendanceBaselineUndoSnapshot.draftState || null
     } else {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      saveStoredAttendanceRecords('dreamhome', restored.records)
-      saveAttendanceBaselineState('dreamhome', restored.state)
+      saveStoredAttendanceRecords(getCurrentResolvedCenterId(), restored.records)
+      saveAttendanceBaselineState(getCurrentResolvedCenterId(), restored.state)
       void writeC51AttendanceSessionReportThroughCloud({
         attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
         baselineState: restored.state,
@@ -7786,7 +8058,7 @@ function bindEvents() {
       return
     }
 
-    const baselineRecords = loadStoredAttendanceRecords()
+    const baselineRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
       .filter((record) => record.source === 'initialBaseline')
     const confirmMessage = baselineRecords.length
       ? 'Bạn chắc chắn muốn chốt dữ liệu nền điểm danh? Sau khi khóa, dữ liệu nền sẽ không được sửa tự do.'
@@ -7796,14 +8068,14 @@ function bindEvents() {
       return
     }
 
-    const nextState = lockAttendanceBaselineState(loadAttendanceBaselineState(), {
+    const nextState = lockAttendanceBaselineState(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
       byRole: 'admin',
       byName: 'Admin cơ sở',
       note: baselineRecords.length
         ? 'Chốt dữ liệu nền điểm danh.'
         : 'Chốt dữ liệu nền khi chưa có bản ghi nền.',
     })
-    saveAttendanceBaselineState('dreamhome', nextState)
+    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
     void writeC51AttendanceSessionReportThroughCloud({
       baselineState: nextState,
       reason: 'baseline-lock',
@@ -7822,13 +8094,13 @@ function bindEvents() {
     }
 
     const reason = window.prompt('Lý do mở khóa', '') || ''
-    const nextState = unlockAttendanceBaselineState(loadAttendanceBaselineState(), {
+    const nextState = unlockAttendanceBaselineState(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
       byRole: 'admin',
       byName: 'Admin cơ sở',
       reason: reason.trim() || 'Không ghi lý do',
       note: 'Mở khóa dữ liệu nền điểm danh.',
     })
-    saveAttendanceBaselineState('dreamhome', nextState)
+    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
     void writeC51AttendanceSessionReportThroughCloud({
       baselineState: nextState,
       reason: 'baseline-unlock',
@@ -9103,7 +9375,7 @@ function bindEvents() {
           mode: 'adminPlaceholder',
         }
         scheduleAdminAttendanceState = occurrence
-          ? createScheduleAdminAttendanceState(occurrence, loadStoredAttendanceRecords())
+          ? createScheduleAdminAttendanceState(occurrence, loadStoredAttendanceRecords(getCurrentResolvedCenterId()))
           : null
         sessionReportAttendanceState = null
         sessionReportLearningState = null
@@ -9131,7 +9403,7 @@ function bindEvents() {
           occurrence.id,
           occurrence.occurrenceDate,
         )
-        const storedAttendanceRecords = loadStoredAttendanceRecords()
+        const storedAttendanceRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
         scheduleReportState = {
           ...scheduleReportState,
           mode: 'teacherReport',
@@ -9282,12 +9554,12 @@ function bindEvents() {
         }
 
         const result = upsertAdminAttendanceRecords({
-          records: loadStoredAttendanceRecords(),
+          records: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
           inputs,
           byName: 'Admin cơ sở',
         })
 
-        saveStoredAttendanceRecords('dreamhome', result.records)
+        saveStoredAttendanceRecords(getCurrentResolvedCenterId(), result.records)
         void writeC51AttendanceSessionReportThroughCloud({
           attendanceRecords: result.savedRecords,
           reason: 'admin-attendance-save',
@@ -9330,7 +9602,7 @@ function bindEvents() {
     }
 
     const occurrence = getScheduleAdminAttendanceOccurrence()
-    const storedAttendanceRecords = loadStoredAttendanceRecords()
+    const storedAttendanceRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
     const adminAttendanceRecords = occurrence
       ? getScheduleAdminAttendanceRecords(occurrence, storedAttendanceRecords)
       : []
@@ -9386,7 +9658,7 @@ function bindEvents() {
       : [savedReport, ...sessionReports]
 
     saveStoredSessionReports(sessionReports)
-    saveStoredAttendanceRecords('dreamhome', teacherAttendanceResult.records)
+    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), teacherAttendanceResult.records)
     void writeC51AttendanceSessionReportThroughCloud({
       attendanceRecords: teacherAttendanceResult.savedRecords,
       sessionReports: [savedReport],
@@ -10688,6 +10960,31 @@ function bindNotificationOutsidePointer() {
     render()
   })
   notificationOutsidePointerBound = true
+}
+
+function bindCenterProfileOutsidePointer() {
+  if (centerProfileOutsidePointerBound) {
+    return
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!isCenterProfilePopoverOpen) {
+      return
+    }
+
+    const target = event.target
+
+    if (
+      target.closest?.('.center-profile-popover') ||
+      target.closest?.('[data-action="toggle-center-profile"]')
+    ) {
+      return
+    }
+
+    isCenterProfilePopoverOpen = false
+    render()
+  })
+  centerProfileOutsidePointerBound = true
 }
 
 function bindStartMenuOutsidePointer() {

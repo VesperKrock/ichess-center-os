@@ -3,13 +3,12 @@ import { CURRENT_CENTER_ID } from './supabase-auth.js'
 export function getDefaultAppCenter() {
   return {
     id: CURRENT_CENTER_ID,
-    name: 'DreamHome',
+    name: 'DreamHome staging',
     source: 'single-center-default',
   }
 }
 
 export function resolveAppCenterBinding(authState) {
-  const defaultCenter = getDefaultAppCenter()
   const isSignedIn = authState?.authStatus === 'signed-in' && authState.user
 
   if (!isSignedIn) {
@@ -22,21 +21,55 @@ export function resolveAppCenterBinding(authState) {
     }
   }
 
-  if (!defaultCenter.id) {
+  if (authState?.membershipStatus === 'loading') {
+    return {
+      status: 'loading',
+      currentCenterId: '',
+      centerName: '',
+      source: 'center-members-loading',
+      message: 'Dang kiem tra co so cua tai khoan...',
+    }
+  }
+
+  if (authState?.membershipStatus === 'loaded' && authState?.centerId) {
+    return {
+      status: 'bound',
+      currentCenterId: authState.centerId,
+      centerName: authState.centerName || authState.centerId,
+      source: 'account-membership',
+      role: authState.role ?? null,
+      membership: authState.membership ?? null,
+      memberships: authState.memberships ?? [],
+      message: authState.message || '',
+    }
+  }
+
+  if (authState?.membershipStatus === 'missing') {
     return {
       status: 'error',
       currentCenterId: '',
       centerName: '',
-      source: 'missing-default-center',
-      message: 'Không thể xác định cơ sở cho tài khoản này. Vui lòng liên hệ quản trị viên.',
+      source: 'missing-center-membership',
+      message: authState.message ||
+        'Tai khoan nay chua duoc gan co so active. Vui long lien he quan tri vien.',
+    }
+  }
+
+  if (authState?.membershipStatus === 'error') {
+    return {
+      status: 'error',
+      currentCenterId: '',
+      centerName: '',
+      source: 'center-members-error',
+      message: authState.message || 'Khong the doc quyen center_members qua RLS.',
     }
   }
 
   return {
-    status: 'bound',
-    currentCenterId: defaultCenter.id,
-    centerName: defaultCenter.name,
-    source: 'single-center-fallback',
+    status: 'signed-out',
+    currentCenterId: '',
+    centerName: getDefaultAppCenter().name,
+    source: 'signed-out-default-only',
     message: '',
   }
 }

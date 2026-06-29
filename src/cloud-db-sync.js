@@ -51,7 +51,10 @@ export async function getCloudDbContext(centerId = CURRENT_CENTER_ID) {
     try {
       membership = await getCurrentCenterMembership(user.id, centerId)
     } catch (error) {
-      const detail = classifyCloudDbError(error, 'center_members')
+      const detail = {
+        ...classifyCloudDbError(error, 'center_members'),
+        centerId,
+      }
       return {
         ok: false,
         error: getCloudDbReadinessMessage(detail),
@@ -67,6 +70,7 @@ export async function getCloudDbContext(centerId = CURRENT_CENTER_ID) {
           category: 'missing-membership',
           status: 403,
           target: 'center_members',
+          centerId,
         },
       }
     }
@@ -81,7 +85,10 @@ export async function checkCloudDbReadiness(centerId = CURRENT_CENTER_ID) {
   const context = await getCloudDbContext(centerId)
 
   if (!context.ok) {
-    const detail = context.detail || classifyCloudDbContextError(context.error)
+    const detail = {
+      ...classifyCloudDbContextError(context.error),
+      centerId,
+    }
 
     return {
       ...context,
@@ -101,7 +108,10 @@ export async function checkCloudDbReadiness(centerId = CURRENT_CENTER_ID) {
     .limit(1)
 
   if (error) {
-    const detail = classifyCloudDbError(error, 'center_cloud_entities')
+    const detail = {
+      ...classifyCloudDbError(error, 'center_cloud_entities'),
+      centerId,
+    }
 
     return {
       ok: false,
@@ -561,20 +571,22 @@ export function classifyCloudDbContextError(error) {
 }
 
 export function getCloudDbReadinessMessage(detail = {}) {
+  const centerId = detail.centerId || 'current center'
+
   if (detail.category === 'schema-not-ready') {
     return 'Chưa chạy SQL C1/C2.2 hoặc bảng center_cloud_entities chưa sẵn sàng.'
   }
 
   if (detail.category === 'membership-read-denied') {
-    return 'Không đọc được quyền DreamHome từ center_members. Kiểm tra GRANT/RLS cho center_members và membership center_id = dreamhome.'
+    return `Không đọc được quyền từ center_members. Kiểm tra GRANT/RLS và membership center_id = ${centerId}.`
   }
 
   if (detail.category === 'missing-membership') {
-    return 'User hiện tại chưa có membership center_members với center_id = dreamhome.'
+    return `User hiện tại chưa có membership center_members với center_id = ${centerId}.`
   }
 
   if (detail.category === 'cloud-permission-denied') {
-    return 'Không đọc được Cloud DB do quyền DreamHome/RLS. Kiểm tra GRANT authenticated, center_members và policy.'
+    return `Không đọc được Cloud DB do quyền/RLS của center ${centerId}. Kiểm tra GRANT authenticated, center_members và policy.`
   }
 
   if (detail.category === 'signed-out') {
