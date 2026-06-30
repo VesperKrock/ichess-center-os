@@ -8,8 +8,9 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const root = path.resolve(__dirname, '..')
 
-const docPath = path.join(root, 'docs', 'supabase-c6-2b-startup-badge-cache-flicker-hotfix.md')
-const mainPath = path.join(root, 'src', 'main.js')
+const docPath = path.join(root, 'docs', 'supabase-c6-3b-centers-schema-hardening-provisioning-pack.md')
+const readonlySqlPath = path.join(root, 'docs', 'supabase-c6-3b-readonly-inspect-centers-schema.sql')
+const manualSqlPath = path.join(root, 'docs', 'supabase-c6-3b-manual-apply-centers-schema-hardening-template.sql')
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8')
@@ -21,6 +22,12 @@ function assertIncludes(content, needle, label = needle) {
 
 function assertNotIncludes(content, needle, label = needle) {
   assert(!content.includes(needle), `Unexpected ${label}`)
+}
+
+function stripSqlComments(sql) {
+  return sql
+    .replace(/--.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
 }
 
 function assertNoMojibake(filePath) {
@@ -37,27 +44,38 @@ function assertNoMojibake(filePath) {
   }
 }
 
-assert(fs.existsSync(docPath), 'C6.2B docs must exist')
+assert(fs.existsSync(docPath), 'C6.3B docs must exist')
+assert(fs.existsSync(readonlySqlPath), 'C6.3B read-only SQL must exist')
+assert(fs.existsSync(manualSqlPath), 'C6.3B manual apply template must exist')
 
 const docs = readUtf8(docPath)
-const main = readUtf8(mainPath)
+const readonlySql = readUtf8(readonlySqlPath)
+const manualSql = readUtf8(manualSqlPath)
+const readonlyExecutableSql = stripSqlComments(readonlySql)
+const manualExecutableSql = stripSqlComments(manualSql)
+const main = readUtf8(path.join(root, 'src', 'main.js'))
 
 ;[
-  'C6.2B STATUS: STARTUP BADGE CACHE FLICKER HOTFIX',
-  'PRODUCTION_CENTER_ID: dreamhome_prod',
-  'STAGING_CENTER_ID: dreamhome',
-  'STARTUP_BADGE_FLICKER_FIXED: YES',
-  'BADGES_GATED_UNTIL_CENTER_READY: YES',
-  'INVENTORY_BADGE_CENTER_AWARE: YES',
-  'PRODUCTION_EMPTY_BADGE_HIDDEN: YES',
-  'SIGNED_IN_PRODUCTION_READS_DREAMHOME_CACHE: NO',
-  'ANGEL_WINGS_DELETED: NO',
-  'ANGEL_WINGS_MIGRATED: NO',
-  'DREAMHOME_CACHE_DELETED: NO',
-  'DREAMHOME_CACHE_MIGRATED: NO',
+  'C6.3B STATUS: CENTERS SCHEMA HARDENING PROVISIONING PACK',
+  'C6_3A_STATUS: PASS',
+  'CURRENT_CENTERS_SCHEMA_MINIMAL: YES',
+  'PROPOSED_CENTER_COLUMNS: slug, environment, status, updated_at',
+  'PROPOSED_UNIQUE_SLUG_ENVIRONMENT: YES',
+  'BACKFILL_DREAMHOME_STAGING: YES',
+  'BACKFILL_DREAMHOME_PRODUCTION: YES',
+  'FUTURE_CENTER_ID_EXAMPLE_GOVAP: govap_prod',
+  'FUTURE_CENTER_ID_EXAMPLE_QUAN12: quan12_prod',
+  'ADD_CENTER_NOT_CLONE: YES',
+  'READONLY_SQL_CREATED: YES',
+  'MANUAL_APPLY_SQL_TEMPLATE_CREATED: YES',
   'SQL_APPLIED_BY_CODEX: NO',
   'SUPABASE_ACTION_BY_CODEX: NOT RUN',
-  'C6_3_STARTED: NO',
+  'NEW_CENTER_CREATED: NO',
+  'GOVAP_CREATED: NO',
+  'QUAN12_CREATED: NO',
+  'ANGEL_WINGS_DELETED: NO',
+  'ANGEL_WINGS_MIGRATED: NO',
+  'RUNTIME_CHANGE: NO',
   'C6_4_STARTED: NO',
   'C6_5_INTERNAL_CONSOLE_STARTED: NO',
   'C7_STARTED: NO',
@@ -66,43 +84,42 @@ const main = readUtf8(mainPath)
 ].forEach((marker) => assertIncludes(docs, marker))
 
 ;[
-  'Kho hàng',
-  'badge đỏ `3`',
-  'dreamhome_prod',
-  'dreamhome',
-  'center binding',
-  'module badges chỉ được tính sau khi center binding sẵn sàng',
-  'Kho hàng` badge chỉ hợp lệ sau khi local data đã được reload trong namespace production',
-  'Production empty là trạng thái hợp lệ',
-  'không seed sample',
-  'không được tính từ `.dreamhome`',
-  'không xóa `.dreamhome`',
-  'không xóa hoặc migrate Angel Wings',
-  'C6.2E checkpoint review',
+  'slug',
+  'environment',
+  'status',
+  'updated_at',
+  'unique index `(slug, environment)`',
+  '`dreamhome` staging',
+  '`dreamhome_prod` production',
+  'govap_prod',
+  'quan12_prod',
+  'add center, not clone',
+  'SQL safety/risk/order',
+  'C6.3C manual apply centers schema hardening',
+  'C6.5 Internal Center Console vẫn deferred',
+  'C7 vẫn deferred',
 ].forEach((needle) => assertIncludes(docs, needle))
 
-assertIncludes(main, 'activeLocalDataCenterId')
-assertIncludes(main, 'function canRenderCenterScopedModuleBadges()')
-assertIncludes(main, "cloudStatus.authStatus === 'signed-in'")
-assertIncludes(main, "binding.status === 'bound'")
-assertIncludes(main, 'activeLocalDataCenterId === binding.currentCenterId')
-assertIncludes(main, 'storageCenterId === binding.currentCenterId')
-assertIncludes(main, 'activeLocalDataCenterId = getCurrentStorageCenterId()')
-assertIncludes(main, 'canRenderCenterScopedModuleBadges()')
-assertIncludes(main, 'getUnreadNotificationCountsByModule(getCenterScopedNotificationsForRender())')
-assertIncludes(main, ': {}')
-assertIncludes(main, 'setCurrentStorageCenterId(resolvedMembership.centerId)')
-assertIncludes(main, 'useSampleFallback: !isProductionCenter(resolvedMembership.centerId)')
+assertIncludes(readonlySql, 'READ ONLY')
+assertIncludes(readonlySql, 'centers')
+assertIncludes(readonlySql, 'center_members')
+assertIncludes(readonlySql, 'center_cloud_entities')
+assert(!/\b(insert|update|delete|alter|drop|create|truncate|grant|revoke|merge|upsert)\b/i.test(readonlyExecutableSql), 'Read-only SQL must not contain mutating operations')
 
-assertNotIncludes(main, 'Cloud trống (production empty center)')
+assertIncludes(manualSql, 'MANUAL APPLY TEMPLATE ONLY')
+;['slug', 'environment', 'status', 'updated_at', 'dreamhome', 'dreamhome_prod', 'staging', 'production'].forEach((needle) =>
+  assertIncludes(manualSql, needle),
+)
+assert(!/insert\s+into[\s\S]*govap_prod/i.test(manualExecutableSql), 'Manual template must not insert govap_prod')
+assert(!/insert\s+into[\s\S]*quan12_prod/i.test(manualExecutableSql), 'Manual template must not insert quan12_prod')
+assert(!/\b(delete|drop|truncate)\b/i.test(manualExecutableSql), 'Manual template must not delete/drop/truncate')
+assert(!/\brename\b[\s\S]*dreamhome/i.test(manualExecutableSql), 'Manual template must not rename dreamhome')
+
 assertNotIncludes(main, '/internal/centers')
 assertNotIncludes(main, 'Thêm cơ sở')
 assertNotIncludes(main, 'username login')
 assertNotIncludes(main, 'Teacher Portal')
 assertNotIncludes(main, 'Super Admin')
-
-const setTimeoutHacks = main.match(/setTimeout\([^)]*(badge|notification|inventory|module)/gi) || []
-assert.strictEqual(setTimeoutHacks.length, 0, 'C6.2B must not use setTimeout badge/inventory/module hacks')
 
 const status = execFileSync('git', ['status', '--short'], {
   cwd: root,
@@ -110,11 +127,6 @@ const status = execFileSync('git', ['status', '--short'], {
 })
 
 const allowedChangedPaths = new Set([
-  'src/main.js',
-  'docs/supabase-c6-2a-online-local-production-staging-qa-audit.md',
-  'docs/supabase-c6-2b-startup-badge-cache-flicker-hotfix.md',
-  'docs/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang.md',
-  'docs/supabase-c6-2e-checkpoint-review-production-staging-hardening.md',
   'docs/supabase-c6-3a-multi-center-foundation-audit-design.md',
   'docs/supabase-c6-3b-centers-schema-hardening-provisioning-pack.md',
   'docs/supabase-c6-3b-readonly-inspect-centers-schema.sql',
@@ -126,10 +138,6 @@ const allowedChangedPaths = new Set([
   'docs/supabase-c6-3c-readonly-verify-centers-schema-hardening-applied.sql',
   'docs/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening.md',
   'docs/supabase-c6-3e-checkpoint-review-multi-center-foundation.md',
-  'tests/supabase-c6-2a-online-local-production-staging-qa-audit-smoke.js',
-  'tests/supabase-c6-2b-startup-badge-cache-flicker-hotfix-smoke.js',
-  'tests/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang-smoke.js',
-  'tests/supabase-c6-2e-checkpoint-review-production-staging-hardening-smoke.js',
   'tests/supabase-c6-3a-multi-center-foundation-audit-design-smoke.js',
   'tests/supabase-c6-3b-centers-schema-hardening-provisioning-pack-smoke.js',
   'tests/supabase-c6-3c-verify-centers-schema-hardening-applied-smoke.js',
@@ -142,15 +150,18 @@ const allowedChangedPaths = new Set([
   'tests/supabase-c6-1d-account-based-center-resolver-cache-guard-smoke.js',
   'tests/supabase-c6-1d-1-taskbar-profile-wording-polish-smoke.js',
   'tests/supabase-c6-1e-checkpoint-review-dreamhome-production-empty-center-smoke.js',
+  'tests/supabase-c6-2a-online-local-production-staging-qa-audit-smoke.js',
+  'tests/supabase-c6-2b-startup-badge-cache-flicker-hotfix-smoke.js',
+  'tests/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang-smoke.js',
+  'tests/supabase-c6-2e-checkpoint-review-production-staging-hardening-smoke.js',
 ])
 
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
-  assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.2B scope: ${changedPath}`)
-  assert(!/\.sql$/i.test(changedPath) || /supabase-c6-3(b-(readonly-inspect-centers-schema|manual-apply-centers-schema-hardening-template)|c-readonly-verify-centers-schema-hardening-applied)\.sql$/i.test(changedPath), `C6.2B must not add SQL: ${changedPath}`)
-  assert(!/c6-3(?![abcde])|c6-4|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.2B must not create future scope files: ${changedPath}`)
+  assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.3B scope: ${changedPath}`)
+  assert(!/c6-4|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.3B must not create future scope files: ${changedPath}`)
 }
 
 assertNoMojibake(docPath)
 
-console.log('C6.2B smoke: PASS')
+console.log('C6.3B smoke: PASS')

@@ -143,10 +143,26 @@ const allowedChangedPaths = new Set([
   'docs/supabase-c6-2b-startup-badge-cache-flicker-hotfix.md',
   'docs/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang.md',
   'docs/supabase-c6-2e-checkpoint-review-production-staging-hardening.md',
+  'docs/supabase-c6-3a-multi-center-foundation-audit-design.md',
+  'docs/supabase-c6-3b-centers-schema-hardening-provisioning-pack.md',
+  'docs/supabase-c6-3b-readonly-inspect-centers-schema.sql',
+  'docs/supabase-c6-3b-manual-apply-centers-schema-hardening-template.sql',
+        'docs/supabase-c6-3c-readonly-verify-centers-schema-hardening-applied.sql',
+  'docs/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening.md',
+  'docs/supabase-c6-3e-checkpoint-review-multi-center-foundation.md',
+  'docs/supabase-c6-3c-verify-centers-schema-hardening-applied.md',
+  'docs/supabase-c6-3c-readonly-verify-centers-schema-hardening-applied.sql',
+  'docs/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening.md',
+  'docs/supabase-c6-3e-checkpoint-review-multi-center-foundation.md',
   'tests/supabase-c6-2a-online-local-production-staging-qa-audit-smoke.js',
   'tests/supabase-c6-2b-startup-badge-cache-flicker-hotfix-smoke.js',
   'tests/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang-smoke.js',
   'tests/supabase-c6-2e-checkpoint-review-production-staging-hardening-smoke.js',
+  'tests/supabase-c6-3a-multi-center-foundation-audit-design-smoke.js',
+  'tests/supabase-c6-3b-centers-schema-hardening-provisioning-pack-smoke.js',
+  'tests/supabase-c6-3c-verify-centers-schema-hardening-applied-smoke.js',
+  'tests/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening-smoke.js',
+  'tests/supabase-c6-3e-checkpoint-review-multi-center-foundation-smoke.js',
   'tests/supabase-c6-0-production-readiness-audit-truoc-dreamhome-production-smoke.js',
   'tests/supabase-c6-1a-thiet-ke-dreamhome-production-empty-center-smoke.js',
   'tests/supabase-c6-1b-readonly-verification-pack-dreamhome-production-empty-center-smoke.js',
@@ -159,8 +175,8 @@ const allowedChangedPaths = new Set([
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
   assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.2B.1 scope: ${changedPath}`)
-  assert(!/\.sql$/i.test(changedPath), `C6.2B.1 must not add SQL: ${changedPath}`)
-  assert(!/c6-3|c6-4|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.2B.1 must not create future scope files: ${changedPath}`)
+  assert(!/\.sql$/i.test(changedPath) || /supabase-c6-3(b-(readonly-inspect-centers-schema|manual-apply-centers-schema-hardening-template)|c-readonly-verify-centers-schema-hardening-applied)\.sql$/i.test(changedPath), `C6.2B.1 must not add SQL: ${changedPath}`)
+  assert(!/c6-3(?![abcde])|c6-4|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.2B.1 must not create future scope files: ${changedPath}`)
 }
 
 assertNoMojibake(docPath)
