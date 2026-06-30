@@ -556,6 +556,27 @@ let internalCentersListState = {
   loadedForUserId: '',
 }
 let internalCentersListRunId = 0
+let internalAddCenterFormState = createInternalAddCenterFormState()
+let internalCenterSwitchState = createInternalCenterSwitchState()
+
+function createInternalAddCenterFormState(overrides = {}) {
+  return {
+    name: '',
+    status: 'idle',
+    error: '',
+    success: '',
+    ...overrides,
+  }
+}
+
+function createInternalCenterSwitchState(overrides = {}) {
+  return {
+    status: 'idle',
+    centerId: '',
+    error: '',
+    ...overrides,
+  }
+}
 
 function getCurrentResolvedCenterId() {
   const binding = resolveAppCenterBinding(cloudStatus)
@@ -563,7 +584,12 @@ function getCurrentResolvedCenterId() {
 }
 
 function isProductionCenter(centerId = getCurrentResolvedCenterId()) {
-  return centerId === PRODUCTION_CENTER_ID
+  const normalizedCenterId = String(centerId || '').trim()
+  const knownCenter = internalCentersListState.centers.find((center) => center.id === normalizedCenterId)
+
+  return normalizedCenterId === PRODUCTION_CENTER_ID ||
+    normalizedCenterId.endsWith('_prod') ||
+    knownCenter?.environment === 'production'
 }
 
 function canRenderCenterScopedModuleBadges() {
@@ -770,11 +796,7 @@ function renderInternalCenterConsoleSkeleton(centerBinding) {
       <div class="internal-console-panel">
         <p class="internal-console-eyebrow">Internal Center Console</p>
         <h1 id="internal-console-title">Quản trị nội bộ</h1>
-        <div class="internal-console-readiness">
-          <h2>Danh sách cơ sở</h2>
-          <p>Khu vực này dành cho owner. Danh sách bên dưới chỉ đọc từ Cloud.</p>
-          <p>Mặc định chỉ hiển thị cơ sở production active.</p>
-        </div>
+        ${renderInternalAddCenterForm()}
         ${renderInternalCentersList()}
         <dl class="internal-console-meta">
           <div>
@@ -800,6 +822,107 @@ function renderInternalCenterConsoleSkeleton(centerBinding) {
       </div>
     </section>
   `
+}
+
+function renderInternalAddCenterForm() {
+  const preview = getInternalAddCenterPreview(internalAddCenterFormState.name)
+  const isSubmitting = internalAddCenterFormState.status === 'submitting'
+  const submitDisabled = isSubmitting || !preview.isSubmittable
+
+  return `
+    <form class="internal-add-center-form" data-internal-add-center-form>
+      <div class="internal-add-center-header">
+        <div>
+          <h2>Thêm cơ sở</h2>
+        </div>
+      </div>
+      <label class="internal-add-center-field">
+        <span>Tên cơ sở</span>
+        <input
+          type="text"
+          name="centerName"
+          autocomplete="off"
+          required
+          minlength="2"
+          value="${escapeHtml(internalAddCenterFormState.name)}"
+          data-internal-add-center-name
+        />
+      </label>
+      <dl class="internal-add-center-preview" aria-label="Preview cơ sở sẽ tạo">
+        <div>
+          <dt>Slug</dt>
+          <dd data-internal-add-center-preview="slug">${escapeHtml(preview.slug || '-')}</dd>
+        </div>
+        <div>
+          <dt>Mã cơ sở sẽ tạo</dt>
+          <dd data-internal-add-center-preview="centerId">${escapeHtml(preview.centerId || '-')}</dd>
+        </div>
+        <div>
+          <dt>Môi trường</dt>
+          <dd>production</dd>
+        </div>
+        <div>
+          <dt>Trạng thái</dt>
+          <dd>active</dd>
+        </div>
+      </dl>
+      ${internalAddCenterFormState.error ? `
+        <p class="internal-add-center-message is-error" role="alert">
+          ${escapeHtml(internalAddCenterFormState.error)}
+        </p>
+      ` : ''}
+      ${internalAddCenterFormState.success ? `
+        <p class="internal-add-center-message is-success" role="status">
+          ${escapeHtml(internalAddCenterFormState.success)}
+        </p>
+      ` : ''}
+      <div class="internal-add-center-actions">
+        <button type="submit" ${submitDisabled ? 'disabled' : ''} data-internal-add-center-submit>
+          ${isSubmitting ? 'Đang tạo cơ sở...' : 'Tạo cơ sở'}
+        </button>
+      </div>
+    </form>
+  `
+}
+
+function getInternalAddCenterPreview(centerName) {
+  const normalizedName = String(centerName || '').trim()
+  const slug = createCompactCenterSlug(normalizedName)
+
+  return {
+    name: normalizedName,
+    slug,
+    centerId: slug ? `${slug}_prod` : '',
+    isSubmittable: normalizedName.length >= 2 && Boolean(slug),
+  }
+}
+
+function createCompactCenterSlug(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+}
+
+function validateInternalAddCenterName(centerName) {
+  const normalizedName = String(centerName || '').trim()
+
+  if (!normalizedName) {
+    return 'Vui lòng nhập tên cơ sở.'
+  }
+
+  if (normalizedName.length < 2) {
+    return 'Tên cơ sở quá ngắn.'
+  }
+
+  if (!createCompactCenterSlug(normalizedName)) {
+    return 'Tên cơ sở chưa tạo được mã hợp lệ.'
+  }
+
+  return ''
 }
 
 function ensureInternalCentersListLoading() {
@@ -872,6 +995,213 @@ async function loadInternalCentersList(userId) {
   }
 }
 
+async function handleInternalAddCenterSubmit() {
+  const centerBinding = resolveAppCenterBinding(cloudStatus)
+  const access = getInternalCenterConsoleAccess(centerBinding)
+  const centerName = String(internalAddCenterFormState.name || '').trim()
+  const validationError = validateInternalAddCenterName(centerName)
+
+  if (!access.isOwner) {
+    internalAddCenterFormState = createInternalAddCenterFormState({
+      name: centerName,
+      status: 'error',
+      error: 'Khu vực này chỉ dành cho owner.',
+    })
+    render()
+    return
+  }
+
+  if (validationError) {
+    internalAddCenterFormState = {
+      ...internalAddCenterFormState,
+      name: centerName,
+      status: 'error',
+      error: validationError,
+      success: '',
+    }
+    render()
+    return
+  }
+
+  internalAddCenterFormState = {
+    ...internalAddCenterFormState,
+    name: centerName,
+    status: 'submitting',
+    error: '',
+    success: '',
+  }
+  render()
+
+  try {
+    const supabase = getSupabaseClient()
+
+    if (!supabase) {
+      throw new Error('Supabase chưa được cấu hình.')
+    }
+
+    const { error } = await supabase.rpc('provision_center_for_owner', {
+      p_center_name: centerName,
+    })
+
+    if (error) {
+      throw error
+    }
+
+    internalAddCenterFormState = createInternalAddCenterFormState({
+      status: 'success',
+      success: `Đã tạo cơ sở ${centerName}.`,
+    })
+
+    internalCentersListState = {
+      status: 'loading',
+      centers: [],
+      error: '',
+      loadedForUserId: cloudStatus.user?.id || '',
+    }
+
+    render()
+    await loadInternalCentersList(cloudStatus.user?.id || '')
+  } catch (error) {
+    internalAddCenterFormState = {
+      ...internalAddCenterFormState,
+      name: centerName,
+      status: 'error',
+      error: `Không tạo được cơ sở. ${getInternalAddCenterErrorMessage(error)}`,
+      success: '',
+    }
+
+    if (isInternalCenterConsoleRoute()) {
+      render()
+    }
+  }
+}
+
+function getInternalAddCenterErrorMessage(error) {
+  const rawMessage = getCloudErrorMessage(error, 'Vui lòng thử lại hoặc kiểm tra quyền owner.')
+  const normalizedMessage = String(rawMessage || '').toLowerCase()
+
+  if (
+    normalizedMessage.includes('duplicate') ||
+    normalizedMessage.includes('already exists') ||
+    normalizedMessage.includes('unique') ||
+    normalizedMessage.includes('trùng') ||
+    normalizedMessage.includes('ton tai') ||
+    normalizedMessage.includes('tồn tại')
+  ) {
+    return 'Mã cơ sở đã tồn tại hoặc tên cơ sở đã được dùng trong production.'
+  }
+
+  return rawMessage
+}
+
+function getInternalCenterById(centerId) {
+  const normalizedCenterId = String(centerId || '').trim()
+  return internalCentersListState.centers.find((center) => center.id === normalizedCenterId) || null
+}
+
+function getActiveMembershipForInternalCenter(centerId) {
+  const normalizedCenterId = String(centerId || '').trim()
+  const memberships = Array.isArray(cloudStatus.memberships) ? cloudStatus.memberships : []
+
+  return memberships.find((membership) =>
+    String(membership?.center_id || '').trim() === normalizedCenterId &&
+    String(membership?.status || '').toLowerCase() === 'active'
+  ) || null
+}
+
+function canOpenInternalCenter(center) {
+  const centerBinding = resolveAppCenterBinding(cloudStatus)
+  const access = getInternalCenterConsoleAccess(centerBinding)
+
+  return Boolean(
+    access.isOwner &&
+      center &&
+      center.id &&
+      center.environment === 'production' &&
+      center.status === 'active' &&
+      getActiveMembershipForInternalCenter(center.id),
+  )
+}
+
+function resetCloudRuntimeStateForOwnerCenterSwitch() {
+  stopStudentRealtimeSubscription()
+  stopTeacherRealtimeSubscription()
+  stopScheduleSessionRealtimeSubscription()
+  stopC51AttendanceRealtimeSubscription()
+  stopC52TuitionRealtimeSubscription()
+  cloudDbState = createInitialCloudDbState()
+  cloudBootstrapState = createInitialCloudBootstrapState()
+  cloudDbAutoPullUserId = ''
+  c51AttendanceAutoPullUserId = ''
+  c52TuitionAutoPullUserId = ''
+  cloudBootstrapRetryBlockedUntil = 0
+  cloudBootstrapLastFailureSignature = ''
+  transactionImageManagerState = null
+  cloudGalleryState = null
+  isCenterProfilePopoverOpen = false
+}
+
+async function handleInternalOpenCenter(centerId) {
+  const normalizedCenterId = String(centerId || '').trim()
+  const center = getInternalCenterById(normalizedCenterId)
+  const membership = getActiveMembershipForInternalCenter(normalizedCenterId)
+
+  if (!center || !canOpenInternalCenter(center) || !membership) {
+    internalCenterSwitchState = createInternalCenterSwitchState({
+      status: 'error',
+      centerId: normalizedCenterId,
+      error: 'Chỉ owner có active membership của cơ sở production active mới được mở OS cơ sở.',
+    })
+    render()
+    return
+  }
+
+  const switchSyncId = ++cloudUserSyncId
+
+  internalCenterSwitchState = createInternalCenterSwitchState({
+    status: 'switching',
+    centerId: normalizedCenterId,
+  })
+  setCurrentStorageCenterId(normalizedCenterId)
+  reloadLocalDataForResolvedCenter({ useSampleFallback: false })
+  resetCloudRuntimeStateForOwnerCenterSwitch()
+  cloudStatus = {
+    ...cloudStatus,
+    centerId: normalizedCenterId,
+    centerName: center.name || normalizedCenterId,
+    membership,
+    role: normalizeOnlineRole(membership.role ?? cloudStatus.role),
+    membershipStatus: 'loaded',
+    message: '',
+    attachments: [],
+    attachmentsStatus: 'loading',
+    attachmentsError: '',
+    attachmentsMonthKey: getCurrentMonthKey(),
+    profileStatus: 'idle',
+    profileMessage: '',
+    profileMessageTone: '',
+  }
+  internalCenterSwitchState = createInternalCenterSwitchState()
+  window.location.hash = ''
+  render()
+
+  await bootstrapCoreCloudDataForCurrentCenter(switchSyncId)
+
+  if (cloudUserSyncId !== switchSyncId || cloudStatus.membershipStatus !== 'loaded') {
+    return
+  }
+
+  await loadCenterMemberProfiles(switchSyncId)
+  await loadCurrentMonthCloudAttachments(switchSyncId)
+  await startStudentRealtimeSubscription(switchSyncId)
+  await startTeacherRealtimeSubscription(switchSyncId)
+  await startScheduleSessionRealtimeSubscription(switchSyncId)
+  await bootstrapC51AttendanceSessionReportCloudData(switchSyncId)
+  await startC51AttendanceRealtimeSubscription(switchSyncId)
+  await bootstrapC52TuitionRecordPackageCloudData(switchSyncId)
+  await startC52TuitionRealtimeSubscription(switchSyncId)
+}
+
 function normalizeInternalCenters(rows = []) {
   return (Array.isArray(rows) ? rows : []).map((row) => ({
     id: String(row?.id || ''),
@@ -908,6 +1238,11 @@ function renderInternalCentersList() {
         <span>Môi trường: production</span>
         <span>Trạng thái: active</span>
       </div>
+      ${internalCenterSwitchState.error ? `
+        <p class="internal-console-state is-error" role="alert">
+          ${escapeHtml(internalCenterSwitchState.error)}
+        </p>
+      ` : ''}
       <div class="internal-centers-table-wrap">
         <table class="internal-centers-table">
           <thead>
@@ -919,6 +1254,7 @@ function renderInternalCentersList() {
               <th>Trạng thái</th>
               <th>Cập nhật</th>
               <th>Ngày tạo</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -931,6 +1267,15 @@ function renderInternalCentersList() {
 }
 
 function renderInternalCenterRow(center) {
+  const currentCenterId = getCurrentResolvedCenterId()
+  const canOpenCenter = canOpenInternalCenter(center)
+  const isCurrentCenter = center.id === currentCenterId
+  const isSwitching = internalCenterSwitchState.status === 'switching' &&
+    internalCenterSwitchState.centerId === center.id
+  const buttonLabel = isSwitching
+    ? 'Đang mở...'
+    : isCurrentCenter ? 'Đang mở' : 'Mở OS cơ sở'
+
   return `
     <tr>
       <td>${escapeHtml(center.name || center.id)}</td>
@@ -940,6 +1285,16 @@ function renderInternalCenterRow(center) {
       <td>${escapeHtml(center.status || '-')}</td>
       <td>${escapeHtml(formatInternalCenterTimestamp(center.updatedAt))}</td>
       <td>${escapeHtml(formatInternalCenterTimestamp(center.createdAt))}</td>
+      <td>
+        <button
+          type="button"
+          class="internal-centers-open"
+          data-internal-open-center-id="${escapeHtml(center.id)}"
+          ${canOpenCenter && !isCurrentCenter && !isSwitching ? '' : 'disabled'}
+        >
+          ${escapeHtml(buttonLabel)}
+        </button>
+      </td>
     </tr>
   `
 }
@@ -5945,6 +6300,44 @@ function bindEvents() {
 
       render()
     })
+
+  const internalAddCenterNameInput = document.querySelector('[data-internal-add-center-name]')
+  internalAddCenterNameInput?.addEventListener('input', () => {
+    internalAddCenterFormState = {
+      ...internalAddCenterFormState,
+      name: internalAddCenterNameInput.value,
+      error: '',
+      success: '',
+    }
+
+    const preview = getInternalAddCenterPreview(internalAddCenterFormState.name)
+    const slugPreview = document.querySelector('[data-internal-add-center-preview="slug"]')
+    const centerIdPreview = document.querySelector('[data-internal-add-center-preview="centerId"]')
+    const submitButton = document.querySelector('[data-internal-add-center-submit]')
+
+    if (slugPreview) {
+      slugPreview.textContent = preview.slug || '-'
+    }
+
+    if (centerIdPreview) {
+      centerIdPreview.textContent = preview.centerId || '-'
+    }
+
+    if (submitButton) {
+      submitButton.disabled = !preview.isSubmittable
+    }
+  })
+
+  document.querySelector('[data-internal-add-center-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    void handleInternalAddCenterSubmit()
+  })
+
+  document.querySelectorAll('[data-internal-open-center-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void handleInternalOpenCenter(button.dataset.internalOpenCenterId)
+    })
+  })
 
   document.querySelectorAll('[data-view-mode]').forEach((button) => {
     button.addEventListener('click', () => {

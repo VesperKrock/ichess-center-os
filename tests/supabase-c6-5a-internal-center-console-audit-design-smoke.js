@@ -110,7 +110,6 @@ const c65bStarted = fs.existsSync(c65bDocPath)
 ].forEach((needle) => assertIncludes(docs, needle))
 
 ;[
-  'Thêm cơ sở',
   'username login',
   'Teacher Portal',
   'Super Admin',
@@ -126,10 +125,14 @@ const diffNames = execFileSync('git', ['diff', '--name-only'], {
 const changedFiles = diffNames.split(/\r?\n/).filter(Boolean).map((fileName) => fileName.replace(/\\/g, '/'))
 
 if (!c65bStarted) {
-  assert(!changedFiles.some((fileName) => fileName.startsWith('src/')), 'C6.5A RUNTIME_CHANGE: NO means no src diff before C6.5B')
-} else {
-  assert(changedFiles.includes('src/main.js'), 'C6.5B runtime route should live in src/main.js')
-  assert(changedFiles.includes('src/styles.css'), 'C6.5B minimal styles should live in src/styles.css')
+  } else {
+  const changedSrcFiles = changedFiles.filter((fileName) => fileName.startsWith('src/')).sort()
+  assert(
+    changedSrcFiles.length === 0 ||
+      JSON.stringify(changedSrcFiles) === JSON.stringify(['src/main.js', 'src/styles.css']),
+    'C6.5 runtime should be either committed or limited to src/main.js/src/styles.css',
+  )
+  assertIncludes(srcMain, "'#/internal/centers'", 'C6.5B runtime route should live in src/main.js')
 }
 
 const allowedChangedPaths = new Set([
@@ -137,12 +140,31 @@ const allowedChangedPaths = new Set([
   'docs/supabase-c6-5b-hidden-route-skeleton-owner-guard.md',
   'docs/supabase-c6-5c-centers-list-readonly.md',
   'docs/supabase-c6-5d-checkpoint-review-internal-center-console.md',
+  'docs/supabase-c6-6a-them-co-so-mot-truong-audit-design.md',
+  'docs/supabase-c6-6b-manual-apply-provision-center-rpc-template.sql',
+  'docs/supabase-c6-6c-post-apply-verify-provision-center-rpc.sql',
+  'docs/supabase-c6-6d-post-apply-verify-controlled-rpc-test-pack.md',
+  'docs/supabase-c6-6d-readonly-verify-rpc-applied.sql',
+  'docs/supabase-c6-6d-controlled-create-center-rpc-template.sql',
+  'docs/supabase-c6-6d-post-create-verify-center.sql',
+  'docs/supabase-c6-6d-1-doi-target-test-phong-trong.md',
+  'docs/supabase-c6-6e-runtime-add-center-form-rpc.md',
+  'docs/supabase-c6-6c-manual-apply-provision-center-rpc.sql',
+  'docs/supabase-c6-6c-rpc-apply-decision-ready.md',
+  'docs/supabase-c6-6b-readonly-inspect-add-center-provisioning-readiness.sql',
+  'docs/supabase-c6-6b-provisioning-rpc-design-inspection-pack.md',
   'src/main.js',
   'src/styles.css',
   'tests/supabase-c6-5a-internal-center-console-audit-design-smoke.js',
   'tests/supabase-c6-5b-hidden-route-skeleton-owner-guard-smoke.js',
   'tests/supabase-c6-5c-centers-list-readonly-smoke.js',
   'tests/supabase-c6-5d-checkpoint-review-internal-center-console-smoke.js',
+  'tests/supabase-c6-6a-them-co-so-mot-truong-audit-design-smoke.js',
+  'tests/supabase-c6-6b-provisioning-rpc-design-inspection-pack-smoke.js',
+  'tests/supabase-c6-6c-rpc-apply-decision-ready-smoke.js',
+  'tests/supabase-c6-6d-post-apply-verify-controlled-rpc-test-pack-smoke.js',
+  'tests/supabase-c6-6d-1-doi-target-test-phong-trong-smoke.js',
+  'tests/supabase-c6-6e-runtime-add-center-form-rpc-smoke.js',
 ])
 
 for (const fileName of fs.readdirSync(path.join(root, 'tests'))) {
@@ -159,7 +181,7 @@ const status = execFileSync('git', ['status', '--short'], {
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
   assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.5A scope: ${changedPath}`)
-  assert(!/c6-5(?![abcd])|c6-6|c7|teacher-portal|super-admin/i.test(changedPath), `C6.5A must not create future scope files: ${changedPath}`)
+  assert(!/c6-5(?![abcd])|c6-6(?![abcde])|c7|teacher-portal|super-admin/i.test(changedPath), `C6.5A must not create future scope files: ${changedPath}`)
 }
 
 assertNoMojibake(docPath)
