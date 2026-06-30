@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const root = path.resolve(__dirname, '..')
 
-const docPath = path.join(root, 'docs', 'supabase-c6-3e-checkpoint-review-multi-center-foundation.md')
+const docPath = path.join(root, 'docs', 'supabase-c6-4e-runtime-manual-qa-owner-login.md')
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8')
@@ -36,40 +36,39 @@ function assertNoMojibake(filePath) {
   }
 }
 
-assert(fs.existsSync(docPath), 'C6.3E docs must exist')
+assert(fs.existsSync(docPath), 'C6.4E docs must exist')
 
 const docs = readUtf8(docPath)
 const srcMain = readUtf8(path.join(root, 'src', 'main.js'))
-const srcAuth = readUtf8(path.join(root, 'src', 'supabase-auth.js'))
+const accessControl = readUtf8(path.join(root, 'src', 'online-access-control.js'))
+const auth = readUtf8(path.join(root, 'src', 'supabase-auth.js'))
 
 ;[
-  'C6.3E STATUS: CHECKPOINT REVIEW BEFORE COMMIT PUSH',
-  'C6_3A_STATUS: PASS',
-  'C6_3B_STATUS: PASS',
-  'C6_3C_STATUS: PASS',
-  'C6_3D_STATUS: PASS',
-  'MANUAL_QA_AFTER_C6_3D: PASS',
-  'SQL_APPLIED_BY_USER: YES',
+  'C6.4E STATUS: RUNTIME MANUAL QA OWNER LOGIN',
+  'C6_4D_STATUS: PASS',
+  'OWNER_MEMBERSHIP_VERIFIED: YES',
+  'OWNER_EMAIL: owner.duchai@ichess.vn',
+  'OWNER_AUTH_USER_ID: 9683b2c8-3970-4eac-99b3-985d503bdeb9',
+  'TARGET_CENTER_ID: dreamhome_prod',
+  'TARGET_ROLE: owner',
+  'TARGET_MEMBERSHIP_STATUS: active',
+  'OWNER_ROLE_RUNTIME_REVIEWED: YES',
+  'OWNER_ROLE_RUNTIME_SUPPORTED: YES',
+  'CENTER_RESOLVER_RUNTIME_REVIEWED: YES',
+  'SIGNED_IN_MEMBERSHIP_WINS_OVER_HARDCODE: YES',
+  'PRODUCTION_STAGING_SEPARATION_REVIEWED: YES',
+  'BADGE_THREE_FIX_STILL_REQUIRED: YES',
+  'INTERNAL_CENTER_CONSOLE_EXPECTED_NOW: NO',
+  'CENTER_LIST_UI_EXPECTED_NOW: NO',
+  'ADD_CENTER_BUTTON_EXPECTED_NOW: NO',
   'SQL_APPLIED_BY_CODEX: NO',
   'SUPABASE_ACTION_BY_CODEX: NOT RUN',
-  'CENTERS_SCHEMA_HARDENED: YES',
-  'DREAMHOME_ENVIRONMENT: staging',
-  'DREAMHOME_PROD_ENVIRONMENT: production',
-  'CENTERS_ENVIRONMENT_CHECK_EXISTS: YES',
-  'CENTERS_STATUS_CHECK_EXISTS: YES',
-  'CENTERS_SLUG_ENVIRONMENT_UNIQUE_INDEX_EXISTS: YES',
-  'FUTURE_CENTER_ID_EXAMPLE_GOVAP: govap_prod',
-  'FUTURE_CENTER_ID_EXAMPLE_QUAN12: quan12_prod',
-  'ADD_CENTER_NOT_CLONE: YES',
-  'ONE_SHARED_LINK_ACCOUNT_BASED_ROUTING: YES',
-  'URL_BASED_SECURITY: NO',
+  'AUTH_USER_CREATED_BY_CODEX: NO',
+  'MEMBERSHIP_CREATED_BY_CODEX: NO',
   'NEW_CENTER_CREATED: NO',
-  'GOVAP_CREATED: NO',
-  'QUAN12_CREATED: NO',
   'ANGEL_WINGS_DELETED: NO',
   'ANGEL_WINGS_MIGRATED: NO',
   'RUNTIME_CHANGE: NO',
-  'C6_4_STARTED: NO',
   'C6_5_INTERNAL_CONSOLE_STARTED: NO',
   'C7_STARTED: NO',
   'COMMIT: NOT RUN',
@@ -77,39 +76,39 @@ const srcAuth = readUtf8(path.join(root, 'src', 'supabase-auth.js'))
 ].forEach((marker) => assertIncludes(docs, marker))
 
 ;[
-  'C6.3A: PASS',
-  'C6.3B: PASS',
-  'C6.3C: PASS',
-  'C6.3D: PASS',
-  'Manual QA sau C6.3D',
-  'SQL centers schema hardening đã do user apply thủ công',
-  'SQL_APPLIED_BY_CODEX: NO',
-  'centers_environment_check',
-  'centers_status_check',
-  'centers_slug_environment_unique_idx',
-  '`dreamhome`: `name = DreamHome`, `slug = dreamhome`, `environment = staging`, `status = active`',
-  '`dreamhome_prod`: `name = DreamHome`, `slug = dreamhome`, `environment = production`, `status = active`',
-  'govap_prod',
-  'quan12_prod',
-  'add center, not clone',
-  'Một link chung, account/membership quyết định center',
-  'URL based security: NO',
-  'Không tạo Gò Vấp',
-  'Không tạo Quận 12',
-  'Không xóa/migrate Angel Wings',
-  'Runtime: none in C6.3E',
-  'C6.4 minimal owner/admin role binding vẫn deferred',
-  'C6.5 Internal Center Console vẫn deferred',
-  'C7 vẫn deferred',
-  'COMMIT: NOT RUN',
-  'PUSH: NOT RUN',
+  'owner.duchai@ichess.vn',
+  '9683b2c8-3970-4eac-99b3-985d503bdeb9',
+  'dreamhome_prod',
+  'role `owner`',
+  'status = active',
+  'OWNER_ROLE_RUNTIME_SUPPORTED: YES',
+  'resolveActiveCenterMembership',
+  'setCurrentStorageCenterId',
+  '.dreamhome_prod',
+  '.dreamhome',
+  'Không thấy Angel Wings',
+  'Không thấy 29 học viên staging',
+  'activeNotificationDataCenterId',
+  'getCenterScopedNotificationsForRender()',
+  'không badge đỏ `3`',
+  'chưa có Internal Center Console là đúng',
+  'chưa có danh sách centers là đúng',
+  'C6.4E.1 minimal owner runtime support',
 ].forEach((needle) => assertIncludes(docs, needle))
 
-assertIncludes(srcAuth, 'resolveActiveCenterMembership')
-assertIncludes(srcAuth, ".from('center_members')")
+assertIncludes(accessControl, "OWNER: 'owner'")
+assertIncludes(accessControl, 'ONLINE_ACCESS_ROLES.OWNER')
+assertIncludes(accessControl, 'CLOUD_WRITE_ROLES')
+assertIncludes(accessControl, 'CLOUD_READ_ROLES')
+assertIncludes(auth, 'resolveActiveCenterMembership')
+assertIncludes(auth, ".from('center_members')")
+assertIncludes(auth, ".eq('status', 'active')")
 assertIncludes(srcMain, 'setCurrentStorageCenterId(resolvedMembership.centerId)')
+assertIncludes(srcMain, 'useSampleFallback: !isProductionCenter(resolvedMembership.centerId)')
 assertIncludes(srcMain, 'activeNotificationDataCenterId')
 assertIncludes(srcMain, 'getCenterScopedNotificationsForRender()')
+assertIncludes(srcMain, 'inventoryRequests = getStoredInventoryRequests')
+assertIncludes(srcMain, 'notifications = syncAppNotifications')
 
 assertNotIncludes(srcMain, '/internal/centers')
 assertNotIncludes(srcMain, 'Thêm cơ sở')
@@ -117,36 +116,30 @@ assertNotIncludes(srcMain, 'username login')
 assertNotIncludes(srcMain, 'Teacher Portal')
 assertNotIncludes(srcMain, 'Super Admin')
 
+const diffNames = execFileSync('git', ['diff', '--name-only'], {
+  cwd: root,
+  encoding: 'utf8',
+})
+
+assert(!diffNames.split(/\r?\n/).filter(Boolean).some((fileName) => fileName.startsWith('src/')), 'C6.4E RUNTIME_CHANGE: NO means no src diff')
+
 const status = execFileSync('git', ['status', '--short'], {
   cwd: root,
   encoding: 'utf8',
 })
 
 const allowedChangedPaths = new Set([
-  'docs/supabase-c6-3a-multi-center-foundation-audit-design.md',
-  'docs/supabase-c6-3b-centers-schema-hardening-provisioning-pack.md',
-  'docs/supabase-c6-3b-readonly-inspect-centers-schema.sql',
-  'docs/supabase-c6-3b-manual-apply-centers-schema-hardening-template.sql',
-  'docs/supabase-c6-3c-readonly-verify-centers-schema-hardening-applied.sql',
-  'docs/supabase-c6-3c-verify-centers-schema-hardening-applied.md',
-  'docs/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening.md',
-  'docs/supabase-c6-3e-checkpoint-review-multi-center-foundation.md',
-  'tests/supabase-c6-3a-multi-center-foundation-audit-design-smoke.js',
-  'tests/supabase-c6-3b-centers-schema-hardening-provisioning-pack-smoke.js',
-  'tests/supabase-c6-3c-verify-centers-schema-hardening-applied-smoke.js',
-  'tests/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening-smoke.js',
-  'tests/supabase-c6-3e-checkpoint-review-multi-center-foundation-smoke.js',
   'docs/supabase-c6-4a-minimal-owner-admin-role-binding-audit-design.md',
-  'tests/supabase-c6-4a-minimal-owner-admin-role-binding-audit-design-smoke.js',
   'docs/supabase-c6-4b-owner-membership-readiness-provisioning-pack.md',
   'docs/supabase-c6-4b-readonly-inspect-owner-membership-readiness.sql',
   'docs/supabase-c6-4b-manual-apply-owner-membership-template.sql',
-  'tests/supabase-c6-4b-owner-membership-readiness-provisioning-pack-smoke.js',
   'docs/supabase-c6-4c-owner-membership-apply-decision-ready.md',
-  'tests/supabase-c6-4c-owner-membership-apply-decision-ready-smoke.js',
   'docs/supabase-c6-4d-verify-owner-membership-applied.md',
-  'tests/supabase-c6-4d-verify-owner-membership-applied-smoke.js',
   'docs/supabase-c6-4e-runtime-manual-qa-owner-login.md',
+  'tests/supabase-c6-4a-minimal-owner-admin-role-binding-audit-design-smoke.js',
+  'tests/supabase-c6-4b-owner-membership-readiness-provisioning-pack-smoke.js',
+  'tests/supabase-c6-4c-owner-membership-apply-decision-ready-smoke.js',
+  'tests/supabase-c6-4d-verify-owner-membership-applied-smoke.js',
   'tests/supabase-c6-4e-runtime-manual-qa-owner-login-smoke.js',
   'docs/supabase-c6-4f-checkpoint-review-owner-role-binding.md',
   'tests/supabase-c6-4f-checkpoint-review-owner-role-binding-smoke.js',
@@ -161,15 +154,20 @@ const allowedChangedPaths = new Set([
   'tests/supabase-c6-2b-startup-badge-cache-flicker-hotfix-smoke.js',
   'tests/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang-smoke.js',
   'tests/supabase-c6-2e-checkpoint-review-production-staging-hardening-smoke.js',
+  'tests/supabase-c6-3a-multi-center-foundation-audit-design-smoke.js',
+  'tests/supabase-c6-3b-centers-schema-hardening-provisioning-pack-smoke.js',
+  'tests/supabase-c6-3c-verify-centers-schema-hardening-applied-smoke.js',
+  'tests/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening-smoke.js',
+  'tests/supabase-c6-3e-checkpoint-review-multi-center-foundation-smoke.js',
 ])
 
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
-  assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.3E scope: ${changedPath}`)
-  assert(!/c6-4(?![abcdef])|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.3E must not create future scope files: ${changedPath}`)
+  assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.4E scope: ${changedPath}`)
+  assert(!/c6-4(?![abcdef])|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.4E must not create future scope files: ${changedPath}`)
 }
 
 assertNoMojibake(docPath)
-assertNoMojibake(path.join(root, 'tests', 'supabase-c6-3e-checkpoint-review-multi-center-foundation-smoke.js'))
+assertNoMojibake(path.join(root, 'tests', 'supabase-c6-4e-runtime-manual-qa-owner-login-smoke.js'))
 
-console.log('C6.3E smoke: PASS')
+console.log('C6.4E smoke: PASS')

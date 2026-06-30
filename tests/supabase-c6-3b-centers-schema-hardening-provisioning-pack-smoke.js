@@ -143,6 +143,20 @@ const allowedChangedPaths = new Set([
   'tests/supabase-c6-3c-verify-centers-schema-hardening-applied-smoke.js',
   'tests/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening-smoke.js',
   'tests/supabase-c6-3e-checkpoint-review-multi-center-foundation-smoke.js',
+  'docs/supabase-c6-4a-minimal-owner-admin-role-binding-audit-design.md',
+  'tests/supabase-c6-4a-minimal-owner-admin-role-binding-audit-design-smoke.js',
+  'docs/supabase-c6-4b-owner-membership-readiness-provisioning-pack.md',
+  'docs/supabase-c6-4b-readonly-inspect-owner-membership-readiness.sql',
+  'docs/supabase-c6-4b-manual-apply-owner-membership-template.sql',
+  'tests/supabase-c6-4b-owner-membership-readiness-provisioning-pack-smoke.js',
+  'docs/supabase-c6-4c-owner-membership-apply-decision-ready.md',
+  'tests/supabase-c6-4c-owner-membership-apply-decision-ready-smoke.js',
+  'docs/supabase-c6-4d-verify-owner-membership-applied.md',
+  'tests/supabase-c6-4d-verify-owner-membership-applied-smoke.js',
+  'docs/supabase-c6-4e-runtime-manual-qa-owner-login.md',
+  'tests/supabase-c6-4e-runtime-manual-qa-owner-login-smoke.js',
+  'docs/supabase-c6-4f-checkpoint-review-owner-role-binding.md',
+  'tests/supabase-c6-4f-checkpoint-review-owner-role-binding-smoke.js',
   'tests/supabase-c6-0-production-readiness-audit-truoc-dreamhome-production-smoke.js',
   'tests/supabase-c6-1a-thiet-ke-dreamhome-production-empty-center-smoke.js',
   'tests/supabase-c6-1b-readonly-verification-pack-dreamhome-production-empty-center-smoke.js',
@@ -159,7 +173,7 @@ const allowedChangedPaths = new Set([
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
   assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.3B scope: ${changedPath}`)
-  assert(!/c6-4|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.3B must not create future scope files: ${changedPath}`)
+  assert(!/c6-4(?![abcdef])|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.3B must not create future scope files: ${changedPath}`)
 }
 
 assertNoMojibake(docPath)
