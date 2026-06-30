@@ -12,7 +12,7 @@ import {
   signInWithEmailPassword,
   signOutSupabase,
 } from './supabase-auth.js'
-import { getSupabaseConfigStatus } from './supabase-client.js'
+import { getSupabaseClient, getSupabaseConfigStatus } from './supabase-client.js'
 import {
   buildAttachmentFileName,
   buildTransactionCode,
@@ -311,9 +311,11 @@ import {
 } from './cloud-rollback-preview.js'
 import { buildScheduleSessionBridgePreview } from './cloud-schedule-session-bridge.js'
 import {
+  ONLINE_ACCESS_ROLES,
   buildOnlineAccessState,
   canWriteEntity,
   getOnlineAccessMessage,
+  normalizeOnlineRole,
 } from './online-access-control.js'
 import { sampleStudents, shouldReplaceLegacyEightSeed } from './student-data.js'
 import { sampleTeachers } from './teacher-data.js'
@@ -371,6 +373,8 @@ import {
 } from './tuition-module.js'
 
 const app = document.querySelector('#app')
+const INTERNAL_CENTERS_ROUTE_HASH = '#/internal/centers'
+const INTERNAL_CENTERS_SELECT_FIELDS = 'id,name,slug,environment,status,created_at,updated_at'
 
 const preservedScrollTargets = [
   ['.window-body', 'window-body'],
@@ -545,6 +549,13 @@ let cloudUploadingTransactionId = null
 let transactionImageManagerState = null
 let cloudGalleryState = null
 let activeLocalDataCenterId = getCurrentStorageCenterId()
+let internalCentersListState = {
+  status: 'idle',
+  centers: [],
+  error: '',
+  loadedForUserId: '',
+}
+let internalCentersListRunId = 0
 
 function getCurrentResolvedCenterId() {
   const binding = resolveAppCenterBinding(cloudStatus)
@@ -657,6 +668,7 @@ function render() {
   const parentContactFormScrollTop = getParentContactFormScrollTop()
   const currentCenterBinding = resolveAppCenterBinding(cloudStatus)
   const isLoginGateOpen = !isDashboardUnlockedByCenter(cloudStatus, currentCenterBinding)
+  const isInternalCentersRoute = isInternalCenterConsoleRoute()
 
   if (
     parentConsultationFormState &&
@@ -670,16 +682,16 @@ function render() {
   }
 
   app.innerHTML = `
-    <div class="app-shell ${isLoginGateOpen ? 'is-login-gated' : ''}">
-      <main class="desktop-area ${isLoginGateOpen ? 'is-login-gated' : ''}">
+    <div class="app-shell ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''}">
+      <main class="desktop-area ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''}">
         ${isLoginGateOpen ? renderAppAuthEntry(cloudStatus, currentCenterBinding) : ''}
-        ${isLoginGateOpen ? '' : renderDashboard()}
+        ${isLoginGateOpen ? '' : isInternalCentersRoute ? renderInternalCenterConsoleRoute(currentCenterBinding) : renderDashboard()}
         <div class="window-layer" aria-label="Các cửa sổ đang mở">
-          ${isLoginGateOpen ? '' : renderOpenWindows()}
+          ${isLoginGateOpen || isInternalCentersRoute ? '' : renderOpenWindows()}
         </div>
       </main>
-      ${isLoginGateOpen ? '' : renderTaskbar()}
-      ${isLoginGateOpen ? '' : renderSystemOverlay()}
+      ${isLoginGateOpen || isInternalCentersRoute ? '' : renderTaskbar()}
+      ${isLoginGateOpen || isInternalCentersRoute ? '' : renderSystemOverlay()}
     </div>
   `
 
@@ -691,6 +703,263 @@ function render() {
   focusPendingAttendanceBaselineCell()
   skipNextParentContactScrollCapture = false
   updateClock()
+}
+
+function isInternalCenterConsoleRoute() {
+  return window.location.hash === INTERNAL_CENTERS_ROUTE_HASH
+}
+
+function getInternalCenterConsoleAccess(centerBinding) {
+  const isSignedIn = cloudStatus.authStatus === 'signed-in' && Boolean(cloudStatus.user)
+  const role = normalizeOnlineRole(cloudStatus.role ?? cloudStatus.membership?.role)
+  const membershipStatus = String(cloudStatus.membership?.status || '').toLowerCase()
+  const hasActiveMembership = centerBinding?.status === 'bound' && membershipStatus === 'active'
+
+  return {
+    isSignedIn,
+    role,
+    hasActiveMembership,
+    isOwner: isSignedIn && hasActiveMembership && role === ONLINE_ACCESS_ROLES.OWNER,
+  }
+}
+
+function renderInternalCenterConsoleRoute(centerBinding) {
+  const access = getInternalCenterConsoleAccess(centerBinding)
+
+  if (!access.isOwner) {
+    return renderInternalCenterConsoleDenied(access)
+  }
+
+  ensureInternalCentersListLoading()
+
+  return renderInternalCenterConsoleSkeleton(centerBinding)
+}
+
+function renderInternalCenterConsoleDenied(access) {
+  const reason = !access.isSignedIn
+    ? 'Vui lòng đăng nhập bằng tài khoản owner để vào khu vực nội bộ.'
+    : 'Bạn không có quyền truy cập khu vực nội bộ.'
+
+  return `
+    <section class="internal-console-screen is-denied" aria-labelledby="internal-console-denied-title">
+      <div class="internal-console-panel">
+        <p class="internal-console-eyebrow">Internal Center Console</p>
+        <h1 id="internal-console-denied-title">Không thể truy cập</h1>
+        <p>${escapeHtml(reason)}</p>
+        <dl class="internal-console-meta">
+          <div>
+            <dt>Trạng thái</dt>
+            <dd>${escapeHtml(access.isSignedIn ? 'Đã đăng nhập' : 'Chưa đăng nhập')}</dd>
+          </div>
+          <div>
+            <dt>Vai trò</dt>
+            <dd>${escapeHtml(access.role || 'none')}</dd>
+          </div>
+        </dl>
+        <button type="button" class="internal-console-return" data-internal-console-action="return-dashboard">
+          Quay lại OS cơ sở
+        </button>
+      </div>
+    </section>
+  `
+}
+
+function renderInternalCenterConsoleSkeleton(centerBinding) {
+  return `
+    <section class="internal-console-screen" aria-labelledby="internal-console-title">
+      <div class="internal-console-panel">
+        <p class="internal-console-eyebrow">Internal Center Console</p>
+        <h1 id="internal-console-title">Quản trị nội bộ</h1>
+        <div class="internal-console-readiness">
+          <h2>Danh sách cơ sở</h2>
+          <p>Khu vực này dành cho owner. Danh sách bên dưới chỉ đọc từ Cloud.</p>
+          <p>Mặc định chỉ hiển thị cơ sở production active.</p>
+        </div>
+        ${renderInternalCentersList()}
+        <dl class="internal-console-meta">
+          <div>
+            <dt>Tài khoản</dt>
+            <dd>${escapeHtml(cloudStatus.user?.email || '')}</dd>
+          </div>
+          <div>
+            <dt>Vai trò</dt>
+            <dd>${escapeHtml(cloudStatus.role || '')}</dd>
+          </div>
+          <div>
+            <dt>Cơ sở hiện tại</dt>
+            <dd>${escapeHtml(centerBinding.centerName || 'DreamHome')}</dd>
+          </div>
+          <div>
+            <dt>Mã cơ sở hiện tại</dt>
+            <dd>${escapeHtml(centerBinding.currentCenterId || '')}</dd>
+          </div>
+        </dl>
+        <button type="button" class="internal-console-return" data-internal-console-action="return-dashboard">
+          Quay lại OS cơ sở
+        </button>
+      </div>
+    </section>
+  `
+}
+
+function ensureInternalCentersListLoading() {
+  const userId = cloudStatus.user?.id || ''
+
+  if (
+    internalCentersListState.status === 'loading' ||
+    (internalCentersListState.status === 'loaded' && internalCentersListState.loadedForUserId === userId) ||
+    (internalCentersListState.status === 'error' && internalCentersListState.loadedForUserId === userId)
+  ) {
+    return
+  }
+
+  internalCentersListState = {
+    status: 'loading',
+    centers: [],
+    error: '',
+    loadedForUserId: userId,
+  }
+
+  void loadInternalCentersList(userId)
+}
+
+async function loadInternalCentersList(userId) {
+  const runId = ++internalCentersListRunId
+
+  try {
+    const supabase = getSupabaseClient()
+
+    if (!supabase) {
+      throw new Error('Supabase chưa được cấu hình.')
+    }
+
+    const { data, error } = await supabase
+      .from('centers')
+      .select(INTERNAL_CENTERS_SELECT_FIELDS)
+      .eq('environment', 'production')
+      .eq('status', 'active')
+      .order('name', { ascending: true })
+
+    if (runId !== internalCentersListRunId) {
+      return
+    }
+
+    if (error) {
+      throw error
+    }
+
+    internalCentersListState = {
+      status: 'loaded',
+      centers: normalizeInternalCenters(data),
+      error: '',
+      loadedForUserId: userId,
+    }
+  } catch (error) {
+    if (runId !== internalCentersListRunId) {
+      return
+    }
+
+    internalCentersListState = {
+      status: 'error',
+      centers: [],
+      error: getCloudErrorMessage(error, 'Không tải được danh sách cơ sở.'),
+      loadedForUserId: userId,
+    }
+  }
+
+  if (isInternalCenterConsoleRoute()) {
+    render()
+  }
+}
+
+function normalizeInternalCenters(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    id: String(row?.id || ''),
+    name: String(row?.name || ''),
+    slug: String(row?.slug || ''),
+    environment: String(row?.environment || ''),
+    status: String(row?.status || ''),
+    createdAt: String(row?.created_at || ''),
+    updatedAt: String(row?.updated_at || ''),
+  }))
+}
+
+function renderInternalCentersList() {
+  if (internalCentersListState.status === 'loading' || internalCentersListState.status === 'idle') {
+    return '<p class="internal-console-state" role="status">Đang tải danh sách cơ sở...</p>'
+  }
+
+  if (internalCentersListState.status === 'error') {
+    return `
+      <div class="internal-console-state is-error" role="alert">
+        <strong>Không tải được danh sách cơ sở.</strong>
+        <span>${escapeHtml(internalCentersListState.error || 'Vui lòng kiểm tra quyền đọc centers.')}</span>
+      </div>
+    `
+  }
+
+  if (!internalCentersListState.centers.length) {
+    return '<p class="internal-console-state">Chưa có cơ sở production active.</p>'
+  }
+
+  return `
+    <div class="internal-centers-list" aria-label="Danh sách cơ sở readonly">
+      <div class="internal-centers-filter-note">
+        <span>Môi trường: production</span>
+        <span>Trạng thái: active</span>
+      </div>
+      <div class="internal-centers-table-wrap">
+        <table class="internal-centers-table">
+          <thead>
+            <tr>
+              <th>Tên cơ sở</th>
+              <th>Mã cơ sở</th>
+              <th>Slug</th>
+              <th>Môi trường</th>
+              <th>Trạng thái</th>
+              <th>Cập nhật</th>
+              <th>Ngày tạo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${internalCentersListState.centers.map(renderInternalCenterRow).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `
+}
+
+function renderInternalCenterRow(center) {
+  return `
+    <tr>
+      <td>${escapeHtml(center.name || center.id)}</td>
+      <td><code>${escapeHtml(center.id)}</code></td>
+      <td>${escapeHtml(center.slug || '-')}</td>
+      <td>${escapeHtml(center.environment || '-')}</td>
+      <td>${escapeHtml(center.status || '-')}</td>
+      <td>${escapeHtml(formatInternalCenterTimestamp(center.updatedAt))}</td>
+      <td>${escapeHtml(formatInternalCenterTimestamp(center.createdAt))}</td>
+    </tr>
+  `
+}
+
+function formatInternalCenterTimestamp(value) {
+  if (!value) {
+    return '-'
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return date.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
 }
 
 function getBaselineInputFocusTarget(input) {
@@ -5665,6 +5934,17 @@ function bindEvents() {
   bindCenterProfileOutsidePointer()
   bindModuleNotificationOutsidePointer()
   bindPreservedScrollRetentionEvents()
+
+  document
+    .querySelector('[data-internal-console-action="return-dashboard"]')
+    ?.addEventListener('click', () => {
+      if (window.location.hash === INTERNAL_CENTERS_ROUTE_HASH) {
+        window.location.hash = ''
+        return
+      }
+
+      render()
+    })
 
   document.querySelectorAll('[data-view-mode]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -11462,6 +11742,10 @@ function installManualCloudBackfillHelpers() {
 installManualCloudBackfillHelpers()
 render()
 initializeSupabaseAuth()
+
+window.addEventListener('hashchange', () => {
+  render()
+})
 
 if (window.__ichessClockTimer) {
   clearInterval(window.__ichessClockTimer)

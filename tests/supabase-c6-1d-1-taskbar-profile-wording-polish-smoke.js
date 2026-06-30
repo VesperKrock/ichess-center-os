@@ -88,7 +88,6 @@ assertNotIncludes(taskbarFunction, 'Cloud trống (production empty center)', 't
 assertNotIncludes(taskbarFunction, 'Vai trò: Quản lý cơ sở', 'taskbar role clutter')
 
 assertNotIncludes(main, 'Cloud trống (production empty center)', 'runtime technical production empty wording')
-assertNotIncludes(main, '/internal/centers')
 assertNotIncludes(main, 'Thêm cơ sở')
 assertNotIncludes(main, 'username login')
 assertNotIncludes(main, 'Teacher Portal')
@@ -165,13 +164,21 @@ const allowedChangedPaths = new Set([
   'src/cloud-status.js',
   'src/cloud-bootstrap.js',
   'src/cloud-db-sync.js',
+  'docs/supabase-c6-5a-internal-center-console-audit-design.md',
+  'tests/supabase-c6-5a-internal-center-console-audit-design-smoke.js',
+  'docs/supabase-c6-5b-hidden-route-skeleton-owner-guard.md',
+  'docs/supabase-c6-5c-centers-list-readonly.md',
+  'docs/supabase-c6-5d-checkpoint-review-internal-center-console.md',
+  'tests/supabase-c6-5b-hidden-route-skeleton-owner-guard-smoke.js',
+  'tests/supabase-c6-5c-centers-list-readonly-smoke.js',
+  'tests/supabase-c6-5d-checkpoint-review-internal-center-console-smoke.js',
 ])
 
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
   assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.1D.1 scope: ${changedPath}`)
   assert(!/\.sql$/i.test(changedPath) || changedPath.includes('c6-1b') || changedPath.includes('c6-1c') || changedPath.includes('c6-3b') || changedPath.includes('c6-3c') || changedPath.includes('c6-4b'), `C6.1D.1 must not add SQL: ${changedPath}`)
-  assert(!/c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.1D.1 must not create future scope files: ${changedPath}`)
+  assert(!/c6-5(?![abcd])|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.1D.1 must not create future scope files: ${changedPath}`)
 }
 
 assertNoMojibake(docPath)

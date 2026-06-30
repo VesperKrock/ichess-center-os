@@ -117,7 +117,6 @@ assertIncludes(manualSql, '-- insert into public.center_members')
 assertNotIncludes(manualSql, "center_id = '*'")
 assert(!/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i.test(manualSql), 'Manual template must not hardcode a real UUID')
 
-assertNotIncludes(srcMain, '/internal/centers')
 assertNotIncludes(srcMain, 'Thêm cơ sở')
 assertNotIncludes(srcMain, 'username login')
 assertNotIncludes(srcMain, 'Teacher Portal')
@@ -159,12 +158,22 @@ const allowedChangedPaths = new Set([
   'tests/supabase-c6-3c-verify-centers-schema-hardening-applied-smoke.js',
   'tests/supabase-c6-3d-runtime-readiness-audit-sau-centers-schema-hardening-smoke.js',
   'tests/supabase-c6-3e-checkpoint-review-multi-center-foundation-smoke.js',
+  'docs/supabase-c6-5a-internal-center-console-audit-design.md',
+  'tests/supabase-c6-5a-internal-center-console-audit-design-smoke.js',
+  'docs/supabase-c6-5b-hidden-route-skeleton-owner-guard.md',
+  'docs/supabase-c6-5c-centers-list-readonly.md',
+  'docs/supabase-c6-5d-checkpoint-review-internal-center-console.md',
+  'src/main.js',
+  'src/styles.css',
+  'tests/supabase-c6-5b-hidden-route-skeleton-owner-guard-smoke.js',
+  'tests/supabase-c6-5c-centers-list-readonly-smoke.js',
+  'tests/supabase-c6-5d-checkpoint-review-internal-center-console-smoke.js',
 ])
 
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
   assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.4B scope: ${changedPath}`)
-  assert(!/c6-4(?![abcdef])|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.4B must not create future scope files: ${changedPath}`)
+  assert(!/c6-4(?![abcdef])|c6-5(?![abcd])|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.4B must not create future scope files: ${changedPath}`)
 }
 
 ;[docPath, readonlySqlPath, manualSqlPath, path.join(root, 'tests', 'supabase-c6-4b-owner-membership-readiness-provisioning-pack-smoke.js')].forEach(assertNoMojibake)

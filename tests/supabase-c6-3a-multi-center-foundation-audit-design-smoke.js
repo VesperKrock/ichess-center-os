@@ -96,7 +96,6 @@ if (fs.existsSync(optionalSqlPath)) {
   assert(!/\b(insert|update|delete|alter|drop|create|truncate|grant|revoke)\b/i.test(sql), 'C6.3A SQL must be read-only')
 }
 
-assertNotIncludes(main, '/internal/centers')
 assertNotIncludes(main, 'Thêm cơ sở')
 assertNotIncludes(main, 'username login')
 assertNotIncludes(main, 'Teacher Portal')
@@ -149,13 +148,23 @@ const allowedChangedPaths = new Set([
   'tests/supabase-c6-2b-startup-badge-cache-flicker-hotfix-smoke.js',
   'tests/supabase-c6-2b-1-truy-nguon-badge-3-thong-bao-kho-hang-smoke.js',
   'tests/supabase-c6-2e-checkpoint-review-production-staging-hardening-smoke.js',
+  'docs/supabase-c6-5a-internal-center-console-audit-design.md',
+  'tests/supabase-c6-5a-internal-center-console-audit-design-smoke.js',
+  'docs/supabase-c6-5b-hidden-route-skeleton-owner-guard.md',
+  'docs/supabase-c6-5c-centers-list-readonly.md',
+  'docs/supabase-c6-5d-checkpoint-review-internal-center-console.md',
+  'src/main.js',
+  'src/styles.css',
+  'tests/supabase-c6-5b-hidden-route-skeleton-owner-guard-smoke.js',
+  'tests/supabase-c6-5c-centers-list-readonly-smoke.js',
+  'tests/supabase-c6-5d-checkpoint-review-internal-center-console-smoke.js',
 ])
 
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
   const changedPath = line.slice(3).replace(/\\/g, '/')
   assert(allowedChangedPaths.has(changedPath), `Unexpected changed file in C6.3A scope: ${changedPath}`)
   assert(!/\.sql$/i.test(changedPath) || /supabase-c6-(3(b-(readonly-inspect-centers-schema|manual-apply-centers-schema-hardening-template)|c-readonly-verify-centers-schema-hardening-applied)|4b-(readonly-inspect-owner-membership-readiness|manual-apply-owner-membership-template))\.sql$/i.test(changedPath), `C6.3A/C6.3B SQL scope mismatch: ${changedPath}`)
-  assert(!/c6-4(?![abcdef])|c6-5|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.3A must not create future scope files: ${changedPath}`)
+  assert(!/c6-4(?![abcdef])|c6-5(?![abcd])|internal-centers|c7|teacher-portal|super-admin/i.test(changedPath), `C6.3A must not create future scope files: ${changedPath}`)
 }
 
 assertNoMojibake(docPath)

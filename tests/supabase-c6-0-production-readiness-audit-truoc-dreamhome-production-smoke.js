@@ -196,6 +196,14 @@ const allowedChangedPaths = new Set([
   'src/cloud-status.js',
   'src/cloud-bootstrap.js',
   'src/cloud-db-sync.js',
+  'docs/supabase-c6-5a-internal-center-console-audit-design.md',
+  'tests/supabase-c6-5a-internal-center-console-audit-design-smoke.js',
+  'docs/supabase-c6-5b-hidden-route-skeleton-owner-guard.md',
+  'docs/supabase-c6-5c-centers-list-readonly.md',
+  'docs/supabase-c6-5d-checkpoint-review-internal-center-console.md',
+  'tests/supabase-c6-5b-hidden-route-skeleton-owner-guard-smoke.js',
+  'tests/supabase-c6-5c-centers-list-readonly-smoke.js',
+  'tests/supabase-c6-5d-checkpoint-review-internal-center-console-smoke.js',
 ])
 
 for (const line of status.split(/\r?\n/).filter(Boolean)) {
