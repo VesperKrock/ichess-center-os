@@ -377,6 +377,7 @@ const INTERNAL_CENTERS_ROUTE_HASH = '#/internal/centers'
 const INTERNAL_CENTERS_SELECT_FIELDS = 'id,name,slug,environment,status,created_at,updated_at'
 
 const preservedScrollTargets = [
+  ['.desktop-area.is-internal-console-route', 'internal-console-route'],
   ['.window-body', 'window-body'],
   ['.student-table-wrap', 'student-table'],
   ['.student-form-scroll', 'student-form'],
@@ -556,8 +557,33 @@ let internalCentersListState = {
   loadedForUserId: '',
 }
 let internalCentersListRunId = 0
+let internalCenterAdminAccountsState = createInternalCenterAdminAccountsState()
+let internalCenterAdminAccountsRunId = 0
 let internalAddCenterFormState = createInternalAddCenterFormState()
 let internalCenterSwitchState = createInternalCenterSwitchState()
+
+function createInternalCenterAdminAccountsState(overrides = {}) {
+  return {
+    status: 'idle',
+    adminsByCenterId: {},
+    error: '',
+    loadedForUserId: '',
+    loadedForCenterKey: '',
+    copiedCenterId: '',
+    copyMessage: '',
+    resetStatus: 'idle',
+    resetCenterId: '',
+    resetError: '',
+    resetConfirm: null,
+    createStatus: 'idle',
+    createCenterId: '',
+    createError: '',
+    createConfirm: null,
+    handoff: null,
+    handoffCopyMessage: '',
+    ...overrides,
+  }
+}
 
 function createInternalAddCenterFormState(overrides = {}) {
   return {
@@ -798,6 +824,7 @@ function renderInternalCenterConsoleSkeleton(centerBinding) {
         <h1 id="internal-console-title">Quản trị nội bộ</h1>
         ${renderInternalAddCenterForm()}
         ${renderInternalCentersList()}
+        ${renderInternalCenterAccountManagement()}
         <dl class="internal-console-meta">
           <div>
             <dt>Tài khoản</dt>
@@ -977,6 +1004,8 @@ async function loadInternalCentersList(userId) {
       error: '',
       loadedForUserId: userId,
     }
+
+    ensureInternalCenterAdminAccountsLoading(userId, internalCentersListState.centers)
   } catch (error) {
     if (runId !== internalCentersListRunId) {
       return
@@ -1092,6 +1121,535 @@ function getInternalAddCenterErrorMessage(error) {
   }
 
   return rawMessage
+}
+
+function getInternalCenterAccountKey(centers = internalCentersListState.centers) {
+  return (Array.isArray(centers) ? centers : [])
+    .map((center) => center.id)
+    .filter(Boolean)
+    .sort()
+    .join('|')
+}
+
+function ensureInternalCenterAdminAccountsLoading(userId, centers = internalCentersListState.centers) {
+  const centerKey = getInternalCenterAccountKey(centers)
+
+  if (!centerKey) {
+    internalCenterAdminAccountsState = createInternalCenterAdminAccountsState({
+      status: 'loaded',
+      loadedForUserId: userId,
+      loadedForCenterKey: centerKey,
+    })
+    return
+  }
+
+  if (
+    internalCenterAdminAccountsState.status === 'loading' ||
+    (
+      internalCenterAdminAccountsState.status === 'loaded' &&
+      internalCenterAdminAccountsState.loadedForUserId === userId &&
+      internalCenterAdminAccountsState.loadedForCenterKey === centerKey
+    ) ||
+    (
+      internalCenterAdminAccountsState.status === 'error' &&
+      internalCenterAdminAccountsState.loadedForUserId === userId &&
+      internalCenterAdminAccountsState.loadedForCenterKey === centerKey
+    )
+  ) {
+    return
+  }
+
+  internalCenterAdminAccountsState = createInternalCenterAdminAccountsState({
+    status: 'loading',
+    loadedForUserId: userId,
+    loadedForCenterKey: centerKey,
+  })
+
+  void loadInternalCenterAdminAccounts(userId, centers)
+}
+
+async function loadInternalCenterAdminAccounts(userId, centers = internalCentersListState.centers) {
+  const runId = ++internalCenterAdminAccountsRunId
+  const centerIds = (Array.isArray(centers) ? centers : [])
+    .map((center) => center.id)
+    .filter(Boolean)
+  const centerKey = getInternalCenterAccountKey(centers)
+
+  try {
+    const supabase = getSupabaseClient()
+
+    if (!supabase) {
+      throw new Error('Supabase chưa được cấu hình.')
+    }
+
+    if (!supabase.functions?.invoke) {
+      throw new Error('Supabase Functions chưa sẵn sàng.')
+    }
+
+    if (!centerIds.length) {
+      internalCenterAdminAccountsState = createInternalCenterAdminAccountsState({
+        status: 'loaded',
+        loadedForUserId: userId,
+        loadedForCenterKey: centerKey,
+      })
+      return
+    }
+
+    const { data, error } = await supabase.functions.invoke('list-center-admin-accounts', {
+      body: { center_ids: centerIds },
+    })
+
+    if (runId !== internalCenterAdminAccountsRunId) {
+      return
+    }
+
+    if (error) {
+      throw error
+    }
+
+    if (!data?.ok || data.code !== 'center_admin_accounts_loaded') {
+      throw new Error(data?.code || 'Không tải được dữ liệu tài khoản admin.')
+    }
+
+    internalCenterAdminAccountsState = createInternalCenterAdminAccountsState({
+      ...internalCenterAdminAccountsState,
+      status: 'loaded',
+      adminsByCenterId: normalizeInternalCenterAdminAccounts(data.centers),
+      loadedForUserId: userId,
+      loadedForCenterKey: centerKey,
+      copiedCenterId: internalCenterAdminAccountsState.copiedCenterId,
+    })
+  } catch (error) {
+    if (runId !== internalCenterAdminAccountsRunId) {
+      return
+    }
+
+    internalCenterAdminAccountsState = createInternalCenterAdminAccountsState({
+      ...internalCenterAdminAccountsState,
+      status: 'error',
+      error: getCloudErrorMessage(error, 'Chưa tải được dữ liệu tài khoản admin.'),
+      loadedForUserId: userId,
+      loadedForCenterKey: centerKey,
+    })
+  }
+
+  if (isInternalCenterConsoleRoute()) {
+    render()
+  }
+}
+
+function normalizeInternalCenterAdminAccounts(rows = []) {
+  return (Array.isArray(rows) ? rows : []).reduce((adminsByCenterId, row) => {
+    const centerId = String(row?.center_id || row?.centerId || '').trim()
+    const admin = row?.admin && typeof row.admin === 'object' ? row.admin : {}
+
+    if (!centerId || adminsByCenterId[centerId]) {
+      return adminsByCenterId
+    }
+
+    adminsByCenterId[centerId] = {
+      centerId,
+      exists: Boolean(admin?.exists),
+      userId: String(admin?.user_id || ''),
+      role: 'center_admin',
+      status: String(admin?.membership_status || ''),
+      email: String(admin?.email || '').trim(),
+      state: String(admin?.state || ''),
+    }
+
+    return adminsByCenterId
+  }, {})
+}
+
+function getExpectedInternalAdminEmail(center) {
+  const slug = String(center?.slug || '').trim().toLowerCase()
+
+  return slug ? `admin.${slug}@ichess.vn` : ''
+}
+
+function getInternalAccountCreateTarget(centerId) {
+  const center = getInternalCenterById(centerId)
+  const adminAccount = internalCenterAdminAccountsState.adminsByCenterId[String(centerId || '').trim()] || null
+  const adminLoaded = internalCenterAdminAccountsState.status === 'loaded'
+  const canCreate = Boolean(
+    center &&
+      center.environment === 'production' &&
+      center.status === 'active' &&
+      adminLoaded &&
+      adminAccount?.exists === false,
+  )
+
+  if (!canCreate) {
+    return null
+  }
+
+  return {
+    centerId: center.id,
+    centerName: center.name || center.id,
+    expectedEmail: getExpectedInternalAdminEmail(center),
+    displayName: `Admin ${center.name || center.slug || center.id}`,
+  }
+}
+
+function openInternalCreateAdminConfirm(centerId) {
+  const target = getInternalAccountCreateTarget(centerId)
+
+  if (!target?.expectedEmail) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      createStatus: 'error',
+      createCenterId: '',
+      createError: 'Cơ sở này chưa sẵn sàng để tạo admin.',
+      createConfirm: null,
+    }
+    render()
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    createStatus: 'confirming',
+    createCenterId: target.centerId,
+    createError: '',
+    createConfirm: target,
+    handoffCopyMessage: '',
+  }
+  render()
+}
+
+function closeInternalCreateAdminConfirm() {
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    createStatus: 'idle',
+    createCenterId: '',
+    createError: '',
+    createConfirm: null,
+  }
+  render()
+}
+
+async function handleInternalCreateAdminAccount() {
+  const target = internalCenterAdminAccountsState.createConfirm
+  if (!target?.centerId) {
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    createStatus: 'submitting',
+    createCenterId: target.centerId,
+    createError: '',
+  }
+  render()
+
+  try {
+    const supabase = getSupabaseClient()
+
+    if (!supabase?.functions?.invoke) {
+      throw new Error('Supabase Functions chưa sẵn sàng.')
+    }
+
+    const { data, error } = await supabase.functions.invoke('provision-center-admin-account', {
+      body: {
+        center_id: target.centerId,
+        idempotency_key: createInternalCreateAdminIdempotencyKey(target.centerId),
+        display_name: target.displayName,
+      },
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (!data?.ok || data.code !== 'center_admin_created' || !data.temporary_password || !data.email) {
+      throw new Error(data?.code || 'Không tạo được admin cơ sở.')
+    }
+
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      createStatus: 'success',
+      createCenterId: '',
+      createError: '',
+      createConfirm: null,
+      adminsByCenterId: {
+        ...internalCenterAdminAccountsState.adminsByCenterId,
+        [target.centerId]: {
+          centerId: target.centerId,
+          exists: true,
+          userId: '',
+          role: 'center_admin',
+          status: 'active',
+          email: data.email,
+          state: 'active',
+        },
+      },
+      handoff: {
+        kind: 'create',
+        centerId: target.centerId,
+        centerName: target.centerName,
+        email: data.email,
+        temporaryPassword: data.temporary_password,
+        auditId: data.audit_id || '',
+      },
+      handoffCopyMessage: '',
+    }
+    render()
+    void loadInternalCenterAdminAccounts(cloudStatus.user?.id || '', internalCentersListState.centers)
+  } catch (error) {
+    const errorMessage = getInternalCreateAdminErrorMessage(error)
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      createStatus: 'error',
+      createCenterId: target.centerId,
+      createError: errorMessage,
+    }
+    render()
+
+    if (String(errorMessage).includes('Đang tải lại trạng thái tài khoản')) {
+      void loadInternalCenterAdminAccounts(cloudStatus.user?.id || '', internalCentersListState.centers)
+    }
+  }
+}
+
+function createInternalCreateAdminIdempotencyKey(centerId) {
+  return `c7-8d-create-admin-${centerId}-${Date.now()}`
+}
+
+function getInternalCreateAdminErrorMessage(error) {
+  const rawMessage = getCloudErrorMessage(error, 'Không tạo được admin cơ sở.')
+  const normalizedMessage = String(rawMessage || '').toLowerCase()
+
+  if (normalizedMessage.includes('center_admin_already_exists')) {
+    return 'Cơ sở này đã có admin. Đang tải lại trạng thái tài khoản.'
+  }
+
+  if (normalizedMessage.includes('admin_email_already_used')) {
+    return 'Email admin dự kiến đã được dùng. Vui lòng kiểm tra trạng thái tài khoản.'
+  }
+
+  if (normalizedMessage.includes('forbidden_owner_required')) {
+    return 'Chỉ owner active của cơ sở mới được tạo admin.'
+  }
+
+  if (normalizedMessage.includes('center_not_production_active')) {
+    return 'Chỉ cơ sở production active mới được tạo admin.'
+  }
+
+  if (normalizedMessage.includes('duplicate_request_already_processed')) {
+    return 'Yêu cầu này đã được xử lý trước đó. Vì an toàn, mật khẩu tạm không thể hiển thị lại. Hãy tạo yêu cầu mới nếu cần.'
+  }
+
+  return rawMessage
+}
+
+function getInternalAccountResetTarget(centerId) {
+  const center = getInternalCenterById(centerId)
+  const adminAccount = internalCenterAdminAccountsState.adminsByCenterId[String(centerId || '').trim()] || null
+  const email = String(adminAccount?.email || '').trim()
+
+  if (!center || !adminAccount?.exists || !email) {
+    return null
+  }
+
+  return {
+    centerId: center.id,
+    centerName: center.name || center.id,
+    email,
+  }
+}
+
+function openInternalResetPasswordConfirm(centerId) {
+  const target = getInternalAccountResetTarget(centerId)
+
+  if (!target) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      resetStatus: 'error',
+      resetCenterId: '',
+      resetError: 'Chưa có email admin để tạo mật khẩu tạm mới.',
+      resetConfirm: null,
+    }
+    render()
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    resetStatus: 'confirming',
+    resetCenterId: target.centerId,
+    resetError: '',
+    resetConfirm: target,
+    handoffCopyMessage: '',
+  }
+  render()
+}
+
+function closeInternalResetPasswordConfirm() {
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    resetStatus: 'idle',
+    resetCenterId: '',
+    resetError: '',
+    resetConfirm: null,
+  }
+  render()
+}
+
+async function handleInternalResetAdminPassword() {
+  const target = internalCenterAdminAccountsState.resetConfirm
+  if (!target?.centerId || !target?.email) {
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    resetStatus: 'submitting',
+    resetCenterId: target.centerId,
+    resetError: '',
+  }
+  render()
+
+  try {
+    const supabase = getSupabaseClient()
+
+    if (!supabase?.functions?.invoke) {
+      throw new Error('Supabase Functions chưa sẵn sàng.')
+    }
+
+    const { data, error } = await supabase.functions.invoke('reset-center-admin-password', {
+      body: {
+        center_id: target.centerId,
+        target_email: target.email,
+        idempotency_key: createInternalResetPasswordIdempotencyKey(target.centerId),
+        reason: 'owner_ui_temporary_password_reset',
+      },
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (!data?.ok || data.code !== 'center_admin_password_reset' || !data.temporary_password) {
+      throw new Error(data?.code || 'Không tạo được mật khẩu tạm mới.')
+    }
+
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      resetStatus: 'success',
+      resetCenterId: '',
+      resetError: '',
+      resetConfirm: null,
+      handoff: {
+        kind: 'reset',
+        centerId: target.centerId,
+        centerName: target.centerName,
+        email: data.email || target.email,
+        temporaryPassword: data.temporary_password,
+        auditId: data.audit_id || '',
+      },
+      handoffCopyMessage: '',
+    }
+    render()
+  } catch (error) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      resetStatus: 'error',
+      resetCenterId: target.centerId,
+      resetError: getInternalResetPasswordErrorMessage(error),
+    }
+    render()
+  }
+}
+
+function createInternalResetPasswordIdempotencyKey(centerId) {
+  return `c7-8c-reset-${centerId}-${Date.now()}`
+}
+
+function getInternalResetPasswordErrorMessage(error) {
+  const rawMessage = getCloudErrorMessage(error, 'Không tạo được mật khẩu tạm mới.')
+  const normalizedMessage = String(rawMessage || '').toLowerCase()
+
+  if (normalizedMessage.includes('duplicate_request_already_processed')) {
+    return 'Yêu cầu này đã được xử lý trước đó. Vì an toàn, mật khẩu tạm không thể hiển thị lại. Hãy tạo yêu cầu reset mới nếu cần.'
+  }
+
+  if (normalizedMessage.includes('forbidden_owner_required')) {
+    return 'Chỉ owner active của cơ sở mới được tạo mật khẩu tạm mới.'
+  }
+
+  if (normalizedMessage.includes('target_center_admin_not_found')) {
+    return 'Không tìm thấy admin cơ sở cần reset.'
+  }
+
+  if (normalizedMessage.includes('password_reset_audit_failed_manual_reset_required')) {
+    return 'Reset chưa hoàn tất an toàn vì audit lỗi. Không bàn giao mật khẩu; hãy kiểm tra backend trước khi thử lại.'
+  }
+
+  return rawMessage
+}
+
+function closeInternalPasswordHandoff() {
+  const shouldRefreshAccountStatus = internalCenterAdminAccountsState.handoff?.kind === 'create'
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    handoff: null,
+    handoffCopyMessage: '',
+    resetStatus: 'idle',
+    resetCenterId: '',
+    resetError: '',
+    createStatus: 'idle',
+    createCenterId: '',
+    createError: '',
+  }
+  render()
+
+  if (shouldRefreshAccountStatus) {
+    void loadInternalCenterAdminAccounts(cloudStatus.user?.id || '', internalCentersListState.centers)
+  }
+}
+
+function getInternalAccountLoginLink() {
+  const basePath = `${window.location.origin}${window.location.pathname}`
+  return basePath.endsWith('/') ? basePath : `${basePath}/`
+}
+
+function buildInternalPasswordHandoffText(handoff) {
+  return [
+    `Tài khoản quản lý cơ sở ${handoff.centerName}`,
+    `Email: ${handoff.email}`,
+    `Mật khẩu tạm: ${handoff.temporaryPassword}`,
+    `Link đăng nhập: ${getInternalAccountLoginLink()}`,
+  ].join('\n')
+}
+
+async function copyInternalAccountText(value, successMessage) {
+  const text = String(value || '')
+
+  if (!text || !navigator.clipboard?.writeText) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      handoffCopyMessage: 'Không copy được, hãy chọn và copy thủ công.',
+    }
+    render()
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(text)
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      handoffCopyMessage: successMessage || 'Đã copy.',
+    }
+    render()
+  } catch (error) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      handoffCopyMessage: 'Không copy được, hãy chọn và copy thủ công.',
+    }
+    render()
+    console.warn('Không copy được handoff tài khoản cơ sở.', error)
+  }
 }
 
 function getInternalCenterById(centerId) {
@@ -1212,6 +1770,326 @@ function normalizeInternalCenters(rows = []) {
     createdAt: String(row?.created_at || ''),
     updatedAt: String(row?.updated_at || ''),
   }))
+}
+
+function renderInternalCenterAccountManagement() {
+  if (internalCentersListState.status === 'loading' || internalCentersListState.status === 'idle') {
+    return `
+      <section class="internal-account-management" aria-labelledby="internal-account-management-title">
+        <div class="internal-account-management-header">
+          <h2 id="internal-account-management-title">Quản lý tài khoản cơ sở</h2>
+          <span>Owner ops</span>
+        </div>
+        <p class="internal-console-state" role="status">Đang chờ danh sách cơ sở production active...</p>
+      </section>
+    `
+  }
+
+  if (internalCentersListState.status === 'error') {
+    return ''
+  }
+
+  ensureInternalCenterAdminAccountsLoading(cloudStatus.user?.id || '', internalCentersListState.centers)
+
+  return `
+    <section class="internal-account-management" aria-labelledby="internal-account-management-title">
+      <div class="internal-account-management-header">
+        <div>
+          <h2 id="internal-account-management-title">Quản lý tài khoản cơ sở</h2>
+          <p>Anh Hải có thể tạo hoặc đổi mật khẩu tạm cho admin cơ sở ở bước tiếp theo. Mật khẩu tạm chỉ hiển thị một lần để copy bàn giao.</p>
+        </div>
+        <span>Owner ops</span>
+      </div>
+      ${renderInternalCenterAccountStatusNote()}
+      ${internalCentersListState.centers.length
+        ? `<div class="internal-account-card-list">
+            ${internalCentersListState.centers.map(renderInternalCenterAccountCard).join('')}
+          </div>`
+        : '<p class="internal-console-state">Chưa có cơ sở production active để quản lý tài khoản.</p>'}
+      ${renderInternalCreateAdminConfirm()}
+      ${renderInternalResetPasswordConfirm()}
+      ${renderInternalPasswordHandoffCard()}
+    </section>
+  `
+}
+
+function renderInternalCenterAccountStatusNote() {
+  if (internalCenterAdminAccountsState.status === 'loading' || internalCenterAdminAccountsState.status === 'idle') {
+    return '<p class="internal-console-state" role="status">Đang tải dữ liệu tài khoản admin qua quyền đọc hiện có...</p>'
+  }
+
+  if (internalCenterAdminAccountsState.status === 'error') {
+    return `
+      <p class="internal-console-state is-warning" role="status">
+        Không tải được dữ liệu tài khoản từ endpoint read-only. UI vẫn an toàn readonly; vui lòng deploy list-center-admin-accounts rồi thử lại.
+      </p>
+    `
+  }
+
+  return '<p class="internal-console-state is-muted">Tạo admin chỉ bật cho cơ sở production active chưa có admin. Tạo mật khẩu tạm chỉ bật khi cơ sở đã có admin. Thu hồi quyền vẫn chưa bật.</p>'
+}
+
+function renderInternalCenterAccountCard(center) {
+  const adminAccount = internalCenterAdminAccountsState.adminsByCenterId[center.id] || null
+  const hasAdmin = adminAccount?.exists === true
+  const adminEmail = adminAccount?.email || ''
+  const adminLabel = getInternalCenterAdminLabel(adminAccount)
+  const accountStatus = getInternalCenterAccountStatus(adminAccount)
+  const copied = internalCenterAdminAccountsState.copiedCenterId === center.id
+  const resetEnabled = Boolean(hasAdmin && adminEmail)
+  const isResetting = internalCenterAdminAccountsState.resetStatus === 'submitting' &&
+    internalCenterAdminAccountsState.resetCenterId === center.id
+  const createEnabled = Boolean(
+    center.environment === 'production' &&
+      center.status === 'active' &&
+      internalCenterAdminAccountsState.status === 'loaded' &&
+      adminAccount?.exists === false,
+  )
+  const isCreating = internalCenterAdminAccountsState.createStatus === 'submitting' &&
+    internalCenterAdminAccountsState.createCenterId === center.id
+  const createButtonLabel = isCreating
+    ? 'Đang tạo admin...'
+    : hasAdmin
+      ? 'Đã có admin'
+      : createEnabled ? 'Tạo admin' : 'Chưa sẵn sàng'
+
+  return `
+    <article class="internal-account-card">
+      <div class="internal-account-card-title">
+        <h3>${escapeHtml(center.name || center.id)}</h3>
+        <span class="${hasAdmin ? 'is-ready' : 'is-pending'}">${escapeHtml(accountStatus)}</span>
+      </div>
+      <dl class="internal-account-meta">
+        <div>
+          <dt>Mã cơ sở</dt>
+          <dd><code>${escapeHtml(center.id)}</code></dd>
+        </div>
+        <div>
+          <dt>Slug</dt>
+          <dd>${escapeHtml(center.slug || '-')}</dd>
+        </div>
+        <div>
+          <dt>Môi trường</dt>
+          <dd>${escapeHtml(center.environment || '-')}</dd>
+        </div>
+        <div>
+          <dt>Trạng thái</dt>
+          <dd>${escapeHtml(center.status || '-')}</dd>
+        </div>
+        <div>
+          <dt>Admin cơ sở</dt>
+          <dd class="internal-account-email">${escapeHtml(adminLabel)}</dd>
+        </div>
+        <div>
+          <dt>Trạng thái tài khoản</dt>
+          <dd>${escapeHtml(accountStatus)}</dd>
+        </div>
+      </dl>
+      <div class="internal-account-actions" aria-label="Hành động tài khoản cơ sở">
+        <button
+          type="button"
+          class="internal-account-create"
+          data-internal-create-admin-center-id="${escapeAttribute(center.id)}"
+          ${createEnabled && !isCreating ? '' : 'disabled'}
+        >
+          ${escapeHtml(createButtonLabel)}
+        </button>
+        <button
+          type="button"
+          class="internal-account-reset"
+          data-internal-reset-admin-center-id="${escapeAttribute(center.id)}"
+          ${resetEnabled && !isResetting ? '' : 'disabled'}
+        >
+          ${isResetting ? 'Đang tạo mật khẩu tạm...' : 'Tạo mật khẩu tạm mới'}
+        </button>
+        <button type="button" disabled title="Sẽ được bật ở C7.8B/C7.8C">Thu hồi quyền <span>Sắp bật</span></button>
+        <button
+          type="button"
+          class="internal-account-copy"
+          data-internal-copy-admin-email="${escapeAttribute(adminEmail)}"
+          data-internal-copy-admin-center-id="${escapeAttribute(center.id)}"
+          ${adminEmail ? '' : 'disabled'}
+        >
+          ${copied ? 'Đã copy email' : 'Copy email'}
+        </button>
+      </div>
+      ${internalCenterAdminAccountsState.copyMessage ? `
+        <p class="internal-account-copy-message" role="status">${escapeHtml(internalCenterAdminAccountsState.copyMessage)}</p>
+      ` : ''}
+    </article>
+  `
+}
+
+function renderInternalCreateAdminConfirm() {
+  const confirm = internalCenterAdminAccountsState.createConfirm
+  const isSubmitting = internalCenterAdminAccountsState.createStatus === 'submitting'
+
+  if (!confirm && !internalCenterAdminAccountsState.createError) {
+    return ''
+  }
+
+  if (!confirm && internalCenterAdminAccountsState.createError) {
+    return `
+      <div class="internal-account-reset-panel is-error" role="alert">
+        <strong>Không tạo được admin cơ sở</strong>
+        <p>${escapeHtml(internalCenterAdminAccountsState.createError)}</p>
+      </div>
+    `
+  }
+
+  return `
+    <div class="internal-account-reset-panel" role="dialog" aria-modal="false" aria-labelledby="internal-create-admin-title">
+      <div>
+        <h3 id="internal-create-admin-title">Tạo admin cơ sở?</h3>
+        <p>Bạn đang tạo tài khoản admin cho:</p>
+        <p class="internal-account-confirm-email">${escapeHtml(confirm.centerName)}</p>
+        <p>Mã cơ sở: <strong>${escapeHtml(confirm.centerId)}</strong></p>
+        <p>Hệ thống sẽ tạo tài khoản: <strong>${escapeHtml(confirm.expectedEmail)}</strong></p>
+        <p>Mật khẩu tạm chỉ hiển thị một lần để copy bàn giao.</p>
+      </div>
+      ${internalCenterAdminAccountsState.createError ? `
+        <p class="internal-account-reset-error" role="alert">${escapeHtml(internalCenterAdminAccountsState.createError)}</p>
+      ` : ''}
+      <div class="internal-account-reset-actions">
+        <button type="button" data-internal-create-admin-cancel ${isSubmitting ? 'disabled' : ''}>Hủy</button>
+        <button type="button" data-internal-create-admin-confirm ${isSubmitting ? 'disabled' : ''}>
+          ${isSubmitting ? 'Đang tạo admin...' : 'Tạo admin'}
+        </button>
+      </div>
+    </div>
+  `
+}
+
+function renderInternalResetPasswordConfirm() {
+  const confirm = internalCenterAdminAccountsState.resetConfirm
+  const isSubmitting = internalCenterAdminAccountsState.resetStatus === 'submitting'
+
+  if (!confirm && !internalCenterAdminAccountsState.resetError) {
+    return ''
+  }
+
+  if (!confirm && internalCenterAdminAccountsState.resetError) {
+    return `
+      <div class="internal-account-reset-panel is-error" role="alert">
+        <strong>Không tạo được mật khẩu tạm mới</strong>
+        <p>${escapeHtml(internalCenterAdminAccountsState.resetError)}</p>
+      </div>
+    `
+  }
+
+  return `
+    <div class="internal-account-reset-panel" role="dialog" aria-modal="false" aria-labelledby="internal-reset-title">
+      <div>
+        <h3 id="internal-reset-title">Tạo mật khẩu tạm mới?</h3>
+        <p>Bạn đang tạo mật khẩu tạm mới cho admin cơ sở:</p>
+        <p class="internal-account-confirm-email">${escapeHtml(confirm.email)}</p>
+        <p>Mật khẩu cũ sẽ không dùng được sau khi reset. Mật khẩu mới chỉ hiển thị một lần để copy bàn giao.</p>
+      </div>
+      ${internalCenterAdminAccountsState.resetError ? `
+        <p class="internal-account-reset-error" role="alert">${escapeHtml(internalCenterAdminAccountsState.resetError)}</p>
+      ` : ''}
+      <div class="internal-account-reset-actions">
+        <button type="button" data-internal-reset-cancel ${isSubmitting ? 'disabled' : ''}>Hủy</button>
+        <button type="button" data-internal-reset-confirm ${isSubmitting ? 'disabled' : ''}>
+          ${isSubmitting ? 'Đang tạo mật khẩu tạm...' : 'Tạo mật khẩu tạm mới'}
+        </button>
+      </div>
+    </div>
+  `
+}
+
+function renderInternalPasswordHandoffCard() {
+  const handoff = internalCenterAdminAccountsState.handoff
+
+  if (!handoff) {
+    return ''
+  }
+
+  const title = handoff.kind === 'create'
+    ? 'Đã tạo tài khoản admin cơ sở'
+    : 'Đã tạo mật khẩu tạm mới'
+
+  return `
+    <div class="internal-password-handoff" role="dialog" aria-modal="false" aria-labelledby="internal-handoff-title">
+      <div class="internal-password-handoff-header">
+        <div>
+          <h3 id="internal-handoff-title">${escapeHtml(title)}</h3>
+          <p>Mật khẩu này chỉ hiển thị trong lần này. Hãy copy và gửi riêng cho admin cơ sở.</p>
+        </div>
+      </div>
+      <dl class="internal-password-handoff-details">
+        <div>
+          <dt>Cơ sở</dt>
+          <dd>${escapeHtml(handoff.centerName)}</dd>
+        </div>
+        <div>
+          <dt>Tài khoản</dt>
+          <dd class="internal-account-email">${escapeHtml(handoff.email)}</dd>
+        </div>
+        <div>
+          <dt>Mật khẩu tạm</dt>
+          <dd class="internal-password-handoff-secret">${escapeHtml(handoff.temporaryPassword)}</dd>
+        </div>
+      </dl>
+      <div class="internal-password-handoff-actions">
+        <button type="button" data-internal-handoff-copy="email">Copy email</button>
+        <button type="button" data-internal-handoff-copy="password">Copy mật khẩu</button>
+        <button type="button" data-internal-handoff-copy="all">Copy toàn bộ</button>
+        <button type="button" data-internal-handoff-close>Tôi đã lưu</button>
+      </div>
+      ${internalCenterAdminAccountsState.handoffCopyMessage ? `
+        <p class="internal-account-copy-message" role="status">${escapeHtml(internalCenterAdminAccountsState.handoffCopyMessage)}</p>
+      ` : ''}
+    </div>
+  `
+}
+
+function getInternalCenterAdminLabel(adminAccount) {
+  if (internalCenterAdminAccountsState.status === 'loading' || internalCenterAdminAccountsState.status === 'idle') {
+    return 'Đang tải...'
+  }
+
+  if (internalCenterAdminAccountsState.status === 'error') {
+    return 'Chưa tải'
+  }
+
+  if (!adminAccount?.exists) {
+    return 'Chưa có admin'
+  }
+
+  if (adminAccount.state === 'multiple_active_admins') {
+    return 'Nhiều admin active, cần kiểm tra'
+  }
+
+  return adminAccount.email || 'Đã có admin, chưa có email'
+}
+
+function getInternalCenterAccountStatus(adminAccount) {
+  if (internalCenterAdminAccountsState.status === 'loading' || internalCenterAdminAccountsState.status === 'idle') {
+    return 'Đang tải dữ liệu tài khoản'
+  }
+
+  if (internalCenterAdminAccountsState.status === 'error') {
+    return 'Không tải được dữ liệu tài khoản'
+  }
+
+  if (adminAccount?.state === 'multiple_active_admins') {
+    return 'Cần kiểm tra nhiều admin'
+  }
+
+  if (adminAccount?.exists) {
+    return 'Đã có admin'
+  }
+
+  return 'Cần tạo tài khoản'
+}
+
+function getInternalCenterAccountUnknownLabel() {
+  if (internalCenterAdminAccountsState.status === 'loaded') {
+    return 'Chưa có admin'
+  }
+
+  return 'Chưa tải'
 }
 
 function renderInternalCentersList() {
@@ -6337,6 +7215,126 @@ function bindEvents() {
     button.addEventListener('click', () => {
       void handleInternalOpenCenter(button.dataset.internalOpenCenterId)
     })
+  })
+
+  document.querySelectorAll('[data-internal-copy-admin-email]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const email = String(button.dataset.internalCopyAdminEmail || '').trim()
+      const centerId = String(button.dataset.internalCopyAdminCenterId || '').trim()
+
+      if (!email) {
+        internalCenterAdminAccountsState = {
+          ...internalCenterAdminAccountsState,
+          copiedCenterId: '',
+          copyMessage: 'Chưa có email admin để copy',
+        }
+        render()
+        return
+      }
+
+      if (!navigator.clipboard?.writeText) {
+        internalCenterAdminAccountsState = {
+          ...internalCenterAdminAccountsState,
+          copiedCenterId: '',
+          copyMessage: 'Không copy tự động được. Hãy copy email admin thủ công.',
+        }
+        render()
+        return
+      }
+
+      try {
+        await navigator.clipboard.writeText(email)
+        internalCenterAdminAccountsState = {
+          ...internalCenterAdminAccountsState,
+          copiedCenterId: centerId,
+          copyMessage: 'Đã copy email admin.',
+        }
+        render()
+      } catch (error) {
+        internalCenterAdminAccountsState = {
+          ...internalCenterAdminAccountsState,
+          copiedCenterId: '',
+          copyMessage: 'Không copy tự động được. Hãy copy email admin thủ công.',
+        }
+        render()
+        console.warn('Không copy được email admin cơ sở.', error)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-internal-reset-admin-center-id]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openInternalResetPasswordConfirm(button.dataset.internalResetAdminCenterId)
+    })
+  })
+
+  document.querySelectorAll('[data-internal-create-admin-center-id]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openInternalCreateAdminConfirm(button.dataset.internalCreateAdminCenterId)
+    })
+  })
+
+  document.querySelector('[data-internal-create-admin-cancel]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    closeInternalCreateAdminConfirm()
+  })
+
+  document.querySelector('[data-internal-create-admin-confirm]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    void handleInternalCreateAdminAccount()
+  })
+
+  document.querySelector('[data-internal-reset-cancel]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    closeInternalResetPasswordConfirm()
+  })
+
+  document.querySelector('[data-internal-reset-confirm]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    void handleInternalResetAdminPassword()
+  })
+
+  document.querySelectorAll('[data-internal-handoff-copy]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const handoff = internalCenterAdminAccountsState.handoff
+      const copyTarget = button.dataset.internalHandoffCopy
+
+      if (!handoff) {
+        return
+      }
+
+      if (copyTarget === 'email') {
+        void copyInternalAccountText(handoff.email, 'Đã copy email.')
+        return
+      }
+
+      if (copyTarget === 'password') {
+        void copyInternalAccountText(handoff.temporaryPassword, 'Đã copy mật khẩu.')
+        return
+      }
+
+      if (copyTarget === 'all') {
+        void copyInternalAccountText(buildInternalPasswordHandoffText(handoff), 'Đã copy toàn bộ thông tin bàn giao.')
+      }
+    })
+  })
+
+  document.querySelector('[data-internal-handoff-close]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    closeInternalPasswordHandoff()
   })
 
   document.querySelectorAll('[data-view-mode]').forEach((button) => {

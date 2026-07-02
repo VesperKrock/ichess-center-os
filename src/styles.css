@@ -94,12 +94,12 @@ button {
 
 .internal-console-screen {
   display: grid;
-  width: min(820px, 100%);
+  width: min(1120px, 100%);
 }
 
 .internal-console-panel {
   display: grid;
-  gap: 18px;
+  gap: 22px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   padding: 24px;
@@ -146,6 +146,16 @@ button {
   gap: 4px;
   border-color: rgba(239, 92, 92, 0.42);
   background: rgba(120, 33, 33, 0.22);
+}
+
+.internal-console-state.is-warning {
+  border-color: rgba(234, 179, 8, 0.42);
+  color: #fff3c4;
+  background: rgba(113, 74, 13, 0.22);
+}
+
+.internal-console-state.is-muted {
+  color: #c6d3e2;
 }
 
 .internal-add-center-form {
@@ -346,6 +356,265 @@ button {
 .internal-centers-open:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.internal-account-management {
+  display: grid;
+  gap: 16px;
+  border: 1px solid rgba(118, 164, 231, 0.24);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(7, 34, 45, 0.28);
+}
+
+.internal-account-management-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.internal-account-management-header div {
+  display: grid;
+  gap: 6px;
+}
+
+.internal-account-management-header p {
+  color: #c8d8eb;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.internal-account-management-header > span,
+.internal-account-card-title span,
+.internal-account-actions button span {
+  border: 1px solid rgba(118, 164, 231, 0.34);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #cfe3ff;
+  background: rgba(31, 93, 153, 0.2);
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.internal-account-card-list {
+  display: grid;
+  gap: 14px;
+}
+
+.internal-account-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.internal-account-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.internal-account-card-title h3 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+
+.internal-account-card-title span.is-ready {
+  border-color: rgba(60, 179, 113, 0.38);
+  color: #d8ffe6;
+  background: rgba(24, 105, 59, 0.24);
+}
+
+.internal-account-card-title span.is-pending {
+  border-color: rgba(234, 179, 8, 0.4);
+  color: #fff3c4;
+  background: rgba(113, 74, 13, 0.22);
+}
+
+.internal-account-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.internal-account-meta div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.internal-account-meta dt {
+  color: #9fc7ef;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.internal-account-meta dd {
+  margin: 0;
+  overflow-wrap: break-word;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.internal-account-email {
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.internal-account-meta code {
+  color: inherit;
+  font-family: inherit;
+}
+
+.internal-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.internal-account-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  border: 1px solid rgba(118, 164, 231, 0.62);
+  border-radius: 6px;
+  padding: 7px 11px;
+  color: #ffffff;
+  background: #1f5d99;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.internal-account-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.internal-account-copy:not(:disabled):hover,
+.internal-account-copy:not(:disabled):focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.72);
+  background: #2b73b9;
+}
+
+.internal-account-copy-message {
+  margin: 0;
+  color: #cfe3ff;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.internal-account-reset-panel,
+.internal-password-handoff {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(118, 164, 231, 0.32);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(31, 93, 153, 0.14);
+}
+
+.internal-account-reset-panel.is-error {
+  border-color: rgba(239, 92, 92, 0.42);
+  background: rgba(120, 33, 33, 0.22);
+}
+
+.internal-account-reset-panel h3,
+.internal-password-handoff h3 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.internal-account-reset-panel > div,
+.internal-password-handoff-header,
+.internal-password-handoff-details {
+  display: grid;
+  gap: 8px;
+}
+
+.internal-account-confirm-email,
+.internal-password-handoff-secret {
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 10px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.055);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.internal-password-handoff-details {
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  margin: 0;
+}
+
+.internal-password-handoff-details div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.internal-password-handoff-details dt {
+  color: #9fc7ef;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.internal-password-handoff-details dd {
+  margin: 0;
+}
+
+.internal-account-reset-actions,
+.internal-password-handoff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.internal-account-reset-actions button,
+.internal-password-handoff-actions button {
+  min-height: 36px;
+  border: 1px solid rgba(118, 164, 231, 0.62);
+  border-radius: 6px;
+  padding: 7px 11px;
+  color: #ffffff;
+  background: #1f5d99;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.internal-account-reset-actions button:first-child {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.internal-account-reset-actions button:disabled,
+.internal-password-handoff-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.internal-account-reset-error {
+  color: #ffd8d8;
+  font-weight: 800;
 }
 
 .internal-console-meta {
@@ -14944,8 +15213,16 @@ h3 {
 
 @media (max-width: 720px) {
   .internal-add-center-preview,
+  .internal-account-meta,
+  .internal-password-handoff-details,
   .internal-console-meta {
     grid-template-columns: 1fr;
+  }
+
+  .internal-account-management-header,
+  .internal-account-card-title {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .internal-add-center-actions {

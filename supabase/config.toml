@@ -391,6 +391,9 @@ verify_jwt = true
 [functions.revoke-center-admin-access]
 verify_jwt = true
 
+[functions.list-center-admin-accounts]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327
