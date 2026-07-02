@@ -529,6 +529,7 @@ let cloudBootstrapRetryBlockedUntil = 0
 let cloudBootstrapLastFailureSignature = ''
 let coreCloudSyncTimer = null
 let coreCloudSyncRunId = 0
+let pendingTextEditingRender = false
 let studentRealtimeSubscription = null
 let studentRealtimeCenterId = ''
 let studentCloudWriteRunId = 0
@@ -714,6 +715,11 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
 }
 
 function render() {
+  if (shouldDeferRenderForTextEditing()) {
+    deferRenderUntilTextEditingEnds()
+    return
+  }
+
   const preservedScrollState = rememberPreservedScrollPositions()
   const scheduleReportScrollState = getScheduleReportScrollState()
   const scheduleFormScrollState = getScheduleFormScrollState()
@@ -755,6 +761,47 @@ function render() {
   focusPendingAttendanceBaselineCell()
   skipNextParentContactScrollCapture = false
   updateClock()
+}
+
+function isTextEditingElement(element) {
+  if (!element) {
+    return false
+  }
+
+  const tagName = element.tagName?.toLowerCase()
+
+  return (
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select' ||
+    element.isContentEditable
+  )
+}
+
+function shouldDeferRenderForTextEditing() {
+  return isTextEditingElement(document.activeElement)
+}
+
+function deferRenderUntilTextEditingEnds() {
+  pendingTextEditingRender = true
+}
+
+function flushDeferredTextEditingRender() {
+  if (!pendingTextEditingRender || shouldDeferRenderForTextEditing()) {
+    return
+  }
+
+  pendingTextEditingRender = false
+  render()
+}
+
+function scheduleDeferredTextEditingRenderFlush() {
+  window.setTimeout(flushDeferredTextEditingRender, 0)
+}
+
+function installTextEditingRenderProtection() {
+  document.addEventListener('focusout', scheduleDeferredTextEditingRenderFlush, true)
+  document.addEventListener('change', scheduleDeferredTextEditingRenderFlush, true)
 }
 
 function isInternalCenterConsoleRoute() {
@@ -13131,6 +13178,7 @@ function installManualCloudBackfillHelpers() {
 }
 
 installManualCloudBackfillHelpers()
+installTextEditingRenderProtection()
 render()
 initializeSupabaseAuth()
 

@@ -152,6 +152,8 @@ const allowedPaths = new Set([
   'tests/supabase-c7-8c-1-fix-account-management-scroll-jump-smoke.js',
   'docs/supabase-c7-8d-wire-create-admin-button-handoff-ui.md',
   'tests/supabase-c7-8d-wire-create-admin-button-handoff-ui-smoke.js',
+  'docs/c7-8-hotfix-mat-focus-input-toan-app.md',
+  'tests/c7-8-hotfix-mat-focus-input-toan-app-smoke.js',
 ])
 
 for (const changedPath of changedPaths) {
