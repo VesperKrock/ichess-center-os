@@ -106,7 +106,8 @@ assert(
   'restorePreservedScrollPositions',
 ].forEach((marker) => assertIncludes(main, marker))
 
-assert(!/functions\.invoke\s*\(\s*['"`]revoke-center-admin-access/.test(main), 'Frontend must not invoke revoke Edge Function.')
+assert(main.includes("const ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS = new Set(['phongtrong_prod'])"), 'C7.8G live actions must be allowlisted to Phong Trong.')
+assert(!/ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS[\s\S]{0,120}dreamhome_prod/.test(main), 'DreamHome must not be in live account access allowlist.')
 assert(!main.includes('SUPABASE_SERVICE_ROLE_KEY'), 'Frontend must not expose service role key.')
 assert(!main.includes('service_role'), 'Frontend must not reference service_role.')
 assert(!main.includes('auth.admin'), 'Frontend must not use auth.admin.')

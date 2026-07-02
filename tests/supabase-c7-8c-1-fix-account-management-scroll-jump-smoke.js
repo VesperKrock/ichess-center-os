@@ -71,6 +71,10 @@ assertIncludes(main, 'restorePreservedScrollPositions')
   "document.querySelectorAll('[data-internal-create-admin-center-id]')",
   "document.querySelector('[data-internal-create-admin-cancel]')",
   "document.querySelector('[data-internal-create-admin-confirm]')",
+  "document.querySelectorAll('[data-internal-revoke-admin-center-id]')",
+  "document.querySelectorAll('[data-internal-revoke-cancel]')",
+  "document.querySelector('[data-internal-revoke-acknowledge-risk]')",
+  "document.querySelector('[data-internal-revoke-confirm]')?.addEventListener('click'",
   "document.querySelectorAll('[data-internal-reset-admin-center-id]')",
   "document.querySelector('[data-internal-reset-cancel]')",
   "document.querySelector('[data-internal-reset-confirm]')",
@@ -101,8 +105,12 @@ assert(
   'After C7.8D, centers with existing admin must keep create action disabled.',
 )
 assert(
-  /<button type="button" disabled title="Sẽ được bật ở C7\.8B\/C7\.8C">Thu hồi quyền/.test(main),
-  'Revoke action must remain disabled.',
+  /data-internal-revoke-admin-center-id="\$\{escapeAttribute\(center\.id\)\}"/.test(main),
+  'After C7.8E, revoke action must open a safety-gated UI panel.',
+)
+assert(
+  /const ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS = new Set\(\['phongtrong_prod'\]\)/.test(main),
+  'After C7.8G, revoke live actions must be allowlisted to Phong Trong.',
 )
 assert(!main.includes('SUPABASE_SERVICE_ROLE_KEY'), 'Frontend must not expose service role key.')
 assert(!main.includes('service_role'), 'Frontend must not reference service_role.')

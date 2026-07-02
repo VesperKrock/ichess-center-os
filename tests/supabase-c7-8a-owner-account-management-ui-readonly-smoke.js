@@ -84,8 +84,8 @@ const styles = readUtf8(stylesPath)
   'Tạo mật khẩu tạm mới',
   'Thu hồi quyền',
   'Copy email',
-  'Sắp bật',
-  'Sẽ được bật ở C7.8B/C7.8C',
+  'Đã bật cho cơ sở này',
+  'Thao tác thu hồi quyền cho cơ sở này chưa được bật.',
   'data-internal-copy-admin-email',
 ].forEach((marker) => assertIncludes(main, marker))
 
@@ -108,12 +108,16 @@ assert(
   'After C7.8D, centers with existing admin must keep create action disabled.',
 )
 assert(
-  /const resetEnabled = Boolean\(hasAdmin && adminEmail\)/.test(main),
+  /const resetEnabled = Boolean\(hasAdmin && adminEmail && !isRevokedAdmin\)/.test(main),
   'After C7.8C, reset temporary password action must only enable for cards with admin email.',
 )
 assert(
-  /<button type="button" disabled title="Sẽ được bật ở C7\.8B\/C7\.8C">Thu hồi quyền/.test(main),
-  'Revoke action must be disabled.',
+  /data-internal-revoke-admin-center-id="\$\{escapeAttribute\(center\.id\)\}"/.test(main),
+  'After C7.8E, revoke action must open a safety-gated UI panel.',
+)
+assert(
+  /const revokeEnabled = Boolean\(hasAdmin && adminEmail && !isRevokedAdmin\)/.test(main),
+  'After C7.8G, revoke entry action must only enable for active centers with admin email.',
 )
 
 const sourceFiles = execFileSync('git', ['ls-files', 'src'], { cwd: root, encoding: 'utf8' })
@@ -133,7 +137,8 @@ assert(
   !/sessionStorage[\s\S]{0,160}temporary_password|temporary_password[\s\S]{0,160}sessionStorage/.test(srcCombined),
   'Frontend src must not persist temporary_password to sessionStorage.',
 )
-assert(!/functions\.invoke\s*\(\s*['"`]revoke-center-admin-access/.test(srcCombined), 'C7.8A-D must not invoke revoke account ops Edge Function.')
+assert(srcCombined.includes("const ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS = new Set(['phongtrong_prod'])"), 'C7.8G live actions must be allowlisted to Phong Trong.')
+assert(!/ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS[\s\S]{0,120}dreamhome_prod/.test(srcCombined), 'DreamHome must not be in live account access allowlist.')
 assert(!/data-internal-[\w-]*(password|temporary)[\w-]*\s*=/.test(main), 'C7.8A must not add password input/storage data hooks.')
 
 const changedPaths = getStatusPaths()
@@ -154,6 +159,23 @@ const allowedPaths = new Set([
   'tests/supabase-c7-8d-wire-create-admin-button-handoff-ui-smoke.js',
   'docs/c7-8-hotfix-mat-focus-input-toan-app.md',
   'tests/c7-8-hotfix-mat-focus-input-toan-app-smoke.js',
+  'docs/supabase-c7-8e-revoke-access-ui-safety-gate.md',
+  'tests/supabase-c7-8e-revoke-access-ui-safety-gate-smoke.js',
+  'docs/supabase-c7-8e-1-revoke-window-restore-ux-polish.md',
+  'tests/supabase-c7-8e-1-revoke-window-restore-ux-polish-smoke.js',
+  'supabase/functions/restore-center-admin-access/',
+  'docs/supabase-c7-8f-controlled-live-revoke-restore-phongtrong.md',
+  'docs/supabase-c7-8f-manual-apply-service-role-update-grant.sql',
+  'docs/supabase-c7-8f-readonly-preflight-phongtrong-revoke.sql',
+  'docs/supabase-c7-8f-browser-invoke-revoke-phongtrong.js',
+  'docs/supabase-c7-8f-readonly-post-revoke-verify.sql',
+  'docs/supabase-c7-8f-browser-invoke-restore-phongtrong.js',
+  'docs/supabase-c7-8f-readonly-post-restore-verify.sql',
+  'tests/supabase-c7-8f-controlled-live-revoke-restore-phongtrong-smoke.js',
+  'docs/supabase-c7-8g-wire-live-revoke-restore-ui-phongtrong.md',
+  'tests/supabase-c7-8g-wire-live-revoke-restore-ui-phongtrong-smoke.js',
+  'docs/supabase-c7-8h-owner-account-management-final-polish.md',
+  'tests/supabase-c7-8h-owner-account-management-final-polish-smoke.js',
 ])
 
 for (const changedPath of changedPaths) {
@@ -164,8 +186,9 @@ for (const changedPath of changedPaths) {
   assert(allowedPaths.has(changedPath), `Unexpected changed file in C7.8A scope: ${changedPath}`)
   assert(
     !changedPath.startsWith('supabase/functions/') ||
-      changedPath === 'supabase/functions/list-center-admin-accounts/',
-    `Only C7.8B read-only status Edge Function is allowed after C7.8A: ${changedPath}`,
+      changedPath === 'supabase/functions/list-center-admin-accounts/' ||
+      changedPath === 'supabase/functions/restore-center-admin-access/',
+    `Only C7.8B read-only status and C7.8F restore Edge Function folders are allowed after C7.8A: ${changedPath}`,
   )
 }
 

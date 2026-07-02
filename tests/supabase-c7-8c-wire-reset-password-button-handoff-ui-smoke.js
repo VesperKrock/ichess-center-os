@@ -93,7 +93,7 @@ const styles = readUtf8(stylesPath)
 ].forEach((marker) => assertIncludes(main, marker))
 
 assert(
-  /const resetEnabled = Boolean\(hasAdmin && adminEmail\)/.test(main),
+  /const resetEnabled = Boolean\(hasAdmin && adminEmail && !isRevokedAdmin\)/.test(main),
   'Reset button must only enable for cards with admin email.',
 )
 assert(
@@ -109,8 +109,12 @@ assert(
   'After C7.8D, centers with existing admin must keep create action disabled.',
 )
 assert(
-  /<button type="button" disabled title="Sẽ được bật ở C7\.8B\/C7\.8C">Thu hồi quyền/.test(main),
-  'Revoke action must remain disabled.',
+  /data-internal-revoke-admin-center-id="\$\{escapeAttribute\(center\.id\)\}"/.test(main),
+  'After C7.8E, revoke action must open a safety-gated UI panel.',
+)
+assert(
+  /const ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS = new Set\(\['phongtrong_prod'\]\)/.test(main),
+  'After C7.8G, revoke live actions must be allowlisted to Phong Trong.',
 )
 assert(
   /handleInternalResetAdminPassword[\s\S]*supabase\.functions\.invoke\('reset-center-admin-password'/.test(main),

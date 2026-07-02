@@ -391,6 +391,9 @@ verify_jwt = true
 [functions.revoke-center-admin-access]
 verify_jwt = true
 
+[functions.restore-center-admin-access]
+verify_jwt = true
+
 [functions.list-center-admin-accounts]
 verify_jwt = true
 

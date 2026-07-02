@@ -375,6 +375,9 @@ import {
 const app = document.querySelector('#app')
 const INTERNAL_CENTERS_ROUTE_HASH = '#/internal/centers'
 const INTERNAL_CENTERS_SELECT_FIELDS = 'id,name,slug,environment,status,created_at,updated_at'
+const ACCOUNT_REVOKE_LIVE_ACTIONS_ENABLED = true
+const ACCOUNT_RESTORE_LIVE_ACTIONS_ENABLED = true
+const ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS = new Set(['phongtrong_prod'])
 
 const preservedScrollTargets = [
   ['.desktop-area.is-internal-console-route', 'internal-console-route'],
@@ -567,6 +570,7 @@ function createInternalCenterAdminAccountsState(overrides = {}) {
   return {
     status: 'idle',
     adminsByCenterId: {},
+    localAccountSnapshotsByCenterId: {},
     error: '',
     loadedForUserId: '',
     loadedForCenterKey: '',
@@ -580,6 +584,17 @@ function createInternalCenterAdminAccountsState(overrides = {}) {
     createCenterId: '',
     createError: '',
     createConfirm: null,
+    revokeStatus: 'idle',
+    revokeCenterId: '',
+    revokeError: '',
+    revokeConfirm: null,
+    revokeTypedConfirmation: '',
+    revokeRiskAcknowledged: false,
+    restoreStatus: 'idle',
+    restoreCenterId: '',
+    restoreError: '',
+    restoreConfirm: null,
+    restoreTypedConfirmation: '',
     handoff: null,
     handoffCopyMessage: '',
     ...overrides,
@@ -1261,7 +1276,10 @@ async function loadInternalCenterAdminAccounts(userId, centers = internalCenters
     internalCenterAdminAccountsState = createInternalCenterAdminAccountsState({
       ...internalCenterAdminAccountsState,
       status: 'loaded',
-      adminsByCenterId: normalizeInternalCenterAdminAccounts(data.centers),
+      adminsByCenterId: {
+        ...normalizeInternalCenterAdminAccounts(data.centers),
+        ...internalCenterAdminAccountsState.localAccountSnapshotsByCenterId,
+      },
       loadedForUserId: userId,
       loadedForCenterKey: centerKey,
       copiedCenterId: internalCenterAdminAccountsState.copiedCenterId,
@@ -1635,6 +1653,418 @@ function getInternalResetPasswordErrorMessage(error) {
   return rawMessage
 }
 
+function isInternalAccountLiveAllowedCenter(centerId) {
+  return ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS.has(String(centerId || '').trim())
+}
+
+function canLiveRevokeInternalAccount(target) {
+  return Boolean(
+    ACCOUNT_REVOKE_LIVE_ACTIONS_ENABLED &&
+      target?.centerId &&
+      target?.email &&
+      isInternalAccountLiveAllowedCenter(target.centerId),
+  )
+}
+
+function canLiveRestoreInternalAccount(target) {
+  return Boolean(
+    ACCOUNT_RESTORE_LIVE_ACTIONS_ENABLED &&
+      target?.centerId &&
+      target?.email &&
+      isInternalAccountLiveAllowedCenter(target.centerId),
+  )
+}
+
+function getInternalAccountRecord(centerId) {
+  const normalizedCenterId = String(centerId || '').trim()
+  return internalCenterAdminAccountsState.localAccountSnapshotsByCenterId[normalizedCenterId] ||
+    internalCenterAdminAccountsState.adminsByCenterId[normalizedCenterId] ||
+    null
+}
+
+function getInternalAccountRevokeTarget(centerId) {
+  const center = getInternalCenterById(centerId)
+  const adminAccount = getInternalAccountRecord(centerId)
+  const email = String(adminAccount?.email || '').trim()
+
+  if (!center || !adminAccount?.exists || !email) {
+    return null
+  }
+
+  return {
+    centerId: center.id,
+    centerName: center.name || center.id,
+    email,
+  }
+}
+
+function getInternalAccountRestoreTarget(centerId) {
+  const center = getInternalCenterById(centerId)
+  const adminAccount = getInternalAccountRecord(centerId)
+  const email = String(adminAccount?.email || '').trim()
+
+  if (!center || adminAccount?.state !== 'revoked' || !email) {
+    return null
+  }
+
+  return {
+    centerId: center.id,
+    centerName: center.name || center.id,
+    email,
+    auditId: adminAccount.auditId || '',
+  }
+}
+
+function openInternalRevokeAccessConfirm(centerId) {
+  const target = getInternalAccountRevokeTarget(centerId)
+
+  if (!target) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      revokeStatus: 'error',
+      revokeCenterId: '',
+      revokeError: 'Không có admin cơ sở để thu hồi quyền.',
+      revokeConfirm: null,
+      revokeTypedConfirmation: '',
+      revokeRiskAcknowledged: false,
+    }
+    render()
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    revokeStatus: 'confirming',
+    revokeCenterId: target.centerId,
+    revokeError: '',
+    revokeConfirm: target,
+    revokeTypedConfirmation: '',
+    revokeRiskAcknowledged: false,
+    handoffCopyMessage: '',
+  }
+  render()
+}
+
+function openInternalRestoreAccessConfirm(centerId) {
+  const target = getInternalAccountRestoreTarget(centerId)
+
+  if (!target) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      restoreStatus: 'error',
+      restoreCenterId: '',
+      restoreError: 'Chỉ có thể khôi phục khi quyền admin đang bị thu hồi.',
+      restoreConfirm: null,
+      restoreTypedConfirmation: '',
+    }
+    render()
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    restoreStatus: 'confirming',
+    restoreCenterId: target.centerId,
+    restoreError: '',
+    restoreConfirm: target,
+    restoreTypedConfirmation: '',
+  }
+  render()
+}
+
+function closeInternalRevokeAccessConfirm() {
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    revokeStatus: 'idle',
+    revokeCenterId: '',
+    revokeError: '',
+    revokeConfirm: null,
+    revokeTypedConfirmation: '',
+    revokeRiskAcknowledged: false,
+  }
+  render()
+}
+
+function closeInternalRestoreAccessConfirm() {
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    restoreStatus: 'idle',
+    restoreCenterId: '',
+    restoreError: '',
+    restoreConfirm: null,
+    restoreTypedConfirmation: '',
+  }
+  render()
+}
+
+function acknowledgeInternalRevokeRisk() {
+  if (!internalCenterAdminAccountsState.revokeConfirm) {
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    revokeRiskAcknowledged: true,
+    revokeError: '',
+  }
+  render()
+}
+
+function updateInternalRevokeTypedConfirmation(value) {
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    revokeTypedConfirmation: String(value || ''),
+  }
+
+  syncInternalAccountAccessFinalButtons()
+}
+
+function updateInternalRestoreTypedConfirmation(value) {
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    restoreTypedConfirmation: String(value || ''),
+  }
+
+  syncInternalAccountAccessFinalButtons()
+}
+
+function syncInternalAccountAccessFinalButtons() {
+  const revokeButton = document.querySelector('[data-internal-revoke-confirm]')
+  if (revokeButton) {
+    revokeButton.disabled = !(
+      canLiveRevokeInternalAccount(internalCenterAdminAccountsState.revokeConfirm) &&
+      internalCenterAdminAccountsState.revokeRiskAcknowledged &&
+      internalCenterAdminAccountsState.revokeTypedConfirmation === 'REVOKE' &&
+      internalCenterAdminAccountsState.revokeStatus !== 'submitting'
+    )
+  }
+
+  const restoreButton = document.querySelector('[data-internal-restore-confirm]')
+  if (restoreButton) {
+    restoreButton.disabled = !(
+      canLiveRestoreInternalAccount(internalCenterAdminAccountsState.restoreConfirm) &&
+      internalCenterAdminAccountsState.restoreTypedConfirmation === 'RESTORE' &&
+      internalCenterAdminAccountsState.restoreStatus !== 'submitting'
+    )
+  }
+}
+
+async function handleInternalRevokeAdminAccess() {
+  const target = internalCenterAdminAccountsState.revokeConfirm
+  if (!target?.centerId || !target?.email) {
+    return
+  }
+
+  if (!canLiveRevokeInternalAccount(target)) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      revokeStatus: 'blocked',
+      revokeError: 'Thao tác thu hồi quyền cho cơ sở này chưa được bật. Vui lòng dùng cơ sở kiểm thử trước hoặc xác nhận riêng trước khi thao tác.',
+    }
+    render()
+    return
+  }
+
+  if (
+    internalCenterAdminAccountsState.revokeTypedConfirmation !== 'REVOKE' ||
+    !internalCenterAdminAccountsState.revokeRiskAcknowledged
+  ) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      revokeStatus: 'error',
+      revokeError: 'Cần nhập REVOKE và xác nhận đã hiểu rủi ro trước khi thu hồi quyền.',
+    }
+    render()
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    revokeStatus: 'submitting',
+    revokeCenterId: target.centerId,
+    revokeError: '',
+  }
+  render()
+
+  try {
+    const supabase = getSupabaseClient()
+
+    if (!supabase?.functions?.invoke) {
+      throw new Error('Supabase Functions chưa sẵn sàng.')
+    }
+
+    const { data, error } = await supabase.functions.invoke('revoke-center-admin-access', {
+      body: {
+        center_id: target.centerId,
+        target_email: target.email,
+        idempotency_key: createInternalRevokeAccessIdempotencyKey(target.centerId),
+        reason: 'owner_ui_controlled_revoke_center_admin_access',
+        disable_auth_user: false,
+      },
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (!data?.ok || data.code !== 'center_admin_access_revoked') {
+      throw new Error(data?.code || 'Không thu hồi được quyền admin cơ sở.')
+    }
+
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      revokeStatus: 'success',
+      revokeCenterId: '',
+      revokeError: '',
+      revokeConfirm: null,
+      revokeTypedConfirmation: '',
+      revokeRiskAcknowledged: false,
+      copyMessage: 'Đã thu hồi quyền admin cơ sở.',
+      localAccountSnapshotsByCenterId: {
+        ...internalCenterAdminAccountsState.localAccountSnapshotsByCenterId,
+        [target.centerId]: {
+          centerId: target.centerId,
+          exists: false,
+          userId: '',
+          role: 'center_admin',
+          status: 'revoked',
+          email: data.email || target.email,
+          state: 'revoked',
+          auditId: data.audit_id || '',
+        },
+      },
+      adminsByCenterId: {
+        ...internalCenterAdminAccountsState.adminsByCenterId,
+        [target.centerId]: {
+          centerId: target.centerId,
+          exists: false,
+          userId: '',
+          role: 'center_admin',
+          status: 'revoked',
+          email: data.email || target.email,
+          state: 'revoked',
+          auditId: data.audit_id || '',
+        },
+      },
+    }
+    render()
+    void loadInternalCenterAdminAccounts(cloudStatus.user?.id || '', internalCentersListState.centers)
+  } catch (error) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      revokeStatus: 'error',
+      revokeCenterId: target.centerId,
+      revokeError: getCloudErrorMessage(error, 'Không thu hồi được quyền admin cơ sở.'),
+    }
+    render()
+  }
+}
+
+function createInternalRevokeAccessIdempotencyKey(centerId) {
+  return `c7-8g-ui-revoke-${centerId}-${Date.now()}`
+}
+
+async function handleInternalRestoreAdminAccess() {
+  const target = internalCenterAdminAccountsState.restoreConfirm
+  if (!target?.centerId || !target?.email) {
+    return
+  }
+
+  if (!canLiveRestoreInternalAccount(target)) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      restoreStatus: 'blocked',
+      restoreError: 'Thao tác khôi phục quyền cho cơ sở này chưa được bật.',
+    }
+    render()
+    return
+  }
+
+  if (internalCenterAdminAccountsState.restoreTypedConfirmation !== 'RESTORE') {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      restoreStatus: 'error',
+      restoreError: 'Cần nhập RESTORE để xác nhận khôi phục quyền.',
+    }
+    render()
+    return
+  }
+
+  internalCenterAdminAccountsState = {
+    ...internalCenterAdminAccountsState,
+    restoreStatus: 'submitting',
+    restoreCenterId: target.centerId,
+    restoreError: '',
+  }
+  render()
+
+  try {
+    const supabase = getSupabaseClient()
+
+    if (!supabase?.functions?.invoke) {
+      throw new Error('Supabase Functions chưa sẵn sàng.')
+    }
+
+    const { data, error } = await supabase.functions.invoke('restore-center-admin-access', {
+      body: {
+        center_id: target.centerId,
+        target_email: target.email,
+        idempotency_key: createInternalRestoreAccessIdempotencyKey(target.centerId),
+        reason: 'owner_ui_controlled_restore_center_admin_access',
+      },
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (!data?.ok || !['center_admin_access_restored', 'center_admin_access_already_active'].includes(data.code)) {
+      throw new Error(data?.code || 'Không khôi phục được quyền admin cơ sở.')
+    }
+
+    const nextLocalSnapshots = { ...internalCenterAdminAccountsState.localAccountSnapshotsByCenterId }
+    delete nextLocalSnapshots[target.centerId]
+
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      restoreStatus: 'success',
+      restoreCenterId: '',
+      restoreError: '',
+      restoreConfirm: null,
+      restoreTypedConfirmation: '',
+      copyMessage: 'Đã khôi phục quyền admin cơ sở.',
+      localAccountSnapshotsByCenterId: nextLocalSnapshots,
+      adminsByCenterId: {
+        ...internalCenterAdminAccountsState.adminsByCenterId,
+        [target.centerId]: {
+          centerId: target.centerId,
+          exists: true,
+          userId: '',
+          role: 'center_admin',
+          status: 'active',
+          email: data.email || target.email,
+          state: 'active',
+          auditId: data.audit_id || '',
+        },
+      },
+    }
+    render()
+    void loadInternalCenterAdminAccounts(cloudStatus.user?.id || '', internalCentersListState.centers)
+  } catch (error) {
+    internalCenterAdminAccountsState = {
+      ...internalCenterAdminAccountsState,
+      restoreStatus: 'error',
+      restoreCenterId: target.centerId,
+      restoreError: getCloudErrorMessage(error, 'Không khôi phục được quyền admin cơ sở.'),
+    }
+    render()
+  }
+}
+
+function createInternalRestoreAccessIdempotencyKey(centerId) {
+  return `c7-8g-ui-restore-${centerId}-${Date.now()}`
+}
+
 function closeInternalPasswordHandoff() {
   const shouldRefreshAccountStatus = internalCenterAdminAccountsState.handoff?.kind === 'create'
 
@@ -1855,6 +2285,8 @@ function renderInternalCenterAccountManagement() {
         : '<p class="internal-console-state">Chưa có cơ sở production active để quản lý tài khoản.</p>'}
       ${renderInternalCreateAdminConfirm()}
       ${renderInternalResetPasswordConfirm()}
+      ${renderInternalRevokeAccessConfirm()}
+      ${renderInternalRestoreAccessConfirm()}
       ${renderInternalPasswordHandoffCard()}
     </section>
   `
@@ -1868,29 +2300,31 @@ function renderInternalCenterAccountStatusNote() {
   if (internalCenterAdminAccountsState.status === 'error') {
     return `
       <p class="internal-console-state is-warning" role="status">
-        Không tải được dữ liệu tài khoản từ endpoint read-only. UI vẫn an toàn readonly; vui lòng deploy list-center-admin-accounts rồi thử lại.
+        Không tải được dữ liệu tài khoản admin. Vui lòng kiểm tra kết nối hoặc thử lại sau.
       </p>
     `
   }
 
-  return '<p class="internal-console-state is-muted">Tạo admin chỉ bật cho cơ sở production active chưa có admin. Tạo mật khẩu tạm chỉ bật khi cơ sở đã có admin. Thu hồi quyền vẫn chưa bật.</p>'
+  return '<p class="internal-console-state is-muted">Tạo admin chỉ bật cho cơ sở đang hoạt động chưa có admin. Tạo mật khẩu tạm và thu hồi quyền chỉ bật khi cơ sở đã có admin.</p>'
 }
 
 function renderInternalCenterAccountCard(center) {
-  const adminAccount = internalCenterAdminAccountsState.adminsByCenterId[center.id] || null
+  const adminAccount = getInternalAccountRecord(center.id)
   const hasAdmin = adminAccount?.exists === true
+  const isRevokedAdmin = adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked'
   const adminEmail = adminAccount?.email || ''
   const adminLabel = getInternalCenterAdminLabel(adminAccount)
   const accountStatus = getInternalCenterAccountStatus(adminAccount)
   const copied = internalCenterAdminAccountsState.copiedCenterId === center.id
-  const resetEnabled = Boolean(hasAdmin && adminEmail)
+  const resetEnabled = Boolean(hasAdmin && adminEmail && !isRevokedAdmin)
   const isResetting = internalCenterAdminAccountsState.resetStatus === 'submitting' &&
     internalCenterAdminAccountsState.resetCenterId === center.id
   const createEnabled = Boolean(
     center.environment === 'production' &&
       center.status === 'active' &&
       internalCenterAdminAccountsState.status === 'loaded' &&
-      adminAccount?.exists === false,
+      adminAccount?.exists === false &&
+      !isRevokedAdmin,
   )
   const isCreating = internalCenterAdminAccountsState.createStatus === 'submitting' &&
     internalCenterAdminAccountsState.createCenterId === center.id
@@ -1899,6 +2333,11 @@ function renderInternalCenterAccountCard(center) {
     : hasAdmin
       ? 'Đã có admin'
       : createEnabled ? 'Tạo admin' : 'Chưa sẵn sàng'
+  const revokeEnabled = Boolean(hasAdmin && adminEmail && !isRevokedAdmin)
+  const restoreEnabled = Boolean(isRevokedAdmin && adminEmail)
+  const revokeButtonLabel = restoreEnabled
+    ? 'Đã thu hồi quyền'
+    : revokeEnabled ? 'Thu hồi quyền' : 'Không có admin'
 
   return `
     <article class="internal-account-card">
@@ -1949,7 +2388,22 @@ function renderInternalCenterAccountCard(center) {
         >
           ${isResetting ? 'Đang tạo mật khẩu tạm...' : 'Tạo mật khẩu tạm mới'}
         </button>
-        <button type="button" disabled title="Sẽ được bật ở C7.8B/C7.8C">Thu hồi quyền <span>Sắp bật</span></button>
+        <button
+          type="button"
+          class="internal-account-revoke"
+          data-internal-revoke-admin-center-id="${escapeAttribute(center.id)}"
+          ${revokeEnabled ? '' : 'disabled'}
+        >
+          ${escapeHtml(revokeButtonLabel)}
+        </button>
+        <button
+          type="button"
+          class="internal-account-restore"
+          data-internal-restore-admin-center-id="${escapeAttribute(center.id)}"
+          ${restoreEnabled ? '' : 'disabled'}
+        >
+          ${restoreEnabled ? 'Khôi phục quyền' : 'Khôi phục quyền'}
+        </button>
         <button
           type="button"
           class="internal-account-copy"
@@ -1964,6 +2418,210 @@ function renderInternalCenterAccountCard(center) {
         <p class="internal-account-copy-message" role="status">${escapeHtml(internalCenterAdminAccountsState.copyMessage)}</p>
       ` : ''}
     </article>
+  `
+}
+
+function renderInternalRevokeAccessConfirm() {
+  const confirm = internalCenterAdminAccountsState.revokeConfirm
+  const isSubmitting = internalCenterAdminAccountsState.revokeStatus === 'submitting'
+  const typedValue = internalCenterAdminAccountsState.revokeTypedConfirmation
+  const liveAllowed = canLiveRevokeInternalAccount(confirm)
+  const finalRevokeEnabled = Boolean(
+    liveAllowed &&
+      internalCenterAdminAccountsState.revokeRiskAcknowledged &&
+      typedValue === 'REVOKE' &&
+      !isSubmitting,
+  )
+
+  if (!confirm && !internalCenterAdminAccountsState.revokeError) {
+    return ''
+  }
+
+  if (!confirm && internalCenterAdminAccountsState.revokeError) {
+    return `
+      <div class="internal-account-revoke-panel is-error" role="alert">
+        <strong>Không mở được thu hồi quyền</strong>
+        <p>${escapeHtml(internalCenterAdminAccountsState.revokeError)}</p>
+      </div>
+    `
+  }
+
+  return `
+    <div class="internal-account-revoke-modal" role="presentation">
+      <div class="internal-account-revoke-window" role="dialog" aria-modal="true" aria-labelledby="internal-revoke-title">
+        <div class="internal-account-revoke-heading">
+          <div>
+            <h3 id="internal-revoke-title">Thu hồi quyền admin cơ sở</h3>
+            <p>Thao tác này dùng để rút quyền truy cập của admin khỏi một cơ sở. Dữ liệu cơ sở không bị xóa.</p>
+          </div>
+          <span>${liveAllowed ? 'Đã bật cho cơ sở này' : 'Chưa bật thao tác thật'}</span>
+          <button
+            type="button"
+            class="internal-account-revoke-close"
+            data-internal-revoke-cancel
+            aria-label="Đóng cửa sổ thu hồi quyền"
+            ${isSubmitting ? 'disabled' : ''}
+          >
+            ×
+          </button>
+        </div>
+        <dl class="internal-account-revoke-details">
+          <div>
+            <dt>Cơ sở</dt>
+            <dd>${escapeHtml(confirm.centerName)}</dd>
+          </div>
+          <div>
+            <dt>Mã cơ sở</dt>
+            <dd><code>${escapeHtml(confirm.centerId)}</code></dd>
+          </div>
+          <div>
+            <dt>Admin</dt>
+            <dd class="internal-account-email">${escapeHtml(confirm.email)}</dd>
+          </div>
+        </dl>
+        <ul class="internal-account-revoke-warning">
+          <li>Admin này sẽ không còn quyền truy cập cơ sở sau khi thu hồi.</li>
+          <li>Thao tác này không xóa học viên, lịch học hoặc dữ liệu cơ sở.</li>
+          <li>Tài khoản đăng nhập vẫn tồn tại, chỉ quyền tại cơ sở này bị thu hồi.</li>
+          <li>Chỉ owner mới được thực hiện thao tác này.</li>
+        </ul>
+        <label class="internal-account-revoke-typed">
+          <span>Nhập REVOKE để xác nhận</span>
+          <input
+            type="text"
+            value="${escapeAttribute(typedValue)}"
+            autocomplete="off"
+            spellcheck="false"
+            data-internal-revoke-typed-confirmation
+          >
+        </label>
+        <p class="internal-account-revoke-gate" role="status">
+          ${liveAllowed
+            ? 'Thao tác bảo mật đã được bật cho cơ sở này.'
+            : 'Thao tác thu hồi quyền cho cơ sở này chưa được bật. Vui lòng dùng cơ sở kiểm thử trước hoặc xác nhận riêng trước khi thao tác.'}
+        </p>
+        ${internalCenterAdminAccountsState.revokeRiskAcknowledged ? `
+          <p class="internal-account-copy-message" role="status">
+            ${liveAllowed ? 'Đã ghi nhận xác nhận rủi ro.' : 'Đã ghi nhận xác nhận rủi ro. Thao tác thật chưa được bật cho cơ sở này.'}
+          </p>
+        ` : ''}
+        ${internalCenterAdminAccountsState.revokeError ? `
+          <p class="internal-account-reset-error" role="alert">${escapeHtml(internalCenterAdminAccountsState.revokeError)}</p>
+        ` : ''}
+        <div class="internal-account-revoke-actions">
+          <button type="button" class="is-secondary" data-internal-revoke-cancel ${isSubmitting ? 'disabled' : ''}>Hủy</button>
+          <button type="button" class="is-primary" data-internal-revoke-acknowledge-risk ${isSubmitting ? 'disabled' : ''}>Tôi hiểu rủi ro</button>
+          <button
+            type="button"
+            class="is-danger"
+            data-internal-revoke-confirm
+            ${finalRevokeEnabled ? '' : 'disabled'}
+          >
+            Thu hồi quyền
+          </button>
+        </div>
+        <p class="internal-account-revoke-helper">
+          ${liveAllowed
+            ? 'Sau khi thu hồi thành công, hệ thống giữ thông tin admin để có thể khôi phục ngay.'
+            : 'Để tránh thao tác nhầm trên cơ sở đang vận hành, chức năng này hiện chỉ bật cho cơ sở đã được chọn để kiểm thử.'}
+        </p>
+        <div class="internal-account-restore-placeholder" aria-label="Thiết kế khôi phục quyền tương lai">
+          <strong>Sau khi thu hồi quyền</strong>
+          <p>Admin sẽ không còn quyền truy cập cơ sở này. Owner có thể khôi phục quyền hoặc tạo admin mới khi chức năng tương ứng được bật.</p>
+          <div>
+            <button type="button" disabled>Khôi phục quyền</button>
+            <button type="button" disabled>Tạo admin mới</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderInternalRestoreAccessConfirm() {
+  const confirm = internalCenterAdminAccountsState.restoreConfirm
+  const isSubmitting = internalCenterAdminAccountsState.restoreStatus === 'submitting'
+  const typedValue = internalCenterAdminAccountsState.restoreTypedConfirmation
+  const liveAllowed = canLiveRestoreInternalAccount(confirm)
+  const finalRestoreEnabled = Boolean(liveAllowed && typedValue === 'RESTORE' && !isSubmitting)
+
+  if (!confirm && !internalCenterAdminAccountsState.restoreError) {
+    return ''
+  }
+
+  if (!confirm && internalCenterAdminAccountsState.restoreError) {
+    return `
+      <div class="internal-account-revoke-panel is-error" role="alert">
+        <strong>Không mở được khôi phục quyền</strong>
+        <p>${escapeHtml(internalCenterAdminAccountsState.restoreError)}</p>
+      </div>
+    `
+  }
+
+  return `
+    <div class="internal-account-revoke-modal" role="presentation">
+      <div class="internal-account-revoke-window" role="dialog" aria-modal="true" aria-labelledby="internal-restore-title">
+        <div class="internal-account-revoke-heading">
+          <div>
+            <h3 id="internal-restore-title">Khôi phục quyền admin cơ sở</h3>
+            <p>Khôi phục quyền sẽ cho admin truy cập lại cơ sở này.</p>
+          </div>
+          <span>${liveAllowed ? 'Đã bật cho cơ sở này' : 'Chưa bật thao tác thật'}</span>
+          <button
+            type="button"
+            class="internal-account-revoke-close"
+            data-internal-restore-cancel
+            aria-label="Đóng cửa sổ khôi phục quyền"
+            ${isSubmitting ? 'disabled' : ''}
+          >
+            ×
+          </button>
+        </div>
+        <dl class="internal-account-revoke-details">
+          <div>
+            <dt>Cơ sở</dt>
+            <dd>${escapeHtml(confirm.centerName)}</dd>
+          </div>
+          <div>
+            <dt>Admin</dt>
+            <dd class="internal-account-email">${escapeHtml(confirm.email)}</dd>
+          </div>
+          <div>
+            <dt>Trạng thái hiện tại</dt>
+            <dd>Đã thu hồi quyền</dd>
+          </div>
+        </dl>
+        <p class="internal-account-revoke-gate" role="status">
+          ${liveAllowed
+            ? 'Thao tác bảo mật đã được bật cho cơ sở này.'
+            : 'Thao tác khôi phục quyền cho cơ sở này chưa được bật.'}
+        </p>
+        <label class="internal-account-revoke-typed">
+          <span>Nhập RESTORE để xác nhận</span>
+          <input
+            type="text"
+            value="${escapeAttribute(typedValue)}"
+            autocomplete="off"
+            spellcheck="false"
+            data-internal-restore-typed-confirmation
+          >
+        </label>
+        ${internalCenterAdminAccountsState.restoreError ? `
+          <p class="internal-account-reset-error" role="alert">${escapeHtml(internalCenterAdminAccountsState.restoreError)}</p>
+        ` : ''}
+        <div class="internal-account-revoke-actions">
+          <button type="button" class="is-secondary" data-internal-restore-cancel ${isSubmitting ? 'disabled' : ''}>Hủy</button>
+          <button
+            type="button"
+            class="is-success"
+            data-internal-restore-confirm
+            ${finalRestoreEnabled ? '' : 'disabled'}
+          >
+            ${isSubmitting ? 'Đang khôi phục...' : 'Khôi phục quyền'}
+          </button>
+        </div>
+      </div>
+    </div>
   `
 }
 
@@ -2100,6 +2758,10 @@ function getInternalCenterAdminLabel(adminAccount) {
     return 'Chưa tải'
   }
 
+  if (adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked') {
+    return adminAccount.email ? `${adminAccount.email} (đã thu hồi)` : 'Đã thu hồi quyền'
+  }
+
   if (!adminAccount?.exists) {
     return 'Chưa có admin'
   }
@@ -2118,6 +2780,10 @@ function getInternalCenterAccountStatus(adminAccount) {
 
   if (internalCenterAdminAccountsState.status === 'error') {
     return 'Không tải được dữ liệu tài khoản'
+  }
+
+  if (adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked') {
+    return 'Đã thu hồi quyền'
   }
 
   if (adminAccount?.state === 'multiple_active_admins') {
@@ -7327,6 +7993,22 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-internal-revoke-admin-center-id]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openInternalRevokeAccessConfirm(button.dataset.internalRevokeAdminCenterId)
+    })
+  })
+
+  document.querySelectorAll('[data-internal-restore-admin-center-id]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openInternalRestoreAccessConfirm(button.dataset.internalRestoreAdminCenterId)
+    })
+  })
+
   document.querySelector('[data-internal-create-admin-cancel]')?.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
@@ -7337,6 +8019,48 @@ function bindEvents() {
     event.preventDefault()
     event.stopPropagation()
     void handleInternalCreateAdminAccount()
+  })
+
+  document.querySelectorAll('[data-internal-revoke-cancel]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      closeInternalRevokeAccessConfirm()
+    })
+  })
+
+  document.querySelector('[data-internal-revoke-acknowledge-risk]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    acknowledgeInternalRevokeRisk()
+  })
+
+  document.querySelector('[data-internal-revoke-confirm]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    void handleInternalRevokeAdminAccess()
+  })
+
+  document.querySelector('[data-internal-revoke-typed-confirmation]')?.addEventListener('input', (event) => {
+    updateInternalRevokeTypedConfirmation(event.target.value)
+  })
+
+  document.querySelectorAll('[data-internal-restore-cancel]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      closeInternalRestoreAccessConfirm()
+    })
+  })
+
+  document.querySelector('[data-internal-restore-confirm]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    void handleInternalRestoreAdminAccess()
+  })
+
+  document.querySelector('[data-internal-restore-typed-confirmation]')?.addEventListener('input', (event) => {
+    updateInternalRestoreTypedConfirmation(event.target.value)
   })
 
   document.querySelector('[data-internal-reset-cancel]')?.addEventListener('click', (event) => {

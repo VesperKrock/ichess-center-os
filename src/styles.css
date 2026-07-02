@@ -470,8 +470,9 @@ button {
 }
 
 .internal-account-email {
-  overflow-x: auto;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .internal-account-meta code {
@@ -498,6 +499,12 @@ button {
   font: inherit;
   font-size: 0.84rem;
   font-weight: 800;
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 120ms ease, opacity 140ms ease;
+}
+
+.internal-account-actions button:not(:disabled) {
+  cursor: pointer;
 }
 
 .internal-account-actions button:disabled {
@@ -505,11 +512,52 @@ button {
   opacity: 0.58;
 }
 
+.internal-account-create:not(:disabled):hover,
+.internal-account-create:not(:disabled):focus-visible,
+.internal-account-reset:not(:disabled):hover,
+.internal-account-reset:not(:disabled):focus-visible,
 .internal-account-copy:not(:disabled):hover,
-.internal-account-copy:not(:disabled):focus-visible {
+.internal-account-copy:not(:disabled):focus-visible,
+.internal-account-revoke:not(:disabled):hover,
+.internal-account-revoke:not(:disabled):focus-visible,
+.internal-account-restore:not(:disabled):hover,
+.internal-account-restore:not(:disabled):focus-visible {
   outline: none;
   border-color: rgba(255, 255, 255, 0.72);
   background: #2b73b9;
+  box-shadow: 0 10px 24px rgba(15, 40, 70, 0.24);
+  transform: translateY(-1px);
+}
+
+.internal-account-revoke:not(:disabled) {
+  border-color: rgba(255, 166, 118, 0.58);
+  background: rgba(159, 70, 50, 0.58);
+}
+
+.internal-account-restore:not(:disabled) {
+  border-color: rgba(117, 211, 164, 0.58);
+  background: rgba(35, 116, 83, 0.64);
+}
+
+.internal-account-revoke:not(:disabled):hover,
+.internal-account-revoke:not(:disabled):focus-visible {
+  border-color: rgba(255, 185, 139, 0.82);
+  background: rgba(183, 79, 54, 0.78);
+}
+
+.internal-account-restore:not(:disabled):hover,
+.internal-account-restore:not(:disabled):focus-visible {
+  border-color: rgba(142, 232, 184, 0.82);
+  background: rgba(38, 139, 95, 0.78);
+}
+
+.internal-account-create:not(:disabled):active,
+.internal-account-reset:not(:disabled):active,
+.internal-account-copy:not(:disabled):active,
+.internal-account-revoke:not(:disabled):active,
+.internal-account-restore:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 12px rgba(15, 40, 70, 0.18);
 }
 
 .internal-account-copy-message {
@@ -529,22 +577,200 @@ button {
   background: rgba(31, 93, 153, 0.14);
 }
 
-.internal-account-reset-panel.is-error {
+.internal-account-reset-panel.is-error,
+.internal-account-revoke-panel.is-error {
   border-color: rgba(239, 92, 92, 0.42);
   background: rgba(120, 33, 33, 0.22);
 }
 
+.internal-account-revoke-modal {
+  position: fixed;
+  z-index: 160;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 22px;
+  background: rgba(3, 10, 22, 0.62);
+}
+
+.internal-account-revoke-window {
+  display: grid;
+  width: min(820px, 100%);
+  max-height: min(760px, calc(100vh - 44px));
+  gap: 12px;
+  overflow: auto;
+  border: 1px solid rgba(118, 164, 231, 0.42);
+  border-radius: 10px;
+  padding: 16px;
+  color: #edf4fc;
+  background: #111923;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+}
+
 .internal-account-reset-panel h3,
+.internal-account-revoke-panel h3,
+.internal-account-revoke-window h3,
 .internal-password-handoff h3 {
   margin: 0;
   font-size: 1.02rem;
 }
 
 .internal-account-reset-panel > div,
+.internal-account-revoke-heading,
+.internal-account-revoke-details,
 .internal-password-handoff-header,
 .internal-password-handoff-details {
   display: grid;
   gap: 8px;
+}
+
+.internal-account-revoke-heading {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+}
+
+.internal-account-revoke-heading p,
+.internal-account-revoke-helper,
+.internal-account-revoke-future-state,
+.internal-account-revoke-gate {
+  margin: 0;
+  color: #cfe3ff;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.internal-account-revoke-heading > span {
+  border: 1px solid rgba(255, 205, 93, 0.42);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: #ffe5a3;
+  background: rgba(133, 95, 19, 0.22);
+  font-size: 0.74rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.internal-account-revoke-close {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.07);
+  font: inherit;
+  font-size: 1.18rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.internal-account-revoke-close:hover,
+.internal-account-revoke-close:focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.internal-account-revoke-details {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  margin: 0;
+}
+
+.internal-account-revoke-details div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.internal-account-revoke-details dt {
+  color: #9fc7ef;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.internal-account-revoke-details dd {
+  margin: 0;
+}
+
+.internal-account-revoke-warning {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  border: 1px solid rgba(255, 205, 93, 0.24);
+  border-radius: 8px;
+  padding: 12px 12px 12px 28px;
+  color: #ffeed0;
+  background: rgba(97, 68, 10, 0.18);
+  line-height: 1.45;
+}
+
+.internal-account-revoke-typed {
+  display: grid;
+  gap: 7px;
+  color: #dbeafe;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.internal-account-revoke-typed input {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.07);
+  font: inherit;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.internal-account-revoke-gate {
+  border-left: 3px solid #ffd166;
+  padding-left: 10px;
+  color: #ffe7a7;
+}
+
+.internal-account-restore-placeholder {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed rgba(118, 164, 231, 0.34);
+  border-radius: 8px;
+  padding: 12px;
+  color: #cfe3ff;
+  background: rgba(31, 93, 153, 0.1);
+}
+
+.internal-account-restore-placeholder strong {
+  color: #ffffff;
+}
+
+.internal-account-restore-placeholder p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.internal-account-restore-placeholder div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.internal-account-restore-placeholder button {
+  min-height: 34px;
+  border: 1px solid rgba(118, 164, 231, 0.36);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #b9cbe2;
+  background: rgba(255, 255, 255, 0.05);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: not-allowed;
+  opacity: 0.68;
 }
 
 .internal-account-confirm-email,
@@ -582,6 +808,7 @@ button {
 }
 
 .internal-account-reset-actions,
+.internal-account-revoke-actions,
 .internal-password-handoff-actions {
   display: flex;
   flex-wrap: wrap;
@@ -589,6 +816,7 @@ button {
 }
 
 .internal-account-reset-actions button,
+.internal-account-revoke-actions button,
 .internal-password-handoff-actions button {
   min-height: 36px;
   border: 1px solid rgba(118, 164, 231, 0.62);
@@ -599,14 +827,71 @@ button {
   font: inherit;
   font-size: 0.84rem;
   font-weight: 800;
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 120ms ease, opacity 140ms ease;
 }
 
-.internal-account-reset-actions button:first-child {
+.internal-account-reset-actions button:first-child,
+.internal-account-revoke-actions button.is-secondary {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.06);
 }
 
+.internal-account-revoke-actions button.is-primary {
+  border-color: rgba(118, 164, 231, 0.7);
+  background: #1f5d99;
+}
+
+.internal-account-revoke-actions button.is-danger {
+  border-color: rgba(255, 121, 121, 0.42);
+  background: #9f3232;
+}
+
+.internal-account-revoke-actions button.is-success {
+  border-color: rgba(117, 211, 164, 0.58);
+  background: rgba(35, 116, 83, 0.8);
+}
+
+.internal-account-reset-actions button:not(:disabled),
+.internal-account-revoke-actions button:not(:disabled),
+.internal-password-handoff-actions button:not(:disabled) {
+  cursor: pointer;
+}
+
+.internal-account-reset-actions button:not(:disabled):hover,
+.internal-account-reset-actions button:not(:disabled):focus-visible,
+.internal-account-revoke-actions button:not(:disabled):hover,
+.internal-account-revoke-actions button:not(:disabled):focus-visible,
+.internal-password-handoff-actions button:not(:disabled):hover,
+.internal-password-handoff-actions button:not(:disabled):focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.72);
+  background: #2b73b9;
+  box-shadow: 0 10px 24px rgba(15, 40, 70, 0.26);
+  transform: translateY(-1px);
+}
+
+.internal-account-revoke-actions button.is-danger:not(:disabled):hover,
+.internal-account-revoke-actions button.is-danger:not(:disabled):focus-visible {
+  border-color: rgba(255, 151, 151, 0.72);
+  background: #ba3f3f;
+}
+
+.internal-account-revoke-actions button.is-success:not(:disabled):hover,
+.internal-account-revoke-actions button.is-success:not(:disabled):focus-visible {
+  border-color: rgba(142, 232, 184, 0.78);
+  background: rgba(38, 139, 95, 0.88);
+}
+
+.internal-account-reset-actions button:not(:disabled):active,
+.internal-account-revoke-actions button:not(:disabled):active,
+.internal-password-handoff-actions button:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 12px rgba(15, 40, 70, 0.18);
+}
+
 .internal-account-reset-actions button:disabled,
+.internal-account-revoke-actions button:disabled,
 .internal-password-handoff-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
@@ -15214,15 +15499,18 @@ h3 {
 @media (max-width: 720px) {
   .internal-add-center-preview,
   .internal-account-meta,
+  .internal-account-revoke-details,
   .internal-password-handoff-details,
   .internal-console-meta {
     grid-template-columns: 1fr;
   }
 
   .internal-account-management-header,
+  .internal-account-revoke-heading,
   .internal-account-card-title {
     align-items: stretch;
     flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .internal-add-center-actions {

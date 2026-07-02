@@ -131,7 +131,8 @@ assert(!/auth\.admin\.deleteUser\s*\(/.test(fn), 'C7.8B function must not delete
   'Tạo admin',
   'Tạo mật khẩu tạm mới',
   'Thu hồi quyền',
-  'Sắp bật',
+  'Đã bật cho cơ sở này',
+  'Thao tác thu hồi quyền cho cơ sở này chưa được bật.',
   "supabase.functions.invoke('reset-center-admin-password'",
 ].forEach((marker) => assertIncludes(main, marker))
 
@@ -152,12 +153,16 @@ assert(
   'After C7.8D, centers with existing admin must keep create action disabled.',
 )
 assert(
-  /const resetEnabled = Boolean\(hasAdmin && adminEmail\)/.test(main),
+  /const resetEnabled = Boolean\(hasAdmin && adminEmail && !isRevokedAdmin\)/.test(main),
   'After C7.8C, reset temporary password action must only enable for cards with admin email.',
 )
 assert(
-  /<button type="button" disabled title="Sẽ được bật ở C7\.8B\/C7\.8C">Thu hồi quyền/.test(main),
-  'Revoke action must remain disabled.',
+  /data-internal-revoke-admin-center-id="\$\{escapeAttribute\(center\.id\)\}"/.test(main),
+  'After C7.8E, revoke action must open a safety-gated UI panel.',
+)
+assert(
+  /const revokeEnabled = Boolean\(hasAdmin && adminEmail && !isRevokedAdmin\)/.test(main),
+  'After C7.8G, revoke entry action must only enable for active centers with admin email.',
 )
 
 assertIncludes(styles, '.internal-account-copy-message')
@@ -180,7 +185,8 @@ assert(
   'Frontend src must not persist temporary_password to sessionStorage.',
 )
 assert(!/createUser|updateUserById|deleteUser/.test(srcCombined), 'Frontend src must not call Auth Admin account mutation APIs.')
-assert(!/functions\.invoke\s*\(\s*['"`]revoke-center-admin-access/.test(srcCombined), 'C7.8B-D must not invoke revoke Edge Function.')
+assert(srcCombined.includes("const ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS = new Set(['phongtrong_prod'])"), 'C7.8G live actions must be allowlisted to Phong Trong.')
+assert(!/ACCOUNT_ACCESS_LIVE_ALLOWED_CENTER_IDS[\s\S]{0,120}dreamhome_prod/.test(srcCombined), 'DreamHome must not be in live account access allowlist.')
 
 const changedPaths = getStatusPaths()
 const allowedPaths = new Set([
@@ -200,6 +206,23 @@ const allowedPaths = new Set([
   'tests/supabase-c7-8d-wire-create-admin-button-handoff-ui-smoke.js',
   'docs/c7-8-hotfix-mat-focus-input-toan-app.md',
   'tests/c7-8-hotfix-mat-focus-input-toan-app-smoke.js',
+  'docs/supabase-c7-8e-revoke-access-ui-safety-gate.md',
+  'tests/supabase-c7-8e-revoke-access-ui-safety-gate-smoke.js',
+  'docs/supabase-c7-8e-1-revoke-window-restore-ux-polish.md',
+  'tests/supabase-c7-8e-1-revoke-window-restore-ux-polish-smoke.js',
+  'supabase/functions/restore-center-admin-access/',
+  'docs/supabase-c7-8f-controlled-live-revoke-restore-phongtrong.md',
+  'docs/supabase-c7-8f-manual-apply-service-role-update-grant.sql',
+  'docs/supabase-c7-8f-readonly-preflight-phongtrong-revoke.sql',
+  'docs/supabase-c7-8f-browser-invoke-revoke-phongtrong.js',
+  'docs/supabase-c7-8f-readonly-post-revoke-verify.sql',
+  'docs/supabase-c7-8f-browser-invoke-restore-phongtrong.js',
+  'docs/supabase-c7-8f-readonly-post-restore-verify.sql',
+  'tests/supabase-c7-8f-controlled-live-revoke-restore-phongtrong-smoke.js',
+  'docs/supabase-c7-8g-wire-live-revoke-restore-ui-phongtrong.md',
+  'tests/supabase-c7-8g-wire-live-revoke-restore-ui-phongtrong-smoke.js',
+  'docs/supabase-c7-8h-owner-account-management-final-polish.md',
+  'tests/supabase-c7-8h-owner-account-management-final-polish-smoke.js',
 ])
 
 for (const changedPath of changedPaths) {
@@ -208,7 +231,10 @@ for (const changedPath of changedPaths) {
   }
 
   assert(allowedPaths.has(changedPath), `Unexpected changed file in C7.8B scope: ${changedPath}`)
-  assert(!/sql$/i.test(changedPath), `C7.8B must not add SQL apply files: ${changedPath}`)
+  assert(
+    !/sql$/i.test(changedPath) || changedPath.startsWith('docs/supabase-c7-8f-'),
+    `C7.8B must not add SQL apply files outside later controlled packs: ${changedPath}`,
+  )
 }
 
 assertNoMojibake(docPath)
