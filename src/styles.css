@@ -966,7 +966,8 @@ button {
 
 .app-auth-heading,
 .app-auth-form,
-.app-auth-account {
+.app-auth-account,
+.app-auth-access-denied {
   display: grid;
   gap: 8px;
 }
@@ -1035,7 +1036,8 @@ button {
 }
 
 .app-auth-form button,
-.app-auth-account button {
+.app-auth-account button,
+.app-auth-access-denied button {
   border: 0;
   border-radius: 6px;
   padding: 9px 12px;
@@ -1046,7 +1048,8 @@ button {
 }
 
 .app-auth-form button:disabled,
-.app-auth-account button:disabled {
+.app-auth-account button:disabled,
+.app-auth-access-denied button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -1079,6 +1082,48 @@ button {
   margin-top: 3px;
   color: #cbd5e1;
   font-size: 0.78rem;
+}
+
+.app-auth-access-denied {
+  border: 1px solid rgba(251, 191, 36, 0.42);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(120, 53, 15, 0.24);
+}
+
+.app-auth-access-denied span,
+.app-auth-access-denied strong,
+.app-auth-access-denied small {
+  display: block;
+}
+
+.app-auth-access-denied span {
+  color: #fde68a;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.app-auth-access-denied strong {
+  overflow-wrap: anywhere;
+  color: #fff7ed;
+  font-size: 0.9rem;
+}
+
+.app-auth-access-denied h3 {
+  color: #fef3c7;
+  font-size: 1rem;
+}
+
+.app-auth-access-denied p,
+.app-auth-access-denied small {
+  margin: 0;
+  color: #ffedd5;
+  font-size: 0.82rem;
+}
+
+.app-auth-access-denied-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .app-auth-message {

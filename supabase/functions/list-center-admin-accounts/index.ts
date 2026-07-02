@@ -15,6 +15,8 @@ type CenterMemberRow = {
   user_id: string
   role: string | null
   status: string | null
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 const FUNCTION_BUSINESS_NAME = 'list_center_admin_accounts'
@@ -110,6 +112,50 @@ function normalizeRequestedCenterIds(value: unknown) {
 
 function toSet(values: string[]) {
   return new Set(values.filter(Boolean))
+}
+
+function getMembershipTimestamp(membership: CenterMemberRow) {
+  const rawTimestamp = membership.updated_at || membership.created_at || ''
+  const timestamp = rawTimestamp ? Date.parse(rawTimestamp) : 0
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function compareMembershipsForLifecycle(a: CenterMemberRow, b: CenterMemberRow) {
+  const timestampDiff = getMembershipTimestamp(b) - getMembershipTimestamp(a)
+  if (timestampDiff !== 0) {
+    return timestampDiff
+  }
+
+  return String(a.user_id || '').localeCompare(String(b.user_id || ''))
+}
+
+function getLifecycleAdminMembership(memberships: CenterMemberRow[]) {
+  const activeAdmins = memberships.filter((membership) => membership.status === 'active')
+  if (activeAdmins.length > 0) {
+    return {
+      state: activeAdmins.length > 1 ? 'multiple_active_admins' : 'active',
+      memberships: activeAdmins,
+      membership: activeAdmins.length === 1 ? activeAdmins[0] : null,
+    }
+  }
+
+  const revokedAdmins = memberships
+    .filter((membership) => membership.status === 'revoked')
+    .sort(compareMembershipsForLifecycle)
+
+  if (revokedAdmins.length > 0) {
+    return {
+      state: 'revoked',
+      memberships: revokedAdmins,
+      membership: revokedAdmins[0],
+    }
+  }
+
+  return {
+    state: 'none',
+    memberships: [] as CenterMemberRow[],
+    membership: null,
+  }
 }
 
 async function getAdminEmailByUserId(adminClient: ReturnType<typeof createClient>, userId: string) {
@@ -238,10 +284,10 @@ Deno.serve(async (req) => {
   const productionCenterIds = productionCenters.map((center) => center.id).filter(Boolean)
   const { data: adminMembershipRows, error: adminMembershipError } = await adminClient
     .from('center_members')
-    .select('center_id, user_id, role, status')
+    .select('center_id, user_id, role, status, created_at, updated_at')
     .in('center_id', productionCenterIds)
     .eq('role', 'center_admin')
-    .eq('status', 'active')
+    .in('status', ['active', 'revoked'])
     .order('center_id', { ascending: true })
 
   if (adminMembershipError) {
@@ -263,9 +309,9 @@ Deno.serve(async (req) => {
 
   const centers = []
   for (const center of productionCenters) {
-    const activeAdmins = adminMembershipsByCenter[center.id] || []
+    const lifecycle = getLifecycleAdminMembership(adminMembershipsByCenter[center.id] || [])
 
-    if (activeAdmins.length === 0) {
+    if (lifecycle.state === 'none') {
       centers.push({
         center_id: center.id,
         center_name: center.name,
@@ -278,12 +324,16 @@ Deno.serve(async (req) => {
           user_id: null,
           membership_status: null,
           state: 'none',
+          is_active: false,
+          is_revoked: false,
+          can_restore: false,
+          source: 'center_members',
         },
       })
       continue
     }
 
-    if (activeAdmins.length > 1) {
+    if (lifecycle.state === 'multiple_active_admins') {
       centers.push({
         center_id: center.id,
         center_name: center.name,
@@ -296,14 +346,20 @@ Deno.serve(async (req) => {
           user_id: null,
           membership_status: 'active',
           state: 'multiple_active_admins',
+          is_active: true,
+          is_revoked: false,
+          can_restore: false,
+          source: 'center_members',
         },
       })
       continue
     }
 
-    const adminMembership = activeAdmins[0]
+    const adminMembership = lifecycle.membership as CenterMemberRow
     const adminUserId = String(adminMembership?.user_id || '').trim()
     const adminEmail = await getAdminEmailByUserId(adminClient, adminUserId)
+    const membershipStatus = adminMembership.status || lifecycle.state
+    const isRevoked = membershipStatus === 'revoked'
 
     centers.push({
       center_id: center.id,
@@ -315,8 +371,12 @@ Deno.serve(async (req) => {
         exists: true,
         email: adminEmail,
         user_id: adminUserId || null,
-        membership_status: adminMembership.status || 'active',
-        state: adminEmail ? 'active' : 'email_unavailable',
+        membership_status: membershipStatus,
+        state: isRevoked ? 'revoked' : adminEmail ? 'active' : 'email_unavailable',
+        is_active: membershipStatus === 'active',
+        is_revoked: isRevoked,
+        can_restore: isRevoked,
+        source: 'center_members',
       },
     })
   }

@@ -1273,13 +1273,17 @@ async function loadInternalCenterAdminAccounts(userId, centers = internalCenters
       throw new Error(data?.code || 'Không tải được dữ liệu tài khoản admin.')
     }
 
+    const endpointAdminsByCenterId = normalizeInternalCenterAdminAccounts(data.centers)
+    const accountState = mergeInternalAccountSnapshots(
+      endpointAdminsByCenterId,
+      internalCenterAdminAccountsState.localAccountSnapshotsByCenterId,
+    )
+
     internalCenterAdminAccountsState = createInternalCenterAdminAccountsState({
       ...internalCenterAdminAccountsState,
       status: 'loaded',
-      adminsByCenterId: {
-        ...normalizeInternalCenterAdminAccounts(data.centers),
-        ...internalCenterAdminAccountsState.localAccountSnapshotsByCenterId,
-      },
+      adminsByCenterId: accountState.adminsByCenterId,
+      localAccountSnapshotsByCenterId: accountState.localAccountSnapshotsByCenterId,
       loadedForUserId: userId,
       loadedForCenterKey: centerKey,
       copiedCenterId: internalCenterAdminAccountsState.copiedCenterId,
@@ -1312,18 +1316,65 @@ function normalizeInternalCenterAdminAccounts(rows = []) {
       return adminsByCenterId
     }
 
-    adminsByCenterId[centerId] = {
-      centerId,
-      exists: Boolean(admin?.exists),
-      userId: String(admin?.user_id || ''),
-      role: 'center_admin',
-      status: String(admin?.membership_status || ''),
-      email: String(admin?.email || '').trim(),
-      state: String(admin?.state || ''),
-    }
+    adminsByCenterId[centerId] = normalizeCenterAdminAccount(centerId, admin)
 
     return adminsByCenterId
   }, {})
+}
+
+function normalizeCenterAdminAccount(centerId, admin = {}) {
+  const membershipStatus = String(admin?.membership_status || admin?.membershipStatus || admin?.status || '')
+    .trim()
+    .toLowerCase()
+  const state = String(admin?.state || membershipStatus || '')
+    .trim()
+    .toLowerCase()
+  const isRevoked = Boolean(admin?.is_revoked || admin?.isRevoked || membershipStatus === 'revoked' || state === 'revoked')
+  const isActive = Boolean(admin?.is_active || admin?.isActive || membershipStatus === 'active' || state === 'active')
+  const email = String(admin?.email || '').trim()
+  const exists = Boolean(admin?.exists || email || isActive || isRevoked)
+
+  return {
+      centerId,
+      exists,
+      userId: String(admin?.user_id || ''),
+      role: 'center_admin',
+      status: membershipStatus,
+      email,
+      state: isRevoked ? 'revoked' : isActive ? 'active' : state,
+      isActive,
+      isRevoked,
+      canRestore: Boolean(admin?.can_restore || admin?.canRestore || isRevoked),
+      source: String(admin?.source || ''),
+    }
+}
+
+function hasDurableInternalAccountLifecycle(account) {
+  return ['active', 'revoked', 'multiple_active_admins', 'email_unavailable'].includes(account?.state) ||
+    ['active', 'revoked'].includes(account?.status)
+}
+
+function mergeInternalAccountSnapshots(endpointAdminsByCenterId = {}, localSnapshotsByCenterId = {}) {
+  const adminsByCenterId = { ...endpointAdminsByCenterId }
+  const nextLocalSnapshotsByCenterId = { ...localSnapshotsByCenterId }
+
+  Object.entries(localSnapshotsByCenterId).forEach(([centerId, localAccount]) => {
+    const endpointAccount = endpointAdminsByCenterId[centerId]
+
+    if (hasDurableInternalAccountLifecycle(endpointAccount)) {
+      delete nextLocalSnapshotsByCenterId[centerId]
+      return
+    }
+
+    if (localAccount?.state === 'revoked' || localAccount?.status === 'revoked') {
+      adminsByCenterId[centerId] = localAccount
+    }
+  })
+
+  return {
+    adminsByCenterId,
+    localAccountSnapshotsByCenterId: nextLocalSnapshotsByCenterId,
+  }
 }
 
 function getExpectedInternalAdminEmail(center) {
@@ -1677,8 +1728,8 @@ function canLiveRestoreInternalAccount(target) {
 
 function getInternalAccountRecord(centerId) {
   const normalizedCenterId = String(centerId || '').trim()
-  return internalCenterAdminAccountsState.localAccountSnapshotsByCenterId[normalizedCenterId] ||
-    internalCenterAdminAccountsState.adminsByCenterId[normalizedCenterId] ||
+  return internalCenterAdminAccountsState.adminsByCenterId[normalizedCenterId] ||
+    internalCenterAdminAccountsState.localAccountSnapshotsByCenterId[normalizedCenterId] ||
     null
 }
 
@@ -1703,7 +1754,16 @@ function getInternalAccountRestoreTarget(centerId) {
   const adminAccount = getInternalAccountRecord(centerId)
   const email = String(adminAccount?.email || '').trim()
 
-  if (!center || adminAccount?.state !== 'revoked' || !email) {
+  if (
+    !center ||
+    !email ||
+    !(
+      adminAccount?.state === 'revoked' ||
+      adminAccount?.status === 'revoked' ||
+      adminAccount?.isRevoked ||
+      adminAccount?.canRestore
+    )
+  ) {
     return null
   }
 
@@ -2311,7 +2371,7 @@ function renderInternalCenterAccountStatusNote() {
 function renderInternalCenterAccountCard(center) {
   const adminAccount = getInternalAccountRecord(center.id)
   const hasAdmin = adminAccount?.exists === true
-  const isRevokedAdmin = adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked'
+  const isRevokedAdmin = Boolean(adminAccount?.isRevoked || adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked')
   const adminEmail = adminAccount?.email || ''
   const adminLabel = getInternalCenterAdminLabel(adminAccount)
   const accountStatus = getInternalCenterAccountStatus(adminAccount)
@@ -2334,7 +2394,10 @@ function renderInternalCenterAccountCard(center) {
       ? 'Đã có admin'
       : createEnabled ? 'Tạo admin' : 'Chưa sẵn sàng'
   const revokeEnabled = Boolean(hasAdmin && adminEmail && !isRevokedAdmin)
-  const restoreEnabled = Boolean(isRevokedAdmin && adminEmail)
+  const restoreEnabled = Boolean(isRevokedAdmin && adminEmail && canLiveRestoreInternalAccount({
+    centerId: center.id,
+    email: adminEmail,
+  }))
   const revokeButtonLabel = restoreEnabled
     ? 'Đã thu hồi quyền'
     : revokeEnabled ? 'Thu hồi quyền' : 'Không có admin'
@@ -2416,6 +2479,13 @@ function renderInternalCenterAccountCard(center) {
       </div>
       ${internalCenterAdminAccountsState.copyMessage ? `
         <p class="internal-account-copy-message" role="status">${escapeHtml(internalCenterAdminAccountsState.copyMessage)}</p>
+      ` : ''}
+      ${isRevokedAdmin ? `
+        <p class="internal-account-copy-message" role="status">
+          ${restoreEnabled
+            ? 'Admin này hiện không còn quyền truy cập cơ sở. Có thể khôi phục quyền nếu cần.'
+            : 'Admin này hiện không còn quyền truy cập cơ sở. Thao tác khôi phục cho cơ sở này chưa được bật.'}
+        </p>
       ` : ''}
     </article>
   `
@@ -2758,7 +2828,7 @@ function getInternalCenterAdminLabel(adminAccount) {
     return 'Chưa tải'
   }
 
-  if (adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked') {
+  if (adminAccount?.isRevoked || adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked') {
     return adminAccount.email ? `${adminAccount.email} (đã thu hồi)` : 'Đã thu hồi quyền'
   }
 
@@ -2782,7 +2852,7 @@ function getInternalCenterAccountStatus(adminAccount) {
     return 'Không tải được dữ liệu tài khoản'
   }
 
-  if (adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked') {
+  if (adminAccount?.isRevoked || adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked') {
     return 'Đã thu hồi quyền'
   }
 
@@ -5143,7 +5213,7 @@ function shouldSkipDuplicateCloudUserSync(user, reason = '') {
   }
 
   const isSameUser = nextUserId === cloudStatus.user?.id && nextUserId === cloudLastSyncedUserId
-  const hasSettledMembership = ['loading', 'loaded', 'missing', 'error'].includes(
+  const hasSettledMembership = ['loading', 'loaded', 'missing', 'denied', 'error'].includes(
     cloudStatus.membershipStatus,
   )
 
@@ -5183,6 +5253,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       centerName: '',
       membership: null,
       memberships: [],
+      deniedMemberships: [],
+      accessDeniedReason: '',
       membershipStatus: 'idle',
       message: '',
       attachments: [],
@@ -5214,6 +5286,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     centerName: '',
     membership: null,
     memberships: [],
+    deniedMemberships: [],
+    accessDeniedReason: '',
     membershipStatus: 'loading',
     message: '',
     attachments: [],
@@ -5252,6 +5326,40 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       reloadLocalDataForResolvedCenter({
         useSampleFallback: !isProductionCenter(resolvedMembership.centerId),
       })
+    } else {
+      stopStudentRealtimeSubscription()
+      stopTeacherRealtimeSubscription()
+      stopScheduleSessionRealtimeSubscription()
+      stopC51AttendanceRealtimeSubscription()
+      stopC52TuitionRealtimeSubscription()
+      transactionImageManagerState = null
+      cloudGalleryState = null
+      cloudDbState = createInitialCloudDbState()
+      cloudBootstrapState = createInitialCloudBootstrapState()
+      cloudDbAutoPullUserId = ''
+      c51AttendanceAutoPullUserId = ''
+      c52TuitionAutoPullUserId = ''
+      cloudBootstrapRetryBlockedUntil = 0
+      cloudBootstrapLastFailureSignature = ''
+
+      cloudStatus = {
+        ...cloudStatus,
+        role: null,
+        centerId: resolvedMembership.centerId,
+        centerName: resolvedMembership.centerName,
+        membership: null,
+        memberships: resolvedMembership.memberships || [],
+        deniedMemberships:
+          resolvedMembership.deniedMemberships || resolvedMembership.memberships || [],
+        accessDeniedReason: resolvedMembership.accessDeniedReason || 'unknown',
+        membershipStatus: 'denied',
+        message: resolvedMembership.message,
+        attachments: [],
+        attachmentsStatus: 'idle',
+        attachmentsError: '',
+      }
+      render()
+      return
     }
 
     cloudStatus = {
@@ -5261,6 +5369,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       centerName: resolvedMembership.centerName,
       membership: resolvedMembership.membership,
       memberships: resolvedMembership.memberships,
+      deniedMemberships: resolvedMembership.deniedMemberships || [],
+      accessDeniedReason: '',
       membershipStatus: resolvedMembership.ok ? 'loaded' : 'missing',
       message: resolvedMembership.message,
       attachments: [],
@@ -5279,6 +5389,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       centerName: '',
       membership: null,
       memberships: [],
+      deniedMemberships: [],
+      accessDeniedReason: '',
       membershipStatus: 'error',
       message: getCloudErrorMessage(
         error,

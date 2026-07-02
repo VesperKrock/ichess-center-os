@@ -17,7 +17,9 @@ export function renderAppAuthEntry(status, centerBinding = null) {
         !isConfigured
           ? '<p class="app-auth-message">Chưa cấu hình Supabase. Thêm URL và publishable key vào .env.local rồi khởi động lại app.</p>'
           : isSignedIn
-            ? renderSignedInState(status, centerBinding)
+            ? centerBinding?.status === 'denied'
+              ? renderAccessDeniedState(status, centerBinding)
+              : renderSignedInState(status, centerBinding)
             : renderLoginForm(status, isBusy)
       }
     </section>
@@ -64,6 +66,60 @@ function renderSignedInState(status, centerBinding) {
       ${renderMessage(status.message)}
     </div>
   `
+}
+
+function renderAccessDeniedState(status, centerBinding) {
+  const email = status.user?.email || 'Không có email'
+  const reason = centerBinding?.deniedReason || status.accessDeniedReason || 'unknown'
+  const centerName = centerBinding?.centerName || ''
+  const message = getAccessDeniedMessage(reason)
+  const helper = getAccessDeniedHelper(reason)
+
+  return `
+    <div class="app-auth-access-denied" role="alert">
+      <div>
+        <span>Đã đăng nhập</span>
+        <strong>${escapeHtml(email)}</strong>
+        ${centerName ? `<small>Cơ sở: ${escapeHtml(centerName)}</small>` : ''}
+      </div>
+      <h3>Không có quyền truy cập</h3>
+      <p>${escapeHtml(message)}</p>
+      <small>${escapeHtml(helper)}</small>
+      <div class="app-auth-access-denied-actions">
+        <button type="button" data-cloud-action="logout" ${status.authStatus === 'loading' ? 'disabled' : ''}>
+          Đăng xuất
+        </button>
+      </div>
+    </div>
+  `
+}
+
+function getAccessDeniedMessage(reason) {
+  if (reason === 'revoked') {
+    return 'Quyền truy cập của tài khoản này đã được thu hồi.'
+  }
+
+  if (reason === 'paused') {
+    return 'Quyền truy cập của tài khoản này đang tạm dừng.'
+  }
+
+  if (reason === 'no_membership') {
+    return 'Tài khoản này chưa được cấp quyền truy cập cơ sở.'
+  }
+
+  return 'Tài khoản này chưa có quyền truy cập đang hoạt động.'
+}
+
+function getAccessDeniedHelper(reason) {
+  if (reason === 'paused') {
+    return 'Vui lòng liên hệ người phụ trách iChess để biết thêm thông tin.'
+  }
+
+  if (reason === 'no_membership') {
+    return 'Nếu đây là tài khoản mới, vui lòng liên hệ người phụ trách để được cấp quyền.'
+  }
+
+  return 'Vui lòng liên hệ người phụ trách iChess để được cấp lại quyền nếu cần.'
 }
 
 function getAuthStatusText(status, isConfigured, isSignedIn, isBusy) {

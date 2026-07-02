@@ -12,6 +12,10 @@ const docPath = path.join(root, 'docs', 'supabase-c7-8a-owner-account-management
 const testPath = path.join(root, 'tests', 'supabase-c7-8a-owner-account-management-ui-readonly-smoke.js')
 const mainPath = path.join(root, 'src', 'main.js')
 const stylesPath = path.join(root, 'src', 'styles.css')
+const appAuthPath = path.join(root, 'src', 'app-auth.js')
+const appCenterBindingPath = path.join(root, 'src', 'app-center-binding.js')
+const cloudStatusPath = path.join(root, 'src', 'cloud-status.js')
+const supabaseAuthPath = path.join(root, 'src', 'supabase-auth.js')
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8')
@@ -145,10 +149,15 @@ const changedPaths = getStatusPaths()
 const allowedPaths = new Set([
   'src/main.js',
   'src/styles.css',
+  'src/app-auth.js',
+  'src/app-center-binding.js',
+  'src/cloud-status.js',
+  'src/supabase-auth.js',
   'docs/supabase-c7-8a-owner-account-management-ui-readonly.md',
   'tests/supabase-c7-8a-owner-account-management-ui-readonly-smoke.js',
   'supabase/config.toml',
   'supabase/functions/list-center-admin-accounts/',
+  'supabase/functions/list-center-admin-accounts/index.ts',
   'docs/supabase-c7-8b-owner-account-status-endpoint-ui-wiring.md',
   'tests/supabase-c7-8b-owner-account-status-endpoint-ui-wiring-smoke.js',
   'docs/supabase-c7-8c-wire-reset-password-button-handoff-ui.md',
@@ -176,6 +185,13 @@ const allowedPaths = new Set([
   'tests/supabase-c7-8g-wire-live-revoke-restore-ui-phongtrong-smoke.js',
   'docs/supabase-c7-8h-owner-account-management-final-polish.md',
   'tests/supabase-c7-8h-owner-account-management-final-polish-smoke.js',
+  'docs/supabase-c7-9a-account-lifecycle-readonly-audit.md',
+  'docs/supabase-c7-9a-readonly-account-lifecycle-inspection.sql',
+  'tests/supabase-c7-9a-account-lifecycle-readonly-audit-smoke.js',
+  'docs/supabase-c7-9b-persistent-revoked-restore-state.md',
+  'tests/supabase-c7-9b-persistent-revoked-restore-state-smoke.js',
+  'docs/supabase-c7-9c-access-denied-ux-revoked-user.md',
+  'tests/supabase-c7-9c-access-denied-ux-revoked-user-smoke.js',
 ])
 
 for (const changedPath of changedPaths) {
@@ -187,6 +203,7 @@ for (const changedPath of changedPaths) {
   assert(
     !changedPath.startsWith('supabase/functions/') ||
       changedPath === 'supabase/functions/list-center-admin-accounts/' ||
+      changedPath === 'supabase/functions/list-center-admin-accounts/index.ts' ||
       changedPath === 'supabase/functions/restore-center-admin-access/',
     `Only C7.8B read-only status and C7.8F restore Edge Function folders are allowed after C7.8A: ${changedPath}`,
   )
@@ -196,5 +213,9 @@ assertNoMojibake(docPath)
 assertNoMojibake(testPath)
 assertNoMojibake(mainPath)
 assertNoMojibake(stylesPath)
+assertNoMojibake(appAuthPath)
+assertNoMojibake(appCenterBindingPath)
+assertNoMojibake(cloudStatusPath)
+assertNoMojibake(supabaseAuthPath)
 
 console.log('C7.8A owner account management UI readonly smoke: PASS')

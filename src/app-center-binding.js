@@ -55,6 +55,21 @@ export function resolveAppCenterBinding(authState) {
     }
   }
 
+  if (authState?.membershipStatus === 'denied') {
+    return {
+      status: 'denied',
+      currentCenterId: authState.centerId || '',
+      centerName: authState.centerName || authState.centerId || '',
+      source: 'access-denied-membership',
+      role: authState.role ?? null,
+      membership: authState.membership ?? null,
+      memberships: authState.memberships ?? [],
+      deniedMemberships: authState.deniedMemberships ?? [],
+      deniedReason: authState.accessDeniedReason || 'unknown',
+      message: authState.message || 'Tai khoan nay chua co quyen truy cap dang hoat dong.',
+    }
+  }
+
   if (authState?.membershipStatus === 'error') {
     return {
       status: 'error',

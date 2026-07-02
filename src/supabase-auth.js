@@ -116,35 +116,103 @@ export async function listActiveCenterMemberships(userId) {
   return Array.isArray(data) ? data : []
 }
 
-export async function resolveActiveCenterMembership(userId) {
-  const memberships = await listActiveCenterMemberships(userId)
+export async function listCenterMemberships(userId) {
+  if (!userId) {
+    return []
+  }
 
-  if (memberships.length === 0) {
+  const client = requireSupabaseClient()
+  const { data, error } = await client
+    .from('center_members')
+    .select('center_id, role, status')
+    .eq('user_id', userId)
+    .order('center_id', { ascending: true })
+
+  if (error) {
+    throw error
+  }
+
+  return Array.isArray(data) ? data : []
+}
+
+function getAccessDeniedReason(memberships = []) {
+  if (!memberships.length) {
+    return 'no_membership'
+  }
+
+  const statuses = memberships.map((membership) =>
+    String(membership?.status || '').trim().toLowerCase(),
+  )
+
+  if (statuses.includes('revoked')) {
+    return 'revoked'
+  }
+
+  if (statuses.includes('paused')) {
+    return 'paused'
+  }
+
+  return 'unknown'
+}
+
+export async function resolveActiveCenterMembership(userId) {
+  const memberships = await listCenterMemberships(userId)
+  const activeMemberships = memberships.filter((membership) =>
+    String(membership?.status || '').trim().toLowerCase() === 'active',
+  )
+
+  if (activeMemberships.length === 0) {
+    const accessDeniedReason = getAccessDeniedReason(memberships)
+    const deniedMembership = memberships[0] || null
+    const centerId = deniedMembership?.center_id || ''
+
     return {
       ok: false,
-      status: 'missing',
-      centerId: '',
-      centerName: '',
+      status: 'denied',
+      centerId,
+      centerName: centerId ? getCenterDisplayName(centerId) : '',
       role: null,
       membership: null,
       memberships,
-      message: 'Tai khoan chua duoc gan co so active trong center_members.',
+      deniedMemberships: memberships,
+      accessDeniedReason,
+      message: getAccessDeniedMessage(accessDeniedReason),
     }
   }
 
-  const membership = memberships[0]
+  const membership = activeMemberships[0]
   const centerId = membership.center_id || ''
 
   return {
     ok: true,
-    status: memberships.length > 1 ? 'multiple' : 'loaded',
+    status: activeMemberships.length > 1 ? 'multiple' : 'loaded',
     centerId,
     centerName: getCenterDisplayName(centerId),
     role: membership.role ?? null,
     membership,
-    memberships,
-    message: memberships.length > 1
+    memberships: activeMemberships,
+    deniedMemberships: memberships.filter((item) =>
+      String(item?.status || '').trim().toLowerCase() !== 'active',
+    ),
+    accessDeniedReason: '',
+    message: activeMemberships.length > 1
       ? 'Tai khoan co nhieu co so active; app dang dung co so dau tien theo thu tu center_id.'
       : '',
   }
+}
+
+function getAccessDeniedMessage(reason) {
+  if (reason === 'revoked') {
+    return 'Quyen truy cap cua tai khoan nay da duoc thu hoi.'
+  }
+
+  if (reason === 'paused') {
+    return 'Quyen truy cap cua tai khoan nay dang tam dung.'
+  }
+
+  if (reason === 'no_membership') {
+    return 'Tai khoan nay chua duoc cap quyen truy cap co so.'
+  }
+
+  return 'Tai khoan nay chua co quyen truy cap dang hoat dong.'
 }

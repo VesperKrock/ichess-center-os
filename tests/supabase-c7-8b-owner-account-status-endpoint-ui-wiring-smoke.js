@@ -14,6 +14,10 @@ const denoPath = path.join(root, 'supabase', 'functions', 'list-center-admin-acc
 const configPath = path.join(root, 'supabase', 'config.toml')
 const mainPath = path.join(root, 'src', 'main.js')
 const stylesPath = path.join(root, 'src', 'styles.css')
+const appAuthPath = path.join(root, 'src', 'app-auth.js')
+const appCenterBindingPath = path.join(root, 'src', 'app-center-binding.js')
+const cloudStatusPath = path.join(root, 'src', 'cloud-status.js')
+const supabaseAuthPath = path.join(root, 'src', 'supabase-auth.js')
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, 'utf8')
@@ -192,8 +196,13 @@ const changedPaths = getStatusPaths()
 const allowedPaths = new Set([
   'src/main.js',
   'src/styles.css',
+  'src/app-auth.js',
+  'src/app-center-binding.js',
+  'src/cloud-status.js',
+  'src/supabase-auth.js',
   'supabase/config.toml',
   'supabase/functions/list-center-admin-accounts/',
+  'supabase/functions/list-center-admin-accounts/index.ts',
   'docs/supabase-c7-8a-owner-account-management-ui-readonly.md',
   'tests/supabase-c7-8a-owner-account-management-ui-readonly-smoke.js',
   'docs/supabase-c7-8b-owner-account-status-endpoint-ui-wiring.md',
@@ -223,6 +232,13 @@ const allowedPaths = new Set([
   'tests/supabase-c7-8g-wire-live-revoke-restore-ui-phongtrong-smoke.js',
   'docs/supabase-c7-8h-owner-account-management-final-polish.md',
   'tests/supabase-c7-8h-owner-account-management-final-polish-smoke.js',
+  'docs/supabase-c7-9a-account-lifecycle-readonly-audit.md',
+  'docs/supabase-c7-9a-readonly-account-lifecycle-inspection.sql',
+  'tests/supabase-c7-9a-account-lifecycle-readonly-audit-smoke.js',
+  'docs/supabase-c7-9b-persistent-revoked-restore-state.md',
+  'tests/supabase-c7-9b-persistent-revoked-restore-state-smoke.js',
+  'docs/supabase-c7-9c-access-denied-ux-revoked-user.md',
+  'tests/supabase-c7-9c-access-denied-ux-revoked-user-smoke.js',
 ])
 
 for (const changedPath of changedPaths) {
@@ -232,8 +248,10 @@ for (const changedPath of changedPaths) {
 
   assert(allowedPaths.has(changedPath), `Unexpected changed file in C7.8B scope: ${changedPath}`)
   assert(
-    !/sql$/i.test(changedPath) || changedPath.startsWith('docs/supabase-c7-8f-'),
-    `C7.8B must not add SQL apply files outside later controlled packs: ${changedPath}`,
+    !/sql$/i.test(changedPath) ||
+      changedPath.startsWith('docs/supabase-c7-8f-') ||
+      changedPath === 'docs/supabase-c7-9a-readonly-account-lifecycle-inspection.sql',
+    `C7.8B must not add SQL apply files outside later controlled/read-only packs: ${changedPath}`,
   )
 }
 
@@ -241,5 +259,9 @@ assertNoMojibake(docPath)
 assertNoMojibake(functionPath)
 assertNoMojibake(mainPath)
 assertNoMojibake(stylesPath)
+assertNoMojibake(appAuthPath)
+assertNoMojibake(appCenterBindingPath)
+assertNoMojibake(cloudStatusPath)
+assertNoMojibake(supabaseAuthPath)
 
 console.log('C7.8B owner account status endpoint UI wiring smoke: PASS')

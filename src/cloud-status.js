@@ -10,6 +10,8 @@ export function createInitialCloudStatus(configStatus) {
     centerName: '',
     membership: null,
     memberships: [],
+    deniedMemberships: [],
+    accessDeniedReason: '',
     membershipStatus: 'idle',
     message: '',
     attachments: [],
