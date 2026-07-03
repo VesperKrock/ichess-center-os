@@ -123,7 +123,7 @@ export function renderSettingsModule(
       <div class="settings-header">
         <div>
           <h3>Cài đặt cơ sở</h3>
-          <p>Quản lý các dữ liệu nền phục vụ vận hành cơ sở DreamHome.</p>
+          <p>Quản lý các thiết lập vận hành của cơ sở.</p>
         </div>
         <div class="settings-summary">
           <span>${stats.total} ca học</span>
@@ -133,17 +133,14 @@ export function renderSettingsModule(
       </div>
 
       <div class="settings-tabs" aria-label="Nhóm cài đặt">
-        <span>Thông tin cơ sở - đã lên kế hoạch</span>
         <strong>Ca học / Lớp</strong>
-        <span>Gói học phí - đã lên kế hoạch</span>
-        <span>Dữ liệu mẫu - đã lên kế hoạch</span>
       </div>
 
       <section class="settings-class-session-panel" aria-label="Quản lý Ca học / Lớp">
         <div class="settings-panel-header">
           <div>
             <h4>Ca học / Lớp</h4>
-            <p>Danh mục ca học dùng chung với Module Học viên qua cùng localStorage.</p>
+            <p>Danh mục ca học dùng khi phân lớp học viên và lập thời khóa biểu.</p>
           </div>
           <button type="button" data-settings-class-session-action="open-create">
             + Thêm ca học
@@ -190,7 +187,7 @@ export function renderSettingsModule(
                   ? filteredClassSessions
                       .map((classSession) => renderClassSessionRow(classSession, students))
                       .join('')
-                  : renderEmptyClassSessionRow()
+                  : renderEmptyClassSessionRow(classSessions.length)
               }
             </tbody>
           </table>
@@ -294,10 +291,14 @@ function renderClassSessionRow(classSession, students = []) {
   `
 }
 
-function renderEmptyClassSessionRow() {
+function renderEmptyClassSessionRow(totalClassSessions = 0) {
+  const message = totalClassSessions
+    ? 'Không tìm thấy ca học phù hợp.'
+    : 'Chưa có ca học nào. Hãy thêm ca học/lớp để dùng khi nhập học viên và lập thời khóa biểu.'
+
   return `
     <tr>
-      <td class="settings-empty" colspan="7">Không tìm thấy ca học phù hợp.</td>
+      <td class="settings-empty" colspan="7">${message}</td>
     </tr>
   `
 }
@@ -329,137 +330,42 @@ function renderCloudDbPanel(state = null) {
     panelState.membershipStatus === 'loaded' &&
     Boolean(panelState.role)
   const cloudReady = canUseCloud && panelState.readinessStatus === 'ready'
-  const cloudCounts = cloudReady && panelState.cloudCounts
-    ? panelState.cloudCounts
-    : { student: '—', teacher: '—', class_session: '—' }
-  const localAngelWingsReady = Boolean(panelState.localAngelWingsStatus?.isReadyForCloudPush)
-  const disabled = panelState.isLoading || !cloudReady || !localAngelWingsReady
-  const message = formatCloudDbPanelValue(panelState.message)
+  const syncLabel = panelState.isLoading
+    ? 'Đang cập nhật'
+    : cloudReady
+      ? 'Đang hoạt động'
+      : canUseCloud
+        ? 'Đang kiểm tra'
+        : 'Cần kiểm tra'
+  const dataLabel = cloudReady ? 'Sẵn sàng' : 'Cần kiểm tra'
+  const statusTone = cloudReady ? 'is-ready' : 'is-warning'
+  const message = panelState.messageTone === 'error'
+    ? 'Có lỗi đồng bộ. Vui lòng báo owner kiểm tra.'
+    : ''
 
   return `
-    <details class="settings-cloud-db-panel" aria-label="Cloud DB online core" ${message || canUseCloud ? 'open' : ''}>
-      <summary>
-        <span>Cloud DB online core</span>
-        <strong>${cloudReady ? 'Ready' : 'Advanced'}</strong>
-      </summary>
+    <section class="settings-data-status-panel" aria-label="Trạng thái dữ liệu">
       <div class="settings-panel-header">
         <div>
-          <h4>Cloud DB online core</h4>
-          <p>C2 đọc/ghi cloud cho 3 nhóm dữ liệu lõi: Học viên, Giáo viên, Ca học/Lớp.</p>
+          <h4>Trạng thái dữ liệu</h4>
+          <p>Tình trạng dữ liệu dùng cho vận hành hằng ngày.</p>
         </div>
-        <span class="settings-cloud-db-badge ${cloudReady ? 'is-ready' : ''}">
-          ${cloudReady ? 'Sẵn sàng' : 'Chưa sẵn sàng'}
+        <span class="settings-data-status-badge ${statusTone}">
+          ${dataLabel}
         </span>
       </div>
-      <div class="settings-cloud-db-status">
-        <span>Supabase: <strong>${panelState.configStatus === 'configured' ? 'Đã cấu hình' : 'Chưa cấu hình'}</strong></span>
-        <span>Đăng nhập: <strong>${panelState.authStatus === 'signed-in' ? 'Đã đăng nhập' : 'Chưa đăng nhập'}</strong></span>
-        <span>DreamHome: <strong>${panelState.role || 'Chưa có quyền'}</strong></span>
-        <span>Cloud DB: <strong>${getCloudDbReadinessLabel(panelState.readinessStatus)}</strong></span>
-        <span>Angel Wings local: <strong>${getAngelWingsLocalStatusLabel(panelState.localAngelWingsStatus)}</strong></span>
-      </div>
-      <div class="settings-cloud-db-counts">
-        <div>
-          <strong>Local</strong>
-          <span>Học viên ${formatCloudDbPanelValue(panelState.localCounts.student)}</span>
-          <span>Giáo viên ${formatCloudDbPanelValue(panelState.localCounts.teacher)}</span>
-          <span>Ca học ${formatCloudDbPanelValue(panelState.localCounts.class_session)}</span>
-        </div>
-        <div>
-          <strong>Cloud</strong>
-          <span>Học viên ${formatCloudDbPanelValue(cloudCounts.student)}</span>
-          <span>Giáo viên ${formatCloudDbPanelValue(cloudCounts.teacher)}</span>
-          <span>Ca học ${formatCloudDbPanelValue(cloudCounts.class_session)}</span>
-        </div>
+      <div class="settings-data-status-grid">
+        <span>Dữ liệu cloud: <strong>${dataLabel}</strong></span>
+        <span>Đồng bộ: <strong>${syncLabel}</strong></span>
+        <span>Cơ sở: <strong>DreamHome</strong></span>
       </div>
       ${
         message
-          ? `<p class="settings-cloud-db-message ${panelState.messageTone === 'success' ? 'is-success' : 'is-error'}">${escapeHtml(message)}</p>`
+          ? `<p class="settings-data-status-message is-error">${message}</p>`
           : ''
       }
-      <div class="settings-cloud-db-actions">
-        <button type="button" data-cloud-db-action="refresh" ${panelState.isLoading || !canUseCloud ? 'disabled' : ''}>
-          ${panelState.isLoading ? 'Đang xử lý...' : 'Làm mới số liệu'}
-        </button>
-        <button type="button" data-cloud-db-action="restore-angel-wings-local" ${panelState.isLoading ? 'disabled' : ''}>
-          Khôi phục dữ liệu Angel Wings 06/2026 vào local
-        </button>
-        <button type="button" data-cloud-db-action="push" ${disabled ? 'disabled' : ''}>
-          Đẩy local lên cloud
-        </button>
-        <button type="button" data-cloud-db-action="pull" ${disabled ? 'disabled' : ''}>
-          Tải cloud về local
-        </button>
-      </div>
-      <p class="settings-cloud-db-warning">
-        ${getCloudDbPushWarning(panelState.localAngelWingsStatus)}
-      </p>
-    </details>
+    </section>
   `
-}
-
-function formatCloudDbPanelValue(value) {
-  if (value === null || value === undefined || value === '') {
-    return ''
-  }
-
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value.toLocaleString('vi-VN') : ''
-  }
-
-  if (typeof value === 'string') {
-    return value
-  }
-
-  if (typeof value === 'boolean') {
-    return value ? 'Yes' : 'No'
-  }
-
-  if (value instanceof Error) {
-    return value.message
-  }
-
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function getCloudDbReadinessLabel(status) {
-  const labels = {
-    ready: 'Sẵn sàng',
-    checking: 'Đang kiểm tra',
-    error: 'Chưa sẵn sàng',
-    blocked: 'Chưa có quyền',
-    idle: 'Chưa kiểm tra',
-  }
-
-  return labels[status] || 'Chưa kiểm tra'
-}
-
-function getAngelWingsLocalStatusLabel(status = {}) {
-  if (status.isReadyForCloudPush) {
-    return `${formatCloudDbPanelValue(status.studentCount)} học viên / ${formatCloudDbPanelValue(status.classSessionCount)} ca`
-  }
-
-  if (status.looksLikeOldSeed) {
-    return 'Đang là seed cũ 8 học viên'
-  }
-
-  return 'Chưa có marker Angel Wings'
-}
-
-function getCloudDbPushWarning(status = {}) {
-  if (status.isReadyForCloudPush) {
-    return 'C2.3 chỉ đẩy Học viên, Giáo viên, Ca học/Lớp lên cloud. Không đẩy học phí, điểm danh, Thu chi, Sổ quỹ, notification hoặc ảnh.'
-  }
-
-  if (status.looksLikeOldSeed) {
-    return 'Đang phát hiện local seed cũ 8 học viên. Hãy khôi phục Angel Wings 06/2026 trước khi đẩy local lên cloud.'
-  }
-
-  return 'Chưa đủ marker Angel Wings 06/2026 trong local. Hãy khôi phục/kiểm tra local trước khi đẩy cloud.'
 }
 
 function renderSettingsClassSessionForm(formState) {
