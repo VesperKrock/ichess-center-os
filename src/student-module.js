@@ -111,6 +111,9 @@ const requiredFields = {
   level: 'Cấp độ học',
 }
 
+const parentCareRequiredFields = ['parentName', 'fatherPhone', 'motherPhone']
+const studentParentCareRequiredHint = 'Cần nhập thông tin phụ huynh/chăm sóc'
+
 export function createEmptyStudentFormState() {
   return {
     mode: 'create',
@@ -382,6 +385,29 @@ export function isStudentFormReady(values) {
   return Object.keys(validateStudentForm(values)).length === 0
 }
 
+export function isStudentParentCareInfoIncomplete(values) {
+  const hasParentName = String(values.parentName ?? '').trim()
+  const hasFatherPhone = String(values.fatherPhone ?? '').replace(/\D/g, '')
+  const hasMotherPhone = String(values.motherPhone ?? '').replace(/\D/g, '')
+
+  return !hasParentName || (!hasFatherPhone && !hasMotherPhone)
+}
+
+export function getStudentFormSaveDisabledReason(values) {
+  const errors = validateStudentForm(values)
+  const errorFields = Object.keys(errors)
+
+  if (!errorFields.length) {
+    return ''
+  }
+
+  if (errorFields.some((field) => parentCareRequiredFields.includes(field))) {
+    return studentParentCareRequiredHint
+  }
+
+  return 'Cần nhập đủ thông tin bắt buộc'
+}
+
 export function formatStudentPhoneNumber(value) {
   return formatPhoneNumber(value)
 }
@@ -423,6 +449,8 @@ function renderStudentForm(
   const title = isEdit ? 'Sửa học viên' : 'Thêm học viên'
   const currentStep = formState.step ?? 1
   const isReadyToSave = isStudentFormReady(formState.values)
+  const disabledReason = getStudentFormSaveDisabledReason(formState.values)
+  const parentCareIncomplete = isStudentParentCareInfoIncomplete(formState.values)
 
   return `
     <div class="student-form-backdrop" aria-hidden="true"></div>
@@ -434,30 +462,36 @@ function renderStudentForm(
             <button class="${currentStep === 1 ? 'active' : ''}" type="button" data-student-form-step="1">
               1. Thông tin học viên
             </button>
-            <button class="${currentStep === 2 ? 'active' : ''}" type="button" data-student-form-step="2">
+            <button
+              class="${[
+                currentStep === 2 ? 'active' : '',
+                parentCareIncomplete ? 'needs-attention' : '',
+              ].filter(Boolean).join(' ')}"
+              type="button"
+              data-student-form-step="2"
+              ${parentCareIncomplete ? `title="${studentParentCareRequiredHint}"` : ''}
+            >
               2. Phụ huynh / chăm sóc
+              ${parentCareIncomplete ? '<span aria-label="Cần nhập thông tin phụ huynh/chăm sóc">!</span>' : ''}
             </button>
           </div>
         </div>
         <div class="student-form-header-actions">
-          <button
-            class="student-save-button"
-            type="button"
-            data-student-action="save-form"
-            ${isReadyToSave ? '' : 'disabled'}
-          >
-            ${isEdit ? 'Lưu thay đổi' : 'Lưu học viên'}
-          </button>
+          <span class="student-save-button-wrap" ${disabledReason ? `title="${disabledReason}"` : ''}>
+            <button
+              class="student-save-button"
+              type="button"
+              data-student-action="save-form"
+              ${isReadyToSave ? '' : 'disabled'}
+            >
+              ${isEdit ? 'Lưu thay đổi' : 'Lưu học viên'}
+            </button>
+          </span>
           <button class="student-danger-button" type="button" data-student-action="cancel-form">
             ${isEdit ? 'Hủy sửa' : 'Hủy thêm'}
           </button>
         </div>
       </div>
-      ${
-        isReadyToSave
-          ? ''
-          : '<p class="student-form-hint">Cần nhập đủ các mục có dấu * để lưu.</p>'
-      }
       <div class="student-form-scroll">
         <div class="student-form-grid">
           ${
@@ -530,13 +564,6 @@ function renderStudentForm(
               `
           }
         </div>
-      </div>
-      <div class="student-form-actions">
-        ${
-          currentStep === 1
-            ? '<span></span><button class="student-secondary-button student-step-button" type="button" data-student-form-step="2">Thông tin phụ huynh →</button>'
-            : '<button class="student-secondary-button student-step-button" type="button" data-student-form-step="1">← Thông tin học viên</button><span></span>'
-        }
       </div>
     </section>
   `

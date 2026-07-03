@@ -342,6 +342,7 @@ import {
   createEditStudentFormState,
   createEmptyStudentFormState,
   formatStudentPhoneNumber,
+  getStudentFormSaveDisabledReason,
   initialStudentFilters,
   isStudentFormReady,
   renderStudentModule,
@@ -4722,9 +4723,10 @@ function openStudentDetailWindow(studentId) {
   }
 
   const offset = (openWindows.length % 7) * 28
+  const nextWindowId = `window-${nextWindowNumber}`
 
   openWindows.push({
-    id: `window-${nextWindowNumber}`,
+    id: nextWindowId,
     type: 'student-detail',
     studentId,
     x: 120 + offset,
@@ -4742,6 +4744,7 @@ function openStudentDetailWindow(studentId) {
     },
   })
   nextWindowNumber += 1
+  focusWindow(nextWindowId)
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
@@ -5047,13 +5050,79 @@ function getTuitionPaymentPersonName(student) {
 }
 
 function focusWindow(windowId) {
-  const nextZIndex = ++topZIndex
+  bringWindowToFront(windowId)
+}
 
-  openWindows = openWindows.map((windowItem) =>
-    windowItem.id === windowId
-      ? { ...windowItem, minimized: false, zIndex: nextZIndex }
-      : windowItem,
-  )
+function bringWindowToFront(windowId) {
+  const nextZIndex = ++topZIndex
+  const targetWindow = openWindows.find((windowItem) => windowItem.id === windowId)
+
+  if (!targetWindow) {
+    return
+  }
+
+  openWindows = [
+    ...openWindows.filter((windowItem) => windowItem.id !== windowId),
+    {
+      ...targetWindow,
+      minimized: false,
+      zIndex: nextZIndex,
+    },
+  ]
+}
+
+function handleTeacherFormSave(event = null) {
+  event?.preventDefault?.()
+
+  if (!teacherFormState) {
+    return
+  }
+
+  const errors = validateTeacherForm(teacherFormState.values)
+
+  if (Object.keys(errors).length) {
+    teacherFormState = {
+      ...teacherFormState,
+      errors,
+    }
+    render()
+    return
+  }
+
+  let savedTeacher = null
+
+  if (teacherFormState.mode === 'edit') {
+    const existingTeacher = getTeacherById(teacherFormState.teacherId)
+
+    if (!existingTeacher) {
+      teacherFormState = {
+        ...teacherFormState,
+        errors: {
+          form: 'Không tìm thấy giáo viên cần sửa.',
+        },
+      }
+      render()
+      return
+    }
+
+    const updatedTeacher = buildTeacherFromForm(teacherFormState.values, existingTeacher)
+    teachers = teachers.map((teacher) =>
+      teacher.id === updatedTeacher.id ? updatedTeacher : teacher,
+    )
+    selectedTeacherId = updatedTeacher.id
+    savedTeacher = updatedTeacher
+  } else {
+    const createdTeacher = buildTeacherFromForm(teacherFormState.values)
+    teachers = [createdTeacher, ...teachers]
+    selectedTeacherId = createdTeacher.id
+    savedTeacher = createdTeacher
+  }
+
+  saveStoredTeachers(teachers)
+  queueCoreCloudSync('teacher-save')
+  writeTeacherThroughCloud(savedTeacher, 'teacher-save')
+  teacherFormState = null
+  render()
 }
 
 function minimizeWindow(windowId) {
@@ -11763,55 +11832,8 @@ function bindEvents() {
     }
   })
 
-  document.querySelector('[data-teacher-form]')?.addEventListener('submit', (event) => {
-    event.preventDefault()
-
-    const errors = validateTeacherForm(teacherFormState.values)
-
-    if (Object.keys(errors).length) {
-      teacherFormState = {
-        ...teacherFormState,
-        errors,
-      }
-      render()
-      return
-    }
-
-    let savedTeacher = null
-
-    if (teacherFormState.mode === 'edit') {
-      const existingTeacher = getTeacherById(teacherFormState.teacherId)
-
-      if (!existingTeacher) {
-        teacherFormState = {
-          ...teacherFormState,
-          errors: {
-            form: 'Không tìm thấy giáo viên cần sửa.',
-          },
-        }
-        render()
-        return
-      }
-
-      const updatedTeacher = buildTeacherFromForm(teacherFormState.values, existingTeacher)
-      teachers = teachers.map((teacher) =>
-        teacher.id === updatedTeacher.id ? updatedTeacher : teacher,
-      )
-      selectedTeacherId = updatedTeacher.id
-      savedTeacher = updatedTeacher
-    } else {
-      const createdTeacher = buildTeacherFromForm(teacherFormState.values)
-      teachers = [createdTeacher, ...teachers]
-      selectedTeacherId = createdTeacher.id
-      savedTeacher = createdTeacher
-    }
-
-    saveStoredTeachers(teachers)
-    queueCoreCloudSync('teacher-save')
-    writeTeacherThroughCloud(savedTeacher, 'teacher-save')
-    teacherFormState = null
-    render()
-  })
+  document.querySelector('[data-teacher-form]')?.addEventListener('submit', handleTeacherFormSave)
+  document.querySelector('[data-teacher-action="save-form"]')?.addEventListener('click', handleTeacherFormSave)
 
   document.querySelectorAll('[data-schedule-week-action]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -13057,12 +13079,8 @@ function bindEvents() {
           ...studentFormState.values,
           [fieldName]: control.value,
         },
-        errors: validateStudentForm({
-          ...studentFormState.values,
-          [fieldName]: control.value,
-        }),
       }
-      render()
+      updateStudentFormSaveButton()
     })
   })
 
@@ -13353,7 +13371,12 @@ function bindEvents() {
   })
 
   document.querySelectorAll('.student-row[data-student-id]').forEach((row) => {
-    row.addEventListener('click', () => {
+    row.addEventListener('pointerdown', (event) => {
+      event.stopPropagation()
+    })
+
+    row.addEventListener('click', (event) => {
+      event.stopPropagation()
       studentFilters = {
         ...studentFilters,
         selectedStudentId: row.dataset.studentId,
@@ -13864,12 +13887,19 @@ function moveShortcutBefore(draggedId, targetId) {
 
 function updateStudentFormSaveButton() {
   const saveButton = document.querySelector('[data-student-action="save-form"]')
+  const reasonWrap = document.querySelector('.student-save-button-wrap')
 
   if (!saveButton || !studentFormState) {
     return
   }
 
-  saveButton.disabled = !isStudentFormReady(studentFormState.values)
+  const disabledReason = getStudentFormSaveDisabledReason(studentFormState.values)
+  saveButton.disabled = Boolean(disabledReason)
+  saveButton.removeAttribute('aria-describedby')
+
+  if (reasonWrap) {
+    reasonWrap.title = disabledReason
+  }
 }
 
 function bindWindowDragging() {

@@ -5592,12 +5592,26 @@ h3 {
   box-shadow: 0 10px 24px rgba(31, 93, 153, 0.28);
   cursor: pointer;
   font-weight: 950;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 110ms ease;
   white-space: nowrap;
 }
 
-.teacher-add-button:hover {
+.teacher-add-button:hover,
+.teacher-add-button:focus-visible {
   border-color: rgba(180, 216, 255, 0.88);
+  outline: none;
   background: linear-gradient(180deg, #398bd6, #2469ad);
+  box-shadow: 0 12px 28px rgba(31, 93, 153, 0.34);
+  transform: translateY(-1px);
+}
+
+.teacher-add-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 6px 14px rgba(31, 93, 153, 0.24);
 }
 
 .teacher-list-section {
@@ -5981,11 +5995,35 @@ h3 {
   cursor: pointer;
   font: inherit;
   font-weight: 900;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 110ms ease,
+    opacity 140ms ease;
 }
 
-.teacher-form-actions button:hover,
-.teacher-form-header button:hover {
+.teacher-form-actions button:not(:disabled):hover,
+.teacher-form-actions button:not(:disabled):focus-visible,
+.teacher-form-header button:not(:disabled):hover,
+.teacher-form-header button:not(:disabled):focus-visible {
   border-color: rgba(118, 164, 231, 0.68);
+  outline: none;
+  background: rgba(118, 164, 231, 0.12);
+  box-shadow: 0 8px 18px rgba(31, 93, 153, 0.2);
+  transform: translateY(-1px);
+}
+
+.teacher-form-actions button:not(:disabled):active,
+.teacher-form-header button:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.teacher-form-actions button:disabled,
+.teacher-form-header button:disabled {
+  cursor: not-allowed;
+  opacity: 0.66;
 }
 
 .teacher-danger-button {
@@ -8736,6 +8774,13 @@ h3 {
   color: #edf4fc;
   background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    transform 110ms ease,
+    opacity 140ms ease;
 }
 
 .student-add-button,
@@ -8758,8 +8803,8 @@ h3 {
 
 .student-add-button:hover,
 .student-add-button:focus-visible,
-.student-save-button:hover,
-.student-save-button:focus-visible,
+.student-save-button:not(:disabled):hover,
+.student-save-button:not(:disabled):focus-visible,
 .student-secondary-button:hover,
 .student-secondary-button:focus-visible,
 .student-row-action:hover,
@@ -8768,14 +8813,29 @@ h3 {
 .student-danger-button:focus-visible {
   border-color: rgba(118, 164, 231, 0.8);
   outline: none;
+  box-shadow: 0 8px 18px rgba(31, 93, 153, 0.22);
+  transform: translateY(-1px);
+}
+
+.student-add-button:active,
+.student-save-button:not(:disabled):active,
+.student-secondary-button:active,
+.student-row-action:active,
+.student-danger-button:active {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 .student-save-button:disabled,
-.student-save-button:disabled:hover {
+.student-save-button:disabled:hover,
+.student-save-button:disabled:focus-visible {
   border-color: rgba(160, 184, 214, 0.18);
   color: #8290a0;
   background: rgba(255, 255, 255, 0.035);
   cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.72;
+  transform: none;
 }
 
 .student-stats {
@@ -9275,14 +9335,15 @@ h3 {
 
 .student-form-panel {
   position: absolute;
-  top: 4px;
+  top: -8px;
   bottom: 4px;
   left: 50%;
   z-index: 5;
   display: flex;
   width: min(78%, 1060px);
   max-width: calc(100% - 24px);
-  max-height: calc(100vh - 140px);
+  height: min(92dvh, calc(100dvh - 76px), 780px);
+  max-height: calc(100dvh - 76px);
   transform: translateX(-50%);
   flex-direction: column;
   overflow: hidden;
@@ -9319,6 +9380,9 @@ h3 {
 }
 
 .student-form-steps button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid rgba(160, 184, 214, 0.22);
   border-radius: 999px;
   padding: 4px 8px;
@@ -9327,12 +9391,44 @@ h3 {
   cursor: pointer;
   font-size: 0.8125rem;
   font-weight: 800;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 110ms ease;
+}
+
+.student-form-steps button:hover,
+.student-form-steps button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.68);
+  outline: none;
+  background: rgba(118, 164, 231, 0.12);
+  transform: translateY(-1px);
 }
 
 .student-form-steps button.active {
   border-color: rgba(118, 164, 231, 0.66);
   color: #ffffff;
   background: rgba(31, 93, 153, 0.56);
+}
+
+.student-form-steps button.needs-attention {
+  border-color: rgba(255, 178, 96, 0.56);
+  color: #ffe0b6;
+  background: rgba(168, 86, 18, 0.18);
+}
+
+.student-form-steps button.needs-attention span {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 999px;
+  color: #241408;
+  background: #ffd27a;
+  font-size: 0.72rem;
+  font-weight: 950;
+  line-height: 1;
 }
 
 .student-form-header-actions {
@@ -9343,11 +9439,8 @@ h3 {
   gap: 6px;
 }
 
-.student-form-hint {
-  flex: 0 0 auto;
-  margin: 7px 0 0;
-  color: #d6b88f;
-  font-size: 0.8125rem;
+.student-save-button-wrap {
+  display: inline-flex;
 }
 
 .student-form-scroll {
@@ -9473,23 +9566,6 @@ h3 {
 .student-class-session-option.is-inactive {
   border-color: rgba(255, 178, 96, 0.28);
   background: rgba(168, 86, 18, 0.13);
-}
-
-.student-form-actions {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  flex: 0 0 auto;
-  gap: 8px;
-  margin: 8px -12px -12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 9px 12px;
-  background: #101821;
-}
-
-.student-step-button {
-  min-width: 168px;
-  min-height: 36px;
-  text-align: center;
 }
 
 .student-parent-note-suggestions {

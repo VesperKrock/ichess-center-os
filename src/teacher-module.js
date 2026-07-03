@@ -803,7 +803,7 @@ function renderTeacherForm(formState, classSessions = []) {
         ${renderTeacherFormErrors(formState.errors)}
         <div class="teacher-form-actions">
           <button type="button" data-teacher-action="cancel-form">Hủy</button>
-          <button class="teacher-save-button" type="submit">Lưu giáo viên</button>
+          <button class="teacher-save-button" type="button" data-teacher-action="save-form">Lưu giáo viên</button>
         </div>
       </form>
     </div>
