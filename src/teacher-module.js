@@ -10,12 +10,17 @@ const teacherLevelOptions = ['preschool', 'beginner', 'intermediate', 'advanced'
 const teacherModeOptions = ['group', 'oneOnOne', 'competition', 'online']
 const teacherDayOptions = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const teacherTimeSlotOptions = ['morning', 'afternoon', 'evening', 'weekendMorning', 'weekendAfternoon']
+const teacherAccountStatuses = ['not_invited', 'invited', 'active', 'paused', 'revoked']
 
 const emptyTeacherFormValues = {
   fullName: '',
   displayName: '',
   phone: '',
   email: '',
+  loginEmail: '',
+  birthYear: '',
+  hometown: '',
+  currentArea: '',
   status: 'active',
   teacherType: 'fulltime',
   specialties: '',
@@ -32,6 +37,8 @@ const emptyTeacherFormValues = {
   scheduleNote: '',
   mainRole: 'Giáo viên cờ vua',
   note: '',
+  accountStatus: 'not_invited',
+  accountNotes: '',
 }
 
 export function createEmptyTeacherFormState() {
@@ -59,6 +66,10 @@ export function createEditTeacherFormState(teacher) {
       displayName: teacher.displayName ?? '',
       phone: teacher.phone ?? '',
       email: teacher.email ?? '',
+      loginEmail: teacher.loginEmail ?? teacher.email ?? '',
+      birthYear: teacher.birthYear ?? '',
+      hometown: teacher.hometown ?? '',
+      currentArea: teacher.currentArea ?? '',
       status: teacher.status ?? 'active',
       teacherType: teacher.teacherType ?? 'fulltime',
       specialties: (teacher.specialties ?? []).join(', '),
@@ -75,6 +86,8 @@ export function createEditTeacherFormState(teacher) {
       scheduleNote: teacher.scheduleNote ?? '',
       mainRole: teacher.mainRole ?? '',
       note: teacher.note ?? '',
+      accountStatus: teacher.accountStatus ?? 'not_invited',
+      accountNotes: teacher.accountNotes ?? '',
     },
     errors: {},
   }
@@ -83,6 +96,8 @@ export function createEditTeacherFormState(teacher) {
 export function validateTeacherForm(values) {
   const errors = {}
   const email = String(values.email ?? '').trim()
+  const loginEmail = String(values.loginEmail ?? '').trim()
+  const emailForLogin = loginEmail || email
 
   if (!String(values.fullName ?? '').trim()) {
     errors.fullName = 'Vui lòng nhập họ tên giáo viên.'
@@ -100,12 +115,24 @@ export function validateTeacherForm(values) {
     errors.email = 'Email cần có ký tự @.'
   }
 
+  if (loginEmail && !loginEmail.includes('@')) {
+    errors.loginEmail = 'Email đăng nhập tương lai cần có ký tự @.'
+  }
+
+  if (emailForLogin && /^admin\./i.test(emailForLogin)) {
+    errors.loginEmail = 'Giáo viên dùng email/Gmail thật, không dùng pattern admin.*.'
+  }
+
   if (!teacherStatuses.includes(values.status)) {
     errors.status = 'Trạng thái giáo viên không hợp lệ.'
   }
 
   if (!teacherTypes.includes(values.teacherType)) {
     errors.teacherType = 'Hình thức giáo viên không hợp lệ.'
+  }
+
+  if (values.accountStatus && !teacherAccountStatuses.includes(values.accountStatus)) {
+    errors.accountStatus = 'Trạng thái tài khoản giáo viên không hợp lệ.'
   }
 
   if (
@@ -130,6 +157,10 @@ export function buildTeacherFromForm(values, existingTeacher = null) {
     displayName: String(values.displayName ?? '').trim(),
     phone: String(values.phone ?? '').trim(),
     email: String(values.email ?? '').trim(),
+    loginEmail: String(values.loginEmail || values.email || '').trim(),
+    birthYear: String(values.birthYear ?? '').trim(),
+    hometown: String(values.hometown ?? '').trim(),
+    currentArea: String(values.currentArea ?? '').trim(),
     status: values.status,
     teacherType: values.teacherType,
     specialties: parseCommaSeparatedList(values.specialties),
@@ -143,9 +174,16 @@ export function buildTeacherFromForm(values, existingTeacher = null) {
     availableClassSessionIds: normalizeClassSessionIds(values.availableClassSessionIds),
     maxSessionsPerWeek: normalizeMaxSessionsPerWeek(values.maxSessionsPerWeek),
     canTakeNewClass: Boolean(values.canTakeNewClass),
+    acceptNewStudents: Boolean(values.canTakeNewClass),
     scheduleNote: String(values.scheduleNote ?? '').trim(),
     mainRole: String(values.mainRole ?? '').trim(),
     note: String(values.note ?? '').trim(),
+    accountStatus: teacherAccountStatuses.includes(values.accountStatus)
+      ? values.accountStatus
+      : existingTeacher?.accountStatus || 'not_invited',
+    accountLinkedAt: existingTeacher?.accountLinkedAt || null,
+    accountUserId: existingTeacher?.accountUserId || '',
+    accountNotes: String(values.accountNotes ?? '').trim(),
     assignedClassNames: Array.isArray(existingTeacher?.assignedClassNames)
       ? [...existingTeacher.assignedClassNames]
       : [],
@@ -247,6 +285,7 @@ export function renderTeacherModule(
   students = [],
   schedules = [],
   classSessions = [],
+  sessionReports = [],
 ) {
   const activeFilters = { ...initialTeacherFilters, ...filters }
   const filteredTeachers = getFilteredTeachers(teachers, activeFilters)
@@ -328,7 +367,14 @@ export function renderTeacherModule(
         }
       </section>
       ${selectedTeacher
-        ? renderTeacherProfile(selectedTeacher, teacherStudentLinkMap.get(normalizeId(selectedTeacher.id)), classSessions)
+        ? renderTeacherProfile(
+            selectedTeacher,
+            teacherStudentLinkMap.get(normalizeId(selectedTeacher.id)),
+            classSessions,
+            schedules,
+            students,
+            sessionReports,
+          )
         : ''}
       ${formState ? renderTeacherForm(formState, classSessions) : ''}
     </section>
@@ -431,6 +477,7 @@ function renderTeacherRow(teacher, studentLinks = createTeacherStudentLinkSummar
       <td>
         <span title="${escapeAttribute(teacher.phone)}">${escapeHtml(teacher.phone || '-')}</span>
         <span title="${escapeAttribute(teacher.email)}">${escapeHtml(teacher.email || '-')}</span>
+        <span class="teacher-account-readiness">${escapeHtml(getTeacherAccountStatusLabel(teacher.accountStatus))}</span>
       </td>
       <td>
         <span class="teacher-status-badge is-${escapeAttribute(teacher.status)}">
@@ -454,12 +501,19 @@ function renderTeacherRow(teacher, studentLinks = createTeacherStudentLinkSummar
   `
 }
 
-function renderTeacherProfile(teacher, studentLinks = createTeacherStudentLinkSummary([]), classSessions = []) {
+function renderTeacherProfile(
+  teacher,
+  studentLinks = createTeacherStudentLinkSummary([]),
+  classSessions = [],
+  schedules = [],
+  students = [],
+  sessionReports = [],
+) {
   return `
     <div class="teacher-profile-backdrop" role="presentation">
       <section class="teacher-profile-panel" aria-label="Hồ sơ giáo viên">
         <div class="teacher-profile-header">
-          <div class="teacher-profile-title">
+          <div class="teacher-profile-title teacher-profile-title-compact">
             <h4>${escapeHtml(teacher.fullName || 'Giáo viên')}</h4>
             <span>${escapeHtml(teacher.displayName || '-')}</span>
             <div class="teacher-profile-badges">
@@ -479,7 +533,7 @@ function renderTeacherProfile(teacher, studentLinks = createTeacherStudentLinkSu
         </div>
         <div class="teacher-profile-grid teacher-profile-two-pane">
           ${renderTeacherInfoPane(teacher, classSessions)}
-          ${renderTeacherTeachingUpdatePane(teacher, studentLinks)}
+          ${renderTeacherTeachingUpdatePane(teacher, studentLinks, schedules, students, sessionReports)}
         </div>
       </section>
     </div>
@@ -502,7 +556,14 @@ function renderTeacherInfoPane(teacher, classSessions = []) {
       ${renderProfileSection('Liên hệ', [
         ['Số điện thoại', teacher.phone],
         ['Email', teacher.email],
+        ['Email đăng nhập tương lai', teacher.loginEmail || teacher.email],
       ])}
+      ${renderProfileSection('Thông tin cá nhân', [
+        ['Năm sinh', teacher.birthYear],
+        ['Quê quán', teacher.hometown],
+        ['Khu vực hiện tại', teacher.currentArea],
+      ])}
+      ${renderTeacherAccountReadinessProfile(teacher)}
       <section class="teacher-profile-section">
         <h5>Giảng dạy</h5>
         ${renderProfileTagGroup('Lớp dạy phù hợp', (teacher.levels ?? []).map(getTeacherLevelLabel), 'Chưa cập nhật')}
@@ -513,13 +574,20 @@ function renderTeacherInfoPane(teacher, classSessions = []) {
   `
 }
 
-function renderTeacherTeachingUpdatePane(teacher, studentLinks = createTeacherStudentLinkSummary([])) {
+function renderTeacherTeachingUpdatePane(
+  teacher,
+  studentLinks = createTeacherStudentLinkSummary([]),
+  schedules = [],
+  students = [],
+  sessionReports = [],
+) {
   return `
     <section class="teacher-profile-pane teacher-teaching-update-pane" aria-label="Cập nhật tình hình giảng dạy">
       <div class="teacher-profile-pane-heading">
         <h5>Cập nhật tình hình giảng dạy</h5>
         <span>${Number(studentLinks.total || 0).toLocaleString('vi-VN')} học viên liên quan</span>
       </div>
+      ${renderTeacherPortalShell(teacher, schedules, students, sessionReports)}
       ${renderTeacherStudentUpdateSummary(teacher, studentLinks)}
       ${
         studentLinks.students.length
@@ -565,6 +633,298 @@ function renderTeacherStudentUpdateSummary(teacher, studentLinks = createTeacher
   `
 }
 
+function renderTeacherPortalShell(teacher, schedules = [], students = [], sessionReports = []) {
+  const teacherSessions = getTeacherScheduleSessions(teacher, schedules)
+  const summary = buildTeacherPortalSummary(teacher, teacherSessions, sessionReports)
+
+  return `
+    <details class="teacher-portal-shell" id="teacher-portal-shell-${escapeAttribute(teacher.id)}">
+      <summary>
+        <span>Mở Teacher Portal</span>
+        <small>Lịch dạy của tôi</small>
+      </summary>
+      <section class="teacher-portal-preview" aria-label="Bản xem trước Teacher Portal">
+        <header class="teacher-portal-header">
+          <div>
+            <strong>${escapeHtml(getTeacherDisplayName(teacher))}</strong>
+            <span>${escapeHtml(teacher.displayName || teacher.loginEmail || teacher.email || '')}</span>
+          </div>
+          <div class="teacher-portal-header-meta">
+            <span>${escapeHtml(teacher.loginEmail || teacher.email || 'Chưa có email đăng nhập')}</span>
+            <span>${escapeHtml(getTeacherStatusLabel(teacher.status))}</span>
+            <span>${escapeHtml(getTeacherAccountStatusLabel(teacher.accountStatus))}</span>
+          </div>
+        </header>
+        <p class="teacher-portal-preview-note">
+          Đây là bản xem trước Teacher Portal. Tài khoản đăng nhập giáo viên sẽ được bật ở phase sau.
+        </p>
+        <div class="teacher-portal-summary" aria-label="Tổng quan lịch dạy của tôi">
+          ${renderTeacherPortalSummaryCard('Ca sắp tới', summary.upcoming)}
+          ${renderTeacherPortalSummaryCard('Ca hôm nay', summary.today)}
+          ${renderTeacherPortalSummaryCard('Ca đã dạy', summary.past)}
+          ${renderTeacherPortalSummaryCard('Chưa báo cáo', summary.missingReport)}
+        </div>
+        <section class="teacher-my-schedule" aria-label="Lịch dạy của tôi">
+          <div class="teacher-my-schedule-heading">
+            <h5>Lịch dạy của tôi</h5>
+            <span>${Number(teacherSessions.length || 0).toLocaleString('vi-VN')} ca</span>
+          </div>
+          ${
+            teacherSessions.length
+              ? `<div class="teacher-my-schedule-list">${teacherSessions
+                  .map((session) => renderTeacherScheduleSessionCard(session, teacher, students))
+                  .join('')}</div>`
+              : '<div class="teacher-my-schedule-empty">Chưa có ca dạy nào được gắn với giáo viên này.</div>'
+          }
+        </section>
+      </section>
+    </details>
+  `
+}
+
+function renderTeacherPortalSummaryCard(label, value) {
+  return `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${Number(value || 0).toLocaleString('vi-VN')}</strong>
+    </article>
+  `
+}
+
+function renderTeacherScheduleSessionCard(session, teacher, students = []) {
+  const display = getTeacherScheduleSessionDisplay(session)
+  const studentList = getScheduleSessionStudents(session, students)
+  const roomLabel = getScheduleSessionLocationLabel(session)
+
+  return `
+    <article class="teacher-my-schedule-card">
+      <div class="teacher-my-schedule-main">
+        <time>${escapeHtml(display.dateLabel)}</time>
+        <strong>${escapeHtml(getScheduleTitle(session) || 'Ca dạy')}</strong>
+        <span>${escapeHtml(display.timeLabel)} · ${escapeHtml(roomLabel)}</span>
+      </div>
+      <div class="teacher-my-schedule-meta">
+        <span>${Number(studentList.length || 0).toLocaleString('vi-VN')} học viên</span>
+        <span>${escapeHtml(display.statusLabel)}</span>
+      </div>
+      <details class="teacher-session-preview">
+        <summary>Xem ca dạy</summary>
+        <div>
+          ${renderProfileRows([
+            ['Tên ca', getScheduleTitle(session) || 'Ca dạy'],
+            ['Thời gian', `${display.dateLabel} · ${display.timeLabel}`],
+            ['Địa điểm/phòng', roomLabel],
+            ['Giáo viên', getTeacherDisplayName(teacher)],
+          ])}
+          ${renderProfileTagGroup(
+            'Học viên',
+            studentList.map((student) => getStudentDisplayName(student, student.id)),
+            'Chưa có danh sách học viên',
+          )}
+          <p>Điểm danh và báo cáo ca dạy sẽ được chuyển vào Teacher Portal ở phase sau.</p>
+        </div>
+      </details>
+    </article>
+  `
+}
+
+export function getTeacherScheduleSessions(teacher, scheduleSessions = []) {
+  return (Array.isArray(scheduleSessions) ? scheduleSessions : [])
+    .filter((session) => isScheduleSessionAssignedToTeacher(session, teacher))
+    .sort(compareTeacherScheduleSessions)
+}
+
+export function isScheduleSessionAssignedToTeacher(session, teacher) {
+  const sessionTeacherId = normalizeId(session?.teacherId)
+  const teacherId = normalizeId(teacher?.id)
+
+  if (sessionTeacherId && teacherId) {
+    return sessionTeacherId === teacherId
+  }
+
+  const sessionTeacherName = normalizeText(session?.teacherName)
+  const teacherNames = [
+    teacher?.name,
+    teacher?.fullName,
+    teacher?.displayName,
+  ].map(normalizeText).filter(Boolean)
+
+  return Boolean(sessionTeacherName && teacherNames.includes(sessionTeacherName))
+}
+
+export function buildTeacherPortalSummary(teacher, sessions = [], sessionReports = []) {
+  const todayKey = getDateKey(new Date())
+
+  return sessions.reduce(
+    (summary, session) => {
+      const status = getTeacherScheduleSessionStatus(session, todayKey)
+
+      if (status === 'today') {
+        summary.today += 1
+      }
+
+      if (status === 'past') {
+        summary.past += 1
+
+        if (!hasSessionReportForScheduleSession(session, sessionReports)) {
+          summary.missingReport += 1
+        }
+      }
+
+      if (status === 'upcoming') {
+        summary.upcoming += 1
+      }
+
+      return summary
+    },
+    { teacherId: normalizeId(teacher?.id), upcoming: 0, today: 0, past: 0, missingReport: 0 },
+  )
+}
+
+function getTeacherScheduleSessionDisplay(session) {
+  const dateKey = getScheduleSessionDateKey(session)
+  const todayKey = getDateKey(new Date())
+  const status = getTeacherScheduleSessionStatus(session, todayKey)
+
+  return {
+    dateLabel: dateKey ? formatDisplayDateLabel(dateKey) : getScheduleRecurringDayLabel(session),
+    timeLabel: formatScheduleSessionTime(session),
+    statusLabel: getTeacherScheduleStatusLabel(status),
+  }
+}
+
+function getTeacherScheduleSessionStatus(session, todayKey = getDateKey(new Date())) {
+  const dateKey = getScheduleSessionDateKey(session)
+
+  if (!dateKey) {
+    return 'unknown'
+  }
+
+  if (dateKey === todayKey) {
+    return 'today'
+  }
+
+  return dateKey > todayKey ? 'upcoming' : 'past'
+}
+
+function hasSessionReportForScheduleSession(session, sessionReports = []) {
+  const sessionId = normalizeId(session?.id)
+  const occurrenceDate = String(session?.occurrenceDate || session?.date || '').trim()
+
+  return (Array.isArray(sessionReports) ? sessionReports : []).some((report) => {
+    const reportSessionId = normalizeId(report?.scheduleSessionId || report?.sessionId || report?.classSessionId)
+    const reportDate = String(report?.occurrenceDate || report?.date || '').trim()
+
+    return reportSessionId === sessionId && (!occurrenceDate || !reportDate || reportDate === occurrenceDate)
+  })
+}
+
+function getScheduleSessionDateKey(session) {
+  if (session?.occurrenceDate) {
+    return String(session.occurrenceDate).slice(0, 10)
+  }
+
+  if (session?.scheduleType === 'oneOff' && session?.date) {
+    return String(session.date).slice(0, 10)
+  }
+
+  if (session?.dayOfWeek) {
+    return getCurrentWeekDateForDay(session.dayOfWeek)
+  }
+
+  return ''
+}
+
+function getCurrentWeekDateForDay(dayOfWeek) {
+  const dayIndex = {
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+    sunday: 0,
+  }[dayOfWeek]
+
+  if (dayIndex === undefined) {
+    return ''
+  }
+
+  const today = new Date()
+  const date = new Date(today)
+  date.setDate(today.getDate() + dayIndex - today.getDay())
+  return getDateKey(date)
+}
+
+function compareTeacherScheduleSessions(firstSession, secondSession) {
+  const firstDate = getScheduleSessionDateKey(firstSession)
+  const secondDate = getScheduleSessionDateKey(secondSession)
+
+  if (firstDate !== secondDate) {
+    return firstDate.localeCompare(secondDate)
+  }
+
+  return String(firstSession?.startTime || '').localeCompare(String(secondSession?.startTime || ''))
+}
+
+function getScheduleSessionStudents(session, students = []) {
+  const studentIds = new Set((Array.isArray(session?.studentIds) ? session.studentIds : []).map(normalizeId))
+
+  return (Array.isArray(students) ? students : []).filter((student) => studentIds.has(normalizeId(student?.id)))
+}
+
+function getScheduleSessionLocationLabel(session) {
+  return String(session?.centerName || session?.location || session?.room || 'Cơ sở hiện tại').trim()
+}
+
+function formatScheduleSessionTime(session) {
+  const start = String(session?.startTime || '').trim()
+  const end = String(session?.endTime || '').trim()
+
+  if (start && end) {
+    return `${start}-${end}`
+  }
+
+  return start || end || 'Chưa cập nhật giờ'
+}
+
+function formatDisplayDateLabel(dateKey) {
+  if (!dateKey) {
+    return 'Chưa rõ ngày'
+  }
+
+  const date = new Date(`${dateKey}T00:00:00`)
+
+  if (Number.isNaN(date.getTime())) {
+    return dateKey
+  }
+
+  return new Intl.DateTimeFormat('vi-VN', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  }).format(date)
+}
+
+function getScheduleRecurringDayLabel(session) {
+  return session?.dayOfWeek ? getTeacherDayLabel(session.dayOfWeek) : 'Chưa rõ ngày'
+}
+
+function getTeacherScheduleStatusLabel(status) {
+  const labels = {
+    upcoming: 'Sắp dạy',
+    today: 'Hôm nay',
+    past: 'Đã dạy',
+    unknown: 'Chưa rõ',
+  }
+
+  return labels[status] ?? labels.unknown
+}
+
+function getDateKey(date) {
+  return new Date(date).toISOString().slice(0, 10)
+}
+
 function renderTeacherStudentUpdateRow(link) {
   const student = link.student ?? {}
   const studentName = getStudentDisplayName(student, link.studentId)
@@ -607,6 +967,20 @@ function renderProfileRows(rows) {
         )
         .join('')}
     </dl>
+  `
+}
+
+function renderTeacherAccountReadinessProfile(teacher) {
+  return `
+    <section class="teacher-profile-section teacher-account-readiness-card">
+      <h5>Tài khoản giáo viên</h5>
+      ${renderProfileRows([
+        ['Email đăng nhập tương lai', teacher.loginEmail || teacher.email],
+        ['Trạng thái tài khoản', getTeacherAccountStatusLabel(teacher.accountStatus)],
+        ['Ghi chú tài khoản', teacher.accountNotes],
+      ])}
+      <p>Tài khoản đăng nhập giáo viên sẽ được bật ở phase sau. Hiện chưa tạo tài khoản đăng nhập, chưa gửi lời mời và chưa mở Teacher Portal login.</p>
+    </section>
   `
 }
 
@@ -734,7 +1108,11 @@ function renderTeacherForm(formState, classSessions = []) {
           ${renderTeacherInputField('Họ tên đầy đủ', 'fullName', formState)}
           ${renderTeacherInputField('Tên hiển thị', 'displayName', formState)}
           ${renderTeacherInputField('Số điện thoại', 'phone', formState)}
-          ${renderTeacherInputField('Email', 'email', formState, 'email')}
+          ${renderTeacherInputField('Email/Gmail thật', 'email', formState, 'email', 'ducthang.ichess@gmail.com')}
+          ${renderTeacherInputField('Email đăng nhập tương lai', 'loginEmail', formState, 'email', 'Mặc định lấy theo email thật')}
+          ${renderTeacherInputField('Năm sinh', 'birthYear', formState, 'text', '1998')}
+          ${renderTeacherInputField('Quê quán', 'hometown', formState, 'text', 'Hà Nội')}
+          ${renderTeacherInputField('Khu vực hiện tại', 'currentArea', formState, 'text', 'Quận 7, TP.HCM')}
           ${renderTeacherSelectField(
             'Trạng thái',
             'status',
@@ -771,6 +1149,7 @@ function renderTeacherForm(formState, classSessions = []) {
             <span>Ghi chú</span>
             <textarea data-teacher-form-field="note">${escapeHtml(formState.values.note ?? '')}</textarea>
           </label>
+          ${renderTeacherAccountReadinessForm(formState)}
           <fieldset class="teacher-level-field">
             <legend>Hình thức dạy</legend>
             <div class="teacher-level-options">
@@ -807,6 +1186,22 @@ function renderTeacherForm(formState, classSessions = []) {
         </div>
       </form>
     </div>
+  `
+}
+
+function renderTeacherAccountReadinessForm(formState) {
+  return `
+    <section class="teacher-account-readiness-card teacher-form-field-wide">
+      <div>
+        <strong>Tài khoản giáo viên</strong>
+        <span>${escapeHtml(getTeacherAccountStatusLabel(formState.values.accountStatus))}</span>
+      </div>
+      <p>Tài khoản giáo viên sẽ được bật ở phase sau. Hiện chỉ lưu email đăng nhập tương lai, chưa tạo tài khoản đăng nhập, chưa gửi lời mời và chưa mở Teacher Portal login.</p>
+      <label class="teacher-form-field teacher-form-field-wide">
+        <span>Ghi chú tài khoản</span>
+        <textarea data-teacher-form-field="accountNotes">${escapeHtml(formState.values.accountNotes ?? '')}</textarea>
+      </label>
+    </section>
   `
 }
 
@@ -1225,6 +1620,10 @@ function getTeacherStatusLabel(status) {
   return labels[status] ?? 'Đang dạy'
 }
 
+function getTeacherDisplayName(teacher) {
+  return String(teacher?.displayName || teacher?.fullName || teacher?.name || 'Giáo viên').trim()
+}
+
 function getTeacherTypeLabel(teacherType) {
   const labels = {
     fulltime: 'Full-time',
@@ -1233,6 +1632,18 @@ function getTeacherTypeLabel(teacherType) {
   }
 
   return labels[teacherType] ?? 'Full-time'
+}
+
+function getTeacherAccountStatusLabel(accountStatus) {
+  const labels = {
+    not_invited: 'Chưa tạo tài khoản đăng nhập',
+    invited: 'Đã mời, chờ kích hoạt',
+    active: 'Tài khoản giáo viên đang hoạt động',
+    paused: 'Tài khoản giáo viên tạm dừng',
+    revoked: 'Tài khoản giáo viên đã thu hồi',
+  }
+
+  return labels[accountStatus] ?? labels.not_invited
 }
 
 function getTeacherInitials(fullName) {

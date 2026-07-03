@@ -73,6 +73,7 @@ const VALID_NOTIFICATION_TYPES = [
 ]
 const VALID_TEACHER_STATUSES = ['active', 'paused', 'inactive']
 const VALID_TEACHER_TYPES = ['fulltime', 'parttime', 'collaborator']
+const VALID_TEACHER_ACCOUNT_STATUSES = ['not_invited', 'invited', 'active', 'paused', 'revoked']
 const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
 const VALID_SCHEDULE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const VALID_CLASS_SESSION_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -1176,6 +1177,11 @@ function normalizeTeachers(teachers) {
       const teacherType = VALID_TEACHER_TYPES.includes(teacher.teacherType)
         ? teacher.teacherType
         : 'fulltime'
+      const email = String(teacher.email || '')
+      const loginEmail = String(teacher.loginEmail || email)
+      const accountStatus = VALID_TEACHER_ACCOUNT_STATUSES.includes(teacher.accountStatus)
+        ? teacher.accountStatus
+        : 'not_invited'
 
       return {
         ...teacher,
@@ -1183,7 +1189,15 @@ function normalizeTeachers(teachers) {
         fullName: String(teacher.fullName || teacher.name || 'GiĂ¡o viĂªn'),
         displayName: String(teacher.displayName || ''),
         phone: String(teacher.phone || ''),
-        email: String(teacher.email || ''),
+        email,
+        loginEmail,
+        birthDate: String(teacher.birthDate || ''),
+        birthYear: String(teacher.birthYear || ''),
+        gender: String(teacher.gender || ''),
+        hometown: String(teacher.hometown || ''),
+        currentArea: String(teacher.currentArea || ''),
+        address: String(teacher.address || ''),
+        avatarUrl: String(teacher.avatarUrl || ''),
         status,
         teacherType,
         specialties: normalizeStringArray(teacher.specialties),
@@ -1212,9 +1226,19 @@ function normalizeTeachers(teachers) {
             : typeof teacher.acceptNewStudents === 'boolean'
               ? teacher.acceptNewStudents
               : true,
+        acceptNewStudents:
+          typeof teacher.acceptNewStudents === 'boolean'
+            ? teacher.acceptNewStudents
+            : typeof teacher.canTakeNewClass === 'boolean'
+              ? teacher.canTakeNewClass
+              : true,
         scheduleNote: String(teacher.scheduleNote || ''),
         mainRole: String(teacher.mainRole || 'GiĂ¡o viĂªn cá» vua'),
         note: String(teacher.note || ''),
+        accountStatus,
+        accountLinkedAt: teacher.accountLinkedAt ? normalizeDateTime(teacher.accountLinkedAt) : null,
+        accountUserId: String(teacher.accountUserId || ''),
+        accountNotes: String(teacher.accountNotes || ''),
         createdAt: teacher.createdAt ? normalizeDateTime(teacher.createdAt) : now,
         updatedAt: teacher.updatedAt ? normalizeDateTime(teacher.updatedAt) : now,
       }

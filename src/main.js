@@ -3789,6 +3789,7 @@ function renderWindowBody(windowItem) {
       students,
       scheduleSessions,
       classSessions,
+      sessionReports,
     )
   }
 
