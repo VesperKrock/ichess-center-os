@@ -1,8 +1,7 @@
 import { CURRENT_CENTER_ID, getCurrentSupabaseUser } from './supabase-auth.js'
 import { getSupabaseClient } from './supabase-client.js'
 
-const profileColumns =
-  'user_id, center_id, role, display_name, member_label, email_snapshot, updated_at'
+const CENTER_MEMBER_PROFILE_SELECT_FIELDS = 'user_id, center_id, role, status'
 
 export function mapCenterMemberProfile(row = {}) {
   return {
@@ -30,13 +29,11 @@ export function buildMyCenterMemberProfileUpdate({
   displayName,
   memberLabel,
   emailSnapshot,
-  updatedAt = new Date().toISOString(),
 } = {}) {
   return {
     display_name: String(displayName ?? '').trim(),
     member_label: String(memberLabel ?? '').trim(),
     email_snapshot: String(emailSnapshot ?? '').trim(),
-    updated_at: updatedAt,
   }
 }
 
@@ -51,9 +48,9 @@ export async function listCenterMemberProfiles({
 
   const { data, error } = await authResult.data.client
     .from('center_members')
-    .select(profileColumns)
+    .select(CENTER_MEMBER_PROFILE_SELECT_FIELDS)
     .eq('center_id', centerId)
-    .order('display_name', { ascending: true, nullsFirst: false })
+    .order('role', { ascending: true, nullsFirst: false })
 
   if (error) {
     return failure(error.message, isMissingProfileSchemaError(error))
@@ -94,7 +91,7 @@ export async function updateMyCenterMemberProfile({
     .update(payload)
     .eq('center_id', centerId)
     .eq('user_id', authResult.data.user.id)
-    .select(profileColumns)
+    .select(CENTER_MEMBER_PROFILE_SELECT_FIELDS)
     .maybeSingle()
 
   if (error) {

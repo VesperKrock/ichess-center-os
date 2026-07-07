@@ -1,6 +1,7 @@
 export const CLOUD_BOOTSTRAP_ENTITY_TYPES = Object.freeze([
   'student',
   'teacher',
+  'class_session',
   'schedule_session',
 ])
 
@@ -45,6 +46,9 @@ export function getCloudBootstrapSnapshotCounts(snapshot = {}) {
   return {
     student: Array.isArray(snapshot.students) ? snapshot.students.length : 0,
     teacher: Array.isArray(snapshot.teachers) ? snapshot.teachers.length : 0,
+    class_session: Array.isArray(snapshot.classSessions)
+      ? snapshot.classSessions.length
+      : 0,
     schedule_session: Array.isArray(snapshot.scheduleSessions)
       ? snapshot.scheduleSessions.length
       : 0,

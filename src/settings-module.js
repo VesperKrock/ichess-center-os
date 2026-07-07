@@ -3,6 +3,13 @@ export const initialSettingsFilters = {
   status: 'all',
 }
 
+export const settingsTabOptions = [
+  { id: 'center-info', label: 'Thông tin cơ sở' },
+  { id: 'class-sessions', label: 'Ca học / Lớp' },
+  { id: 'tuition-packages', label: 'Gói học phí' },
+  { id: 'sample-data', label: 'Danh mục nhập liệu' },
+]
+
 const classSessionStatusOptions = [
   { value: 'active', label: 'Đang dùng' },
   { value: 'inactive', label: 'Đã ngưng' },
@@ -109,8 +116,14 @@ export function renderSettingsModule(
   filters = initialSettingsFilters,
   formState = null,
   cloudDbPanelState = null,
+  options = {},
 ) {
   const activeFilters = { ...initialSettingsFilters, ...filters }
+  const activeTab = settingsTabOptions.some((tab) => tab.id === options.activeTab)
+    ? options.activeTab
+    : 'class-sessions'
+  const tuitionPackages = buildSettingsTuitionPackages(options.tuitionRecords ?? [])
+  const centerInfo = buildCenterInfo(options.centerInfo)
   const filteredClassSessions = getFilteredSettingsClassSessions(
     classSessions,
     students,
@@ -133,9 +146,23 @@ export function renderSettingsModule(
       </div>
 
       <div class="settings-tabs" aria-label="Nhóm cài đặt">
-        <strong>Ca học / Lớp</strong>
+        ${settingsTabOptions
+          .map((tab) => `
+            <button
+              type="button"
+              class="${tab.id === activeTab ? 'is-active' : ''}"
+              data-settings-tab="${escapeAttribute(tab.id)}"
+            >
+              ${escapeHtml(tab.label)}
+            </button>
+          `)
+          .join('')}
       </div>
 
+      ${activeTab === 'center-info' ? renderCenterInfoPanel(centerInfo, cloudDbPanelState) : ''}
+      ${activeTab === 'tuition-packages' ? renderTuitionPackagePanel(tuitionPackages) : ''}
+      ${activeTab === 'sample-data' ? renderSampleDataPanel() : ''}
+      ${activeTab === 'class-sessions' ? `
       <section class="settings-class-session-panel" aria-label="Quản lý Ca học / Lớp">
         <div class="settings-panel-header">
           <div>
@@ -193,12 +220,179 @@ export function renderSettingsModule(
           </table>
         </div>
       </section>
-
-      ${renderCloudDbPanel(cloudDbPanelState)}
+      ` : ''}
 
       ${formState ? renderSettingsClassSessionForm(formState) : ''}
     </section>
   `
+}
+
+function renderCenterInfoPanel(centerInfo, cloudDbPanelState) {
+  return `
+    <section class="settings-class-session-panel settings-info-panel" aria-label="Thông tin cơ sở">
+      <div class="settings-panel-header">
+        <div>
+          <h4>Thông tin cơ sở</h4>
+          <p>Thông tin vận hành dùng chung trong các module admin.</p>
+        </div>
+      </div>
+      <div class="settings-info-grid">
+        ${renderInfoItem('Tên cơ sở', centerInfo.name)}
+        ${renderInfoItem('Mã cơ sở', centerInfo.code)}
+        ${renderInfoItem('Môi trường', centerInfo.environment)}
+        ${renderInfoItem('Trạng thái', centerInfo.status)}
+        ${renderInfoItem('Địa chỉ', centerInfo.address)}
+        ${renderInfoItem('Số điện thoại', centerInfo.phone)}
+      </div>
+      <p class="settings-product-note">Thông tin pháp lý/địa chỉ chi tiết sẽ được owner cập nhật sau nếu cần.</p>
+      ${renderCenterAppearancePanel()}
+      ${renderCloudDbPanel(cloudDbPanelState)}
+    </section>
+  `
+}
+
+function renderCenterAppearancePanel() {
+  return `
+    <section class="settings-appearance-panel" aria-label="Giao diện cơ sở">
+      <div>
+        <h4>Giao diện cơ sở</h4>
+        <p>Foundation an toàn cho hình nền cơ sở, chưa tải ảnh lên trong phase này.</p>
+      </div>
+      <div class="settings-appearance-grid">
+        <article>
+          <span>Nền hiện tại</span>
+          <strong>Nền mặc định</strong>
+        </article>
+        <article>
+          <span>Lớp phủ đọc chữ</span>
+          <strong>Vừa</strong>
+        </article>
+        <article>
+          <span>Lưu trữ ảnh</span>
+          <strong>Bật sau</strong>
+        </article>
+      </div>
+      <p class="settings-product-note">Tùy chỉnh hình nền sẽ được bật sau khi cấu hình lưu trữ ảnh; các module vẫn dùng panel tối và lớp phủ để không chìm vào nền.</p>
+    </section>
+  `
+}
+
+function renderTuitionPackagePanel(tuitionPackages) {
+  return `
+    <section class="settings-class-session-panel settings-tuition-package-panel" aria-label="Gói học phí">
+      <div class="settings-panel-header">
+        <div>
+          <h4>Gói học phí</h4>
+          <p>Danh mục gói dùng chung với Module Học phí khi nhập học phí và gia hạn cho học viên.</p>
+        </div>
+      </div>
+      <p class="settings-product-note">Gói tạo/cập nhật trong Module Học phí sẽ xuất hiện tại đây; danh mục này là nguồn tham chiếu chung cho vận hành học phí.</p>
+      <div class="settings-class-session-table-wrap">
+        <table class="settings-class-session-table">
+          <thead>
+            <tr>
+              <th>Tên gói</th>
+              <th>Số buổi</th>
+              <th>Học phí</th>
+              <th>Đang dùng</th>
+              <th>Ghi chú</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              tuitionPackages.length
+                ? tuitionPackages.map((tuitionPackage) => `
+                  <tr>
+                    <td><strong>${escapeHtml(tuitionPackage.packageName)}</strong></td>
+                    <td>${escapeHtml(tuitionPackage.totalSessions || 'Linh hoạt')}</td>
+                    <td>${escapeHtml(formatMoney(tuitionPackage.totalAmount))}</td>
+                    <td>${tuitionPackage.usageCount} hồ sơ</td>
+                    <td>${escapeHtml(tuitionPackage.note || 'Từ dữ liệu học phí hiện có')}</td>
+                  </tr>
+                `).join('')
+                : '<tr><td class="settings-empty" colspan="5">Chưa có gói học phí. Khi nhập học phí cho học viên, danh mục này sẽ tự hiển thị.</td></tr>'
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `
+}
+
+function renderSampleDataPanel() {
+  const groups = [
+    ['Cấp độ học', ['Mới học', 'Cơ bản', 'Nâng cao']],
+    ['Mốc bot', ['Starter', 'Practice', 'Challenge']],
+    ['Trạng thái học viên', ['Đang học', 'Bảo lưu', 'Đã nghỉ']],
+    ['Nhóm chăm sóc', ['Cần gọi lại', 'Theo dõi học phí', 'Cần lịch bù']],
+  ]
+
+  return `
+    <section class="settings-class-session-panel settings-sample-data-panel" aria-label="Danh mục nhập liệu">
+      <div class="settings-panel-header">
+        <div>
+          <h4>Danh mục nhập liệu</h4>
+          <p>Các danh mục này giúp nhập liệu thống nhất trong cơ sở.</p>
+        </div>
+      </div>
+      <div class="settings-sample-grid">
+        ${groups.map(([title, items]) => `
+          <article>
+            <h5>${escapeHtml(title)}</h5>
+            <div>
+              ${items.map((item) => `<span>${escapeHtml(item)}</span>`).join('')}
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    </section>
+  `
+}
+
+function renderInfoItem(label, value) {
+  return `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || 'Chưa cập nhật')}</strong>
+    </article>
+  `
+}
+
+function buildCenterInfo(centerInfo = {}) {
+  return {
+    name: centerInfo.name || 'DreamHome',
+    code: centerInfo.code || 'dreamhome',
+    environment: centerInfo.environment || 'Vận hành chính',
+    status: centerInfo.status || 'Đang hoạt động',
+    address: centerInfo.address || '',
+    phone: centerInfo.phone || '',
+  }
+}
+
+function buildSettingsTuitionPackages(tuitionRecords = []) {
+  const packagesByKey = new Map()
+
+  tuitionRecords.forEach((record) => {
+    const packageName = String(record.packageName || '').trim()
+
+    if (!packageName) {
+      return
+    }
+
+    const key = normalizeSearchText(`${packageName}|${record.totalSessions || ''}|${record.totalAmount || ''}`)
+    const existing = packagesByKey.get(key)
+    packagesByKey.set(key, {
+      packageName,
+      totalSessions: String(record.totalSessions || ''),
+      totalAmount: Number(record.totalAmount || 0),
+      note: String(record.note || ''),
+      usageCount: (existing?.usageCount || 0) + 1,
+    })
+  })
+
+  return Array.from(packagesByKey.values()).sort((firstPackage, secondPackage) =>
+    compareText(firstPackage.packageName, secondPackage.packageName),
+  )
 }
 
 export function getFilteredSettingsClassSessions(
@@ -433,17 +627,22 @@ function renderDaysOfWeekField(values = [], error = '') {
       <div>
         ${classSessionDayOptions
           .map(
-            (option) => `
-              <label>
+            (option) => {
+              const inputId = `settings-class-session-day-${option.value}`
+
+              return `
+              <div class="settings-day-option">
                 <input
+                  id="${escapeAttribute(inputId)}"
                   type="checkbox"
                   value="${escapeAttribute(option.value)}"
                   data-settings-class-session-day
                   ${selectedDays.includes(option.value) ? 'checked' : ''}
                 />
-                <span>${escapeHtml(option.label)}</span>
-              </label>
-            `,
+                <label for="${escapeAttribute(inputId)}">${escapeHtml(option.label)}</label>
+              </div>
+            `
+            },
           )
           .join('')}
       </div>
@@ -610,6 +809,20 @@ function normalizeSearchText(value) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0)
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 'Chưa cập nhật'
+  }
+
+  return amount.toLocaleString('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
+  })
 }
 
 function escapeAttribute(value) {

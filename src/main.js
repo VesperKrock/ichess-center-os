@@ -437,6 +437,10 @@ let windowOverflowOutsidePointerBound = false
 let notificationOutsidePointerBound = false
 let centerProfileOutsidePointerBound = false
 let moduleNotificationOutsidePointerBound = false
+let textEditingActionPointerUntil = 0
+let nativeSelectInteractionUntil = 0
+let nativeSelectChangeRenderUntil = 0
+let pendingWindowFocusAfterRender = null
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
 if (shouldReplaceLegacyEightSeed(students)) {
@@ -454,6 +458,7 @@ let parentConsultationFormState = null
 let skipNextParentContactScrollCapture = false
 let parentQuickNoteState = null
 let parentNoteHistoryContactId = null
+let parentContactDetailId = null
 let staffFilters = { ...initialStaffFilters }
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 let sessionReports = getStoredSessionReports()
@@ -488,6 +493,7 @@ if (JSON.stringify(normalizedTeacherRoster) !== JSON.stringify(teachers)) {
 }
 let studentFormState = null
 let settingsFilters = { ...initialSettingsFilters }
+let settingsActiveTab = 'class-sessions'
 let settingsClassSessionFormState = null
 let tuitionFilters = { ...initialTuitionFilters }
 let tuitionFormState = null
@@ -661,6 +667,7 @@ function resetTransientStateForCenterSwitch() {
   parentConsultationFilters = { ...initialParentConsultationFilters }
   staffFilters = { ...initialStaffFilters }
   settingsFilters = { ...initialSettingsFilters }
+  settingsActiveTab = 'class-sessions'
   tuitionFilters = { ...initialTuitionFilters }
   cashflowFilters = { ...initialCashflowFilters }
   inventoryFilters = { ...initialInventoryFilters }
@@ -672,6 +679,7 @@ function resetTransientStateForCenterSwitch() {
   parentConsultationFormState = null
   parentQuickNoteState = null
   parentNoteHistoryContactId = null
+  parentContactDetailId = null
   scheduleFormState = null
   scheduleReportState = null
   scheduleAdminAttendanceState = null
@@ -736,6 +744,7 @@ function render() {
     return
   }
 
+  const activeElementSnapshot = getActiveElementRenderSnapshot()
   const preservedScrollState = rememberPreservedScrollPositions()
   const scheduleReportScrollState = getScheduleReportScrollState()
   const scheduleFormScrollState = getScheduleFormScrollState()
@@ -774,6 +783,8 @@ function render() {
   restoreScheduleFormScrollState(scheduleFormScrollState)
   restoreParentContactFormScrollTop()
   restorePreservedScrollPositions(preservedScrollState)
+  restoreActiveElementRenderSnapshot(activeElementSnapshot)
+  restorePendingWindowFocusAfterRender()
   focusPendingAttendanceBaselineCell()
   skipNextParentContactScrollCapture = false
   updateClock()
@@ -794,8 +805,197 @@ function isTextEditingElement(element) {
   )
 }
 
+function isNativeSelectElement(element) {
+  return element?.tagName?.toLowerCase() === 'select'
+}
+
 function shouldDeferRenderForTextEditing() {
-  return isTextEditingElement(document.activeElement)
+  if (shouldDelayTextEditingRenderFlushForAction()) {
+    return false
+  }
+
+  const activeElement = document.activeElement
+
+  if (isNativeSelectElement(activeElement)) {
+    return !shouldAllowNativeSelectChangeRender()
+  }
+
+  if (shouldAllowImmediateRenderForActiveElement(activeElement)) {
+    return false
+  }
+
+  return isTextEditingElement(activeElement)
+}
+
+function shouldAllowImmediateRenderForActiveElement(element) {
+  if (!element) {
+    return false
+  }
+
+  return Boolean(element.closest?.('[data-student-filter]'))
+}
+
+function shouldAllowNativeSelectChangeRender() {
+  return Date.now() < nativeSelectChangeRenderUntil
+}
+
+function markNativeSelectInteraction() {
+  nativeSelectInteractionUntil = Date.now() + 1200
+}
+
+function markNativeSelectChangeRender() {
+  nativeSelectChangeRenderUntil = Date.now() + 240
+  nativeSelectInteractionUntil = 0
+}
+
+function isNativeSelectInteractionInProgress() {
+  return Date.now() < nativeSelectInteractionUntil
+}
+
+function isInteractiveActionElement(element) {
+  return Boolean(
+    element?.closest?.(
+      [
+        'button',
+        'summary',
+        'a[href]',
+        '[role="button"]',
+        '[type="button"]',
+        '[type="submit"]',
+        '[data-action]',
+        '[data-window-action]',
+        '[data-student-action]',
+        '[data-teacher-action]',
+        '[data-settings-class-session-action]',
+        '[data-attendance-baseline-action]',
+        '[data-notification-action]',
+        '[data-notification-module-id]',
+        '[data-taskbar-window-id]',
+        '[data-module-id]',
+      ].join(','),
+    ),
+  )
+}
+
+function shouldDelayTextEditingRenderFlushForAction() {
+  return Date.now() < textEditingActionPointerUntil
+}
+
+function getActiveElementRenderSnapshot() {
+  if (shouldDelayTextEditingRenderFlushForAction()) {
+    return null
+  }
+
+  const element = document.activeElement
+
+  if (!isTextEditingElement(element) || isNativeSelectElement(element)) {
+    return null
+  }
+
+  const selector = getStableElementSelector(element)
+
+  if (!selector) {
+    return null
+  }
+
+  return {
+    selector,
+    value: 'value' in element ? element.value : element.textContent,
+    selectionStart: 'selectionStart' in element ? element.selectionStart : null,
+    selectionEnd: 'selectionEnd' in element ? element.selectionEnd : null,
+  }
+}
+
+function restoreActiveElementRenderSnapshot(snapshot) {
+  if (!snapshot || shouldDelayTextEditingRenderFlushForAction()) {
+    return
+  }
+
+  const element = document.querySelector(snapshot.selector)
+
+  if (!element) {
+    return
+  }
+
+  if ('value' in element && snapshot.value !== null && String(element.value) !== String(snapshot.value)) {
+    return
+  }
+
+  focusElementWithoutScrolling(element)
+
+  if (
+    snapshot.selectionStart !== null &&
+    snapshot.selectionEnd !== null &&
+    typeof element.setSelectionRange === 'function'
+  ) {
+    element.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd)
+  }
+}
+
+function restorePendingWindowFocusAfterRender() {
+  if (!pendingWindowFocusAfterRender) {
+    return
+  }
+
+  const windowId = pendingWindowFocusAfterRender
+  const windowItem = openWindows.find((item) => item.id === windowId)
+  const windowElement = document.querySelector(`[data-window-id="${escapeCssAttributeValue(windowId)}"]`)
+
+  if (windowItem && windowElement) {
+    windowElement.style.zIndex = String(windowItem.zIndex)
+    windowElement.classList.add('is-child-open-target')
+  }
+
+  pendingWindowFocusAfterRender = null
+}
+
+function getStableElementSelector(element) {
+  if (!element) {
+    return ''
+  }
+
+  if (element.id) {
+    return `#${escapeCssIdentifier(element.id)}`
+  }
+
+  const stableAttributeNames = [
+    'data-student-filter',
+    'data-student-form-field',
+    'data-teacher-form-field',
+    'data-settings-class-session-field',
+    'data-schedule-form-field',
+    'data-parent-consultation-filter',
+    'data-parent-form-field',
+    'data-tuition-filter',
+    'data-cashflow-filter',
+    'data-inventory-filter',
+    'data-attendance-board-filter',
+    'data-report-filter',
+    'data-staff-filter',
+    'name',
+  ]
+  const attributeName = stableAttributeNames.find((name) => element.hasAttribute?.(name))
+
+  if (!attributeName) {
+    return ''
+  }
+
+  const value = element.getAttribute(attributeName)
+  const tagName = element.tagName?.toLowerCase() || ''
+
+  return `${tagName}[${attributeName}="${escapeCssAttributeValue(value)}"]`
+}
+
+function escapeCssIdentifier(value) {
+  if (window.CSS?.escape) {
+    return window.CSS.escape(String(value))
+  }
+
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&')
+}
+
+function escapeCssAttributeValue(value) {
+  return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
 function deferRenderUntilTextEditingEnds() {
@@ -803,6 +1003,11 @@ function deferRenderUntilTextEditingEnds() {
 }
 
 function flushDeferredTextEditingRender() {
+  if (shouldDelayTextEditingRenderFlushForAction()) {
+    window.setTimeout(flushDeferredTextEditingRender, 80)
+    return
+  }
+
   if (!pendingTextEditingRender || shouldDeferRenderForTextEditing()) {
     return
   }
@@ -816,6 +1021,55 @@ function scheduleDeferredTextEditingRenderFlush() {
 }
 
 function installTextEditingRenderProtection() {
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (isNativeSelectElement(event.target)) {
+        markNativeSelectInteraction()
+      }
+    },
+    true,
+  )
+
+  document.addEventListener(
+    'focusin',
+    (event) => {
+      if (isNativeSelectElement(event.target)) {
+        markNativeSelectInteraction()
+      }
+    },
+    true,
+  )
+
+  document.addEventListener(
+    'change',
+    (event) => {
+      if (isNativeSelectElement(event.target)) {
+        markNativeSelectChangeRender()
+      }
+    },
+    true,
+  )
+
+  document.addEventListener(
+    'focusout',
+    (event) => {
+      if (isNativeSelectElement(event.target)) {
+        nativeSelectInteractionUntil = 0
+      }
+    },
+    true,
+  )
+
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (shouldDeferRenderForTextEditing() && isInteractiveActionElement(event.target)) {
+        textEditingActionPointerUntil = Date.now() + 180
+      }
+    },
+    true,
+  )
   document.addEventListener('focusout', scheduleDeferredTextEditingRenderFlush, true)
   document.addEventListener('change', scheduleDeferredTextEditingRenderFlush, true)
 }
@@ -3777,6 +4031,7 @@ function renderWindowBody(windowItem) {
       parentConsultationFormState,
       parentQuickNoteState,
       parentNoteHistoryContactId,
+      parentContactDetailId,
     )
   }
 
@@ -3921,6 +4176,16 @@ function renderWindowBody(windowItem) {
       settingsFilters,
       settingsClassSessionFormState,
       getSettingsCloudDbPanelState(),
+      {
+        activeTab: settingsActiveTab,
+        tuitionRecords,
+        centerInfo: {
+          name: 'DreamHome',
+          code: getCurrentResolvedCenterId(),
+          environment: cloudStatus.configStatus === 'configured' ? 'Vận hành chính' : 'Vận hành nội bộ',
+          status: 'Đang hoạt động',
+        },
+      },
     )
   }
 
@@ -4672,8 +4937,9 @@ function openModuleWindow(moduleId) {
 
   const offset = (openWindows.length % 7) * 28
 
+  const nextWindowId = `window-${nextWindowNumber}`
   openWindows.push({
-    id: `window-${nextWindowNumber}`,
+    id: nextWindowId,
     moduleId,
     x: 72 + offset,
     y: 42 + offset,
@@ -4690,10 +4956,48 @@ function openModuleWindow(moduleId) {
     },
   })
   nextWindowNumber += 1
+  focusWindow(nextWindowId)
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
   render()
+}
+
+function openModuleWindowFromChildInteraction(moduleId) {
+  const beforeWindow = openWindows.find((windowItem) => windowItem.moduleId === moduleId)
+  openModuleWindow(moduleId)
+  const targetWindow = beforeWindow || openWindows.find((windowItem) => windowItem.moduleId === moduleId)
+
+  if (!targetWindow) {
+    return
+  }
+
+  focusWindowAfterRender(targetWindow.id)
+}
+
+function openStudentDetailWindowFromChildInteraction(studentId) {
+  const beforeWindow = openWindows.find(
+    (windowItem) => windowItem.type === 'student-detail' && windowItem.studentId === studentId,
+  )
+  openStudentDetailWindow(studentId)
+  const targetWindow = beforeWindow || openWindows.find(
+    (windowItem) => windowItem.type === 'student-detail' && windowItem.studentId === studentId,
+  )
+
+  if (!targetWindow) {
+    return
+  }
+
+  focusWindowAfterRender(targetWindow.id)
+}
+
+function focusWindowAfterRender(windowId) {
+  pendingWindowFocusAfterRender = windowId
+  focusWindow(windowId)
+  window.setTimeout(() => {
+    focusWindow(windowId)
+    render()
+  }, 0)
 }
 
 function openInventorySubwindow(view) {
@@ -5055,12 +5359,13 @@ function focusWindow(windowId) {
 }
 
 function bringWindowToFront(windowId) {
-  const nextZIndex = ++topZIndex
   const targetWindow = openWindows.find((windowItem) => windowItem.id === windowId)
 
   if (!targetWindow) {
     return
   }
+
+  const nextZIndex = ++topZIndex
 
   openWindows = [
     ...openWindows.filter((windowItem) => windowItem.id !== windowId),
@@ -5166,7 +5471,20 @@ function toggleMaximizeWindow(windowId) {
 }
 
 function closeWindow(windowId) {
-  openWindows = openWindows.filter((windowItem) => windowItem.id !== windowId)
+  const remainingWindows = openWindows.filter((windowItem) => windowItem.id !== windowId)
+  const nextActiveWindow = remainingWindows
+    .filter((windowItem) => !windowItem.minimized)
+    .reduce(
+      (activeWindow, windowItem) =>
+        !activeWindow || windowItem.zIndex > activeWindow.zIndex ? windowItem : activeWindow,
+      null,
+    )
+
+  openWindows = remainingWindows.map((windowItem) =>
+    nextActiveWindow && windowItem.id === nextActiveWindow.id
+      ? { ...windowItem, zIndex: ++topZIndex }
+      : windowItem,
+  )
   render()
 }
 
@@ -6854,7 +7172,7 @@ function applyCloudBootstrapSnapshotToLocal(snapshot) {
       error: backupResult.error,
       reason: backupResult.reason,
       backupKey: null,
-      counts: getCloudBootstrapSnapshotCounts({ students, teachers, scheduleSessions }),
+      counts: getCloudBootstrapSnapshotCounts({ students, teachers, classSessions, scheduleSessions }),
     }
   }
 
@@ -6872,6 +7190,12 @@ function applyCloudBootstrapSnapshotToLocal(snapshot) {
     teachers = getStoredTeachers([])
   }
 
+  if (Array.isArray(snapshot.classSessions) && snapshot.classSessions.length > 0) {
+    classSessions = snapshot.classSessions
+    saveStoredClassSessions(classSessions)
+    classSessions = getStoredClassSessions([])
+  }
+
   if (Array.isArray(snapshot.scheduleSessions) && snapshot.scheduleSessions.length > 0) {
     scheduleSessions = snapshot.scheduleSessions
     saveStoredSchedule(scheduleSessions)
@@ -6881,7 +7205,7 @@ function applyCloudBootstrapSnapshotToLocal(snapshot) {
   return {
     ok: true,
     backupKey,
-    counts: getCloudBootstrapSnapshotCounts({ students, teachers, scheduleSessions }),
+    counts: getCloudBootstrapSnapshotCounts({ students, teachers, classSessions, scheduleSessions }),
   }
 }
 
@@ -10328,13 +10652,16 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-student-filter]').forEach((control) => {
-    control.addEventListener('input', () => {
+    const updateStudentFilter = () => {
       const filterName = control.dataset.studentFilter
       const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
 
       studentFilters = {
         ...studentFilters,
         [filterName]: control.value,
+      }
+      if (control.matches('select')) {
+        markNativeSelectChangeRender()
       }
       render()
 
@@ -10344,7 +10671,9 @@ function bindEvents() {
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
-    })
+    }
+
+    control.addEventListener(control.matches('select') ? 'change' : 'input', updateStudentFilter)
   })
 
   document.querySelectorAll('[data-settings-filter]').forEach((control) => {
@@ -10357,6 +10686,9 @@ function bindEvents() {
       settingsFilters = {
         ...settingsFilters,
         [filterName]: control.value,
+      }
+      if (control.matches('select')) {
+        markNativeSelectChangeRender()
       }
       render()
 
@@ -10839,9 +11171,18 @@ function bindEvents() {
     render()
   })
 
+  document.querySelectorAll('[data-settings-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      settingsActiveTab = button.dataset.settingsTab || 'class-sessions'
+      settingsClassSessionFormState = null
+      render()
+    })
+  })
+
   document.querySelector('[data-settings-class-session-action="open-create"]')?.addEventListener(
     'click',
     () => {
+      settingsActiveTab = 'class-sessions'
       settingsClassSessionFormState = createEmptySettingsClassSessionFormState()
       render()
     },
@@ -10858,6 +11199,7 @@ function bindEvents() {
       }
 
       settingsClassSessionFormState = createEditSettingsClassSessionFormState(classSession)
+      settingsActiveTab = 'class-sessions'
       render()
     })
   })
@@ -10930,7 +11272,12 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-settings-class-session-day]').forEach((checkbox) => {
-    checkbox.addEventListener('change', () => {
+    checkbox.addEventListener('pointerdown', (event) => {
+      event.stopPropagation()
+    })
+
+    checkbox.addEventListener('change', (event) => {
+      event.stopPropagation()
       if (!settingsClassSessionFormState) {
         return
       }
@@ -11005,6 +11352,9 @@ function bindEvents() {
         ...parentConsultationFilters,
         [filterName]: control.value,
       }
+      if (control.matches('select')) {
+        markNativeSelectChangeRender()
+      }
       render()
 
       const nextControl = document.querySelector(
@@ -11029,6 +11379,66 @@ function bindEvents() {
     button.addEventListener('click', () => {
       parentNoteHistoryContactId = null
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-row-id]').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('button,a,input,select,textarea,[role="button"]')) {
+        return
+      }
+
+      parentContactDetailId = row.dataset.parentContactRowId || null
+      render()
+    })
+
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return
+      }
+
+      if (event.target.closest('button,a,input,select,textarea,[role="button"]')) {
+        return
+      }
+
+      event.preventDefault()
+      parentContactDetailId = row.dataset.parentContactRowId || null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-action="detail"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      parentContactDetailId = button.dataset.contactId || null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-action="close-detail"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      parentContactDetailId = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-linked-student-id]').forEach((button) => {
+    button.addEventListener('pointerdown', (event) => {
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+    })
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      const studentId = button.dataset.parentLinkedStudentId
+
+      if (!studentId) {
+        return
+      }
+
+      parentContactDetailId = null
+      openStudentDetailWindowFromChildInteraction(studentId)
     })
   })
 
@@ -13133,8 +13543,17 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-student-action="open-settings-module"]')?.addEventListener('click', () => {
-    openModuleWindow('cai-dat-co-so')
+  document.querySelector('[data-student-action="open-settings-module"]')?.addEventListener('pointerdown', (event) => {
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+  })
+
+  document.querySelector('[data-student-action="open-settings-module"]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+    textEditingActionPointerUntil = Date.now() + 180
+    openModuleWindowFromChildInteraction('cai-dat-co-so')
   })
 
   document.querySelectorAll('[data-care-note-field]').forEach((control) => {

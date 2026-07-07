@@ -1818,7 +1818,7 @@ h3 {
 
 .parent-consultation-table {
   width: 100%;
-  min-width: 1160px;
+  min-width: 880px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1841,14 +1841,6 @@ h3 {
 
 .parent-consultation-table th:nth-child(5) {
   width: 245px;
-}
-
-.parent-consultation-table th:nth-child(6) {
-  width: 190px;
-}
-
-.parent-consultation-table th:nth-child(7) {
-  width: 116px;
 }
 
 .parent-consultation-table th,
@@ -1878,6 +1870,16 @@ h3 {
 
 .parent-consultation-row:hover {
   background: rgba(118, 164, 231, 0.075);
+}
+
+.parent-consultation-row {
+  cursor: pointer;
+}
+
+.parent-consultation-row:focus-visible {
+  outline: 2px solid rgba(118, 164, 231, 0.72);
+  outline-offset: -2px;
+  background: rgba(118, 164, 231, 0.095);
 }
 
 .parent-contact-cell,
@@ -9885,7 +9887,8 @@ h3 {
 
 .settings-summary span,
 .settings-tabs span,
-.settings-tabs strong {
+.settings-tabs strong,
+.settings-tabs button {
   display: inline-flex;
   border: 1px solid rgba(160, 184, 214, 0.2);
   border-radius: 999px;
@@ -9896,10 +9899,18 @@ h3 {
   font-weight: 850;
 }
 
-.settings-tabs strong {
+.settings-tabs button {
+  cursor: pointer;
+}
+
+.settings-tabs strong,
+.settings-tabs button.is-active,
+.settings-tabs button:hover,
+.settings-tabs button:focus-visible {
   border-color: rgba(118, 164, 231, 0.58);
   color: #ffffff;
   background: rgba(31, 93, 153, 0.42);
+  outline: none;
 }
 
 .settings-class-session-panel {
@@ -9912,6 +9923,134 @@ h3 {
   border-radius: 8px;
   padding: 10px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-info-grid,
+.settings-appearance-grid,
+.settings-sample-grid,
+.parent-contact-detail-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.settings-info-grid article,
+.settings-appearance-grid article,
+.settings-sample-grid article,
+.parent-contact-detail-body article {
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.settings-info-grid span,
+.settings-appearance-grid span,
+.settings-sample-grid h5,
+.parent-contact-detail-body span {
+  display: block;
+  margin: 0 0 6px;
+  color: #9fb1c7;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.settings-info-grid strong,
+.settings-appearance-grid strong,
+.parent-contact-detail-body strong {
+  color: #edf4fc;
+}
+
+.settings-appearance-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-appearance-panel h4 {
+  margin: 0;
+}
+
+.settings-product-note {
+  margin: 0;
+  color: #aebdd0;
+  font-size: 0.86rem;
+}
+
+.settings-sample-grid article div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-sample-grid article span,
+.parent-linked-students button span {
+  color: #c8d4e3;
+}
+
+.settings-sample-grid article span {
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.parent-contact-detail-panel {
+  width: min(920px, calc(100% - 28px));
+  max-width: none;
+  max-height: min(760px, calc(100dvh - 104px));
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.parent-contact-detail-scroll {
+  display: grid;
+  min-height: 0;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.parent-linked-students,
+.parent-detail-note-history {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.parent-linked-students h4,
+.parent-detail-note-history h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.92rem;
+}
+
+.parent-linked-students-list {
+  display: grid;
+  max-height: min(240px, 32dvh);
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.parent-linked-students-list button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.045);
+  text-align: left;
+  cursor: pointer;
+}
+
+.parent-linked-students-list button:hover,
+.parent-linked-students-list button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.62);
+  outline: none;
+  background: rgba(31, 93, 153, 0.34);
 }
 
 .settings-panel-header {
@@ -10147,23 +10286,41 @@ h3 {
   gap: 6px;
 }
 
-.settings-days-field label {
+.settings-day-option {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+
+.settings-day-option label {
+  display: inline-flex;
+  min-width: 42px;
+  justify-content: center;
   border: 1px solid rgba(160, 184, 214, 0.22);
   border-radius: 999px;
-  padding: 6px 8px;
+  padding: 7px 10px;
   color: #dce7f4;
   background: rgba(255, 255, 255, 0.045);
   font-size: 0.8rem;
   font-weight: 850;
+  cursor: pointer;
 }
 
-.settings-days-field input {
+.settings-day-option input {
   width: auto;
   min-height: 0;
   accent-color: #60a5fa;
+}
+
+.settings-day-option input:checked + label {
+  border-color: rgba(96, 165, 250, 0.68);
+  color: #ffffff;
+  background: rgba(37, 99, 235, 0.36);
+}
+
+.settings-day-option input:focus-visible + label {
+  outline: 2px solid rgba(96, 165, 250, 0.72);
+  outline-offset: 2px;
 }
 
 .settings-form-grid small {
@@ -10172,7 +10329,7 @@ h3 {
 }
 
 .settings-form-grid label.has-error input,
-.settings-days-field.has-error label {
+.settings-days-field.has-error .settings-day-option label {
   border-color: rgba(255, 132, 132, 0.76);
 }
 
@@ -14676,7 +14833,7 @@ h3 {
   position: fixed;
   inset-inline: 0;
   bottom: 0;
-  z-index: 10;
+  z-index: 2147482000;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -14777,7 +14934,7 @@ h3 {
   position: absolute;
   left: 112px;
   bottom: calc(100% + 10px);
-  z-index: 2147483001;
+  z-index: 2147483002;
   width: min(340px, calc(100vw - 24px));
   overflow: hidden;
   border: 1px solid rgba(180, 202, 232, 0.24);
@@ -14889,7 +15046,7 @@ h3 {
   position: fixed;
   right: var(--notification-panel-right, 12px);
   bottom: var(--notification-panel-bottom, 56px);
-  z-index: 2147483000;
+  z-index: 2147483004;
   display: flex;
   width: min(420px, calc(100vw - 24px));
   max-height: min(560px, calc(100vh - 84px));
@@ -16009,6 +16166,7 @@ h3 {
 
 .start-menu {
   position: absolute;
+  z-index: 2147483003;
   left: 12px;
   bottom: 56px;
   width: min(360px, calc(100vw - 24px));
@@ -16023,6 +16181,7 @@ h3 {
 
 .window-overflow-menu {
   position: absolute;
+  z-index: 2147483001;
   right: 246px;
   bottom: 56px;
   width: min(260px, calc(100vw - 24px));

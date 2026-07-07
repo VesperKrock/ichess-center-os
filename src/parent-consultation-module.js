@@ -668,6 +668,7 @@ export function getFilteredParentConsultations(contacts, filters = initialParent
         contact.email,
         contact.studentName,
         contact.leadStudentName,
+        contact.studentNames,
         contact.studentBirthYear,
         contact.leadNeed,
         contact.parentFeedbackAboutChild,
@@ -682,6 +683,13 @@ export function getFilteredParentConsultations(contacts, filters = initialParent
           appointment.note,
           parentAppointmentTypeLabels[appointment.appointmentType],
           parentAppointmentStatusLabels[appointment.status],
+        ]),
+        ...(contact.relatedStudents ?? []).flatMap((student) => [
+          student.fullName,
+          student.parentName,
+          student.parentPhone,
+          student.fatherPhone,
+          student.motherPhone,
         ]),
         ...Object.values(contact.enrollmentDraft ?? {}),
       ].some((value) => normalizeText(value).includes(normalizedQuery))
@@ -709,6 +717,109 @@ export function getParentConsultationStats(contacts) {
   }
 }
 
+export function mergeParentContactsWithStudents(contacts = [], students = []) {
+  const contactsByGroupKey = new Map()
+
+  ;(contacts ?? []).forEach((contact) => {
+    const groupKey = getParentContactGroupKey(contact)
+    contactsByGroupKey.set(groupKey, {
+      ...contact,
+      groupKey,
+      relatedStudents: contact.studentId
+        ? students.filter((student) => student.id === contact.studentId)
+        : [],
+      sourceLabel: parentContactSourceLabels[contact.source] ?? 'Chưa rõ',
+    })
+  })
+
+  buildDerivedParentContactsFromStudents(students).forEach((derivedContact) => {
+    const existingContact = contactsByGroupKey.get(derivedContact.groupKey)
+
+    if (existingContact) {
+      contactsByGroupKey.set(derivedContact.groupKey, {
+        ...existingContact,
+        relatedStudents: mergeRelatedStudents(
+          existingContact.relatedStudents,
+          derivedContact.relatedStudents,
+        ),
+        studentNames: derivedContact.studentNames,
+        studentCount: derivedContact.studentCount,
+        sourceLabel: existingContact.sourceLabel || 'Từ hồ sơ học viên',
+      })
+      return
+    }
+
+    contactsByGroupKey.set(derivedContact.groupKey, derivedContact)
+  })
+
+  return Array.from(contactsByGroupKey.values()).sort(
+    (firstContact, secondContact) =>
+      compareContactText(firstContact.parentName, secondContact.parentName) ||
+      compareContactText(firstContact.phone, secondContact.phone),
+  )
+}
+
+export function buildDerivedParentContactsFromStudents(students = []) {
+  const contactsByGroupKey = new Map()
+
+  ;(students ?? [])
+    .filter((student) => student && !student.isDeleted)
+    .forEach((student) => {
+      const parentName = getStudentParentName(student)
+      const phone = getStudentParentPhone(student)
+
+      if (!parentName && !phone) {
+        return
+      }
+
+      const groupKey = phone
+        ? `phone:${normalizePhone(phone)}`
+        : `fallback:${normalizeText(parentName)}:${normalizeText(student.fullName || student.name || student.id)}`
+      const existing = contactsByGroupKey.get(groupKey)
+      const relatedStudents = mergeRelatedStudents(existing?.relatedStudents, [student])
+      const studentNames = relatedStudents.map((item) => item.fullName || item.name || '').filter(Boolean)
+
+      contactsByGroupKey.set(groupKey, {
+        id: `student-parent-${groupKey.replace(/[^a-z0-9]+/g, '-')}`,
+        groupKey,
+        contactType: 'currentParent',
+        parentName: parentName || 'Phụ huynh chưa có tên',
+        phone,
+        secondaryPhone: getStudentSecondaryParentPhone(student, phone),
+        email: '',
+        studentName: studentNames[0] || '',
+        studentNames: studentNames.join(', '),
+        studentId: relatedStudents[0]?.id || '',
+        leadStudentName: '',
+        studentBirthYear: '',
+        leadStudentAge: '',
+        leadNeed: '',
+        parentFeedbackAboutChild: '',
+        consultationStatus: 'activeCare',
+        source: 'oldStudent',
+        sourceLabel: 'Từ hồ sơ học viên',
+        interestedProgram: '',
+        preferredSchedule: '',
+        locationArea: '',
+        consultedAt: '',
+        registeredAt: '',
+        lastContactAt: getLatestStudentCareNoteAt(relatedStudents),
+        lastNote: getLatestStudentCareNoteContent(relatedStudents),
+        nextAction: '',
+        careLogs: [],
+        appointments: [],
+        enrollmentDraft: {},
+        relatedStudents,
+        studentCount: relatedStudents.length,
+        isDerivedFromStudents: true,
+        createdAt: student.createdAt || new Date().toISOString(),
+        updatedAt: student.updatedAt || new Date().toISOString(),
+      })
+    })
+
+  return Array.from(contactsByGroupKey.values())
+}
+
 export function renderParentConsultationModule(
   contacts,
   filters = initialParentConsultationFilters,
@@ -716,9 +827,14 @@ export function renderParentConsultationModule(
   formState = null,
   quickNoteState = null,
   noteHistoryContactId = null,
+  detailContactId = null,
 ) {
-  const stats = getParentConsultationStats(contacts)
-  const filteredContacts = getFilteredParentConsultations(contacts, filters)
+  const mergedContacts = mergeParentContactsWithStudents(contacts, students)
+  const stats = getParentConsultationStats(mergedContacts)
+  const filteredContacts = getFilteredParentConsultations(mergedContacts, filters)
+  const detailContact = detailContactId
+    ? mergedContacts.find((contact) => contact.id === detailContactId)
+    : null
 
   return `
     <section class="parent-consultation-module" aria-label="Danh sách phụ huynh và tư vấn">
@@ -738,7 +854,7 @@ export function renderParentConsultationModule(
         <div class="parent-consultation-list-header">
           <div>
             <h3>Phụ huynh / Tư vấn</h3>
-            <span>${filteredContacts.length}/${contacts.length} liên hệ</span>
+            <span>${filteredContacts.length}/${mergedContacts.length} liên hệ</span>
           </div>
           <span class="parent-consultation-phase">8F · Audit/polish</span>
         </div>
@@ -783,9 +899,10 @@ export function renderParentConsultationModule(
             `
         }
       </section>
+      ${detailContact ? renderParentContactDetailPanel(detailContact) : ''}
       ${formState ? renderParentContactForm(formState, students) : ''}
-      ${noteHistoryContactId ? renderNoteHistoryModal(contacts, noteHistoryContactId) : ''}
-      ${quickNoteState ? renderQuickNoteModal(contacts, quickNoteState) : ''}
+      ${noteHistoryContactId ? renderNoteHistoryModal(mergedContacts, noteHistoryContactId) : ''}
+      ${quickNoteState ? renderQuickNoteModal(mergedContacts, quickNoteState) : ''}
     </section>
   `
 }
@@ -833,8 +950,6 @@ function renderContactsTable(contacts) {
             <th>Trạng thái</th>
             <th>Nguồn</th>
             <th>Ghi chú gần nhất</th>
-            <th>Thêm ghi chú</th>
-            <th>Thao tác</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -848,10 +963,9 @@ function renderContactRow(contact) {
   const lastContactTime = formatDateTime(contact.lastContactAt)
   const latestLog = getLatestCareLog(contact.careLogs)
   const latestNote = contact.lastNote || latestLog?.content || 'Chưa có ghi chú'
-  const upcomingAppointment = getUpcomingAppointment(contact.appointments)
 
   return `
-    <tr class="parent-consultation-row">
+    <tr class="parent-consultation-row" data-parent-contact-row-id="${escapeAttribute(contact.id)}" tabindex="0">
       <td>
         <div class="parent-contact-cell">
           <span class="parent-contact-badge is-${escapeAttribute(contact.contactType)}">
@@ -859,6 +973,7 @@ function renderContactRow(contact) {
           </span>
           <strong>${escapeHtml(contact.parentName || 'Chưa có tên')}</strong>
           <span>${escapeHtml(contact.phone || 'Chưa có số điện thoại')}</span>
+          <small>${escapeHtml(contact.studentCount ? `${contact.studentCount} học viên` : contact.sourceLabel || '')}</small>
         </div>
       </td>
       <td>
@@ -873,7 +988,7 @@ function renderContactRow(contact) {
         </span>
       </td>
       <td>
-        <span class="parent-source-badge">${escapeHtml(parentContactSourceLabels[contact.source] ?? 'Chưa rõ')}</span>
+        <span class="parent-source-badge">${escapeHtml(contact.sourceLabel || parentContactSourceLabels[contact.source] || 'Chưa rõ')}</span>
       </td>
       <td>
         <button
@@ -885,32 +1000,64 @@ function renderContactRow(contact) {
           ${lastContactTime ? `<small>${escapeHtml(lastContactTime)}</small>` : ''}
         </button>
       </td>
-      <td>
-        <div class="parent-quick-note-cell">
-          <button
-            type="button"
-            data-parent-quick-note-contact-id="${escapeAttribute(contact.id)}"
-          >
-            Thêm ghi chú
-          </button>
-          ${
-            upcomingAppointment
-              ? `<small>Hẹn ${escapeHtml(parentAppointmentTypeLabels[upcomingAppointment.appointmentType] ?? 'Khác')}: ${escapeHtml(formatDateTime(upcomingAppointment.scheduledAt, true))}</small>`
-              : ''
-          }
-        </div>
-      </td>
-      <td>
-        <div class="parent-contact-actions">
-          <button type="button" data-parent-contact-action="edit" data-contact-id="${escapeAttribute(contact.id)}">
-            Sửa
-          </button>
-          <button type="button" data-parent-contact-action="delete" data-contact-id="${escapeAttribute(contact.id)}">
-            Xóa
-          </button>
-        </div>
-      </td>
     </tr>
+  `
+}
+
+function renderParentContactDetailPanel(contact) {
+  const relatedStudents = contact.relatedStudents ?? []
+  const noteLogs = getContactNoteHistoryLogs(contact)
+
+  return `
+    <div class="parent-note-modal-backdrop" role="presentation">
+      <section class="parent-note-modal parent-contact-detail-panel" aria-label="Chi tiết liên hệ phụ huynh">
+        <div class="parent-note-modal-header">
+          <div>
+            <h3>${escapeHtml(contact.parentName || 'Phụ huynh')}</h3>
+            <p>${escapeHtml(contact.phone || 'Chưa có số điện thoại')} · ${escapeHtml(contact.sourceLabel || 'Từ hồ sơ học viên')}</p>
+          </div>
+          <button type="button" data-parent-contact-action="close-detail" aria-label="Đóng">X</button>
+        </div>
+        <div class="parent-contact-detail-scroll">
+          <div class="parent-contact-detail-body">
+            <article>
+              <span>Trạng thái</span>
+              <strong>${escapeHtml(parentConsultationStatusLabels[contact.consultationStatus] || 'Đang chăm sóc')}</strong>
+            </article>
+            <article>
+              <span>Ghi chú gần nhất</span>
+              <strong>${escapeHtml(contact.lastNote || 'Chưa có ghi chú')}</strong>
+            </article>
+          </div>
+          <div class="parent-linked-students" aria-label="Học viên liên quan">
+            <h4>Học viên liên quan</h4>
+            <div class="parent-linked-students-list">
+              ${
+                relatedStudents.length
+                  ? relatedStudents.map((student) => `
+                    <button
+                      type="button"
+                      data-parent-linked-student-id="${escapeAttribute(student.id)}"
+                    >
+                      <strong>${escapeHtml(student.fullName || student.name || 'Học viên')}</strong>
+                      <span>${escapeHtml([student.parentName, student.parentPhone || student.motherPhone || student.fatherPhone].filter(Boolean).join(' · ') || 'Từ hồ sơ học viên')}</span>
+                    </button>
+                  `).join('')
+                  : '<p>Chưa có học viên liên quan.</p>'
+              }
+            </div>
+          </div>
+          <div class="parent-note-history-list parent-detail-note-history" aria-label="Lịch sử ghi chú">
+            <h4>Lịch sử ghi chú</h4>
+            ${
+              noteLogs.length
+                ? noteLogs.map((log) => renderNoteHistoryItem(log)).join('')
+                : '<div class="parent-note-history-empty">Chưa có lịch sử ghi chú.</div>'
+            }
+          </div>
+        </div>
+      </section>
+    </div>
   `
 }
 
@@ -952,7 +1099,7 @@ function renderNoteHistoryModal(contacts, contactId) {
     return ''
   }
 
-  const logs = sortCareLogsNewestFirst(contact.careLogs ?? [])
+  const logs = getContactNoteHistoryLogs(contact)
 
   return `
     <div class="parent-note-modal-backdrop" role="presentation">
@@ -972,14 +1119,56 @@ function renderNoteHistoryModal(contacts, contactId) {
           }
         </div>
         <div class="parent-note-modal-actions">
-          <button type="button" data-parent-quick-note-contact-id="${escapeAttribute(contact.id)}">
-            + Thêm ghi chú
-          </button>
+          ${contact.isDerivedFromStudents ? '' : `
+            <button type="button" data-parent-quick-note-contact-id="${escapeAttribute(contact.id)}">
+              + Thêm ghi chú
+            </button>
+          `}
           <button type="button" data-parent-note-history-action="close">Đóng</button>
         </div>
       </section>
     </div>
   `
+}
+
+function getContactNoteHistoryLogs(contact) {
+  const storedLogs = sortCareLogsNewestFirst(contact.careLogs ?? [])
+
+  if (storedLogs.length || !contact.isDerivedFromStudents) {
+    return storedLogs
+  }
+
+  const studentLogs = (contact.relatedStudents ?? []).flatMap((student) => {
+    const careLogs = (student.careNotes ?? [])
+      .filter((note) => String(note?.content || '').trim())
+      .map((note, index) => ({
+        id: note.id || `student-note-${student.id}-${index}`,
+        contactedAt: note.createdAt || note.updatedAt || student.updatedAt || student.createdAt || '',
+        createdAt: note.createdAt || note.updatedAt || student.updatedAt || student.createdAt || '',
+        channel: 'note',
+        content: String(note.content || '').trim(),
+        result: `Từ hồ sơ học viên: ${student.fullName || student.name || 'Học viên'}`,
+        nextAction: '',
+      }))
+
+    const parentNote = String(student.parentNotes || '').trim()
+
+    if (parentNote) {
+      careLogs.push({
+        id: `student-parent-note-${student.id}`,
+        contactedAt: student.updatedAt || student.createdAt || contact.updatedAt || contact.createdAt || '',
+        createdAt: student.updatedAt || student.createdAt || contact.updatedAt || contact.createdAt || '',
+        channel: 'note',
+        content: parentNote,
+        result: `Từ hồ sơ học viên: ${student.fullName || student.name || 'Học viên'}`,
+        nextAction: '',
+      })
+    }
+
+    return careLogs
+  })
+
+  return sortCareLogsNewestFirst(studentLogs)
 }
 
 function renderNoteHistoryItem(log) {
@@ -1608,6 +1797,13 @@ function renderStudentPicker(values, students) {
 }
 
 function getStudentSummary(contact) {
+  if (Array.isArray(contact.relatedStudents) && contact.relatedStudents.length > 1) {
+    return {
+      title: `${contact.relatedStudents.length} học viên`,
+      subtitle: contact.studentNames || contact.relatedStudents.map((student) => student.fullName).filter(Boolean).join(', '),
+    }
+  }
+
   if (contact.studentName) {
     return {
       title: contact.studentName,
@@ -1624,6 +1820,89 @@ function getStudentSummary(contact) {
     title: `${leadStudent}${age}`,
     subtitle: contact.leadNeed || contact.interestedProgram || 'Mong muốn tư vấn chưa nhập',
   }
+}
+
+function getParentContactGroupKey(contact = {}) {
+  const phone = normalizePhone(contact.phone || contact.parentPhone || contact.secondaryPhone)
+
+  if (phone) {
+    return `phone:${phone}`
+  }
+
+  return `fallback:${normalizeText(contact.parentName || contact.name)}:${normalizeText(contact.studentName || contact.leadStudentName || contact.studentId || contact.id)}`
+}
+
+function getStudentParentName(student = {}) {
+  return String(
+    student.parentName ||
+      student.guardianName ||
+      student.caregiverName ||
+      student.motherName ||
+      student.fatherName ||
+      '',
+  ).trim()
+}
+
+function getStudentParentPhone(student = {}) {
+  return String(
+    student.motherPhone ||
+      student.fatherPhone ||
+      student.parentPhone ||
+      student.guardianPhone ||
+      student.caregiverPhone ||
+      student.phone ||
+      '',
+  ).trim()
+}
+
+function getStudentSecondaryParentPhone(student = {}, primaryPhone = '') {
+  const primaryDigits = normalizePhone(primaryPhone)
+  return [student.fatherPhone, student.motherPhone, student.parentPhone, student.guardianPhone, student.phone]
+    .map((phone) => String(phone || '').trim())
+    .find((phone) => phone && normalizePhone(phone) !== primaryDigits) || ''
+}
+
+function mergeRelatedStudents(currentStudents = [], nextStudents = []) {
+  const studentsById = new Map()
+
+  ;[...(currentStudents ?? []), ...(nextStudents ?? [])].forEach((student) => {
+    if (student?.id) {
+      studentsById.set(student.id, student)
+    }
+  })
+
+  return Array.from(studentsById.values())
+}
+
+function getLatestStudentCareNoteAt(students = []) {
+  const latestNote = getLatestStudentCareNote(students)
+  return latestNote?.createdAt || latestNote?.updatedAt || ''
+}
+
+function getLatestStudentCareNoteContent(students = []) {
+  const latestNote = getLatestStudentCareNote(students)
+  return latestNote?.content || students.map((student) => student.parentNotes).find(Boolean) || ''
+}
+
+function getLatestStudentCareNote(students = []) {
+  return students
+    .flatMap((student) => student.careNotes ?? [])
+    .filter(Boolean)
+    .sort(
+      (firstNote, secondNote) =>
+        new Date(secondNote.createdAt || secondNote.updatedAt || 0) -
+        new Date(firstNote.createdAt || firstNote.updatedAt || 0),
+    )[0] ?? null
+}
+
+function normalizePhone(value) {
+  return String(value || '').replace(/\D/g, '')
+}
+
+function compareContactText(firstValue, secondValue) {
+  return String(firstValue ?? '').localeCompare(String(secondValue ?? ''), 'vi', {
+    sensitivity: 'base',
+  })
 }
 
 function calculateAgeFromBirthYear(birthYear) {

@@ -447,11 +447,16 @@ export async function pullCloudBootstrapCoreEntities(centerId = CURRENT_CENTER_I
       centerId,
       entityType: CLOUD_ENTITY_TYPES.TEACHER,
     })
+    const classSessionsResult = await listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.CLASS_SESSION,
+    })
     const scheduleSessionsResult = await listScheduleSessionCloudPayloads({
       supabase: context.supabase,
       centerId,
     })
-    const failedResult = [studentsResult, teachersResult, scheduleSessionsResult].find(
+    const failedResult = [studentsResult, teachersResult, classSessionsResult, scheduleSessionsResult].find(
       (result) => !result.ok,
     )
 
@@ -462,6 +467,7 @@ export async function pullCloudBootstrapCoreEntities(centerId = CURRENT_CENTER_I
     const data = {
       students: studentsResult.data,
       teachers: teachersResult.data,
+      classSessions: classSessionsResult.data,
       scheduleSessions: scheduleSessionsResult.data,
     }
     const counts = {
