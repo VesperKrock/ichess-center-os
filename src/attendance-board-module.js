@@ -458,6 +458,7 @@ function renderAttendanceBoardContent(rows, dates, classSessions, students, base
                 `,
               )
               .join('')}
+            <th class="attendance-package-sessions-column">Số buổi</th>
             <th>Ghi chú</th>
           </tr>
         </thead>
@@ -478,8 +479,31 @@ function renderAttendanceBoardRow(row, rowIndex, dates, baselineState) {
       </td>
       <td>${renderClassSessionList(row.classSessions)}</td>
       ${dates.map((dateItem, dateIndex) => renderAttendanceCell(row, dateItem, baselineState, rowIndex, dateIndex)).join('')}
+      <td class="attendance-package-sessions-cell">${renderAttendancePackageSessions(row)}</td>
       <td class="attendance-note-cell">${renderAttendanceNoteCell(row)}</td>
     </tr>
+  `
+}
+
+function renderAttendancePackageSessions(row) {
+  const tuition = row?.tuition
+  const usedSessions = Number(tuition?.usedSessions)
+  const totalSessions = Number(tuition?.totalSessions)
+
+  if (!tuition) {
+    return '<span class="attendance-package-sessions is-missing">Chưa gán gói</span>'
+  }
+
+  if (!Number.isFinite(totalSessions) || totalSessions <= 0) {
+    return '<span class="attendance-package-sessions is-warning">Chưa rõ số buổi</span>'
+  }
+
+  const safeUsedSessions = Number.isFinite(usedSessions) && usedSessions >= 0 ? usedSessions : 0
+
+  return `
+    <span class="attendance-package-sessions">
+      ${safeUsedSessions}/${totalSessions}
+    </span>
   `
 }
 

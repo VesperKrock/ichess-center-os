@@ -367,6 +367,7 @@ import {
   initialTuitionFilters,
   normalizePaymentFormValues,
   normalizeTuitionFormValues,
+  renderTuitionDiscountPreviewFromValues,
   renderTuitionModule,
   validatePaymentForm,
   validateRenewTuitionForm,
@@ -788,6 +789,20 @@ function render() {
   focusPendingAttendanceBaselineCell()
   skipNextParentContactScrollCapture = false
   updateClock()
+}
+
+function refreshTuitionFormPreview() {
+  if (!tuitionFormState) {
+    return
+  }
+
+  const previewElement = document.querySelector('[data-tuition-discount-preview]')
+
+  if (!previewElement) {
+    return
+  }
+
+  previewElement.outerHTML = renderTuitionDiscountPreviewFromValues(tuitionFormState.values)
 }
 
 function isTextEditingElement(element) {
@@ -4116,6 +4131,10 @@ function renderWindowBody(windowItem) {
       attendanceAdvisoryNotes,
       getCurrentMonthKey(),
       tuitionRollbackPreviewState,
+      buildUnifiedAttendanceRecords({
+        sessionReports,
+        storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+      }),
     )
   }
 
@@ -10496,43 +10515,9 @@ function bindEvents() {
     render()
   })
 
-  document.querySelectorAll('[data-tuition-form-field]').forEach((control) => {
-    control.addEventListener('input', () => {
-      if (!tuitionFormState) {
-        return
-      }
-
-      const fieldName = control.dataset.tuitionFormField
-      const selectionStart = 'selectionStart' in control ? control.selectionStart : null
-      const selectionEnd = 'selectionEnd' in control ? control.selectionEnd : null
-
-      tuitionFormState = {
-        ...tuitionFormState,
-        values: {
-          ...tuitionFormState.values,
-          [fieldName]: control.value,
-        },
-        errors: {
-          ...tuitionFormState.errors,
-          [fieldName]: undefined,
-          discountAmount: undefined,
-        },
-      }
-
-      if (['discountPreset', 'discountCustomValue', 'totalAmount', 'paidAmount'].includes(fieldName)) {
-        render()
-        const nextControl = document.querySelector(`[data-tuition-form-field="${fieldName}"]`)
-        focusElementWithoutScrolling(nextControl)
-
-        if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
-          nextControl.setSelectionRange(selectionStart, selectionEnd)
-        }
-      }
-    })
-  })
-
-  document.querySelector('[data-tuition-form]')?.addEventListener('submit', (event) => {
-    event.preventDefault()
+  const handleTuitionFormSave = (event) => {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
 
     if (!tuitionFormState) {
       return
@@ -10592,7 +10577,49 @@ function bindEvents() {
       beforePayload: currentRecord ? { ...currentRecord } : null,
     })
     render()
+  }
+
+  document.querySelectorAll('[data-tuition-form-field]').forEach((control) => {
+    const handleTuitionFormFieldInput = () => {
+      if (!tuitionFormState) {
+        return
+      }
+
+      const fieldName = control.dataset.tuitionFormField
+
+      tuitionFormState = {
+        ...tuitionFormState,
+        values: {
+          ...tuitionFormState.values,
+          [fieldName]: control.value,
+        },
+        errors: {
+          ...tuitionFormState.errors,
+          [fieldName]: undefined,
+          discountAmount: undefined,
+        },
+      }
+
+      if (fieldName === 'discountPreset') {
+        markNativeSelectChangeRender()
+        render()
+        return
+      }
+
+      if (['discountCustomValue', 'totalAmount', 'paidAmount'].includes(fieldName)) {
+        refreshTuitionFormPreview()
+      }
+    }
+
+    if (control.matches('select')) {
+      control.addEventListener('change', handleTuitionFormFieldInput)
+    } else {
+      control.addEventListener('input', handleTuitionFormFieldInput)
+    }
   })
+
+  document.querySelector('[data-tuition-form]')?.addEventListener('submit', handleTuitionFormSave)
+  document.querySelector('[data-tuition-action="save-form"]')?.addEventListener('click', handleTuitionFormSave)
 
   document.querySelectorAll('[data-tuition-payment-field]').forEach((control) => {
     control.addEventListener('input', () => {

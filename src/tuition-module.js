@@ -3,6 +3,7 @@ import {
   buildAttendanceAdvisoryRows,
   getCurrentMonthKey,
 } from './attendance-advisory.js'
+import { getStudentAttendanceCredits } from './attendance-records.js'
 import { buildStudentTuitionLink } from './student-tuition-links.js'
 
 export const initialTuitionFilters = {
@@ -148,8 +149,9 @@ export function renderTuitionModule(
   advisoryNotes = [],
   advisoryMonthKey = getCurrentMonthKey(),
   rollbackPreviewState = null,
+  attendanceRecords = [],
 ) {
-  const rows = buildTuitionRows(students, tuitionRecords)
+  const rows = buildTuitionRows(students, tuitionRecords, attendanceRecords)
   const visibleRows = filterTuitionRows(rows, filters)
   const stats = getTuitionStats(rows)
   const formStudent = formState ? students.find((student) => student.id === formState.studentId) : null
@@ -164,6 +166,9 @@ export function renderTuitionModule(
     : null
   const detailTuition = detailState
     ? tuitionRecords.find((record) => record.studentId === detailState.studentId)
+    : null
+  const detailRow = detailState
+    ? rows.find((row) => row.student.id === detailState.studentId)
     : null
   const hasPanel = Boolean(formState || paymentFormState || detailState || rollbackPreviewState)
   const advisoryRows = buildAttendanceAdvisoryRows(
@@ -245,7 +250,7 @@ export function renderTuitionModule(
           ? renderPaymentForm(paymentStudent, paymentTuition, paymentFormState)
           : ''
       }
-      ${detailState && detailStudent ? renderTuitionDetailPanel(detailStudent, detailTuition) : ''}
+      ${detailState && detailStudent ? renderTuitionDetailPanel(detailStudent, detailTuition, detailRow?.attendanceTuitionPreview) : ''}
       ${rollbackPreviewState ? renderRollbackPreviewPanel(rollbackPreviewState) : ''}
     </section>
   `
@@ -341,18 +346,25 @@ function renderAttendanceAdvisoryRow(row) {
   `
 }
 
-export function buildTuitionRows(students, tuitionRecords) {
+export function buildTuitionRows(students, tuitionRecords, attendanceRecords = []) {
   const tuitionByStudentId = new Map(tuitionRecords.map((record) => [record.studentId, record]))
+  const attendancePreviewByStudentId = buildTuitionAttendancePreviewMap(attendanceRecords)
 
   return students.map((student) => {
     const tuition = tuitionByStudentId.get(student.id)
     const familyTuitionLink = buildStudentTuitionLink(student, tuitionRecords)
+    const attendanceTuitionPreview = buildStudentTuitionAttendancePreview(
+      student.id,
+      tuition,
+      attendancePreviewByStudentId.get(String(student.id)) || null,
+    )
 
     if (!tuition) {
       return {
         student,
         tuition: null,
         familyTuitionLink,
+        attendanceTuitionPreview,
         packageKind: 'no-package',
         status: {
           key: 'no-package',
@@ -380,11 +392,104 @@ export function buildTuitionRows(students, tuitionRecords) {
       remainingSessions,
       debtAmount,
       familyTuitionLink,
+      attendanceTuitionPreview,
       searchableText: normalizeSearchText(
         `${student.fullName} ${student.parentName} ${student.parentPhone} ${student.fatherPhone} ${student.motherPhone} ${familyTuitionLink.warnings.map((warning) => warning.label).join(' ')} ${tuition.note}`,
       ),
     }
   })
+}
+
+export function buildTuitionAttendancePreviewMap(attendanceRecords = []) {
+  const recordsByStudentId = new Map()
+
+  ;(Array.isArray(attendanceRecords) ? attendanceRecords : []).forEach((record) => {
+    const studentId = String(record?.studentId || '').trim()
+
+    if (!studentId) {
+      return
+    }
+
+    if (!recordsByStudentId.has(studentId)) {
+      recordsByStudentId.set(studentId, [])
+    }
+
+    recordsByStudentId.get(studentId).push(record)
+  })
+
+  const previewByStudentId = new Map()
+
+  recordsByStudentId.forEach((studentRecords, studentId) => {
+    const credits = getStudentAttendanceCredits(studentRecords, studentId)
+    const sourceLabels = Array.from(new Set(
+      studentRecords
+        .map((record) => getAttendanceTuitionSourceLabel(record?.source))
+        .filter(Boolean),
+    ))
+    const dateValues = studentRecords
+      .map((record) => String(record?.date || '').trim())
+      .filter(Boolean)
+      .sort()
+
+    previewByStudentId.set(studentId, {
+      studentId,
+      attendanceRecordCount: studentRecords.length,
+      attendanceCreditCount: credits.length,
+      lastAttendanceDate: dateValues.length ? dateValues[dateValues.length - 1] : '',
+      sourceSummary: sourceLabels.length ? sourceLabels.join(', ') : 'Điểm danh',
+      hasAttendanceData: studentRecords.length > 0,
+    })
+  })
+
+  return previewByStudentId
+}
+
+function buildStudentTuitionAttendancePreview(studentId, tuition, attendancePreview) {
+  const storedUsedSessions = Number(tuition?.usedSessions)
+  const hasStoredUsedSessions = tuition &&
+    tuition.hasUsedSessionsData !== false &&
+    Number.isFinite(storedUsedSessions)
+  const normalizedStoredUsedSessions = hasStoredUsedSessions ? Math.max(0, storedUsedSessions) : null
+  const hasAttendanceData = Boolean(attendancePreview?.hasAttendanceData)
+  const attendanceCreditCount = hasAttendanceData ? Number(attendancePreview.attendanceCreditCount) || 0 : null
+  const difference =
+    hasAttendanceData && normalizedStoredUsedSessions !== null
+      ? attendanceCreditCount - normalizedStoredUsedSessions
+      : null
+  const isMismatch = difference !== null && difference !== 0
+
+  return {
+    studentId: String(studentId || ''),
+    hasAttendanceData,
+    storedUsedSessions: normalizedStoredUsedSessions,
+    attendanceCreditCount,
+    attendanceRecordCount: hasAttendanceData ? Number(attendancePreview.attendanceRecordCount) || 0 : 0,
+    lastAttendanceDate: attendancePreview?.lastAttendanceDate || '',
+    sourceSummary: attendancePreview?.sourceSummary || '',
+    difference,
+    isMismatch,
+    statusLabel: !hasAttendanceData
+      ? 'Chưa có dữ liệu điểm danh'
+      : isMismatch
+        ? 'Cần kiểm tra'
+        : 'Khớp điểm danh',
+  }
+}
+
+function getAttendanceTuitionSourceLabel(source) {
+  if (source === 'initialBaseline') {
+    return 'Dữ liệu nền'
+  }
+
+  if (source === 'teacher') {
+    return 'Giáo viên'
+  }
+
+  if (source === 'admin') {
+    return 'Admin'
+  }
+
+  return source ? 'Điểm danh' : ''
 }
 
 export function getTuitionWarningStatus(remainingSessions) {
@@ -664,7 +769,12 @@ function renderTuitionRow(row) {
       <td>
         ${
           tuition
-            ? `${tuition.usedSessions}/${tuition.totalSessions}${termNumber > 1 ? ` <small class="tuition-term-chip">· Kỳ ${termNumber}</small>` : ''}`
+            ? `
+              <div class="tuition-session-cell">
+                <strong>${tuition.usedSessions}/${tuition.totalSessions}${termNumber > 1 ? ` <small class="tuition-term-chip">· Kỳ ${termNumber}</small>` : ''}</strong>
+                ${renderTuitionAttendancePreview(row.attendanceTuitionPreview)}
+              </div>
+            `
             : '—'
         }
       </td>
@@ -821,6 +931,43 @@ function renderTuitionConflictBadge(conflictMarker) {
   `
 }
 
+function renderTuitionAttendancePreview(preview) {
+  if (!preview) {
+    return ''
+  }
+
+  if (!preview.hasAttendanceData) {
+    return `
+      <span class="tuition-attendance-compare is-muted">Chưa có dữ liệu điểm danh</span>
+    `
+  }
+
+  const mismatchText = preview.isMismatch
+    ? `Lệch ${Math.abs(preview.difference)} buổi`
+    : 'Khớp điểm danh'
+  const statusClass = preview.isMismatch ? 'is-warning' : 'is-match'
+  const detailText = [
+    `Đang lưu học phí: ${preview.storedUsedSessions ?? '—'}`,
+    `Theo điểm danh: ${preview.attendanceCreditCount}`,
+    `${preview.attendanceRecordCount} bản ghi`,
+    preview.lastAttendanceDate ? `Gần nhất ${formatPaymentDate(preview.lastAttendanceDate)}` : '',
+  ].filter(Boolean).join(' · ')
+
+  return `
+    <span
+      class="tuition-attendance-compare ${statusClass}"
+      title="${escapeHtml(detailText)}"
+    >
+      Theo điểm danh: ${preview.attendanceCreditCount} · ${mismatchText}
+    </span>
+    ${
+      preview.isMismatch
+        ? '<small class="tuition-attendance-warning">Cần kiểm tra: số buổi học phí đang lưu khác dữ liệu điểm danh.</small>'
+        : ''
+    }
+  `
+}
+
 function renderTuitionFamilyLink(link) {
   const parentLabel = link.parent.hasContact
     ? link.parent.parentName
@@ -919,7 +1066,7 @@ function renderTuitionForm(student, formState) {
               '">Gia hạn / Tạo kỳ mới</button>'
             : ''
         }
-        <button type="submit" data-tuition-action="save-form">${isRenew ? 'Tạo kỳ mới' : 'Lưu gói'}</button>
+        <button type="button" data-tuition-action="save-form">${isRenew ? 'Tạo kỳ mới' : 'Lưu gói'}</button>
       </div>
     </form>
   `
@@ -1074,7 +1221,7 @@ function renderPaymentForm(student, tuitionRecord, formState) {
   `
 }
 
-function renderTuitionDetailPanel(student, tuitionRecord) {
+function renderTuitionDetailPanel(student, tuitionRecord, attendanceTuitionPreview = null) {
   return `
     <div class="tuition-form-backdrop" data-tuition-detail-action="close-detail"></div>
     <section class="tuition-form-panel tuition-detail-panel" aria-label="Chi tiết học phí">
@@ -1087,7 +1234,7 @@ function renderTuitionDetailPanel(student, tuitionRecord) {
       </div>
       ${
         tuitionRecord
-          ? renderTuitionDetailContent(tuitionRecord)
+          ? renderTuitionDetailContent(tuitionRecord, attendanceTuitionPreview)
           : `
             <div class="tuition-detail-empty">
               <strong>Học viên này chưa có gói học phí.</strong>
@@ -1102,7 +1249,7 @@ function renderTuitionDetailPanel(student, tuitionRecord) {
   `
 }
 
-function renderTuitionDetailContent(tuitionRecord) {
+function renderTuitionDetailContent(tuitionRecord, attendanceTuitionPreview = null) {
   const remainingSessions = tuitionRecord.totalSessions - tuitionRecord.usedSessions
   const amounts = calculateTuitionAmounts(tuitionRecord)
   const overpaidAmount = getTuitionOverpaidAmount(tuitionRecord)
@@ -1114,6 +1261,7 @@ function renderTuitionDetailContent(tuitionRecord) {
       ${renderDetailMetric('Kỳ', `Kỳ ${tuitionRecord.currentTermNumber || 1}`)}
       ${renderDetailMetric('Tổng số buổi', tuitionRecord.totalSessions)}
       ${renderDetailMetric('Đã học', tuitionRecord.usedSessions)}
+      ${renderDetailMetric('Theo điểm danh', renderTuitionAttendancePreview(attendanceTuitionPreview), true)}
       ${renderDetailMetric('Còn lại', remainingSessions)}
       ${renderDetailMetric('Hạn đóng / ngày nhắc', tuitionRecord.dueDate || 'Chưa đặt')}
       ${renderDetailMetric('Trạng thái', status.label)}
@@ -1231,10 +1379,14 @@ function renderDiscountCustomField(values, errors) {
 
 function renderDiscountPreview(preview) {
   return `
-    <div class="tuition-discount-preview" aria-label="Công thức học phí">
+    <div class="tuition-discount-preview" data-tuition-discount-preview aria-label="Công thức học phí">
       ${renderTuitionFormula(preview)}
     </div>
   `
+}
+
+export function renderTuitionDiscountPreviewFromValues(values) {
+  return renderDiscountPreview(getDiscountPreview(values))
 }
 
 function getTuitionStats(rows) {
