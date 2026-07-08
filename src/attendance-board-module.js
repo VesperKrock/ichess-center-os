@@ -49,11 +49,14 @@ export function renderAttendanceBoardModule(
   baselineUndoAvailable = false,
   draftRecords = null,
   draftChangeCount = 0,
+  baselineStateOverride = null,
 ) {
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
   const storedAttendanceRecords = Array.isArray(draftRecords) ? draftRecords : loadStoredAttendanceRecords()
-  const baselineState = loadAttendanceBaselineState()
+  const baselineState = baselineStateOverride && typeof baselineStateOverride === 'object'
+    ? baselineStateOverride
+    : loadAttendanceBaselineState()
   const filteredRows = buildAttendanceBoardRows(
     students,
     classSessions,
@@ -100,10 +103,10 @@ export function renderAttendanceBoardModule(
           >
         </label>
         <div class="attendance-board-stats" aria-label="Tổng quan bảng điểm danh">
-          <span>Tổng học viên: <strong>${stats.totalStudents}</strong></span>
-          <span>Đã phân lớp: <strong>${stats.assignedStudents}</strong></span>
-          <span>Chưa phân lớp: <strong>${stats.unassignedStudents}</strong></span>
-          <span>Tổng ca học: <strong>${stats.totalClassSessions}</strong></span>
+          <span class="attendance-stat-chip">Tổng học viên: <strong>${stats.totalStudents}</strong></span>
+          <span class="attendance-stat-chip">Đã phân lớp: <strong>${stats.assignedStudents}</strong></span>
+          <span class="attendance-stat-chip ${stats.unassignedStudents > 0 ? 'is-warning' : 'is-ok'}">Chưa phân lớp: <strong>${stats.unassignedStudents}</strong></span>
+          <span class="attendance-stat-chip">Tổng ca học: <strong>${stats.totalClassSessions}</strong></span>
         </div>
       </div>
 
@@ -222,6 +225,7 @@ export function buildAttendanceBoardRows(
         student,
         classSessionIds,
         classSessions: studentClassSessions,
+        isUnassigned: classSessionIds.length === 0,
         tuition,
         attendanceSummary,
         careStatus: getCareStatusLabel(tuition),
@@ -467,7 +471,7 @@ function renderAttendanceBoardContent(rows, dates, classSessions, students, base
 
 function renderAttendanceBoardRow(row, rowIndex, dates, baselineState) {
   return `
-    <tr>
+    <tr class="${row.isUnassigned ? 'is-unassigned' : ''}">
       <td class="is-sticky">${rowIndex + 1}</td>
       <td class="is-sticky">
         <strong>${escapeHtml(cleanDisplayText(row.student.fullName || ''))}</strong>
@@ -500,6 +504,10 @@ function renderAttendanceNoteCell(row) {
 function renderAttendanceCell(row, dateItem, baselineState = {}, rowIndex = 0, dateIndex = 0) {
   const attendance = row.attendanceSummary.byDate.get(dateItem.dateKey)
   const canEditBaselineCell = canEditAttendanceBaselineCell(row, dateItem, attendance, baselineState)
+
+  if (row?.isUnassigned) {
+    return renderUnassignedAttendanceCell()
+  }
 
   if (attendance) {
     if (canEditBaselineCell) {
@@ -559,11 +567,23 @@ function canEditAttendanceBaselineCell(row, dateItem, attendance, baselineState)
     return false
   }
 
+  if (!row || row.isUnassigned || !row.classSessionIds?.length) {
+    return false
+  }
+
   if (!row?.student?.id || !dateItem?.dateKey || !isDateInBaselineEditableRange(dateItem.dateKey)) {
     return false
   }
 
   return true
+}
+
+function renderUnassignedAttendanceCell() {
+  return `
+    <td class="attendance-cell attendance-baseline-disabled-cell is-unassigned" title="Chưa phân lớp, hãy chọn Ca học / Lớp trong hồ sơ học viên.">
+      <span>—</span>
+    </td>
+  `
 }
 
 function renderAttendanceBaselineEditableCell(row, dateItem, attendance, isPlanned = true, rowIndex = 0, dateIndex = 0) {
@@ -604,7 +624,13 @@ function renderClassSessionList(classSessions) {
       ${classSessions
         .map(
           (classSession) => `
-            <span class="${classSession.status === 'inactive' ? 'is-inactive' : ''}">
+            <span
+              class="${[
+                classSession.status === 'inactive' ? 'is-inactive' : '',
+                classSession.isMissing ? 'is-missing' : '',
+              ].filter(Boolean).join(' ')}"
+              ${classSession.isMissing ? 'title="Ca học / Lớp này chưa có trong Cài đặt cơ sở."' : ''}
+            >
               ${escapeHtml(getClassSessionLabel(classSession))}
             </span>
           `,
@@ -761,26 +787,46 @@ function buildAttendanceClassSessionMap(classSessions = [], sessionReports = [],
 
 function buildFallbackClassSessionFromId(id) {
   const normalizedId = String(id || '')
-  const timeMatch = normalizedId.match(/(\d{4})-(\d{4})$/)
-  const startTime = timeMatch ? `${timeMatch[1].slice(0, 2)}:${timeMatch[1].slice(2)}` : ''
-  const endTime = timeMatch ? `${timeMatch[2].slice(0, 2)}:${timeMatch[2].slice(2)}` : ''
-  const dayLabel = normalizedId.includes('t4-t6')
-    ? 'T4-T6'
-    : normalizedId.includes('t7-cn')
-      ? 'T7-CN'
-      : ''
-  const displayLabel =
-    dayLabel && startTime && endTime ? `${dayLabel} ${startTime}-${endTime}` : normalizedId
+  const resolved = resolveClassSessionLabelFromRawId(normalizedId)
+  const displayLabel = resolved.label || 'Ca học không tìm thấy'
 
   return {
     id: normalizedId,
     name: displayLabel,
-    daysLabel: dayLabel,
+    daysLabel: resolved.dayLabel,
+    dayLabel: resolved.dayLabel,
+    startTime: resolved.startTime,
+    endTime: resolved.endTime,
+    displayLabel,
+    status: 'missing',
+    isMissing: true,
+  }
+}
+
+function resolveClassSessionLabelFromRawId(id) {
+  const normalizedId = String(id || '').toLowerCase()
+  const dayMatches = Array.from(normalizedId.matchAll(/(?:^|-)(t[2-7]|cn)(?=-|$)/g))
+    .map((match) => match[1].toUpperCase())
+  const dayLabel = dayMatches.length ? dayMatches.join('-') : ''
+  const timeMatches = Array.from(normalizedId.matchAll(/(?:^|-)(?:(\d{1,2})(?:g|h|:)(\d{2})|(\d{2})(\d{2})|(\d{1,2})-(\d{2}))(?=-|$)/g))
+    .map((match) => {
+      const hour = match[1] || match[3] || match[5] || ''
+      const minute = match[2] || match[4] || match[6] || ''
+
+      return `${hour.padStart(2, '0')}:${minute}`
+    })
+    .filter((time) => {
+      const [hour, minute] = time.split(':').map(Number)
+      return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+    })
+  const startTime = timeMatches[0] || ''
+  const endTime = timeMatches[1] || ''
+
+  return {
     dayLabel,
     startTime,
     endTime,
-    displayLabel,
-    status: 'active',
+    label: dayLabel && startTime && endTime ? `${dayLabel} ${startTime}-${endTime}` : '',
   }
 }
 
@@ -1302,12 +1348,16 @@ function getCareStatusLabel(tuition) {
 
 function getAttendanceBoardStats(students, classSessions) {
   const activeStudents = students.filter((student) => !student.isDeleted)
+  const activeClassSessions = classSessions.filter((classSession) => classSession?.status !== 'inactive')
+  const assignedClassSessionIds = new Set(
+    activeStudents.flatMap((student) => normalizeIdList(student.classSessionIds)),
+  )
 
   return {
     totalStudents: activeStudents.length,
     assignedStudents: activeStudents.filter((student) => normalizeIdList(student.classSessionIds).length > 0).length,
     unassignedStudents: activeStudents.filter((student) => normalizeIdList(student.classSessionIds).length === 0).length,
-    totalClassSessions: classSessions.length,
+    totalClassSessions: Math.max(activeClassSessions.length, assignedClassSessionIds.size),
   }
 }
 
@@ -1371,7 +1421,18 @@ function getWeekdayIndex(label) {
 }
 
 function getClassSessionLabel(classSession) {
-  return cleanDisplayText(classSession?.displayLabel || classSession?.name || classSession?.daysLabel || 'Ca học chưa đặt tên')
+  const rawLabel = cleanDisplayText(classSession?.displayLabel || classSession?.name || classSession?.daysLabel || '')
+
+  if (isRawClassSessionLabel(rawLabel)) {
+    const resolved = resolveClassSessionLabelFromRawId(rawLabel)
+    return resolved.label || 'Ca học không tìm thấy'
+  }
+
+  return rawLabel || 'Ca học chưa đặt tên'
+}
+
+function isRawClassSessionLabel(value) {
+  return /^class-session(?:-|$)/i.test(String(value || '').trim())
 }
 
 function normalizeAttendanceBoardFilters(filters) {

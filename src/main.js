@@ -832,7 +832,7 @@ function shouldAllowImmediateRenderForActiveElement(element) {
     return false
   }
 
-  return Boolean(element.closest?.('[data-student-filter]'))
+  return Boolean(element.closest?.('[data-student-filter], [data-attendance-board-filter]'))
 }
 
 function shouldAllowNativeSelectChangeRender() {
@@ -970,6 +970,7 @@ function getStableElementSelector(element) {
     'data-cashflow-filter',
     'data-inventory-filter',
     'data-attendance-board-filter',
+    'data-attendance-baseline-cell-input',
     'data-report-filter',
     'data-staff-filter',
     'name',
@@ -3268,6 +3269,24 @@ function focusPendingAttendanceBaselineCell() {
   input.select?.()
 }
 
+function focusAttendanceBaselineCellTarget(target) {
+  if (!target) {
+    return false
+  }
+
+  const selector =
+    `[data-attendance-baseline-cell-input][data-row-index="${target.rowIndex}"][data-column-index="${target.columnIndex}"]`
+  const input = document.querySelector(selector)
+
+  if (!input) {
+    return false
+  }
+
+  input.focus()
+  input.select?.()
+  return true
+}
+
 function getAttendanceBaselineNavigationTarget(input, direction) {
   const inputs = Array.from(document.querySelectorAll('[data-attendance-baseline-cell-input]'))
   const currentIndex = inputs.indexOf(input)
@@ -3576,7 +3595,7 @@ function restoreAttendanceBaselineDraftUndoSnapshot(snapshot = {}) {
   attendanceBaselineDraftState = snapshot.state || null
 }
 
-function commitAttendanceBaselineCellInput(input, { focusTarget = null } = {}) {
+function commitAttendanceBaselineCellInput(input, { focusTarget = null, shouldRender = true } = {}) {
   const studentId = input?.dataset?.studentId || ''
   const date = input?.dataset?.dateKey || ''
   const fallbackFocusTarget = focusTarget || getBaselineInputFocusTarget(input)
@@ -3607,7 +3626,9 @@ function commitAttendanceBaselineCellInput(input, { focusTarget = null } = {}) {
 
   if (parsedInput.action === 'delete' && !hasInitialBaselineAttendanceRecord(currentRecords, studentId, date)) {
     pendingAttendanceBaselineCellFocus = fallbackFocusTarget
-    render()
+    if (shouldRender) {
+      render()
+    }
     return true
   }
 
@@ -3650,7 +3671,11 @@ function commitAttendanceBaselineCellInput(input, { focusTarget = null } = {}) {
   attendanceBaselineDraftState = result.state
   attendanceBoardDetailState = null
   pendingAttendanceBaselineCellFocus = fallbackFocusTarget
-  render()
+
+  if (shouldRender) {
+    render()
+  }
+
   return true
 }
 
@@ -4201,8 +4226,9 @@ function renderWindowBody(windowItem) {
       attendanceBoardNotes,
       attendanceBoardNoteFormState,
       Boolean(attendanceBaselineUndoSnapshot),
-      attendanceBaselineDraftRecords,
+      getAttendanceBaselineDraftRecords(),
       getAttendanceBaselineDraftChangeCount(),
+      getAttendanceBaselineDraftState(),
     )
   }
 
@@ -10742,11 +10768,17 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-attendance-board-filter]').forEach((control) => {
-    const eventName = control.matches('select') || control.type === 'month' ? 'change' : 'input'
+    const eventNames = control.type === 'month'
+      ? ['input', 'change']
+      : [control.matches('select') ? 'change' : 'input']
 
-    control.addEventListener(eventName, () => {
+    const applyAttendanceBoardFilter = () => {
       const filterName = control.dataset.attendanceBoardFilter
       const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
+
+      if (attendanceBoardFilters[filterName] === control.value && !attendanceBoardDetailState) {
+        return
+      }
 
       attendanceBoardFilters = {
         ...attendanceBoardFilters,
@@ -10761,6 +10793,10 @@ function bindEvents() {
       if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
+    }
+
+    eventNames.forEach((eventName) => {
+      control.addEventListener(eventName, applyAttendanceBoardFilter)
     })
   })
 
@@ -10860,7 +10896,31 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-attendance-baseline-cell-input]').forEach((input) => {
+    input.addEventListener('pointerdown', (event) => {
+      const activeInput = document.activeElement
+
+      if (
+        activeInput &&
+        activeInput !== input &&
+        activeInput.matches?.('[data-attendance-baseline-cell-input]')
+      ) {
+        const committed = commitAttendanceBaselineCellInput(activeInput, {
+          focusTarget: getBaselineInputFocusTarget(input),
+          shouldRender: false,
+        })
+
+        if (committed) {
+          activeInput.dataset.attendanceBaselineCommittedValue = activeInput.value
+        }
+      }
+    })
+
     input.addEventListener('change', () => {
+      if (input.dataset.attendanceBaselineCommittedValue === input.value) {
+        delete input.dataset.attendanceBaselineCommittedValue
+        return
+      }
+
       commitAttendanceBaselineCellInput(input)
     })
 
@@ -10882,7 +10942,15 @@ function bindEvents() {
 
       event.preventDefault()
       const focusTarget = getAttendanceBaselineNavigationTarget(input, direction)
-      commitAttendanceBaselineCellInput(input, { focusTarget })
+      const committed = commitAttendanceBaselineCellInput(input, {
+        focusTarget,
+        shouldRender: false,
+      })
+
+      if (committed) {
+        input.dataset.attendanceBaselineCommittedValue = input.value
+        focusAttendanceBaselineCellTarget(focusTarget)
+      }
     })
   })
 
@@ -11078,10 +11146,11 @@ function bindEvents() {
     }
 
     const reason = window.prompt('Lý do mở khóa', '') || ''
+    const unlockReason = reason.trim() || 'Mở khóa để chỉnh sửa dữ liệu nền.'
     const nextState = unlockAttendanceBaselineState(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
       byRole: 'admin',
       byName: 'Admin cơ sở',
-      reason: reason.trim() || 'Không ghi lý do',
+      reason: unlockReason,
       note: 'Mở khóa dữ liệu nền điểm danh.',
     })
     saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
@@ -11090,6 +11159,7 @@ function bindEvents() {
       reason: 'baseline-unlock',
     })
     attendanceBaselineUndoSnapshot = null
+    clearAttendanceBaselineDraft()
     render()
   })
 

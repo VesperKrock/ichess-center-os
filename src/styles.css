@@ -15502,8 +15502,39 @@ h3 {
   background: rgba(37, 130, 69, 0.22);
 }
 
+.attendance-board-stats .attendance-stat-chip {
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #d9e5f3;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.attendance-board-stats .attendance-stat-chip.is-warning {
+  border-color: rgba(255, 132, 132, 0.62);
+  color: #ffe1e1;
+  background: rgba(153, 27, 27, 0.34);
+}
+
+.attendance-board-stats .attendance-stat-chip.is-ok {
+  border-color: rgba(111, 210, 138, 0.42);
+  color: #dcfce7;
+  background: rgba(22, 101, 52, 0.28);
+}
+
 .attendance-baseline-editable-cell {
   padding: 3px;
+}
+
+.attendance-board-table tr.is-unassigned td {
+  background: rgba(153, 27, 27, 0.08);
+}
+
+.attendance-baseline-disabled-cell.is-unassigned span {
+  border-color: rgba(255, 132, 132, 0.52);
+  color: #ffd6d6;
+  background: rgba(153, 27, 27, 0.24);
+  cursor: not-allowed;
 }
 
 .attendance-baseline-cell-input {
@@ -15521,7 +15552,8 @@ h3 {
 
 .attendance-baseline-cell-input:focus {
   border-color: rgba(118, 164, 231, 0.78);
-  box-shadow: 0 0 0 2px rgba(118, 164, 231, 0.18);
+  background: rgba(11, 20, 32, 0.96);
+  box-shadow: 0 0 0 2px rgba(118, 164, 231, 0.28), 0 0 0 1px rgba(218, 232, 255, 0.12) inset;
 }
 
 .attendance-baseline-editable-cell.has-source-record .attendance-baseline-cell-input {
@@ -15570,10 +15602,16 @@ h3 {
   background: rgba(168, 86, 18, 0.2);
 }
 
+.attendance-class-session-list span.is-missing {
+  border-color: rgba(255, 132, 132, 0.56);
+  color: #ffe1e1;
+  background: rgba(153, 27, 27, 0.28);
+}
+
 .attendance-unassigned {
-  border-color: rgba(255, 178, 96, 0.36);
-  color: #ffd9ad;
-  background: rgba(168, 86, 18, 0.2);
+  border-color: rgba(255, 132, 132, 0.6);
+  color: #ffe1e1;
+  background: rgba(153, 27, 27, 0.32);
 }
 
 .attendance-muted,
