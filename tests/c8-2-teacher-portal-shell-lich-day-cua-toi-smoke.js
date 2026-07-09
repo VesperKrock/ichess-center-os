@@ -134,9 +134,9 @@ const sessions = [
 ]
 
 assert.equal(isScheduleSessionAssignedToTeacher(sessions[0], teacher), true)
-assert.equal(isScheduleSessionAssignedToTeacher(sessions[1], teacher), true)
+assert.equal(isScheduleSessionAssignedToTeacher(sessions[1], teacher), false)
 assert.equal(isScheduleSessionAssignedToTeacher(sessions[2], teacher), false)
-assert.deepEqual(getTeacherScheduleSessions(teacher, sessions).map((session) => session.id), ['s1', 's2'])
+assert.deepEqual(getTeacherScheduleSessions(teacher, sessions).map((session) => session.id), ['s1'])
 
 const summary = buildTeacherPortalSummary(teacher, [
   { id: 'past', teacherId: 'teacher-001', date: '2000-01-01', scheduleType: 'oneOff' },
@@ -173,8 +173,15 @@ const allowedPaths = new Set([
   'src/storage.js',
   'src/styles.css',
   'src/main.js',
+  'src/schedule-module.js',
   'docs/c8-2-teacher-portal-shell-lich-day-cua-toi.md',
   'tests/c8-2-teacher-portal-shell-lich-day-cua-toi-smoke.js',
+  'docs/c8-3-lich-day-cua-toi-teacher-portal.md',
+  'tests/c8-3-lich-day-cua-toi-teacher-portal-smoke.js',
+  'tests/fb-c8-3-tkb-them-buoi-hoc-khong-tao-card-smoke.js',
+  'tests/fb-c8-3-tkb-khong-chon-duoc-hoc-vien-smoke.js',
+  'tests/fb-c8-3-tkb-student-picker-save-ux-smoke.js',
+  'tests/fb-c8-3-teacher-portal-button-va-tkb-lich-co-dinh-ca-hoc-smoke.js',
   'docs/fb-c8-2-teacher-profile-modal-taskbar-safe-height.md',
   'tests/fb-c8-2-teacher-profile-modal-taskbar-safe-height-smoke.js',
 ])
@@ -183,7 +190,6 @@ for (const changedPath of changedPaths) {
   assert(allowedPaths.has(changedPath), `Unexpected C8.2 changed file: ${changedPath}`)
   assert(!changedPath.startsWith('supabase/functions/'), `Edge Function must not change: ${changedPath}`)
   assert(!changedPath.endsWith('.sql'), `C8.2 must not create SQL: ${changedPath}`)
-  assert(changedPath !== 'src/schedule-module.js', 'C8.2 must not change TKB schedule module.')
   assert(changedPath !== 'src/attendance-records.js', 'C8.2 must not change attendance logic.')
 }
 

@@ -42,6 +42,7 @@ export const emptyScheduleFormValues = {
   scheduleType: 'recurring',
   title: '',
   dayOfWeek: 'monday',
+  classSessionId: '',
   startDate: '',
   endDate: '',
   date: '',
@@ -95,6 +96,7 @@ export function createEditScheduleFormState(session) {
       scheduleType,
       title: session.title ?? '',
       dayOfWeek: session.dayOfWeek ?? 'monday',
+      classSessionId: session.classSessionId ?? '',
       startDate: session.startDate ?? '',
       endDate: session.endDate ?? '',
       date: session.date ?? '',
@@ -147,6 +149,7 @@ export function renderScheduleModule(
     teachers,
     now: deadlineOptions.now,
   })
+  const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
 
   return `
     <section class="schedule-module ${formState || reportState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
@@ -184,7 +187,7 @@ export function renderScheduleModule(
             .join('')}
         </div>
       </div>
-      ${formState ? renderScheduleForm(formState, teachers, students, sessions, normalizedWeekStart) : ''}
+      ${formState ? renderScheduleForm(formState, teachers, students, sessions, normalizedWeekStart, classSessions) : ''}
       ${
         reportState
           ? renderScheduleReportPanel(
@@ -208,11 +211,17 @@ export function renderScheduleModule(
   `
 }
 
-export function validateScheduleForm(values) {
+export function validateScheduleForm(values, classSessions = []) {
   const errors = {}
   const scheduleType = normalizeScheduleType(values.scheduleType)
+  const selectedClassSession =
+    scheduleType === 'recurring' ? findScheduleClassSession(classSessions, values.classSessionId) : null
+  const recurringValues =
+    scheduleType === 'recurring'
+      ? applyClassSessionToScheduleValues(values, selectedClassSession)
+      : values
 
-  if (!String(values.title ?? '').trim()) {
+  if (!String(recurringValues.title ?? '').trim()) {
     errors.title = 'Tên buổi/lớp là bắt buộc.'
   }
 
@@ -221,7 +230,17 @@ export function validateScheduleForm(values) {
   }
 
   if (scheduleType === 'recurring') {
-    if (!scheduleDays.some((day) => day.id === values.dayOfWeek)) {
+    if (!normalizeOptionalId(values.classSessionId)) {
+      errors.classSessionId = 'Chọn ca học/lớp từ Cài đặt cơ sở.'
+    } else if (!selectedClassSession) {
+      errors.classSessionId = 'Ca học/lớp đã chọn không còn trong Cài đặt cơ sở.'
+    }
+
+    if (selectedClassSession && selectedClassSession.status === 'inactive') {
+      errors.classSessionId = 'Ca học/lớp đã ngưng dùng.'
+    }
+
+    if (!scheduleDays.some((day) => day.id === recurringValues.dayOfWeek)) {
       errors.dayOfWeek = 'Ngày trong tuần không hợp lệ.'
     }
 
@@ -261,15 +280,19 @@ export function validateScheduleForm(values) {
     }
   }
 
-  if (!isValidTime(values.startTime)) {
+  if (!isValidTime(recurringValues.startTime)) {
     errors.startTime = 'Giờ bắt đầu cần đúng định dạng HH:mm.'
   }
 
-  if (!isValidTime(values.endTime)) {
+  if (!isValidTime(recurringValues.endTime)) {
     errors.endTime = 'Giờ kết thúc cần đúng định dạng HH:mm.'
   }
 
-  if (isValidTime(values.startTime) && isValidTime(values.endTime) && values.endTime <= values.startTime) {
+  if (
+    isValidTime(recurringValues.startTime) &&
+    isValidTime(recurringValues.endTime) &&
+    recurringValues.endTime <= recurringValues.startTime
+  ) {
     errors.endTime = 'Giờ kết thúc phải lớn hơn giờ bắt đầu.'
   }
 
@@ -284,41 +307,53 @@ export function validateScheduleForm(values) {
   return errors
 }
 
-export function buildScheduleSessionFromForm(values, existingSession = null, teachers = []) {
+export function buildScheduleSessionFromForm(
+  values,
+  existingSession = null,
+  teachers = [],
+  classSessions = [],
+) {
   const now = new Date().toISOString()
   const scheduleType = normalizeScheduleType(values.scheduleType)
+  const selectedClassSession =
+    scheduleType === 'recurring' ? findScheduleClassSession(classSessions, values.classSessionId) : null
+  const normalizedValues =
+    scheduleType === 'recurring'
+      ? applyClassSessionToScheduleValues(values, selectedClassSession)
+      : values
   const teacherId = normalizeOptionalId(values.teacherId)
   const teacher = teacherId ? teachers.find((item) => String(item.id) === teacherId) : null
   const teacherName = teacher
     ? getTeacherDisplayName(teacher)
     : String(values.teacherName ?? '').trim()
-  const date = scheduleType === 'oneOff' ? String(values.date ?? '').trim() : null
+  const date = scheduleType === 'oneOff' ? String(normalizedValues.date ?? '').trim() : null
   const dayOfWeek = scheduleType === 'oneOff'
-    ? getDayOfWeekFromDate(date) || values.dayOfWeek || 'monday'
-    : values.dayOfWeek
+    ? getDayOfWeekFromDate(date) || normalizedValues.dayOfWeek || 'monday'
+    : normalizedValues.dayOfWeek
 
   return {
     id: existingSession?.id ?? `schedule-${Date.now()}`,
     scheduleType,
-    title: String(values.title ?? '').trim(),
+    title: String(normalizedValues.title ?? '').trim(),
     dayOfWeek,
-    startDate: scheduleType === 'recurring' ? normalizeNullableDate(values.startDate) : null,
-    endDate: scheduleType === 'recurring' ? normalizeNullableDate(values.endDate) : null,
+    classSessionId: scheduleType === 'recurring' ? normalizeOptionalId(normalizedValues.classSessionId) : '',
+    startDate: scheduleType === 'recurring' ? normalizeNullableDate(normalizedValues.startDate) : null,
+    endDate: scheduleType === 'recurring' ? normalizeNullableDate(normalizedValues.endDate) : null,
     date,
     occurrenceReason:
       scheduleType === 'oneOff'
-        ? normalizeOccurrenceReason(values.occurrenceReason)
+        ? normalizeOccurrenceReason(normalizedValues.occurrenceReason)
         : '',
-    startTime: String(values.startTime ?? '').trim(),
-    endTime: String(values.endTime ?? '').trim(),
-    room: String(values.room ?? '').trim(),
+    startTime: String(normalizedValues.startTime ?? '').trim(),
+    endTime: String(normalizedValues.endTime ?? '').trim(),
+    room: String(normalizedValues.room ?? '').trim(),
     teacherId,
     teacherName,
-    studentIds: normalizeIdArray(values.studentIds),
-    groupName: String(values.groupName ?? '').trim(),
-    level: scheduleLevels.includes(values.level) ? values.level : 'mixed',
-    status: scheduleStatuses.includes(values.status) ? values.status : 'scheduled',
-    note: String(values.note ?? '').trim(),
+    studentIds: normalizeIdArray(normalizedValues.studentIds),
+    groupName: String(normalizedValues.groupName ?? '').trim(),
+    level: scheduleLevels.includes(normalizedValues.level) ? normalizedValues.level : 'mixed',
+    status: scheduleStatuses.includes(normalizedValues.status) ? normalizedValues.status : 'scheduled',
+    note: String(normalizedValues.note ?? '').trim(),
     createdAt: existingSession?.createdAt ?? now,
     updatedAt: now,
   }
@@ -1035,15 +1070,22 @@ function renderTeacherDeadlineAlertItem(alert) {
   `
 }
 
-function renderScheduleForm(formState, teachers, students, sessions, weekStartDate) {
+function renderScheduleForm(formState, teachers, students, sessions, weekStartDate, classSessions = []) {
   const isEdit = formState.mode === 'edit'
   const scheduleType = normalizeScheduleType(formState.values.scheduleType)
+  const selectedClassSession =
+    scheduleType === 'recurring' ? findScheduleClassSession(classSessions, formState.values.classSessionId) : null
+  const displayValues =
+    scheduleType === 'recurring'
+      ? applyClassSessionToScheduleValues(formState.values, selectedClassSession)
+      : formState.values
   const formConflicts = getScheduleFormConflicts(
     formState,
     sessions,
     students,
     weekStartDate,
     teachers,
+    classSessions,
   )
 
   return `
@@ -1072,13 +1114,24 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
               )}
             `
             : `
-              ${renderSelectField('dayOfWeek', 'Ngày trong tuần *', formState, scheduleDays.map((day) => [day.id, day.label]))}
+              ${renderClassSessionSelect(formState, classSessions)}
+              ${renderClassSessionReadOnlyFields(displayValues, selectedClassSession, formState)}
               ${renderField('startDate', 'Từ ngày *', formState, 'date')}
               ${renderField('endDate', 'Đến ngày *', formState, 'date')}
             `
         }
-        ${renderField('startTime', 'Giờ bắt đầu *', formState, 'time')}
-        ${renderField('endTime', 'Giờ kết thúc *', formState, 'time')}
+        ${
+          scheduleType === 'oneOff'
+            ? `
+              ${renderField('startTime', 'Giờ bắt đầu *', formState, 'time')}
+              ${renderField('endTime', 'Giờ kết thúc *', formState, 'time')}
+            `
+            : `
+              ${renderHiddenScheduleField('dayOfWeek', displayValues.dayOfWeek)}
+              ${renderHiddenScheduleField('startTime', displayValues.startTime)}
+              ${renderHiddenScheduleField('endTime', displayValues.endTime)}
+            `
+        }
         ${renderField('room', 'Phòng *', formState, 'text')}
         ${renderTeacherSelect(formState, teachers)}
         ${renderField('teacherName', 'Tên giáo viên fallback', formState, 'text')}
@@ -1100,7 +1153,7 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         }
         <div>
           <button type="button" data-schedule-action="cancel-form">Hủy</button>
-          <button class="schedule-save-button" type="submit">Lưu buổi học</button>
+          <button class="schedule-save-button" type="button" data-schedule-action="save-form">Lưu buổi học</button>
         </div>
       </div>
     </form>
@@ -1870,6 +1923,48 @@ function renderScheduleTypeToggle(formState) {
   )
 }
 
+function renderClassSessionSelect(formState, classSessions = []) {
+  const visibleClassSessions = getVisibleScheduleClassSessions(classSessions, formState.values.classSessionId)
+  const options = [
+    ['', visibleClassSessions.length ? 'Chọn ca học/lớp' : 'Chưa có ca học/lớp trong Cài đặt cơ sở'],
+    ...visibleClassSessions.map((classSession) => [
+      classSession.id,
+      getScheduleClassSessionLabel(classSession),
+    ]),
+  ]
+
+  return renderSelectField(
+    'classSessionId',
+    'Ca học/Lớp từ Cài đặt cơ sở *',
+    formState,
+    options,
+    'span-full schedule-class-session-select',
+  )
+}
+
+function renderClassSessionReadOnlyFields(values, classSession, formState) {
+  const dayLabel = getScheduleDayLabel(values.dayOfWeek)
+  const timeLabel = [values.startTime, values.endTime].filter(Boolean).join('-')
+  const sourceLabel = classSession ? getScheduleClassSessionLabel(classSession) : 'Chưa chọn ca học/lớp'
+
+  return `
+    <div class="schedule-class-session-readonly span-full ${formState.errors.classSessionId ? 'has-error' : ''}">
+      <span>Nguồn lịch cố định</span>
+      <strong>${escapeHtml(sourceLabel)}</strong>
+      <div>
+        <small>Ngày: ${escapeHtml(dayLabel || 'Chưa có')}</small>
+        <small>Giờ: ${escapeHtml(timeLabel || 'Chưa có')}</small>
+        <small>Lớp/Nhóm: ${escapeHtml(values.groupName || values.title || 'Chưa có')}</small>
+      </div>
+      ${formState.errors.classSessionId ? `<small>${escapeHtml(formState.errors.classSessionId)}</small>` : ''}
+    </div>
+  `
+}
+
+function renderHiddenScheduleField(name, value) {
+  return `<input type="hidden" name="${escapeAttribute(name)}" value="${escapeAttribute(value ?? '')}" data-schedule-form-field="${escapeAttribute(name)}" />`
+}
+
 function renderTeacherSelect(formState, teachers) {
   return renderSelectField(
     'teacherId',
@@ -1896,7 +1991,7 @@ function renderStudentPicker(formState, students, teachers) {
     <details class="schedule-student-picker span-full ${formState.errors.studentIds ? 'has-error' : ''}" ${
       selectedIds.size ? 'open' : ''
     }>
-      <summary>
+      <summary data-schedule-action="toggle-student-picker" aria-expanded="${selectedIds.size ? 'true' : 'false'}">
         <span>
           <strong>Học viên tham gia</strong>
           <small>${selectedIds.size} học viên đã chọn</small>
@@ -1932,9 +2027,13 @@ function renderStudentOption(student, selectedIds, selectedTeacherId, teacherLoo
   const isSuggested = selectedTeacherId && student.assignedTeacherId === selectedTeacherId
 
   return `
-    <label class="schedule-student-option ${isSuggested ? 'is-suggested' : ''}">
+    <label
+      class="schedule-student-option ${isSuggested ? 'is-suggested' : ''} ${selectedIds.has(String(student.id)) ? 'is-selected' : ''}"
+      data-schedule-student-option
+    >
       <input
         type="checkbox"
+        name="studentIds"
         value="${escapeAttribute(student.id)}"
         data-schedule-student-field
         ${selectedIds.has(String(student.id)) ? 'checked' : ''}
@@ -1953,6 +2052,7 @@ function renderField(name, label, formState, type, options = {}) {
       <span>${escapeHtml(label)}</span>
       <input
         type="${type}"
+        name="${escapeAttribute(name)}"
         value="${escapeAttribute(formState.values[name] ?? '')}"
         data-schedule-form-field="${escapeAttribute(name)}"
       />
@@ -1965,7 +2065,7 @@ function renderTextareaField(name, label, formState) {
   return `
     <label class="schedule-form-field span-full ${formState.errors[name] ? 'has-error' : ''}">
       <span>${escapeHtml(label)}</span>
-      <textarea data-schedule-form-field="${escapeAttribute(name)}">${escapeHtml(formState.values[name] ?? '')}</textarea>
+      <textarea name="${escapeAttribute(name)}" data-schedule-form-field="${escapeAttribute(name)}">${escapeHtml(formState.values[name] ?? '')}</textarea>
       ${formState.errors[name] ? `<small>${escapeHtml(formState.errors[name])}</small>` : ''}
     </label>
   `
@@ -1975,7 +2075,7 @@ function renderSelectField(name, label, formState, options, className = '') {
   return `
     <label class="schedule-form-field ${className} ${formState.errors[name] ? 'has-error' : ''}">
       <span>${escapeHtml(label)}</span>
-      <select data-schedule-form-field="${escapeAttribute(name)}">
+      <select name="${escapeAttribute(name)}" data-schedule-form-field="${escapeAttribute(name)}">
         ${options
           .map(([value, optionLabel]) => `
             <option value="${escapeAttribute(value)}" ${String(formState.values[name] ?? '') === String(value) ? 'selected' : ''}>
@@ -2062,12 +2162,13 @@ function isRecurringSessionVisible(session, occurrenceDate) {
   return true
 }
 
-function getScheduleFormConflicts(formState, sessions, students, weekStartDate, teachers) {
+function getScheduleFormConflicts(formState, sessions, students, weekStartDate, teachers, classSessions = []) {
   const sessionId = formState.sessionId || '__schedule-draft__'
   const draftSession = buildScheduleSessionFromForm(
     formState.values,
     { id: sessionId, createdAt: new Date().toISOString() },
     teachers,
+    classSessions,
   )
   const visibleExistingSessions = getVisibleScheduleSessions(
     sessions.filter((session) => session.id !== formState.sessionId),
@@ -2398,6 +2499,99 @@ function createLookup(items = []) {
 
 function normalizeScheduleType(value) {
   return scheduleTypes.includes(value) ? value : 'recurring'
+}
+
+function findScheduleClassSession(classSessions = [], classSessionId) {
+  const targetId = normalizeOptionalId(classSessionId)
+
+  if (!targetId) {
+    return null
+  }
+
+  return (Array.isArray(classSessions) ? classSessions : []).find(
+    (classSession) => String(classSession?.id ?? '') === targetId,
+  ) ?? null
+}
+
+function getVisibleScheduleClassSessions(classSessions = [], selectedClassSessionId = '') {
+  const selectedId = normalizeOptionalId(selectedClassSessionId)
+
+  return (Array.isArray(classSessions) ? classSessions : [])
+    .filter((classSession) => {
+      const classSessionId = normalizeOptionalId(classSession?.id)
+      return classSessionId && (classSession.status !== 'inactive' || classSessionId === selectedId)
+    })
+    .sort((firstClassSession, secondClassSession) =>
+      compareText(getScheduleClassSessionLabel(firstClassSession), getScheduleClassSessionLabel(secondClassSession)),
+    )
+}
+
+function applyClassSessionToScheduleValues(values, classSession) {
+  if (!classSession) {
+    return values
+  }
+
+  const dayOfWeek = getScheduleDayFromClassSession(classSession) || values.dayOfWeek || 'monday'
+  const classSessionLabel = getScheduleClassSessionLabel(classSession)
+
+  return {
+    ...values,
+    classSessionId: normalizeOptionalId(classSession.id),
+    title: String(values.title ?? '').trim() || classSessionLabel,
+    dayOfWeek,
+    startTime: String(classSession.startTime ?? values.startTime ?? '').trim(),
+    endTime: String(classSession.endTime ?? values.endTime ?? '').trim(),
+    groupName: String(values.groupName ?? '').trim() || String(classSession.name || classSessionLabel || '').trim(),
+    room: String(values.room ?? '').trim() || String(classSession.room || '').trim(),
+    level: scheduleLevels.includes(classSession.level) ? classSession.level : values.level,
+  }
+}
+
+function getScheduleDayFromClassSession(classSession) {
+  return getScheduleDaysFromClassSession(classSession)[0] || ''
+}
+
+function getScheduleDaysFromClassSession(classSession) {
+  const dayAliases = {
+    mon: 'monday',
+    monday: 'monday',
+    t2: 'monday',
+    tue: 'tuesday',
+    tuesday: 'tuesday',
+    t3: 'tuesday',
+    wed: 'wednesday',
+    wednesday: 'wednesday',
+    t4: 'wednesday',
+    thu: 'thursday',
+    thursday: 'thursday',
+    t5: 'thursday',
+    fri: 'friday',
+    friday: 'friday',
+    t6: 'friday',
+    sat: 'saturday',
+    saturday: 'saturday',
+    t7: 'saturday',
+    sun: 'sunday',
+    sunday: 'sunday',
+    cn: 'sunday',
+  }
+  const explicitDays = Array.isArray(classSession?.daysOfWeek) ? classSession.daysOfWeek : []
+  const labelDays = String(classSession?.daysLabel || classSession?.dayLabel || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+
+  return [...explicitDays, ...labelDays]
+    .map((day) => dayAliases[String(day).toLowerCase()] || '')
+    .filter((day, index, days) => day && days.indexOf(day) === index)
+}
+
+function getScheduleClassSessionLabel(classSession) {
+  return String(classSession?.displayLabel || classSession?.name || classSession?.daysLabel || 'Ca học').trim()
+}
+
+function getScheduleDayLabel(dayOfWeek) {
+  return scheduleDays.find((day) => day.id === dayOfWeek)?.label || ''
 }
 
 function normalizeOccurrenceReason(value) {

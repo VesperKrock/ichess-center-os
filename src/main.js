@@ -3525,6 +3525,45 @@ function normalizeScheduleTeacherAttendanceStatus(status) {
   return rawStatus || 'present'
 }
 
+function getScheduleDaysFromSettingsClassSession(classSession) {
+  const dayAliases = {
+    mon: 'monday',
+    monday: 'monday',
+    t2: 'monday',
+    tue: 'tuesday',
+    tuesday: 'tuesday',
+    t3: 'tuesday',
+    wed: 'wednesday',
+    wednesday: 'wednesday',
+    t4: 'wednesday',
+    thu: 'thursday',
+    thursday: 'thursday',
+    t5: 'thursday',
+    fri: 'friday',
+    friday: 'friday',
+    t6: 'friday',
+    sat: 'saturday',
+    saturday: 'saturday',
+    t7: 'saturday',
+    sun: 'sunday',
+    sunday: 'sunday',
+    cn: 'sunday',
+  }
+  const explicitDays = Array.isArray(classSession?.daysOfWeek) ? classSession.daysOfWeek : []
+  const labelDays = String(classSession?.daysLabel || classSession?.dayLabel || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .filter(Boolean)
+
+  return [...explicitDays, ...labelDays]
+    .map((day) => dayAliases[String(day).toLowerCase()] || '')
+    .filter((day, index, days) => day && days.indexOf(day) === index)
+}
+
+function getScheduleSettingsClassSessionLabel(classSession) {
+  return String(classSession?.displayLabel || classSession?.name || classSession?.daysLabel || 'Ca học').trim()
+}
+
 function getScheduleAdminTeacherName(occurrence) {
   const teacher = teachers.find((item) => String(item.id || '') === String(occurrence?.teacherId || ''))
   return teacher?.fullName || teacher?.name || teacher?.nickname || occurrence?.teacherName || null
@@ -4115,6 +4154,7 @@ function renderWindowBody(windowItem) {
       scheduleAdminAttendanceState,
       {
         attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        classSessions,
       },
     )
   }
@@ -12164,6 +12204,23 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-teacher-action="open-teacher-portal"]').forEach((summary) => {
+    summary.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const shell = summary.closest('.teacher-portal-shell')
+
+      if (!shell) {
+        return
+      }
+
+      shell.open = true
+      summary.setAttribute('aria-expanded', 'true')
+      shell.querySelector('.teacher-portal-preview')?.scrollIntoView({ block: 'nearest' })
+    })
+  })
+
   document.querySelectorAll('[data-teacher-action="open-edit"]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation()
@@ -13295,6 +13352,27 @@ function bindEvents() {
         }
       }
 
+      if (fieldName === 'classSessionId') {
+        const selectedClassSession = classSessions.find(
+          (classSession) => String(classSession.id) === String(control.value),
+        )
+
+        if (selectedClassSession) {
+          const classSessionDays = getScheduleDaysFromSettingsClassSession(selectedClassSession)
+          const classSessionLabel = getScheduleSettingsClassSessionLabel(selectedClassSession)
+          nextValues.title = String(nextValues.title || '').trim() || classSessionLabel
+          nextValues.dayOfWeek = classSessionDays[0] || nextValues.dayOfWeek || 'monday'
+          nextValues.startTime = selectedClassSession.startTime || ''
+          nextValues.endTime = selectedClassSession.endTime || ''
+          nextValues.groupName = String(nextValues.groupName || '').trim() ||
+            String(selectedClassSession.name || classSessionLabel || '').trim()
+
+          if (selectedClassSession.room && !String(nextValues.room || '').trim()) {
+            nextValues.room = selectedClassSession.room
+          }
+        }
+      }
+
       scheduleFormState = {
         ...scheduleFormState,
         values: nextValues,
@@ -13304,13 +13382,47 @@ function bindEvents() {
         },
       }
 
-      if (shouldRender || ['teacherId', 'scheduleType', 'date'].includes(fieldName)) {
+      if (shouldRender || ['teacherId', 'scheduleType', 'classSessionId', 'date'].includes(fieldName)) {
         render()
       }
     }
 
     control.addEventListener('input', () => updateScheduleFormValue(false))
     control.addEventListener('change', () => updateScheduleFormValue(true))
+  })
+
+  document.querySelector('[data-schedule-action="toggle-student-picker"]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const picker = event.currentTarget.closest('.schedule-student-picker')
+
+    if (!picker) {
+      return
+    }
+
+    picker.open = !picker.open
+    event.currentTarget.setAttribute('aria-expanded', picker.open ? 'true' : 'false')
+  })
+
+  document.querySelectorAll('[data-schedule-student-option]').forEach((option) => {
+    option.addEventListener('click', (event) => {
+      if (event.target.closest('[data-schedule-student-field]')) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const checkbox = option.querySelector('[data-schedule-student-field]')
+
+      if (!checkbox) {
+        return
+      }
+
+      checkbox.checked = !checkbox.checked
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+    })
   })
 
   document.querySelectorAll('[data-schedule-student-field]').forEach((checkbox) => {
@@ -13338,18 +13450,65 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-schedule-form]')?.addEventListener('submit', (event) => {
-    event.preventDefault()
+  const getScheduleFormValuesFromDom = () => {
+    const formElement = document.querySelector('[data-schedule-form]')
+    const nextValues = {
+      ...(scheduleFormState?.values ?? {}),
+    }
+
+    formElement?.querySelectorAll('[data-schedule-form-field]').forEach((control) => {
+      const fieldName = control.dataset.scheduleFormField
+
+      if (!fieldName) {
+        return
+      }
+
+      nextValues[fieldName] = control.value
+    })
+
+    nextValues.studentIds = Array.from(
+      formElement?.querySelectorAll('[data-schedule-student-field]:checked') ?? [],
+    ).map((input) => input.value)
+
+    if (nextValues.teacherId) {
+      const selectedTeacher = teachers.find((teacher) => String(teacher.id) === String(nextValues.teacherId))
+
+      if (selectedTeacher) {
+        nextValues.teacherName = selectedTeacher.displayName || selectedTeacher.fullName || ''
+      }
+    }
+
+    return nextValues
+  }
+
+  const handleScheduleFormSave = (event) => {
+    event?.preventDefault()
 
     if (!scheduleFormState) {
       return
     }
 
-    const errors = validateScheduleForm(scheduleFormState.values)
+    const saveButton = event?.currentTarget?.matches?.('[data-schedule-action="save-form"]')
+      ? event.currentTarget
+      : document.querySelector('[data-schedule-action="save-form"]')
+
+    if (saveButton?.disabled) {
+      return
+    }
+
+    if (saveButton) {
+      saveButton.disabled = true
+      saveButton.setAttribute('aria-busy', 'true')
+      saveButton.textContent = 'Đang lưu...'
+    }
+
+    const formValues = getScheduleFormValuesFromDom()
+    const errors = validateScheduleForm(formValues, classSessions)
 
     if (Object.keys(errors).length) {
       scheduleFormState = {
         ...scheduleFormState,
+        values: formValues,
         errors,
       }
       render()
@@ -13375,16 +13534,17 @@ function bindEvents() {
       }
 
       const updatedSession = buildScheduleSessionFromForm(
-        scheduleFormState.values,
+        formValues,
         existingSession,
         teachers,
+        classSessions,
       )
       scheduleSessions = scheduleSessions.map((session) =>
         session.id === updatedSession.id ? updatedSession : session,
       )
       savedScheduleSession = updatedSession
     } else {
-      const createdSession = buildScheduleSessionFromForm(scheduleFormState.values, null, teachers)
+      const createdSession = buildScheduleSessionFromForm(formValues, null, teachers, classSessions)
       scheduleSessions = [createdSession, ...scheduleSessions]
       savedScheduleSession = createdSession
     }
@@ -13400,7 +13560,10 @@ function bindEvents() {
     isSessionReportExtraExpanded = false
     sessionReportGuestFormState = null
     render()
-  })
+  }
+
+  document.querySelector('[data-schedule-form]')?.addEventListener('submit', handleScheduleFormSave)
+  document.querySelector('[data-schedule-action="save-form"]')?.addEventListener('click', handleScheduleFormSave)
 
   document.querySelector('[data-schedule-action="delete-session"]')?.addEventListener('click', () => {
     if (!scheduleFormState?.sessionId) {

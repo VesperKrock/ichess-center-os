@@ -635,11 +635,12 @@ function renderTeacherStudentUpdateSummary(teacher, studentLinks = createTeacher
 
 function renderTeacherPortalShell(teacher, schedules = [], students = [], sessionReports = []) {
   const teacherSessions = getTeacherScheduleSessions(teacher, schedules)
+  const scheduleAudit = buildTeacherPortalScheduleAudit(teacher, schedules)
   const summary = buildTeacherPortalSummary(teacher, teacherSessions, sessionReports)
 
   return `
     <details class="teacher-portal-shell" id="teacher-portal-shell-${escapeAttribute(teacher.id)}">
-      <summary>
+      <summary data-teacher-action="open-teacher-portal" data-teacher-id="${escapeAttribute(teacher.id)}" aria-expanded="false">
         <span>Mở Teacher Portal</span>
         <small>Lịch dạy của tôi</small>
       </summary>
@@ -669,6 +670,7 @@ function renderTeacherPortalShell(teacher, schedules = [], students = [], sessio
             <h5>Lịch dạy của tôi</h5>
             <span>${Number(teacherSessions.length || 0).toLocaleString('vi-VN')} ca</span>
           </div>
+          ${renderTeacherScheduleAuditNotice(scheduleAudit)}
           ${
             teacherSessions.length
               ? `<div class="teacher-my-schedule-list">${teacherSessions
@@ -694,6 +696,7 @@ function renderTeacherPortalSummaryCard(label, value) {
 function renderTeacherScheduleSessionCard(session, teacher, students = []) {
   const display = getTeacherScheduleSessionDisplay(session)
   const studentList = getScheduleSessionStudents(session, students)
+  const warnings = getTeacherScheduleSessionWarnings(session, studentList)
   const roomLabel = getScheduleSessionLocationLabel(session)
 
   return `
@@ -707,7 +710,8 @@ function renderTeacherScheduleSessionCard(session, teacher, students = []) {
         <span>${Number(studentList.length || 0).toLocaleString('vi-VN')} học viên</span>
         <span>${escapeHtml(display.statusLabel)}</span>
       </div>
-      <details class="teacher-session-preview">
+      ${warnings.length ? renderTeacherScheduleWarnings(warnings) : ''}
+      <details class="teacher-session-detail">
         <summary>Xem ca dạy</summary>
         <div>
           ${renderProfileRows([
@@ -722,6 +726,14 @@ function renderTeacherScheduleSessionCard(session, teacher, students = []) {
             'Chưa có danh sách học viên',
           )}
           <p>Điểm danh và báo cáo ca dạy sẽ được chuyển vào Teacher Portal ở phase sau.</p>
+          <div class="teacher-session-detail-extra">
+            ${renderProfileRows([
+              ['Trạng thái', display.statusLabel],
+              ['Ghi chú', getTeacherScheduleSessionNote(session)],
+            ])}
+          </div>
+          ${warnings.length ? renderTeacherScheduleWarnings(warnings) : ''}
+          <p>Chi tiết ca chỉ đọc trong C8.3. Check-in, check-out, ảnh, điểm danh và báo cáo ca dạy sẽ được bật ở phase sau.</p>
         </div>
       </details>
     </article>
@@ -742,6 +754,37 @@ export function isScheduleSessionAssignedToTeacher(session, teacher) {
     return sessionTeacherId === teacherId
   }
 
+  return false
+}
+
+export function buildTeacherPortalScheduleAudit(teacher, scheduleSessions = []) {
+  const sessions = Array.isArray(scheduleSessions) ? scheduleSessions : []
+  const teacherId = normalizeId(teacher?.id)
+
+  return sessions.reduce(
+    (audit, session) => {
+      const sessionTeacherId = normalizeId(session?.teacherId)
+
+      if (teacherId && sessionTeacherId === teacherId) {
+        audit.assignedByTeacherId += 1
+      } else if (!sessionTeacherId && isLegacyTeacherNameCandidate(session, teacher)) {
+        audit.legacyNameOnlyCandidates += 1
+      } else if (!sessionTeacherId) {
+        audit.missingTeacherId += 1
+      }
+
+      return audit
+    },
+    {
+      teacherId,
+      assignedByTeacherId: 0,
+      legacyNameOnlyCandidates: 0,
+      missingTeacherId: 0,
+    },
+  )
+}
+
+function isLegacyTeacherNameCandidate(session, teacher) {
   const sessionTeacherName = normalizeText(session?.teacherName)
   const teacherNames = [
     teacher?.name,
@@ -750,6 +793,70 @@ export function isScheduleSessionAssignedToTeacher(session, teacher) {
   ].map(normalizeText).filter(Boolean)
 
   return Boolean(sessionTeacherName && teacherNames.includes(sessionTeacherName))
+}
+
+function renderTeacherScheduleAuditNotice(audit) {
+  if (!audit?.legacyNameOnlyCandidates && !audit?.missingTeacherId) {
+    return ''
+  }
+
+  const messages = []
+
+  if (audit.legacyNameOnlyCandidates) {
+    messages.push(
+      `${Number(audit.legacyNameOnlyCandidates).toLocaleString('vi-VN')} ca legacy chỉ có tên giáo viên nên chưa tự đưa vào lịch của tôi.`,
+    )
+  }
+
+  if (audit.missingTeacherId) {
+    messages.push(
+      `${Number(audit.missingTeacherId).toLocaleString('vi-VN')} ca thiếu teacherId cần kiểm tra dữ liệu lịch.`,
+    )
+  }
+
+  return `
+    <div class="teacher-my-schedule-notice" role="status">
+      ${messages.map((message) => `<span>${escapeHtml(message)}</span>`).join('')}
+    </div>
+  `
+}
+
+function getTeacherScheduleSessionWarnings(session, studentList = []) {
+  const warnings = []
+
+  if (!normalizeId(session?.teacherId)) {
+    warnings.push('Ca thiếu teacherId.')
+  }
+
+  if (!Array.isArray(session?.studentIds) || !session.studentIds.length) {
+    warnings.push('Ca chưa có danh sách học viên.')
+  } else if (studentList.length < session.studentIds.length) {
+    warnings.push('Một số học viên trong ca chưa tìm thấy trong hồ sơ học viên.')
+  }
+
+  if (!String(session?.startTime || '').trim() || !String(session?.endTime || '').trim()) {
+    warnings.push('Ca thiếu giờ bắt đầu hoặc kết thúc.')
+  }
+
+  return warnings
+}
+
+function renderTeacherScheduleWarnings(warnings = []) {
+  return `
+    <div class="teacher-session-warnings" role="status">
+      ${warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join('')}
+    </div>
+  `
+}
+
+function getTeacherScheduleSessionNote(session) {
+  return String(
+    session?.note ||
+      session?.notes ||
+      session?.reason ||
+      session?.description ||
+      'Chưa có ghi chú',
+  ).trim()
 }
 
 export function buildTeacherPortalSummary(teacher, sessions = [], sessionReports = []) {

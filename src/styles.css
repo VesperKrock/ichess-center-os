@@ -6519,7 +6519,8 @@ h3 {
 .teacher-portal-preview-note,
 .teacher-my-schedule-heading span,
 .teacher-my-schedule-card span,
-.teacher-session-preview p {
+.teacher-session-preview p,
+.teacher-session-detail p {
   color: #9fb8d5;
   font-size: 0.78rem;
   line-height: 1.45;
@@ -6530,7 +6531,8 @@ h3 {
 }
 
 .teacher-portal-preview-note,
-.teacher-session-preview p {
+.teacher-session-preview p,
+.teacher-session-detail p {
   margin: 0;
 }
 
@@ -6634,6 +6636,49 @@ h3 {
   color: #9fb8d5;
   font-size: 0.82rem;
   text-align: center;
+}
+
+.teacher-my-schedule-notice,
+.teacher-session-warnings {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.teacher-my-schedule-notice span,
+.teacher-session-warnings span {
+  color: #f8dba1;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.teacher-session-detail-extra {
+  display: grid;
+  gap: 6px;
+}
+
+.teacher-session-detail {
+  grid-column: 1 / -1;
+}
+
+.teacher-session-detail > summary {
+  width: max-content;
+  border: 1px solid rgba(118, 164, 231, 0.34);
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: #eef6ff;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.teacher-session-detail > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .teacher-profile-pane-heading {
@@ -8730,6 +8775,49 @@ h3 {
   font-weight: 900;
 }
 
+.schedule-class-session-readonly {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+  border: 1px solid rgba(118, 164, 231, 0.24);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(31, 93, 153, 0.12);
+}
+
+.schedule-class-session-readonly > span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.schedule-class-session-readonly strong {
+  color: #eef6ff;
+  font-size: 0.86rem;
+}
+
+.schedule-class-session-readonly div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-class-session-readonly small {
+  border: 1px solid rgba(160, 184, 214, 0.14);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #bdd1e8;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.schedule-class-session-readonly.has-error {
+  border-color: rgba(255, 132, 132, 0.42);
+  background: rgba(132, 32, 32, 0.12);
+}
+
 .schedule-student-picker {
   grid-column: 1 / -1;
   min-width: 0;
@@ -8799,11 +8887,31 @@ h3 {
   border-radius: 7px;
   padding: 6px 7px;
   background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
 }
 
 .schedule-student-option.is-suggested {
   border-color: rgba(82, 209, 139, 0.32);
   background: rgba(32, 122, 72, 0.12);
+}
+
+.schedule-student-option.is-selected {
+  border-color: rgba(118, 164, 231, 0.62);
+  background: rgba(31, 93, 153, 0.22);
+}
+
+.schedule-student-option:hover,
+.schedule-student-option:focus-within {
+  border-color: rgba(118, 164, 231, 0.46);
+  background: rgba(118, 164, 231, 0.12);
+}
+
+.schedule-student-option:active {
+  transform: translateY(1px);
 }
 
 .schedule-student-option input {
@@ -8972,6 +9080,12 @@ h3 {
 .schedule-save-button {
   border-color: rgba(118, 164, 231, 0.55) !important;
   background: #1f5d99 !important;
+}
+
+.schedule-save-button:disabled,
+.schedule-save-button[aria-busy="true"] {
+  cursor: wait !important;
+  opacity: 0.78;
 }
 
 .schedule-danger-button {
