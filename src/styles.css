@@ -15342,7 +15342,7 @@ h3 {
   min-height: 0;
   height: 100%;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
   overflow: hidden;
   color: #edf4fc;
 }
@@ -15436,10 +15436,10 @@ h3 {
   flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   border: 1px solid rgba(160, 184, 214, 0.18);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   background: rgba(16, 26, 38, 0.72);
 }
 
@@ -15457,15 +15457,16 @@ h3 {
 
 .attendance-baseline-summary strong {
   color: #ffffff;
+  font-size: 0.88rem;
 }
 
 .attendance-baseline-summary span {
   border: 1px solid rgba(160, 184, 214, 0.18);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 3px 7px;
   color: #c8d4e3;
   background: rgba(255, 255, 255, 0.035);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 800;
 }
 
@@ -15477,13 +15478,14 @@ h3 {
 }
 
 .attendance-baseline-actions button {
-  min-height: 34px;
+  min-height: 30px;
   border: 1px solid rgba(160, 184, 214, 0.26);
   border-radius: 7px;
-  padding: 7px 10px;
+  padding: 5px 8px;
   color: #edf4fc;
   background: rgba(255, 255, 255, 0.055);
   cursor: pointer;
+  font-size: 0.78rem;
   font-weight: 850;
 }
 
@@ -15510,20 +15512,46 @@ h3 {
   color: #f6c67a;
 }
 
+.attendance-baseline-details {
+  flex: 1 1 100%;
+  min-width: 0;
+  border-top: 1px solid rgba(160, 184, 214, 0.12);
+  padding-top: 4px;
+  color: #aebdd0;
+  font-size: 0.78rem;
+}
+
+.attendance-baseline-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #bdd1e8;
+  font-weight: 850;
+}
+
+.attendance-baseline-details div {
+  display: grid;
+  gap: 4px;
+  padding-top: 6px;
+}
+
+.attendance-baseline-details p {
+  margin: 0;
+}
+
 .attendance-board-toolbar {
   flex: 0 0 auto;
   align-items: end;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  padding: 10px;
+  padding: 7px 8px;
   background: rgba(255, 255, 255, 0.03);
 }
 
 .attendance-board-toolbar label {
   display: grid;
-  min-width: 190px;
-  flex: 0 1 210px;
-  gap: 6px;
+  min-width: 170px;
+  flex: 0 1 190px;
+  gap: 4px;
 }
 
 .attendance-board-toolbar label:nth-of-type(3) {
@@ -15537,26 +15565,27 @@ h3 {
 
 .attendance-board-toolbar span {
   color: #9fb1c7;
-  font-size: 0.8125rem;
+  font-size: 0.76rem;
   font-weight: 800;
 }
 
 .attendance-board-toolbar input,
 .attendance-board-toolbar select {
   width: 100%;
-  min-height: 36px;
+  min-height: 32px;
   border: 1px solid rgba(160, 184, 214, 0.28);
   border-radius: 7px;
-  padding: 7px 9px;
+  padding: 5px 8px;
   color: #edf4fc;
   background: #121a24;
-  font-size: 0.875rem;
+  font-size: 0.82rem;
   outline: none;
 }
 
 .attendance-board-sheet-wrap {
   min-height: 0;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: clamp(360px, 58vh, 680px);
   overflow: auto;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -15573,10 +15602,10 @@ h3 {
 
 .attendance-board-sheet th,
 .attendance-board-sheet td {
-  min-width: 80px;
+  min-width: 68px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 8px;
+  padding: 5px 6px;
   background: rgba(15, 23, 32, 0.98);
   text-align: left;
   vertical-align: middle;
@@ -15588,13 +15617,13 @@ h3 {
   z-index: 3;
   color: #9fb1c7;
   background: #111821;
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
 }
 
 .attendance-board-sheet td {
   color: #dce7f4;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
 }
 
 .attendance-board-sheet .is-sticky {
@@ -15611,7 +15640,7 @@ h3 {
 .attendance-board-sheet th.is-sticky:nth-child(2),
 .attendance-board-sheet td.is-sticky:nth-child(2) {
   left: 72px;
-  min-width: 190px;
+  min-width: 176px;
 }
 
 .attendance-board-sheet td strong {
@@ -15651,10 +15680,10 @@ h3 {
   max-width: 100%;
   border: 1px solid rgba(160, 184, 214, 0.2);
   border-radius: 999px;
-  padding: 4px 7px;
+  padding: 3px 6px;
   color: #c8d4e3;
   background: rgba(255, 255, 255, 0.045);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 850;
 }
 
@@ -15663,7 +15692,7 @@ h3 {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 27px;
+  min-height: 24px;
   line-height: 1.05;
 }
 
@@ -15778,9 +15807,9 @@ h3 {
 
 .attendance-class-session-list {
   display: flex;
-  min-width: 180px;
+  min-width: 150px;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 
 .attendance-class-session-list span.is-inactive {
@@ -15848,15 +15877,16 @@ h3 {
 }
 
 .attendance-note-cell {
-  min-width: 210px;
+  min-width: 150px;
+  max-width: 170px;
   white-space: normal;
 }
 
 .attendance-package-sessions-column,
 .attendance-package-sessions-cell {
-  width: 112px;
-  min-width: 112px;
-  max-width: 112px;
+  width: 88px;
+  min-width: 88px;
+  max-width: 88px;
   text-align: center;
 }
 
@@ -15867,10 +15897,10 @@ h3 {
   justify-content: center;
   border: 1px solid rgba(111, 210, 138, 0.34);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 3px 6px;
   color: #dcfce7;
   background: rgba(22, 101, 52, 0.22);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 950;
   line-height: 1.15;
   white-space: normal;
@@ -15891,15 +15921,22 @@ h3 {
 .attendance-note-action {
   display: grid;
   min-width: 0;
-  gap: 5px;
+  gap: 3px;
 }
 
 .attendance-note-action p,
 .attendance-note-action span {
   margin: 0;
   color: #dce7f4;
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   font-weight: 800;
+}
+
+.attendance-note-action p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .attendance-note-action span {
@@ -15908,15 +15945,15 @@ h3 {
 
 .attendance-note-action button {
   width: fit-content;
-  min-height: 27px;
+  min-height: 24px;
   border: 1px solid rgba(118, 164, 231, 0.38);
   border-radius: 7px;
-  padding: 4px 8px;
+  padding: 3px 7px;
   color: #edf4fc;
   background: rgba(31, 93, 153, 0.24);
   cursor: pointer;
   font: inherit;
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   font-weight: 900;
 }
 
@@ -15929,21 +15966,21 @@ h3 {
 
 .attendance-board-sheet .attendance-date-column,
 .attendance-board-sheet .attendance-cell {
-  width: 48px;
-  min-width: 48px;
-  max-width: 48px;
-  padding: 4px 3px;
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+  padding: 3px 2px;
 }
 
 .attendance-board-sheet th:first-child,
 .attendance-board-sheet td:first-child {
-  min-width: 54px;
+  min-width: 48px;
 }
 
 .attendance-board-sheet th.is-sticky:nth-child(2),
 .attendance-board-sheet td.is-sticky:nth-child(2) {
-  left: 54px;
-  min-width: 178px;
+  left: 48px;
+  min-width: 168px;
 }
 
 .attendance-cell-button {

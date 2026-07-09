@@ -487,6 +487,7 @@ let notificationFilters = { sourceModule: 'all', readState: 'unread' }
 let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
 let attendanceBoardDetailState = null
 let attendanceBoardNoteFormState = null
+let isAttendanceBaselineDetailsOpen = false
 const normalizedTeacherRoster = mergeAngelWingsTeacherRoster(teachers, students)
 if (JSON.stringify(normalizedTeacherRoster) !== JSON.stringify(teachers)) {
   teachers = normalizedTeacherRoster
@@ -4288,6 +4289,7 @@ function renderWindowBody(windowItem) {
       getAttendanceBaselineDraftRecords(),
       getAttendanceBaselineDraftChangeCount(),
       getAttendanceBaselineDraftState(),
+      isAttendanceBaselineDetailsOpen,
     )
   }
 
@@ -10945,6 +10947,10 @@ function bindEvents() {
     saveStoredAttendanceBoardNotes(attendanceBoardNotes)
     attendanceBoardNoteFormState = null
     render()
+  })
+
+  document.querySelector('[data-attendance-baseline-details]')?.addEventListener('toggle', (event) => {
+    isAttendanceBaselineDetailsOpen = Boolean(event.currentTarget.open)
   })
 
   document.querySelector('[data-attendance-baseline-action="start"]')?.addEventListener('click', () => {

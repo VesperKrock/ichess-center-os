@@ -50,6 +50,7 @@ export function renderAttendanceBoardModule(
   draftRecords = null,
   draftChangeCount = 0,
   baselineStateOverride = null,
+  isBaselineDetailsOpen = false,
 ) {
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
@@ -110,8 +111,8 @@ export function renderAttendanceBoardModule(
         </div>
       </div>
 
-      ${renderAttendanceBaselinePanel(storedAttendanceRecords, baselineState, baselineUndoAvailable, draftChangeCount)}
-      ${renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState)}
+      ${renderAttendanceBaselinePanel(storedAttendanceRecords, baselineState, baselineUndoAvailable, draftChangeCount, isBaselineDetailsOpen)}
+      ${renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState, normalizedFilters)}
       ${renderAttendanceDetailModal(detailState, filteredRows, classSessions)}
       ${renderAttendanceNoteModal(noteFormState, filteredRows, normalizedFilters)}
     </section>
@@ -123,6 +124,7 @@ function renderAttendanceBaselinePanel(
   baselineState = {},
   baselineUndoAvailable = false,
   draftChangeCount = 0,
+  isDetailsOpen = false,
 ) {
   const normalizedState = baselineState && typeof baselineState === 'object' ? baselineState : { status: 'notStarted' }
   const status = normalizedState.status || 'notStarted'
@@ -165,19 +167,24 @@ function renderAttendanceBaselinePanel(
           Mở khóa dữ liệu nền
         </button>
       </div>
-      <p>Nhập trực tiếp vào ô ngày trong khoảng cho phép. Ví dụ: 1, 3+4, T, V, P, CP, B hoặc để trống để xóa dữ liệu nền.</p>
-      ${
-        normalizedState.lockedAt
-          ? `<p class="attendance-baseline-meta">Khóa lúc ${escapeHtml(formatDateTime(normalizedState.lockedAt))}${normalizedState.lockedBy ? ` bởi ${escapeHtml(normalizedState.lockedBy)}` : ''}.</p>`
-          : ''
-      }
-      ${
-        normalizedState.unlockedAt
-          ? `<p class="attendance-baseline-meta">Mở khóa lúc ${escapeHtml(formatDateTime(normalizedState.unlockedAt))}${normalizedState.unlockReason ? ` · Lý do: ${escapeHtml(normalizedState.unlockReason)}` : ''}.</p>`
-          : ''
-      }
-      ${isInputMode ? '' : '<p class="attendance-baseline-warning">Bấm “Bắt đầu nhập dữ liệu nền” để chỉnh trực tiếp trên các ô ngày hợp lệ.</p>'}
-      ${isLocked ? '<p class="attendance-baseline-warning">Dữ liệu nền đã khóa, cần mở khóa trước khi chỉnh sửa.</p>' : ''}
+      <details class="attendance-baseline-details" data-attendance-baseline-details ${isDetailsOpen ? 'open' : ''}>
+        <summary>Chi tiết dữ liệu nền</summary>
+        <div>
+          <p>Nhập trực tiếp vào ô ngày trong khoảng cho phép. Ví dụ: 1, 3+4, T, V, P, CP, B hoặc để trống để xóa dữ liệu nền.</p>
+          ${
+            normalizedState.lockedAt
+              ? `<p class="attendance-baseline-meta">Khóa lúc ${escapeHtml(formatDateTime(normalizedState.lockedAt))}${normalizedState.lockedBy ? ` bởi ${escapeHtml(normalizedState.lockedBy)}` : ''}.</p>`
+              : ''
+          }
+          ${
+            normalizedState.unlockedAt
+              ? `<p class="attendance-baseline-meta">Mở khóa lúc ${escapeHtml(formatDateTime(normalizedState.unlockedAt))}${normalizedState.unlockReason ? ` · Lý do: ${escapeHtml(normalizedState.unlockReason)}` : ''}.</p>`
+              : ''
+          }
+          ${isInputMode ? '' : '<p class="attendance-baseline-warning">Bấm “Bắt đầu nhập dữ liệu nền” để chỉnh trực tiếp trên các ô ngày hợp lệ.</p>'}
+          ${isLocked ? '<p class="attendance-baseline-warning">Dữ liệu nền đã khóa, cần mở khóa trước khi chỉnh sửa.</p>' : ''}
+        </div>
+      </details>
     </section>
   `
 }
@@ -427,7 +434,7 @@ export function parseClassSessionDayIndexes(dayLabel = '') {
   return Array.from(indexes).sort((firstIndex, secondIndex) => firstIndex - secondIndex)
 }
 
-function renderAttendanceBoardContent(rows, dates, classSessions, students, baselineState = {}) {
+function renderAttendanceBoardContent(rows, dates, classSessions, students, baselineState = {}, filters = initialAttendanceBoardFilters) {
   if (!students.length) {
     return '<p class="attendance-board-empty">Chưa có học viên để lập bảng điểm danh.</p>'
   }
@@ -440,14 +447,16 @@ function renderAttendanceBoardContent(rows, dates, classSessions, students, base
     return '<p class="attendance-board-empty">Không có học viên phù hợp với bộ lọc.</p>'
   }
 
+  const hideClassSessionColumn = isSpecificAttendanceClassSessionFilter(filters?.classSessionId)
+
   return `
-    <div class="attendance-board-sheet-wrap">
-      <table class="attendance-board-sheet">
+    <div class="attendance-board-sheet-wrap ${hideClassSessionColumn ? 'is-class-session-filtered' : ''}">
+      <table class="attendance-board-sheet ${hideClassSessionColumn ? 'is-class-session-filtered' : ''}">
         <thead>
           <tr>
             <th class="is-sticky">STT</th>
             <th class="is-sticky">Họ và tên</th>
-            <th>Ca học / Lớp</th>
+            ${hideClassSessionColumn ? '' : '<th class="attendance-class-session-column">Ca học / Lớp</th>'}
             ${dates
               .map(
                 (dateItem) => `
@@ -463,21 +472,21 @@ function renderAttendanceBoardContent(rows, dates, classSessions, students, base
           </tr>
         </thead>
         <tbody>
-          ${rows.map((row, rowIndex) => renderAttendanceBoardRow(row, rowIndex, dates, baselineState)).join('')}
+          ${rows.map((row, rowIndex) => renderAttendanceBoardRow(row, rowIndex, dates, baselineState, hideClassSessionColumn)).join('')}
         </tbody>
       </table>
     </div>
   `
 }
 
-function renderAttendanceBoardRow(row, rowIndex, dates, baselineState) {
+function renderAttendanceBoardRow(row, rowIndex, dates, baselineState, hideClassSessionColumn = false) {
   return `
     <tr class="${row.isUnassigned ? 'is-unassigned' : ''}">
       <td class="is-sticky">${rowIndex + 1}</td>
       <td class="is-sticky">
         <strong>${escapeHtml(cleanDisplayText(row.student.fullName || ''))}</strong>
       </td>
-      <td>${renderClassSessionList(row.classSessions)}</td>
+      ${hideClassSessionColumn ? '' : `<td class="attendance-class-session-column">${renderClassSessionList(row.classSessions)}</td>`}
       ${dates.map((dateItem, dateIndex) => renderAttendanceCell(row, dateItem, baselineState, rowIndex, dateIndex)).join('')}
       <td class="attendance-package-sessions-cell">${renderAttendancePackageSessions(row)}</td>
       <td class="attendance-note-cell">${renderAttendanceNoteCell(row)}</td>
@@ -1465,6 +1474,11 @@ function normalizeAttendanceBoardFilters(filters) {
     classSessionId: String(filters?.classSessionId || 'all'),
     query: String(filters?.query || ''),
   }
+}
+
+function isSpecificAttendanceClassSessionFilter(classSessionId) {
+  const normalizedId = String(classSessionId || '').trim()
+  return Boolean(normalizedId && normalizedId !== 'all' && normalizedId !== 'unassigned')
 }
 
 function normalizeIdList(values) {
