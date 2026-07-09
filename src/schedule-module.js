@@ -39,7 +39,7 @@ const adminAttendanceStatuses = [
 ]
 
 export const emptyScheduleFormValues = {
-  scheduleType: 'recurring',
+  scheduleType: 'oneOff',
   title: '',
   dayOfWeek: 'monday',
   classSessionId: '',
@@ -137,7 +137,8 @@ export function renderScheduleModule(
 ) {
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate()
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
-  const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart)
+  const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
+  const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
   const teacherLookup = createLookup(teachers)
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
@@ -149,7 +150,6 @@ export function renderScheduleModule(
     teachers,
     now: deadlineOptions.now,
   })
-  const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
 
   return `
     <section class="schedule-module ${formState || reportState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
@@ -221,7 +221,7 @@ export function validateScheduleForm(values, classSessions = []) {
       ? applyClassSessionToScheduleValues(values, selectedClassSession)
       : values
 
-  if (!String(recurringValues.title ?? '').trim()) {
+  if (scheduleType === 'oneOff' && !String(recurringValues.title ?? '').trim()) {
     errors.title = 'Tên buổi/lớp là bắt buộc.'
   }
 
@@ -730,12 +730,36 @@ export function buildTrelloReportText({
     .join('\n\n')
 }
 
-export function getVisibleScheduleSessions(sessions = [], weekStartDate = getCurrentScheduleWeekStartDate()) {
+export function getVisibleScheduleSessions(
+  sessions = [],
+  weekStartDate = getCurrentScheduleWeekStartDate(),
+  classSessions = [],
+) {
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate()
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const weekDateSet = new Set(weekDays.map((day) => day.date))
+  const assignmentByClassSessionId = new Map(
+    (Array.isArray(sessions) ? sessions : [])
+      .filter((session) => normalizeScheduleType(session?.scheduleType) === 'recurring')
+      .filter((session) => normalizeOptionalId(session?.classSessionId) && !session?.isDeleted)
+      .map((session) => [normalizeOptionalId(session.classSessionId), session]),
+  )
+  const classSessionSlots = getVisibleScheduleClassSessions(classSessions)
+    .flatMap((classSession) =>
+      getScheduleDaysFromClassSession(classSession).map((dayOfWeek) => {
+        const occurrenceDate = weekDays.find((day) => day.id === dayOfWeek)?.date
 
-  return sessions
+        if (!occurrenceDate) {
+          return null
+        }
+
+        const assignment = assignmentByClassSessionId.get(normalizeOptionalId(classSession.id)) || null
+        return buildClassSessionScheduleSlot(classSession, assignment, dayOfWeek, occurrenceDate)
+      }),
+    )
+    .filter(Boolean)
+
+  const scheduleRecords = (Array.isArray(sessions) ? sessions : [])
     .flatMap((session) => {
       const scheduleType = normalizeScheduleType(session.scheduleType)
 
@@ -754,6 +778,10 @@ export function getVisibleScheduleSessions(sessions = [], weekStartDate = getCur
             occurrenceDate: date,
           },
         ]
+      }
+
+      if (normalizeOptionalId(session.classSessionId)) {
+        return []
       }
 
       const day = scheduleDays.find((item) => item.id === session.dayOfWeek)
@@ -776,6 +804,7 @@ export function getVisibleScheduleSessions(sessions = [], weekStartDate = getCur
         },
       ]
     })
+  return [...classSessionSlots, ...scheduleRecords]
     .sort(compareSessions)
 }
 
@@ -913,21 +942,29 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
   const teacherLabel = getSessionTeacherLabel(session, teacher)
   const studentSummary = getStudentSummary(session.studentIds, studentLookup)
   const conflicts = conflictMap.get(session.id)
+  const isEmptySlot = Boolean(session.isEmptyClassSessionSlot)
+  const title = isEmptySlot
+    ? 'Chưa gán thông tin'
+    : String(session.title || session.groupName || session.classSessionLabel || 'Chưa gán thông tin')
+  const meta = isEmptySlot
+    ? `${session.classSessionLabel || 'Slot từ Cài đặt cơ sở'} · ${session.room || 'Chưa có phòng'}`
+    : `${teacherLabel.name} · ${session.room || 'Chưa có phòng'}`
 
   return `
     <article
-      class="schedule-session-card is-${escapeAttribute(session.level)} is-${escapeAttribute(session.scheduleType)} ${conflicts ? 'has-conflict' : ''}"
+      class="schedule-session-card is-${escapeAttribute(session.level)} is-${escapeAttribute(session.scheduleType)} ${isEmptySlot ? 'is-empty-slot' : ''} ${conflicts ? 'has-conflict' : ''}"
       data-schedule-action="open-edit"
       data-schedule-session-id="${escapeAttribute(session.id)}"
       data-schedule-occurrence-date="${escapeAttribute(session.occurrenceDate ?? '')}"
       tabindex="0"
     >
       <time class="schedule-session-time">${escapeHtml(formatSessionTime(session))}</time>
-      <h4>${escapeHtml(session.title)}</h4>
+      <h4>${escapeHtml(title)}</h4>
       <p class="schedule-session-meta">
         ${escapeHtml(teacherLabel.name)} · ${escapeHtml(session.room || 'Chưa có phòng')}
       </p>
       <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
+      ${isEmptySlot ? '<span class="schedule-empty-slot-action">+ Thêm thông tin</span>' : ''}
     </article>
   `
 }
@@ -1072,7 +1109,15 @@ function renderTeacherDeadlineAlertItem(alert) {
 
 function renderScheduleForm(formState, teachers, students, sessions, weekStartDate, classSessions = []) {
   const isEdit = formState.mode === 'edit'
+  const isManualCreate = formState.mode === 'create'
+  const formTitle = isEdit || formState.mode === 'assign' ? 'Sửa buổi học' : 'Thêm buổi học'
+  const formSubtitle = isManualCreate
+    ? 'Chỉ thêm buổi đột xuất hoặc học bù'
+    : 'Gán thông tin cho slot cố định từ Cài đặt cơ sở'
   const scheduleType = normalizeScheduleType(formState.values.scheduleType)
+  const deleteLabel = scheduleType === 'recurring' && normalizeOptionalId(formState.values.classSessionId)
+    ? 'Xóa phân công'
+    : 'Xóa buổi học'
   const selectedClassSession =
     scheduleType === 'recurring' ? findScheduleClassSession(classSessions, formState.values.classSessionId) : null
   const displayValues =
@@ -1093,8 +1138,8 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
     <form class="schedule-form-panel" data-schedule-form>
       <div class="schedule-form-header">
         <div>
-          <h4>${isEdit ? 'Sửa buổi học' : 'Thêm buổi học'}</h4>
-          <span>${isEdit ? 'Cập nhật rule lịch hoặc buổi đột xuất' : 'Tạo lịch cố định hoặc buổi đột xuất'}</span>
+          <h4>${escapeHtml(formTitle)}</h4>
+          <span>${escapeHtml(formSubtitle)}</span>
         </div>
         <button type="button" data-schedule-action="cancel-form" aria-label="Đóng form">×</button>
       </div>
@@ -1148,7 +1193,7 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
       <div class="schedule-form-actions">
         ${
           isEdit
-            ? '<button class="schedule-danger-button" type="button" data-schedule-action="delete-session">Xóa buổi học</button>'
+            ? `<button class="schedule-danger-button" type="button" data-schedule-action="delete-session">${escapeHtml(deleteLabel)}</button>`
             : '<span></span>'
         }
         <div>
@@ -1911,6 +1956,10 @@ function renderReportItem(label, value) {
 }
 
 function renderScheduleTypeToggle(formState) {
+  if (formState.mode === 'create') {
+    return renderHiddenScheduleField('scheduleType', 'oneOff')
+  }
+
   return renderSelectField(
     'scheduleType',
     'Loại lịch *',
@@ -2532,18 +2581,59 @@ function applyClassSessionToScheduleValues(values, classSession) {
   }
 
   const dayOfWeek = getScheduleDayFromClassSession(classSession) || values.dayOfWeek || 'monday'
-  const classSessionLabel = getScheduleClassSessionLabel(classSession)
 
   return {
     ...values,
     classSessionId: normalizeOptionalId(classSession.id),
-    title: String(values.title ?? '').trim() || classSessionLabel,
+    title: String(values.title ?? '').trim(),
     dayOfWeek,
     startTime: String(classSession.startTime ?? values.startTime ?? '').trim(),
     endTime: String(classSession.endTime ?? values.endTime ?? '').trim(),
-    groupName: String(values.groupName ?? '').trim() || String(classSession.name || classSessionLabel || '').trim(),
+    groupName: String(values.groupName ?? '').trim(),
     room: String(values.room ?? '').trim() || String(classSession.room || '').trim(),
     level: scheduleLevels.includes(classSession.level) ? classSession.level : values.level,
+  }
+}
+
+function buildClassSessionScheduleSlot(classSession, assignment, dayOfWeek, occurrenceDate) {
+  const classSessionId = normalizeOptionalId(classSession?.id)
+  const hasAssignment = Boolean(assignment)
+  const startTime = String(classSession?.startTime ?? assignment?.startTime ?? '').trim()
+  const endTime = String(classSession?.endTime ?? assignment?.endTime ?? '').trim()
+  const assignmentTitle = String(assignment?.title ?? '').trim()
+  const assignmentGroupName = String(assignment?.groupName ?? '').trim()
+  const classSessionLabel = getScheduleClassSessionLabel(classSession)
+
+  return {
+    ...(assignment || {}),
+    id: hasAssignment ? assignment.id : `schedule-slot-${classSessionId}-${dayOfWeek}`,
+    assignmentId: assignment?.id || '',
+    classSessionId,
+    classSessionLabel,
+    isClassSessionSlot: true,
+    isEmptyClassSessionSlot: !hasAssignment,
+    scheduleType: 'recurring',
+    title: hasAssignment ? assignmentTitle : '',
+    dayOfWeek,
+    startDate: assignment?.startDate || null,
+    endDate: assignment?.endDate || null,
+    date: null,
+    occurrenceReason: '',
+    startTime,
+    endTime,
+    room: String(classSession?.room ?? assignment?.room ?? '').trim(),
+    teacherId: assignment?.teacherId || '',
+    teacherName: assignment?.teacherName || '',
+    studentIds: normalizeIdArray(assignment?.studentIds),
+    groupName: hasAssignment ? assignmentGroupName : '',
+    level: scheduleLevels.includes(assignment?.level)
+      ? assignment.level
+      : scheduleLevels.includes(classSession?.level)
+        ? classSession.level
+        : 'mixed',
+    status: scheduleStatuses.includes(assignment?.status) ? assignment.status : 'scheduled',
+    note: assignment?.note || '',
+    occurrenceDate,
   }
 }
 

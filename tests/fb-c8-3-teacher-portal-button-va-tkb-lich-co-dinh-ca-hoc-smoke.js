@@ -56,8 +56,10 @@ assert(teacherHtml.includes('Lịch dạy của tôi'), 'Teacher Portal preview 
 const emptyFormState = createEmptyScheduleFormState()
 const recurringFormState = {
   ...emptyFormState,
+  mode: 'assign',
   values: {
     ...emptyFormState.values,
+    scheduleType: 'recurring',
     classSessionId: classSession.id,
     room: classSession.room,
     teacherId: teacher.id,
@@ -136,7 +138,7 @@ assert.equal(session.dayOfWeek, 'monday', 'Recurring payload must derive day fro
 assert.equal(session.teacherId, teacher.id, 'Recurring payload must keep teacherId.')
 assert.deepEqual(session.studentIds, [student.id], 'Recurring payload must keep studentIds.')
 
-const visibleSessions = getVisibleScheduleSessions([session], '2026-07-06')
+const visibleSessions = getVisibleScheduleSessions([session], '2026-07-06', [classSession])
 assert.equal(visibleSessions.length, 1, 'Recurring class session must render a TKB card in the selected week.')
 assert.equal(visibleSessions[0].occurrenceDate, '2026-07-06')
 

@@ -182,6 +182,9 @@ const allowedPaths = new Set([
   'tests/fb-c8-3-tkb-khong-chon-duoc-hoc-vien-smoke.js',
   'tests/fb-c8-3-tkb-student-picker-save-ux-smoke.js',
   'tests/fb-c8-3-teacher-portal-button-va-tkb-lich-co-dinh-ca-hoc-smoke.js',
+  'tests/fb-c8-3-tkb-lich-co-dinh-slot-trong-tu-cai-dat-co-so-smoke.js',
+  'tests/fb-c8-3-tkb-khong-tao-lich-co-dinh-tu-tkb-smoke.js',
+  'tests/fb-c8-3-tkb-bo-loai-lich-va-hint-du-thua-smoke.js',
   'docs/fb-c8-2-teacher-profile-modal-taskbar-safe-height.md',
   'tests/fb-c8-2-teacher-profile-modal-taskbar-safe-height-smoke.js',
 ])

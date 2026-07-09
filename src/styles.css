@@ -9088,6 +9088,22 @@ h3 {
   opacity: 0.78;
 }
 
+.schedule-session-card.is-empty-slot {
+  border-style: dashed;
+  border-color: rgba(160, 184, 214, 0.28);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.schedule-session-card.is-empty-slot h4 {
+  color: #c8d4e3;
+}
+
+.schedule-empty-slot-action {
+  color: #9fc5ff;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
 .schedule-danger-button {
   border-color: rgba(255, 132, 132, 0.42) !important;
   color: #ffb8b8 !important;

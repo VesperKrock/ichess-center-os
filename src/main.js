@@ -3439,7 +3439,7 @@ function getScheduleAdminAttendanceOccurrence() {
     return null
   }
 
-  return getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
+  return getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
     (item) =>
       item.id === scheduleReportState.sessionId &&
       item.occurrenceDate === scheduleReportState.occurrenceDate,
@@ -12462,23 +12462,22 @@ function bindEvents() {
 
   document.querySelectorAll('[data-schedule-action="open-edit"]').forEach((card) => {
     const openScheduleSession = () => {
-      const session = scheduleSessions.find(
-        (item) => item.id === card.dataset.scheduleSessionId,
+      const occurrenceDate = card.dataset.scheduleOccurrenceDate
+      const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
+        (item) => item.id === card.dataset.scheduleSessionId && item.occurrenceDate === occurrenceDate,
       )
+      const session = occurrence?.assignmentId
+        ? scheduleSessions.find((item) => item.id === occurrence.assignmentId)
+        : scheduleSessions.find((item) => item.id === card.dataset.scheduleSessionId)
 
-      if (!session) {
+      if (!session && !occurrence?.isEmptyClassSessionSlot) {
         return
       }
-
-      const occurrenceDate = card.dataset.scheduleOccurrenceDate
-      const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
-        (item) => item.id === session.id && item.occurrenceDate === occurrenceDate,
-      )
 
       if (occurrence && isPastScheduleOccurrence(occurrence)) {
         scheduleFormState = null
         scheduleReportState = {
-          sessionId: session.id,
+          sessionId: session?.id || occurrence.id,
           occurrenceDate: occurrence.occurrenceDate,
           mode: 'roleGateway',
         }
@@ -12498,7 +12497,23 @@ function bindEvents() {
         sessionReportExtraState = null
         isSessionReportExtraExpanded = false
         sessionReportGuestFormState = null
-        scheduleFormState = createEditScheduleFormState(session)
+        scheduleFormState = occurrence?.isEmptyClassSessionSlot
+          ? {
+              ...createEmptyScheduleFormState(),
+              mode: 'assign',
+              values: {
+                ...createEmptyScheduleFormState().values,
+                scheduleType: 'recurring',
+                classSessionId: occurrence.classSessionId,
+                dayOfWeek: occurrence.dayOfWeek,
+                startTime: occurrence.startTime,
+                endTime: occurrence.endTime,
+                room: occurrence.room || '',
+                level: occurrence.level || 'mixed',
+                status: occurrence.status || 'scheduled',
+              },
+            }
+          : createEditScheduleFormState(session)
       }
 
       render()
@@ -12557,7 +12572,7 @@ function bindEvents() {
       }
 
       if (role === 'teacher') {
-        const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
+        const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
           (item) =>
             item.id === scheduleReportState.sessionId &&
             item.occurrenceDate === scheduleReportState.occurrenceDate,
@@ -13118,7 +13133,7 @@ function bindEvents() {
       return
     }
 
-    const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate).find(
+    const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
       (item) =>
         item.id === scheduleReportState.sessionId &&
         item.occurrenceDate === scheduleReportState.occurrenceDate,
@@ -13359,13 +13374,9 @@ function bindEvents() {
 
         if (selectedClassSession) {
           const classSessionDays = getScheduleDaysFromSettingsClassSession(selectedClassSession)
-          const classSessionLabel = getScheduleSettingsClassSessionLabel(selectedClassSession)
-          nextValues.title = String(nextValues.title || '').trim() || classSessionLabel
           nextValues.dayOfWeek = classSessionDays[0] || nextValues.dayOfWeek || 'monday'
           nextValues.startTime = selectedClassSession.startTime || ''
           nextValues.endTime = selectedClassSession.endTime || ''
-          nextValues.groupName = String(nextValues.groupName || '').trim() ||
-            String(selectedClassSession.name || classSessionLabel || '').trim()
 
           if (selectedClassSession.room && !String(nextValues.room || '').trim()) {
             nextValues.room = selectedClassSession.room
@@ -13503,6 +13514,20 @@ function bindEvents() {
     }
 
     const formValues = getScheduleFormValuesFromDom()
+    const isManualScheduleCreate = scheduleFormState.mode === 'create'
+
+    if (isManualScheduleCreate && formValues.scheduleType === 'recurring') {
+      scheduleFormState = {
+        ...scheduleFormState,
+        values: formValues,
+        errors: {
+          form: 'Lich co dinh duoc tao o Cai dat co so. Vui long tao ca hoc/lop tai Cai dat co so truoc.',
+        },
+      }
+      render()
+      return
+    }
+
     const errors = validateScheduleForm(formValues, classSessions)
 
     if (Object.keys(errors).length) {
@@ -13570,7 +13595,12 @@ function bindEvents() {
       return
     }
 
-    const confirmed = window.confirm('Xóa buổi học này khỏi lịch tuần?')
+    const deletingClassSessionAssignment = Boolean(scheduleFormState.values?.classSessionId)
+    const confirmed = window.confirm(
+      deletingClassSessionAssignment
+        ? 'Xóa phân công của slot này? Slot vẫn còn vì được khai báo ở Cài đặt cơ sở. Muốn xóa hẳn khung giờ, hãy xóa/ngưng ca học/lớp trong Cài đặt cơ sở.'
+        : 'Xóa buổi học này khỏi lịch tuần?',
+    )
 
     if (!confirmed) {
       return
@@ -14718,7 +14748,7 @@ function installManualCloudBackfillHelpers() {
       backfillLocalScheduleSessionsToCloud({
         ...options,
         scheduleSessions,
-        visibleScheduleSessions: getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate),
+        visibleScheduleSessions: getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions),
       }),
   }
 }
