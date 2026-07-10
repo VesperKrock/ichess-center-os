@@ -8930,6 +8930,17 @@ h3 {
   background: rgba(132, 32, 32, 0.12);
 }
 
+.schedule-orphan-warning {
+  margin: 0 12px;
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #fed7aa;
+  background: rgba(120, 53, 15, 0.22);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
 .schedule-student-picker {
   grid-column: 1 / -1;
   min-width: 0;

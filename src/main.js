@@ -179,7 +179,9 @@ import {
   getNextScheduleWeekStartDate,
   getPreviousScheduleWeekStartDate,
   getVisibleScheduleSessions,
+  isOrphanFixedScheduleRecord,
   isPastScheduleOccurrence,
+  purgeZombieLopThayThinhScheduleSessions,
   renderScheduleModule,
   updateSessionReportDraftAttendance,
   updateSessionReportExtraState,
@@ -463,6 +465,7 @@ let parentNoteHistoryContactId = null
 let parentContactDetailId = null
 let staffFilters = { ...initialStaffFilters }
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
+scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'initial-load' })
 let sessionReports = getStoredSessionReports()
 let attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes()
 let attendanceBoardNotes = getStoredAttendanceBoardNotes()
@@ -706,6 +709,23 @@ function resetTransientStateForCenterSwitch() {
   attendanceBoardNoteFormState = null
 }
 
+function purgeZombieScheduleSessions({ persist = false, reason = 'schedule-cleanup' } = {}) {
+  const purgeResult = purgeZombieLopThayThinhScheduleSessions(scheduleSessions, classSessions)
+
+  if (!purgeResult.removedCount) {
+    return scheduleSessions
+  }
+
+  scheduleSessions = purgeResult.scheduleSessions
+
+  if (persist) {
+    saveStoredSchedule(scheduleSessions)
+  }
+
+  console.info(`[TKB] Purged ${purgeResult.removedCount} zombie schedule record(s): ${reason}`)
+  return scheduleSessions
+}
+
 function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   const nextStudents = getStoredStudents(useSampleFallback ? sampleStudents : [])
   students = shouldReplaceLegacyEightSeed(nextStudents) && useSampleFallback
@@ -720,6 +740,7 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
     useSampleFallback ? sampleParentConsultations : [],
   )
   scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
+  scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
   sessionReports = getStoredSessionReports([])
   attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes([])
   attendanceBoardNotes = getStoredAttendanceBoardNotes([])
@@ -6520,6 +6541,7 @@ function handleScheduleSessionRealtimeRecord(record) {
   }
 
   scheduleSessions = mergeResult.scheduleSessions
+  scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'schedule-realtime' })
   saveStoredSchedule(scheduleSessions)
   render()
 }
@@ -7286,8 +7308,10 @@ function applyCloudBootstrapSnapshotToLocal(snapshot) {
 
   if (Array.isArray(snapshot.scheduleSessions) && snapshot.scheduleSessions.length > 0) {
     scheduleSessions = snapshot.scheduleSessions
+    scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'cloud-bootstrap' })
     saveStoredSchedule(scheduleSessions)
     scheduleSessions = getStoredSchedule([])
+    scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'cloud-bootstrap-reload' })
   }
 
   return {
@@ -7307,6 +7331,7 @@ function restoreAngelWingsLocalDataset() {
   classSessions = result.classSessions
   tuitionRecords = result.tuitionRecords
   scheduleSessions = result.schedule
+  scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'angel-wings-restore' })
   sessionReports = result.sessionReports
   attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
 
@@ -11255,6 +11280,7 @@ function bindEvents() {
     classSessions = result.classSessions
     tuitionRecords = result.tuitionRecords
     scheduleSessions = result.schedule
+    scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'angel-wings-action-add' })
     sessionReports = result.sessionReports
     attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
     saveStoredStudents(students)
@@ -11287,6 +11313,7 @@ function bindEvents() {
     classSessions = result.classSessions
     tuitionRecords = result.tuitionRecords
     scheduleSessions = result.schedule
+    scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'angel-wings-action-clear' })
     sessionReports = result.sessionReports
     attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
     saveStoredStudents(students)
@@ -13654,7 +13681,14 @@ function bindEvents() {
       return
     }
 
-    const deletingClassSessionAssignment = Boolean(scheduleFormState.values?.classSessionId)
+    const deletedScheduleSession = scheduleSessions.find(
+      (session) => session.id === scheduleFormState.sessionId,
+    )
+    const isOrphanFixedSchedule = isOrphanFixedScheduleRecord(
+      deletedScheduleSession || scheduleFormState.values,
+      classSessions,
+    )
+    const deletingClassSessionAssignment = Boolean(scheduleFormState.values?.classSessionId) && !isOrphanFixedSchedule
     const confirmed = window.confirm(
       deletingClassSessionAssignment
         ? 'Xóa phân công của slot này? Slot vẫn còn vì được khai báo ở Cài đặt cơ sở. Muốn xóa hẳn khung giờ, hãy xóa/ngưng ca học/lớp trong Cài đặt cơ sở.'
@@ -13664,10 +13698,6 @@ function bindEvents() {
     if (!confirmed) {
       return
     }
-
-    const deletedScheduleSession = scheduleSessions.find(
-      (session) => session.id === scheduleFormState.sessionId,
-    )
 
     scheduleSessions = scheduleSessions.filter(
       (session) => session.id !== scheduleFormState.sessionId,

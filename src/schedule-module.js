@@ -738,10 +738,13 @@ export function getVisibleScheduleSessions(
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate()
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const weekDateSet = new Set(weekDays.map((day) => day.date))
+  const validClassSessionIds = getScheduleClassSessionIdSet(classSessions)
+  const cleanedSessions = purgeZombieLopThayThinhScheduleSessions(sessions, classSessions).scheduleSessions
   const assignmentByClassSessionId = new Map(
-    (Array.isArray(sessions) ? sessions : [])
+    cleanedSessions
       .filter((session) => normalizeScheduleType(session?.scheduleType) === 'recurring')
       .filter((session) => normalizeOptionalId(session?.classSessionId) && !session?.isDeleted)
+      .filter((session) => validClassSessionIds.has(normalizeOptionalId(session.classSessionId)))
       .map((session) => [normalizeOptionalId(session.classSessionId), session]),
   )
   const classSessionSlots = getVisibleScheduleClassSessions(classSessions)
@@ -759,7 +762,7 @@ export function getVisibleScheduleSessions(
     )
     .filter(Boolean)
 
-  const scheduleRecords = (Array.isArray(sessions) ? sessions : [])
+  const scheduleRecords = cleanedSessions
     .flatMap((session) => {
       const scheduleType = normalizeScheduleType(session.scheduleType)
 
@@ -780,7 +783,9 @@ export function getVisibleScheduleSessions(
         ]
       }
 
-      if (normalizeOptionalId(session.classSessionId)) {
+      const classSessionId = normalizeOptionalId(session.classSessionId)
+
+      if (classSessionId && validClassSessionIds.has(classSessionId)) {
         return []
       }
 
@@ -801,11 +806,65 @@ export function getVisibleScheduleSessions(
           ...session,
           scheduleType: 'recurring',
           occurrenceDate,
+          isOrphanScheduleRecord: isOrphanFixedScheduleRecord(session, classSessions),
+          missingClassSessionId: classSessionId || '',
         },
       ]
     })
   return [...classSessionSlots, ...scheduleRecords]
     .sort(compareSessions)
+}
+
+export function isOrphanFixedScheduleRecord(session, classSessions = []) {
+  if (normalizeScheduleType(session?.scheduleType) !== 'recurring') {
+    return false
+  }
+
+  const classSessionId = normalizeOptionalId(session?.classSessionId)
+
+  if (!classSessionId) {
+    return true
+  }
+
+  return !getScheduleClassSessionIdSet(classSessions).has(classSessionId)
+}
+
+export function purgeZombieLopThayThinhScheduleSessions(sessions = [], classSessions = []) {
+  const sourceSessions = Array.isArray(sessions) ? sessions : []
+  const scheduleSessions = sourceSessions.filter(
+    (session) => !isZombieLopThayThinhScheduleRecord(session, classSessions),
+  )
+
+  return {
+    scheduleSessions,
+    removedCount: sourceSessions.length - scheduleSessions.length,
+  }
+}
+
+export function isZombieLopThayThinhScheduleRecord(session, classSessions = []) {
+  if (!isOrphanFixedScheduleRecord(session, classSessions)) {
+    return false
+  }
+
+  const titleText = normalizeSearchText([
+    session?.title,
+    session?.groupName,
+    session?.name,
+  ].filter(Boolean).join(' '))
+  const teacherText = normalizeSearchText([
+    session?.teacherName,
+    session?.teacherDisplayName,
+    session?.teacherFallbackName,
+  ].filter(Boolean).join(' '))
+  const roomText = normalizeRoomText(session?.room)
+  const timeMatches = String(session?.startTime || '').trim() === '16:30' &&
+    String(session?.endTime || '').trim() === '18:00'
+  const titleMatches = titleText.includes('lop thay thinh') ||
+    titleText.includes('thay thinh')
+  const teacherMatches = teacherText.includes('thay thinh')
+  const roomMatches = roomText === '01' || roomText === '1'
+
+  return timeMatches && roomMatches && (titleMatches || teacherMatches)
 }
 
 export function getScheduleConflicts(visibleSessions = [], students = []) {
@@ -1112,18 +1171,24 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
   const isEdit = formState.mode === 'edit'
   const isManualCreate = formState.mode === 'create'
   const scheduleType = normalizeScheduleType(formState.values.scheduleType)
-  const isFixedSlotForm = scheduleType === 'recurring' && normalizeOptionalId(formState.values.classSessionId)
+  const selectedClassSession =
+    scheduleType === 'recurring' ? findScheduleClassSession(classSessions, formState.values.classSessionId) : null
+  const isOrphanFixedRecord = isOrphanFixedScheduleRecord(formState.values, classSessions)
+  const isFixedSlotForm = scheduleType === 'recurring' &&
+    normalizeOptionalId(formState.values.classSessionId) &&
+    selectedClassSession &&
+    !isOrphanFixedRecord
   const formTitle = isFixedSlotForm
     ? 'Gán thông tin ca học'
     : isEdit || formState.mode === 'assign'
       ? 'Sửa buổi học'
       : 'Thêm buổi học'
   const formSubtitle = isManualCreate ? 'Chỉ thêm buổi đột xuất hoặc học bù' : ''
-  const deleteLabel = scheduleType === 'recurring' && normalizeOptionalId(formState.values.classSessionId)
+  const deleteLabel = isFixedSlotForm
     ? 'Xóa phân công'
-    : 'Xóa buổi học'
-  const selectedClassSession =
-    scheduleType === 'recurring' ? findScheduleClassSession(classSessions, formState.values.classSessionId) : null
+    : isOrphanFixedRecord
+      ? 'Xóa lịch cũ'
+      : 'Xóa buổi học'
   const displayValues =
     scheduleType === 'recurring'
       ? applyClassSessionToScheduleValues(formState.values, selectedClassSession)
@@ -1205,6 +1270,7 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         ${renderTextareaField('note', scheduleType === 'oneOff' ? 'Ghi chú / lý do chi tiết' : 'Ghi chú', formState)}
       </div>
 
+      ${isOrphanFixedRecord ? renderScheduleOrphanWarning() : ''}
       ${renderFormWarnings(formConflicts)}
       ${renderFormErrors(formState.errors)}
 
@@ -2042,6 +2108,14 @@ function renderFixedSlotContext(values, classSession, formState) {
   `
 }
 
+function renderScheduleOrphanWarning() {
+  return `
+    <div class="schedule-orphan-warning" role="status">
+      Lịch cũ không còn trong Cài đặt cơ sở. Xóa sẽ xóa hẳn khỏi Thời khóa biểu.
+    </div>
+  `
+}
+
 function renderHiddenScheduleField(name, value) {
   return `<input type="hidden" name="${escapeAttribute(name)}" value="${escapeAttribute(value ?? '')}" data-schedule-form-field="${escapeAttribute(name)}" />`
 }
@@ -2607,6 +2681,12 @@ function getVisibleScheduleClassSessions(classSessions = [], selectedClassSessio
     )
 }
 
+function getScheduleClassSessionIdSet(classSessions = []) {
+  return new Set(
+    getVisibleScheduleClassSessions(classSessions).map((classSession) => normalizeOptionalId(classSession.id)),
+  )
+}
+
 function applyClassSessionToScheduleValues(values, classSession) {
   if (!classSession) {
     return values
@@ -2714,6 +2794,21 @@ function getScheduleClassSessionLabel(classSession) {
 
 function getScheduleDayLabel(dayOfWeek) {
   return scheduleDays.find((day) => day.id === dayOfWeek)?.label || ''
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function normalizeRoomText(value) {
+  return normalizeSearchText(value).replace(/^phong\s+/, '').padStart(2, '0')
 }
 
 function normalizeOccurrenceReason(value) {
