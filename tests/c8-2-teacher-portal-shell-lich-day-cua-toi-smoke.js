@@ -178,6 +178,8 @@ const allowedPaths = new Set([
   'tests/c8-2-teacher-portal-shell-lich-day-cua-toi-smoke.js',
   'docs/c8-3-lich-day-cua-toi-teacher-portal.md',
   'tests/c8-3-lich-day-cua-toi-teacher-portal-smoke.js',
+  'docs/c8-4-chi-tiet-ca-day-teacher-portal.md',
+  'tests/c8-4-chi-tiet-ca-day-teacher-portal-smoke.js',
   'tests/fb-c8-3-tkb-them-buoi-hoc-khong-tao-card-smoke.js',
   'tests/fb-c8-3-tkb-khong-chon-duoc-hoc-vien-smoke.js',
   'tests/fb-c8-3-tkb-student-picker-save-ux-smoke.js',

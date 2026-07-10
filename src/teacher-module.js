@@ -533,7 +533,7 @@ function renderTeacherProfile(
         </div>
         <div class="teacher-profile-grid teacher-profile-two-pane">
           ${renderTeacherInfoPane(teacher, classSessions)}
-          ${renderTeacherTeachingUpdatePane(teacher, studentLinks, schedules, students, sessionReports)}
+          ${renderTeacherTeachingUpdatePane(teacher, studentLinks, schedules, students, sessionReports, classSessions)}
         </div>
       </section>
     </div>
@@ -580,6 +580,7 @@ function renderTeacherTeachingUpdatePane(
   schedules = [],
   students = [],
   sessionReports = [],
+  classSessions = [],
 ) {
   return `
     <section class="teacher-profile-pane teacher-teaching-update-pane" aria-label="Cập nhật tình hình giảng dạy">
@@ -587,7 +588,7 @@ function renderTeacherTeachingUpdatePane(
         <h5>Cập nhật tình hình giảng dạy</h5>
         <span>${Number(studentLinks.total || 0).toLocaleString('vi-VN')} học viên liên quan</span>
       </div>
-      ${renderTeacherPortalShell(teacher, schedules, students, sessionReports)}
+      ${renderTeacherPortalShell(teacher, schedules, students, sessionReports, classSessions)}
       ${renderTeacherStudentUpdateSummary(teacher, studentLinks)}
       ${
         studentLinks.students.length
@@ -633,7 +634,7 @@ function renderTeacherStudentUpdateSummary(teacher, studentLinks = createTeacher
   `
 }
 
-function renderTeacherPortalShell(teacher, schedules = [], students = [], sessionReports = []) {
+function renderTeacherPortalShell(teacher, schedules = [], students = [], sessionReports = [], classSessions = []) {
   const teacherSessions = getTeacherScheduleSessions(teacher, schedules)
   const scheduleAudit = buildTeacherPortalScheduleAudit(teacher, schedules)
   const summary = buildTeacherPortalSummary(teacher, teacherSessions, sessionReports)
@@ -674,7 +675,7 @@ function renderTeacherPortalShell(teacher, schedules = [], students = [], sessio
           ${
             teacherSessions.length
               ? `<div class="teacher-my-schedule-list">${teacherSessions
-                  .map((session) => renderTeacherScheduleSessionCard(session, teacher, students))
+                  .map((session) => renderTeacherScheduleSessionDetailCard(session, teacher, students, classSessions, sessionReports))
                   .join('')}</div>`
               : '<div class="teacher-my-schedule-empty">Chưa có ca dạy nào được gắn với giáo viên này.</div>'
           }
@@ -689,6 +690,76 @@ function renderTeacherPortalSummaryCard(label, value) {
     <article>
       <span>${escapeHtml(label)}</span>
       <strong>${Number(value || 0).toLocaleString('vi-VN')}</strong>
+    </article>
+  `
+}
+
+function renderTeacherScheduleSessionDetailCard(session, teacher, students = [], classSessions = [], sessionReports = []) {
+  const display = getTeacherScheduleSessionDetailDisplay(session)
+  const studentList = getScheduleSessionStudents(session, students)
+  const classSession = getClassSessionForScheduleSession(session, classSessions)
+  const missingStudentIds = getMissingScheduleStudentIds(session, students)
+  const reportSummary = getTeacherSessionReportSummary(session, sessionReports)
+  const warnings = getTeacherScheduleSessionDetailWarnings(session, studentList, classSession, missingStudentIds)
+  const roomLabel = getScheduleSessionDetailLocationLabel(session)
+  const sessionTitle = getScheduleSessionDetailTitle(session, classSession)
+
+  return `
+    <article class="teacher-my-schedule-card">
+      <div class="teacher-my-schedule-main">
+        <time>${escapeHtml(display.dateLabel)}</time>
+        <strong>${escapeHtml(sessionTitle)}</strong>
+        <span>${escapeHtml(display.timeLabel)} · ${escapeHtml(roomLabel)}</span>
+      </div>
+      <div class="teacher-my-schedule-meta">
+        <span>${Number(studentList.length || 0).toLocaleString('vi-VN')} học viên</span>
+        <span>${escapeHtml(display.statusLabel)}</span>
+      </div>
+      ${warnings.length ? renderTeacherScheduleWarnings(warnings) : ''}
+      <details class="teacher-session-detail">
+        <summary>Xem ca dạy</summary>
+        <div class="teacher-session-detail-body" aria-label="Chi tiết ca dạy của giáo viên">
+          <div class="teacher-session-detail-heading">
+            <strong>Chi tiết ca dạy của tôi</strong>
+            <span>Read-only</span>
+          </div>
+          <section class="teacher-session-detail-section">
+            <h6>Thông tin ca</h6>
+            ${renderProfileRows([
+              ['Tên lớp/nhóm', sessionTitle],
+              ['Ngày/thứ', display.dateLabel],
+              ['Giờ bắt đầu/kết thúc', display.timeLabel],
+              ['Phòng', roomLabel],
+              ['Cấp độ', getScheduleSessionLevelLabel(session)],
+              ['Nguồn ca', getScheduleSessionSourceLabel(session, classSession)],
+              ['Trạng thái ca', getScheduleRuntimeStatusLabel(session, display.statusLabel)],
+              ['Ghi chú', getTeacherScheduleSessionDetailNote(session)],
+            ])}
+          </section>
+          <section class="teacher-session-detail-section">
+            <h6>Giáo viên</h6>
+            ${renderProfileRows([
+              ['Tên giáo viên', getTeacherDisplayName(teacher)],
+              ['Email', teacher.loginEmail || teacher.email || 'Chưa có email'],
+              ['Trạng thái', getTeacherStatusLabel(teacher.status)],
+            ])}
+          </section>
+          <section class="teacher-session-detail-section">
+            <h6>Học viên</h6>
+            ${renderTeacherSessionStudentList(studentList, missingStudentIds)}
+          </section>
+          <section class="teacher-session-detail-section">
+            <h6>Báo cáo ca dạy</h6>
+            ${renderProfileRows([
+              ['Trạng thái báo cáo', reportSummary.statusLabel],
+              ['Tóm tắt', reportSummary.summary],
+            ])}
+            <p>Báo cáo ca dạy sẽ được mở ở phase sau.</p>
+          </section>
+          ${warnings.length ? renderTeacherScheduleWarnings(warnings) : ''}
+          <p>Chi tiết ca chỉ đọc trong C8.4. Không chụp ảnh vào/ra, không điểm danh, không tạo hoặc sửa báo cáo ca dạy.</p>
+        </div>
+      </details>
     </article>
   `
 }
@@ -821,6 +892,34 @@ function renderTeacherScheduleAuditNotice(audit) {
   `
 }
 
+function getTeacherScheduleSessionDetailWarnings(session, studentList = [], classSession = null, missingStudentIds = []) {
+  const warnings = []
+
+  if (!normalizeId(session?.teacherId)) {
+    warnings.push('Ca thiếu teacherId.')
+  }
+
+  if (!Array.isArray(session?.studentIds) || !session.studentIds.length) {
+    warnings.push('Ca thiếu studentIds hoặc chưa có danh sách học viên.')
+  } else if (missingStudentIds.length || studentList.length < session.studentIds.length) {
+    warnings.push(`Một số học viên trong ca chưa tìm thấy trong hồ sơ học viên: ${missingStudentIds.join(', ') || 'chưa rõ id'}.`)
+  }
+
+  if (normalizeId(session?.classSessionId) && !classSession) {
+    warnings.push('Ca có classSessionId nhưng chưa tìm thấy nguồn ca cố định tương ứng.')
+  }
+
+  if (!normalizeId(session?.classSessionId) && session?.scheduleType === 'recurring') {
+    warnings.push('Ca lịch cố định thiếu classSession source.')
+  }
+
+  if (!String(session?.startTime || '').trim() || !String(session?.endTime || '').trim()) {
+    warnings.push('Ca thiếu giờ bắt đầu hoặc kết thúc.')
+  }
+
+  return warnings
+}
+
 function getTeacherScheduleSessionWarnings(session, studentList = []) {
   const warnings = []
 
@@ -857,6 +956,36 @@ function getTeacherScheduleSessionNote(session) {
       session?.description ||
       'Chưa có ghi chú',
   ).trim()
+}
+
+function getTeacherScheduleSessionDetailNote(session) {
+  return String(
+    session?.note ||
+      session?.notes ||
+      session?.reason ||
+      session?.description ||
+      'Chưa có ghi chú',
+  ).trim()
+}
+
+export function getTeacherSessionReportSummary(session, sessionReports = []) {
+  const report = findSessionReportForScheduleSession(session, sessionReports)
+
+  if (!report) {
+    return {
+      status: 'missing',
+      statusLabel: isPastScheduleSession(session) ? 'Chưa báo cáo' : 'Chưa có dữ liệu báo cáo',
+      summary: 'Chưa có dữ liệu báo cáo ca dạy.',
+      report: null,
+    }
+  }
+
+  return {
+    status: 'available',
+    statusLabel: 'Đã có báo cáo',
+    summary: getSessionReportSummaryText(report),
+    report,
+  }
 }
 
 export function buildTeacherPortalSummary(teacher, sessions = [], sessionReports = []) {
@@ -915,15 +1044,52 @@ function getTeacherScheduleSessionStatus(session, todayKey = getDateKey(new Date
 }
 
 function hasSessionReportForScheduleSession(session, sessionReports = []) {
+  return Boolean(findSessionReportForScheduleSession(session, sessionReports))
+}
+
+function findSessionReportForScheduleSession(session, sessionReports = []) {
   const sessionId = normalizeId(session?.id)
+  const classSessionId = normalizeId(session?.classSessionId)
   const occurrenceDate = String(session?.occurrenceDate || session?.date || '').trim()
 
-  return (Array.isArray(sessionReports) ? sessionReports : []).some((report) => {
+  return (Array.isArray(sessionReports) ? sessionReports : []).find((report) => {
     const reportSessionId = normalizeId(report?.scheduleSessionId || report?.sessionId || report?.classSessionId)
+    const directSessionId = normalizeId(report?.scheduleSessionId || report?.sessionId)
     const reportDate = String(report?.occurrenceDate || report?.date || '').trim()
+    const isSameSession =
+      reportSessionId === sessionId ||
+      directSessionId === sessionId ||
+      (classSessionId && reportSessionId === classSessionId)
 
-    return reportSessionId === sessionId && (!occurrenceDate || !reportDate || reportDate === occurrenceDate)
+    return isSameSession && (!occurrenceDate || !reportDate || reportDate === occurrenceDate)
   })
+}
+
+function getSessionReportSummaryText(report) {
+  return getFirstNonEmptyValue([
+    report?.summary,
+    report?.content,
+    report?.lessonContent,
+    report?.teacherNote,
+    report?.note,
+    Array.isArray(report?.contentLines) ? report.contentLines.join('; ') : '',
+  ])
+}
+
+function isPastScheduleSession(session) {
+  return getTeacherScheduleSessionStatus(session) === 'past'
+}
+
+function getTeacherScheduleSessionDetailDisplay(session) {
+  const dateKey = getScheduleSessionDateKey(session)
+  const todayKey = getDateKey(new Date())
+  const status = getTeacherScheduleSessionStatus(session, todayKey)
+
+  return {
+    dateLabel: dateKey ? formatDisplayDateLabel(dateKey) : getScheduleRecurringDayLabel(session),
+    timeLabel: formatScheduleSessionDetailTime(session),
+    statusLabel: getTeacherScheduleStatusLabel(status),
+  }
 }
 
 function getScheduleSessionDateKey(session) {
@@ -978,6 +1144,96 @@ function getScheduleSessionStudents(session, students = []) {
   const studentIds = new Set((Array.isArray(session?.studentIds) ? session.studentIds : []).map(normalizeId))
 
   return (Array.isArray(students) ? students : []).filter((student) => studentIds.has(normalizeId(student?.id)))
+}
+
+function getMissingScheduleStudentIds(session, students = []) {
+  const knownStudentIds = new Set((Array.isArray(students) ? students : []).map((student) => normalizeId(student?.id)))
+
+  return (Array.isArray(session?.studentIds) ? session.studentIds : [])
+    .map(normalizeId)
+    .filter((studentId) => studentId && !knownStudentIds.has(studentId))
+}
+
+function getClassSessionForScheduleSession(session, classSessions = []) {
+  const classSessionId = normalizeId(session?.classSessionId)
+
+  if (!classSessionId) {
+    return null
+  }
+
+  return (Array.isArray(classSessions) ? classSessions : []).find(
+    (classSession) => normalizeId(classSession?.id) === classSessionId,
+  ) || null
+}
+
+function getScheduleSessionDetailTitle(session, classSession = null) {
+  return String(
+    session?.title ||
+      session?.groupName ||
+      classSession?.displayLabel ||
+      classSession?.name ||
+      session?.room ||
+      'Ca dạy',
+  ).trim()
+}
+
+function getScheduleSessionLevelLabel(session) {
+  const level = String(session?.level || session?.levelLabel || '').trim()
+
+  if (!level) {
+    return 'Chưa cập nhật'
+  }
+
+  const labels = {
+    beginner: 'Cơ bản',
+    intermediate: 'Trung cấp',
+    advanced: 'Nâng cao',
+    mixed: 'Nhiều trình độ',
+  }
+
+  return labels[level] ?? level
+}
+
+function getScheduleSessionSourceLabel(session, classSession = null) {
+  if (session?.scheduleType === 'recurring') {
+    return classSession ? 'Lịch cố định từ Cài đặt cơ sở' : 'Lịch cố định'
+  }
+
+  if (session?.occurrenceReason === 'makeup') {
+    return 'Học bù'
+  }
+
+  if (session?.scheduleType === 'oneOff') {
+    return 'Buổi đột xuất'
+  }
+
+  return 'Chưa rõ nguồn ca'
+}
+
+function getScheduleRuntimeStatusLabel(session, fallbackStatusLabel = '') {
+  const status = String(session?.status || '').trim()
+  const labels = {
+    scheduled: 'Đã lên lịch',
+    done: 'Đã dạy',
+    cancelled: 'Đã hủy',
+  }
+
+  return labels[status] || fallbackStatusLabel || status || 'Chưa rõ'
+}
+
+function getScheduleSessionDetailLocationLabel(session) {
+  return String(session?.centerName || session?.location || session?.room || 'Cơ sở hiện tại').trim()
+}
+
+function formatScheduleSessionDetailTime(session) {
+  const start = String(session?.startTime || '').trim()
+  const end = String(session?.endTime || '').trim()
+
+  if (start && end) {
+    return `${start}-${end}`
+  }
+
+  return start || end || 'Chưa cập nhật giờ'
 }
 
 function getScheduleSessionLocationLabel(session) {
@@ -1074,6 +1330,45 @@ function renderProfileRows(rows) {
         )
         .join('')}
     </dl>
+  `
+}
+
+function renderTeacherSessionStudentList(studentList = [], missingStudentIds = []) {
+  if (!studentList.length && !missingStudentIds.length) {
+    return '<div class="teacher-empty-inline">Chưa có danh sách học viên.</div>'
+  }
+
+  return `
+    <div class="teacher-session-student-list">
+      ${studentList
+        .map((student) => {
+          const studentName = getStudentDisplayName(student, student?.id)
+          const studentMeta = [
+            getStudentLevelLabel(student) || 'Chưa cập nhật trình độ',
+            getStudentStatusLabel(student) || 'Chưa rõ trạng thái',
+          ]
+
+          return `
+            <article>
+              <strong>${escapeHtml(studentName)}</strong>
+              <span>${escapeHtml(studentMeta.join(' · '))}</span>
+              <small>${escapeHtml(getTeacherStudentNoteLabel(student))}</small>
+            </article>
+          `
+        })
+        .join('')}
+      ${missingStudentIds
+        .map(
+          (studentId) => `
+            <article class="is-missing">
+              <strong>${escapeHtml(studentId)}</strong>
+              <span>Thiếu hồ sơ học viên</span>
+              <small>Cần kiểm tra lại dữ liệu studentIds của ca.</small>
+            </article>
+          `,
+        )
+        .join('')}
+    </div>
   `
 }
 

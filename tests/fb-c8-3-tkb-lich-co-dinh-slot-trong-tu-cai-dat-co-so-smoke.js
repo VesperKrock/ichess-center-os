@@ -62,7 +62,8 @@ const emptyHtml = renderScheduleModule(
   { classSessions: [classSession] },
 )
 assert(emptyHtml.includes('is-empty-slot'), 'Empty fixed slot needs distinct visual state.')
-assert(emptyHtml.includes('Chưa gán thông tin'), 'Empty slot should be clearly unassigned.')
+assert(emptyHtml.includes('T3 16:30-18:00'), 'Empty slot should show the Settings class session name.')
+assert(emptyHtml.includes('Chưa phân công'), 'Empty slot should be clearly unassigned.')
 assert(emptyHtml.includes('+ Thêm thông tin'), 'Empty slot should invite assignment.')
 assert(!emptyHtml.includes('Lớp thầy Thịnh'), 'Empty slot must not resurrect deleted assignment title.')
 

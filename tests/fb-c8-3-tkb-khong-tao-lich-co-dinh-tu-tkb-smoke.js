@@ -105,7 +105,7 @@ const assignHtml = renderScheduleModule(
   { classSessions: [classSession] },
 )
 
-assert(assignHtml.includes('<option value="recurring"'), 'Fixed slot assignment form may show fixed schedule.')
+assert(!assignHtml.includes('Loại lịch'), 'Fixed slot assignment form must not show schedule type selector.')
 assert(assignHtml.includes('data-schedule-form-field="classSessionId"'), 'Fixed slot assignment must keep classSessionId.')
 
 const assignment = buildScheduleSessionFromForm(

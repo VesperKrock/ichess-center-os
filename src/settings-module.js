@@ -15,6 +15,8 @@ const classSessionStatusOptions = [
   { value: 'inactive', label: 'Đã ngưng' },
 ]
 
+const MAX_CLASS_SESSION_DAYS = 2
+
 export const classSessionDayOptions = [
   { value: 'mon', label: 'T2' },
   { value: 'tue', label: 'T3' },
@@ -61,20 +63,25 @@ export function createEditSettingsClassSessionFormState(classSession) {
 
 export function validateSettingsClassSessionForm(values) {
   const errors = {}
+  const selectedDays = normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel)
 
-  if (!String(values.name ?? '').trim()) {
-    errors.name = 'Tên ca học là bắt buộc.'
-  }
-
-  if (!normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel).length) {
+  if (!selectedDays.length) {
     errors.daysOfWeek = 'Chọn ít nhất 1 ngày học.'
   }
 
-  if (values.startTime && !isValidTime(values.startTime)) {
+  if (selectedDays.length > MAX_CLASS_SESSION_DAYS) {
+    errors.daysOfWeek = 'Mỗi ca học chỉ chọn tối đa 2 ngày học.'
+  }
+
+  if (!String(values.startTime ?? '').trim()) {
+    errors.startTime = 'Nhập giờ bắt đầu để tự sinh tên ca học.'
+  } else if (!isValidTime(values.startTime)) {
     errors.startTime = 'Giờ bắt đầu cần đúng dạng HH:mm.'
   }
 
-  if (values.endTime && !isValidTime(values.endTime)) {
+  if (!String(values.endTime ?? '').trim()) {
+    errors.endTime = 'Nhập giờ kết thúc để tự sinh tên ca học.'
+  } else if (!isValidTime(values.endTime)) {
     errors.endTime = 'Giờ kết thúc cần đúng dạng HH:mm.'
   }
 
@@ -87,12 +94,12 @@ export function buildSettingsClassSessionFromForm(
   classSessions = [],
 ) {
   const now = new Date().toISOString()
-  const name = String(values.name ?? '').trim()
-  const daysOfWeek = normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel)
+  const daysOfWeek = normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel).slice(0, MAX_CLASS_SESSION_DAYS)
   const daysLabel = buildClassSessionDaysLabel(daysOfWeek) || String(values.daysLabel ?? '').trim()
   const startTime = String(values.startTime ?? '').trim()
   const endTime = String(values.endTime ?? '').trim()
-  const displayLabel = buildClassSessionDisplayLabel({ name, daysLabel, startTime, endTime })
+  const displayLabel = buildClassSessionAutoName({ daysOfWeek, daysLabel, startTime, endTime })
+  const name = displayLabel
 
   return {
     id: existingClassSession?.id || createClassSessionId(displayLabel || name, classSessions),
@@ -562,11 +569,12 @@ function renderCloudDbPanel(state = null) {
   `
 }
 
-function renderSettingsClassSessionForm(formState) {
+function renderSettingsClassSessionFormLegacy(formState) {
   const isEdit = formState.mode === 'edit'
   const title = isEdit ? 'Sửa ca học' : 'Thêm ca học'
   const values = formState.values ?? {}
   const errors = formState.errors ?? {}
+  const autoName = buildClassSessionAutoName(values)
 
   return `
     <div class="settings-form-backdrop" role="presentation">
@@ -599,6 +607,108 @@ function renderSettingsClassSessionForm(formState) {
           </button>
         </div>
       </section>
+    </div>
+  `
+}
+
+function renderSettingsClassSessionFormPrevious(formState) {
+  const isEdit = formState.mode === 'edit'
+  const title = isEdit ? 'Sửa ca học' : 'Thêm ca học'
+  const values = formState.values ?? {}
+  const errors = formState.errors ?? {}
+  const autoName = buildClassSessionAutoName(values)
+
+  return `
+    <div class="settings-form-backdrop" role="presentation">
+      <section class="settings-class-session-form" role="dialog" aria-modal="true" aria-label="${title}">
+        <div class="settings-form-header">
+          <h4>${title}</h4>
+          <button type="button" data-settings-class-session-action="cancel-form" aria-label="Đóng form">×</button>
+        </div>
+        <div class="settings-form-grid">
+          ${renderClassSessionAutoNamePreview(autoName)}
+          ${renderDaysOfWeekField(values.daysOfWeek, errors.daysOfWeek)}
+          ${renderField('startTime', 'Giờ bắt đầu', values.startTime, errors.startTime, {
+            type: 'time',
+          })}
+          ${renderField('endTime', 'Giờ kết thúc', values.endTime, errors.endTime, {
+            type: 'time',
+          })}
+          ${renderStatusField(values.status)}
+          ${renderField('note', 'Ghi chú', values.note, errors.note, {
+            className: 'span-full',
+          })}
+        </div>
+        <div class="settings-form-actions">
+          <button type="button" data-settings-class-session-action="cancel-form">Hủy</button>
+          <button type="button" data-settings-class-session-action="save-form">
+            ${isEdit ? 'Lưu thay đổi' : 'Lưu ca học'}
+          </button>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderClassSessionAutoNamePreviewPrevious(autoName) {
+  return `
+    <div class="settings-class-session-auto-name span-full" data-settings-class-session-auto-name>
+      <span>Tên ca học tự sinh</span>
+      <strong>${escapeHtml(autoName || 'Chưa đủ thông tin')}</strong>
+    </div>
+  `
+}
+
+function renderSettingsClassSessionForm(formState) {
+  const isEdit = formState.mode === 'edit'
+  const title = isEdit ? 'Sửa ca học' : 'Thêm ca học'
+  const values = formState.values ?? {}
+  const errors = formState.errors ?? {}
+  const autoName = buildClassSessionAutoName(values)
+
+  return `
+    <div class="settings-form-backdrop" role="presentation">
+      <section class="settings-class-session-form" role="dialog" aria-modal="true" aria-label="${title}">
+        <div class="settings-form-header">
+          <h4>${title}</h4>
+          <button type="button" data-settings-class-session-action="cancel-form" aria-label="Đóng form">×</button>
+        </div>
+        <div class="settings-form-grid settings-class-session-form-grid">
+          ${renderClassSessionAutoNamePreview(autoName)}
+          ${renderDaysOfWeekField(values.daysOfWeek, errors.daysOfWeek)}
+          ${renderClassSessionTimeFields(values, errors)}
+          ${renderStatusField(values.status)}
+          ${renderField('note', 'Ghi chú', values.note, errors.note)}
+        </div>
+        <div class="settings-form-actions">
+          <button type="button" data-settings-class-session-action="cancel-form">Hủy</button>
+          <button type="button" data-settings-class-session-action="save-form">
+            ${isEdit ? 'Lưu thay đổi' : 'Lưu ca học'}
+          </button>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderClassSessionAutoNamePreview(autoName) {
+  return `
+    <div class="settings-class-session-auto-name span-full" data-settings-class-session-auto-name>
+      <span>Tên ca học</span>
+      <strong>${escapeHtml(autoName || 'Chưa đủ thông tin')}</strong>
+    </div>
+  `
+}
+
+function renderClassSessionTimeFields(values = {}, errors = {}) {
+  return `
+    <div class="settings-class-session-time-column">
+      ${renderField('startTime', 'Giờ bắt đầu', values.startTime, errors.startTime, {
+        type: 'time',
+      })}
+      ${renderField('endTime', 'Giờ kết thúc', values.endTime, errors.endTime, {
+        type: 'time',
+      })}
     </div>
   `
 }
@@ -639,7 +749,7 @@ function renderDaysOfWeekField(values = [], error = '') {
                   data-settings-class-session-day
                   ${selectedDays.includes(option.value) ? 'checked' : ''}
                 />
-                <label for="${escapeAttribute(inputId)}">${escapeHtml(option.label)}</label>
+                <label data-settings-class-day-toggle="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</label>
               </div>
             `
             },
@@ -716,6 +826,24 @@ export function buildClassSessionDaysLabel(daysOfWeek = []) {
     .join('-')
 }
 
+export function buildClassSessionAutoName(values = {}) {
+  const daysOfWeek = normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel).slice(0, MAX_CLASS_SESSION_DAYS)
+  const labelsByDay = new Map(classSessionDayOptions.map((option) => [option.value, option.label]))
+  const daysLabel =
+    daysOfWeek
+      .map((day) => labelsByDay.get(day))
+      .filter(Boolean)
+      .join(' - ') || String(values.daysLabel || '').trim()
+  const startTime = normalizeDisplayTime(values.startTime)
+  const endTime = normalizeDisplayTime(values.endTime)
+
+  if (!daysLabel || !startTime || !endTime) {
+    return ''
+  }
+
+  return `${daysLabel} ${startTime} - ${endTime}`
+}
+
 function parseClassSessionDaysLabel(label = '') {
   const source = String(label || '').toUpperCase()
   const tokens = source.match(/CN|T[2-7]/g) || []
@@ -785,6 +913,34 @@ function createClassSessionId(value, classSessions = []) {
   }
 
   return id
+}
+
+function normalizeDisplayTime(value) {
+  const source = String(value ?? '').trim()
+
+  if (!source) {
+    return ''
+  }
+
+  const match = source.match(/^(\d{1,2}):(\d{2})(?:\s*(SA|CH|AM|PM))?$/i)
+
+  if (!match) {
+    return source
+  }
+
+  let hour = Number(match[1])
+  const minute = match[2]
+  const period = String(match[3] || '').toUpperCase()
+
+  if ((period === 'CH' || period === 'PM') && hour < 12) {
+    hour += 12
+  }
+
+  if ((period === 'SA' || period === 'AM') && hour === 12) {
+    hour = 0
+  }
+
+  return `${String(hour).padStart(2, '0')}:${minute}`
 }
 
 function isValidTime(value) {

@@ -6676,9 +6676,77 @@ h3 {
 }
 
 .teacher-session-detail > div {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+.teacher-session-detail-body {
   display: grid;
+  gap: 10px;
+}
+
+.teacher-session-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
+}
+
+.teacher-session-detail-heading strong,
+.teacher-session-detail-section h6 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.86rem;
+}
+
+.teacher-session-detail-heading span {
+  border: 1px solid rgba(134, 239, 172, 0.28);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #bbf7d0;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.teacher-session-detail-section {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(160, 184, 214, 0.14);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.teacher-session-student-list {
+  display: grid;
+  gap: 7px;
+}
+
+.teacher-session-student-list article {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(160, 184, 214, 0.12);
+  border-radius: 7px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.026);
+}
+
+.teacher-session-student-list article.is-missing {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.teacher-session-student-list strong {
+  color: #ffffff;
+  font-size: 0.82rem;
+}
+
+.teacher-session-student-list span,
+.teacher-session-student-list small {
+  color: #9fb8d5;
+  font-size: 0.75rem;
+  line-height: 1.35;
 }
 
 .teacher-profile-pane-heading {
@@ -7666,21 +7734,20 @@ h3 {
 }
 
 .schedule-form-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 5;
-  border-radius: 8px;
+  z-index: 180;
   background: rgba(5, 8, 12, 0.58);
 }
 
 .schedule-form-panel {
-  position: absolute;
-  z-index: 6;
+  position: fixed;
+  z-index: 181;
   top: 50%;
   left: 50%;
   display: grid;
   width: min(760px, calc(100% - 28px));
-  max-height: min(680px, calc(100% - 28px));
+  max-height: min(680px, calc(100vh - 28px));
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   overflow: hidden;
   border: 1px solid rgba(160, 184, 214, 0.22);
@@ -8814,6 +8881,51 @@ h3 {
 }
 
 .schedule-class-session-readonly.has-error {
+  border-color: rgba(255, 132, 132, 0.42);
+  background: rgba(132, 32, 32, 0.12);
+}
+
+.schedule-fixed-slot-context {
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(118, 164, 231, 0.28);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(31, 93, 153, 0.12);
+}
+
+.schedule-fixed-slot-context strong,
+.schedule-fixed-slot-context span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-fixed-slot-context strong {
+  color: #eef6ff;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.schedule-fixed-slot-context span {
+  border-left: 1px solid rgba(160, 184, 214, 0.2);
+  padding-left: 8px;
+  color: #b9c8db;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.schedule-fixed-slot-context small {
+  color: #ffb4b4;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.schedule-fixed-slot-context.has-error {
   border-color: rgba(255, 132, 132, 0.42);
   background: rgba(132, 32, 32, 0.12);
 }
@@ -10343,7 +10455,7 @@ h3 {
 
 .settings-class-session-form {
   display: grid;
-  width: min(560px, 100%);
+  width: min(700px, 100%);
   max-height: calc(100vh - 160px);
   gap: 10px;
   overflow: auto;
@@ -10383,7 +10495,12 @@ h3 {
 .settings-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 12px;
+}
+
+.settings-class-session-form-grid {
+  grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.25fr);
+  align-items: start;
 }
 
 .settings-form-grid label {
@@ -10393,6 +10510,32 @@ h3 {
 
 .settings-form-grid label.span-full {
   grid-column: 1 / -1;
+}
+
+.settings-class-session-auto-name {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 5px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(37, 99, 235, 0.09);
+}
+
+.settings-class-session-time-column {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-class-session-auto-name span {
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.settings-class-session-auto-name strong {
+  color: #ffffff;
+  font-size: 0.95rem;
 }
 
 .settings-days-field {

@@ -943,11 +943,12 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
   const studentSummary = getStudentSummary(session.studentIds, studentLookup)
   const conflicts = conflictMap.get(session.id)
   const isEmptySlot = Boolean(session.isEmptyClassSessionSlot)
+  const classSessionLabel = String(session.classSessionLabel || '').trim()
   const title = isEmptySlot
-    ? 'Chưa gán thông tin'
-    : String(session.title || session.groupName || session.classSessionLabel || 'Chưa gán thông tin')
+    ? classSessionLabel || 'Chưa gán thông tin'
+    : String(session.title || session.groupName || classSessionLabel || 'Chưa gán thông tin')
   const meta = isEmptySlot
-    ? `${session.classSessionLabel || 'Slot từ Cài đặt cơ sở'} · ${session.room || 'Chưa có phòng'}`
+    ? `Chưa phân công · ${session.room || 'Chưa có phòng'}`
     : `${teacherLabel.name} · ${session.room || 'Chưa có phòng'}`
 
   return `
@@ -961,7 +962,7 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
       <time class="schedule-session-time">${escapeHtml(formatSessionTime(session))}</time>
       <h4>${escapeHtml(title)}</h4>
       <p class="schedule-session-meta">
-        ${escapeHtml(teacherLabel.name)} · ${escapeHtml(session.room || 'Chưa có phòng')}
+        ${escapeHtml(meta)}
       </p>
       <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
       ${isEmptySlot ? '<span class="schedule-empty-slot-action">+ Thêm thông tin</span>' : ''}
@@ -1110,11 +1111,14 @@ function renderTeacherDeadlineAlertItem(alert) {
 function renderScheduleForm(formState, teachers, students, sessions, weekStartDate, classSessions = []) {
   const isEdit = formState.mode === 'edit'
   const isManualCreate = formState.mode === 'create'
-  const formTitle = isEdit || formState.mode === 'assign' ? 'Sửa buổi học' : 'Thêm buổi học'
-  const formSubtitle = isManualCreate
-    ? 'Chỉ thêm buổi đột xuất hoặc học bù'
-    : 'Gán thông tin cho slot cố định từ Cài đặt cơ sở'
   const scheduleType = normalizeScheduleType(formState.values.scheduleType)
+  const isFixedSlotForm = scheduleType === 'recurring' && normalizeOptionalId(formState.values.classSessionId)
+  const formTitle = isFixedSlotForm
+    ? 'Gán thông tin ca học'
+    : isEdit || formState.mode === 'assign'
+      ? 'Sửa buổi học'
+      : 'Thêm buổi học'
+  const formSubtitle = isManualCreate ? 'Chỉ thêm buổi đột xuất hoặc học bù' : ''
   const deleteLabel = scheduleType === 'recurring' && normalizeOptionalId(formState.values.classSessionId)
     ? 'Xóa phân công'
     : 'Xóa buổi học'
@@ -1139,30 +1143,44 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
       <div class="schedule-form-header">
         <div>
           <h4>${escapeHtml(formTitle)}</h4>
-          <span>${escapeHtml(formSubtitle)}</span>
+          ${formSubtitle ? `<span>${escapeHtml(formSubtitle)}</span>` : ''}
         </div>
         <button type="button" data-schedule-action="cancel-form" aria-label="Đóng form">×</button>
       </div>
 
       <div class="schedule-form-grid" data-schedule-form-scroll-region="form">
-        ${renderScheduleTypeToggle(formState)}
-        ${renderField('title', 'Tên buổi/lớp *', formState, 'text', { className: 'span-full' })}
         ${
-          scheduleType === 'oneOff'
+          isFixedSlotForm
             ? `
-              ${renderField('date', 'Ngày cụ thể *', formState, 'date')}
-              ${renderSelectField(
-                'occurrenceReason',
-                'Lý do',
-                formState,
-                scheduleOccurrenceReasons.map((reason) => [reason.id, reason.label]),
-              )}
+              ${renderFixedSlotContext(displayValues, selectedClassSession, formState)}
+              ${renderHiddenScheduleField('scheduleType', 'recurring')}
+              ${renderHiddenScheduleField('classSessionId', displayValues.classSessionId)}
+              ${renderHiddenScheduleField('dayOfWeek', displayValues.dayOfWeek)}
+              ${renderHiddenScheduleField('startTime', displayValues.startTime)}
+              ${renderHiddenScheduleField('endTime', displayValues.endTime)}
+              ${renderHiddenScheduleField('allowOpenRange', 'true')}
             `
             : `
-              ${renderClassSessionSelect(formState, classSessions)}
-              ${renderClassSessionReadOnlyFields(displayValues, selectedClassSession, formState)}
-              ${renderField('startDate', 'Từ ngày *', formState, 'date')}
-              ${renderField('endDate', 'Đến ngày *', formState, 'date')}
+              ${renderScheduleTypeToggle(formState)}
+              ${renderField('title', 'Tên buổi/lớp *', formState, 'text', { className: 'span-full' })}
+              ${
+                scheduleType === 'oneOff'
+                  ? `
+                    ${renderField('date', 'Ngày cụ thể *', formState, 'date')}
+                    ${renderSelectField(
+                      'occurrenceReason',
+                      'Lý do',
+                      formState,
+                      scheduleOccurrenceReasons.map((reason) => [reason.id, reason.label]),
+                    )}
+                  `
+                  : `
+                    ${renderClassSessionSelect(formState, classSessions)}
+                    ${renderClassSessionReadOnlyFields(displayValues, selectedClassSession, formState)}
+                    ${renderField('startDate', 'Từ ngày *', formState, 'date')}
+                    ${renderField('endDate', 'Đến ngày *', formState, 'date')}
+                  `
+              }
             `
         }
         ${
@@ -1179,9 +1197,9 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         }
         ${renderField('room', 'Phòng *', formState, 'text')}
         ${renderTeacherSelect(formState, teachers)}
-        ${renderField('teacherName', 'Tên giáo viên fallback', formState, 'text')}
-        ${renderField('groupName', 'Nhóm/lớp', formState, 'text')}
-        ${renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
+        ${isFixedSlotForm ? '' : renderField('teacherName', 'Tên giáo viên fallback', formState, 'text')}
+        ${isFixedSlotForm ? '' : renderField('groupName', 'Nhóm/lớp', formState, 'text')}
+        ${isFixedSlotForm ? '' : renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
         ${renderSelectField('status', 'Trạng thái', formState, scheduleStatuses.map((status) => [status, getStatusLabel(status)]))}
         ${renderStudentPicker(formState, students, teachers)}
         ${renderTextareaField('note', scheduleType === 'oneOff' ? 'Ghi chú / lý do chi tiết' : 'Ghi chú', formState)}
@@ -2005,6 +2023,20 @@ function renderClassSessionReadOnlyFields(values, classSession, formState) {
         <small>Giờ: ${escapeHtml(timeLabel || 'Chưa có')}</small>
         <small>Lớp/Nhóm: ${escapeHtml(values.groupName || values.title || 'Chưa có')}</small>
       </div>
+      ${formState.errors.classSessionId ? `<small>${escapeHtml(formState.errors.classSessionId)}</small>` : ''}
+    </div>
+  `
+}
+
+function renderFixedSlotContext(values, classSession, formState) {
+  const dayLabel = getScheduleDayLabel(values.dayOfWeek)
+  const timeLabel = [values.startTime, values.endTime].filter(Boolean).join('-')
+  const slotLabel = classSession ? getScheduleClassSessionLabel(classSession) : values.classSessionLabel || ''
+
+  return `
+    <div class="schedule-fixed-slot-context span-full ${formState.errors.classSessionId ? 'has-error' : ''}">
+      <strong>${escapeHtml(slotLabel || 'Chưa chọn ca học')}</strong>
+      <span>${escapeHtml([dayLabel, timeLabel].filter(Boolean).join(' · ') || 'Chưa đủ thông tin ca')}</span>
       ${formState.errors.classSessionId ? `<small>${escapeHtml(formState.errors.classSessionId)}</small>` : ''}
     </div>
   `

@@ -350,6 +350,7 @@ import {
 } from './student-module.js'
 import {
   buildSettingsClassSessionFromForm,
+  buildClassSessionAutoName,
   createEditSettingsClassSessionFormState,
   createEmptySettingsClassSessionFormState,
   getClassSessionStudentCount,
@@ -11392,6 +11393,31 @@ function bindEvents() {
     })
   })
 
+  const updateSettingsClassSessionAutoNamePreview = (values = settingsClassSessionFormState?.values ?? {}) => {
+    const preview = document.querySelector('[data-settings-class-session-auto-name] strong')
+
+    if (preview) {
+      preview.textContent = buildClassSessionAutoName(values) || 'Chưa đủ thông tin'
+    }
+  }
+
+  document.querySelectorAll('[data-settings-class-day-toggle]').forEach((pill) => {
+    pill.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const option = event.currentTarget.closest('.settings-day-option')
+      const checkbox = option?.querySelector('[data-settings-class-session-day]')
+
+      if (!checkbox) {
+        return
+      }
+
+      checkbox.checked = !checkbox.checked
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  })
+
   document.querySelectorAll('[data-settings-class-session-field]').forEach((control) => {
     const eventName = control.matches('select') ? 'change' : 'input'
 
@@ -11400,17 +11426,20 @@ function bindEvents() {
         return
       }
 
+      const nextValues = {
+        ...settingsClassSessionFormState.values,
+        [control.dataset.settingsClassSessionField]: control.value,
+      }
+
       settingsClassSessionFormState = {
         ...settingsClassSessionFormState,
-        values: {
-          ...settingsClassSessionFormState.values,
-          [control.dataset.settingsClassSessionField]: control.value,
-        },
+        values: nextValues,
         errors: {
           ...settingsClassSessionFormState.errors,
           [control.dataset.settingsClassSessionField]: '',
         },
       }
+      updateSettingsClassSessionAutoNamePreview(nextValues)
     })
   })
 
@@ -11429,6 +11458,19 @@ function bindEvents() {
         document.querySelectorAll('[data-settings-class-session-day]:checked'),
       ).map((item) => item.value)
 
+      if (selectedDays.length > 2) {
+        event.currentTarget.checked = false
+        settingsClassSessionFormState = {
+          ...settingsClassSessionFormState,
+          errors: {
+            ...settingsClassSessionFormState.errors,
+            daysOfWeek: 'Mỗi ca học chỉ chọn tối đa 2 ngày học.',
+          },
+        }
+        render()
+        return
+      }
+
       settingsClassSessionFormState = {
         ...settingsClassSessionFormState,
         values: {
@@ -11440,6 +11482,7 @@ function bindEvents() {
           daysOfWeek: '',
         },
       }
+      updateSettingsClassSessionAutoNamePreview(settingsClassSessionFormState.values)
     })
   })
 
@@ -12480,7 +12523,33 @@ function bindEvents() {
         return
       }
 
-      if (occurrence && isPastScheduleOccurrence(occurrence)) {
+      if (occurrence?.isEmptyClassSessionSlot) {
+        scheduleReportState = null
+        scheduleAdminAttendanceState = null
+        sessionReportAttendanceState = null
+        sessionReportLearningState = null
+        sessionReportLearningFormState = null
+        sessionReportExtraState = null
+        isSessionReportExtraExpanded = false
+        sessionReportGuestFormState = null
+        scheduleFormState = {
+          ...createEmptyScheduleFormState(),
+          mode: 'assign',
+          values: {
+            ...createEmptyScheduleFormState().values,
+            scheduleType: 'recurring',
+            classSessionId: occurrence.classSessionId,
+            title: '',
+            dayOfWeek: occurrence.dayOfWeek,
+            startTime: occurrence.startTime,
+            endTime: occurrence.endTime,
+            room: occurrence.room || '',
+            level: occurrence.level || 'mixed',
+            status: occurrence.status || 'scheduled',
+            allowOpenRange: 'true',
+          },
+        }
+      } else if (occurrence && isPastScheduleOccurrence(occurrence)) {
         scheduleFormState = null
         scheduleReportState = {
           sessionId: session?.id || occurrence.id,
@@ -12503,23 +12572,7 @@ function bindEvents() {
         sessionReportExtraState = null
         isSessionReportExtraExpanded = false
         sessionReportGuestFormState = null
-        scheduleFormState = occurrence?.isEmptyClassSessionSlot
-          ? {
-              ...createEmptyScheduleFormState(),
-              mode: 'assign',
-              values: {
-                ...createEmptyScheduleFormState().values,
-                scheduleType: 'recurring',
-                classSessionId: occurrence.classSessionId,
-                dayOfWeek: occurrence.dayOfWeek,
-                startTime: occurrence.startTime,
-                endTime: occurrence.endTime,
-                room: occurrence.room || '',
-                level: occurrence.level || 'mixed',
-                status: occurrence.status || 'scheduled',
-              },
-            }
-          : createEditScheduleFormState(session)
+        scheduleFormState = createEditScheduleFormState(session)
       }
 
       render()
