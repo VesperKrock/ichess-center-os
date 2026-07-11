@@ -331,10 +331,13 @@ export function buildScheduleSessionFromForm(
     ? getDayOfWeekFromDate(date) || normalizedValues.dayOfWeek || 'monday'
     : normalizedValues.dayOfWeek
 
+  const title = repairScheduleDisplayText(String(normalizedValues.title ?? '').trim())
+  const groupName = repairScheduleDisplayText(String(normalizedValues.groupName ?? '').trim())
+
   return {
     id: existingSession?.id ?? `schedule-${Date.now()}`,
     scheduleType,
-    title: String(normalizedValues.title ?? '').trim(),
+    title,
     dayOfWeek,
     classSessionId: scheduleType === 'recurring' ? normalizeOptionalId(normalizedValues.classSessionId) : '',
     startDate: scheduleType === 'recurring' ? normalizeNullableDate(normalizedValues.startDate) : null,
@@ -350,7 +353,7 @@ export function buildScheduleSessionFromForm(
     teacherId,
     teacherName,
     studentIds: normalizeIdArray(normalizedValues.studentIds),
-    groupName: String(normalizedValues.groupName ?? '').trim(),
+    groupName,
     level: scheduleLevels.includes(normalizedValues.level) ? normalizedValues.level : 'mixed',
     status: scheduleStatuses.includes(normalizedValues.status) ? normalizedValues.status : 'scheduled',
     note: String(normalizedValues.note ?? '').trim(),
@@ -709,7 +712,8 @@ export function buildTrelloReportText({
   const classSituation = normalizeMultilineReportText(report?.classSituation)
   const suggestions = normalizeMultilineReportText(report?.suggestions, false)
   const teacherLine = teacher ? `Giáo viên: ${getTeacherDisplayName(teacher)}` : ''
-  const sessionLine = session?.title ? `Buổi học: ${session.title}` : ''
+  const sessionTitle = getScheduleSessionTitleForDisplay(session, '')
+  const sessionLine = sessionTitle ? `Buổi học: ${sessionTitle}` : ''
   const optionalHeader = [sessionLine, teacherLine].filter(Boolean).join('\n')
 
   return [
@@ -1003,9 +1007,10 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
   const conflicts = conflictMap.get(session.id)
   const isEmptySlot = Boolean(session.isEmptyClassSessionSlot)
   const classSessionLabel = String(session.classSessionLabel || '').trim()
-  const title = isEmptySlot
+  const rawTitle = isEmptySlot
     ? classSessionLabel || 'Chưa gán thông tin'
     : String(session.title || session.groupName || classSessionLabel || 'Chưa gán thông tin')
+  const title = repairScheduleDisplayText(rawTitle)
   const meta = isEmptySlot
     ? `Chưa phân công · ${session.room || 'Chưa có phòng'}`
     : `${teacherLabel.name} · ${session.room || 'Chưa có phòng'}`
@@ -1109,7 +1114,7 @@ function renderScheduleDeadlineAlertItemClean(alert) {
   return `
     <div class="schedule-teacher-alert-item is-${escapeAttribute(alert.status)}">
       <div class="schedule-teacher-alert-main">
-        <strong>${escapeHtml(alert.title)}</strong>
+        <strong>${escapeHtml(repairScheduleDisplayText(alert.title))}</strong>
         <span>${escapeHtml(formatReportDate(alert.occurrenceDate))} · ${escapeHtml(alert.timeLabel)}</span>
       </div>
       <div class="schedule-teacher-alert-meta">
@@ -1155,7 +1160,7 @@ function renderTeacherDeadlineAlertItem(alert) {
   return `
     <div class="schedule-teacher-alert-item is-${escapeAttribute(alert.status)}">
       <div class="schedule-teacher-alert-main">
-        <strong>${escapeHtml(alert.title)}</strong>
+        <strong>${escapeHtml(repairScheduleDisplayText(alert.title))}</strong>
         <span>${escapeHtml(formatReportDate(alert.occurrenceDate))} · ${escapeHtml(alert.timeLabel)}</span>
       </div>
       <div class="schedule-teacher-alert-meta">
@@ -1178,8 +1183,11 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
     normalizeOptionalId(formState.values.classSessionId) &&
     selectedClassSession &&
     !isOrphanFixedRecord
+  const isCompactFixedScheduleForm = isFixedSlotForm || isOrphanFixedRecord
   const formTitle = isFixedSlotForm
     ? 'Gán thông tin ca học'
+    : isOrphanFixedRecord
+      ? 'Sửa lịch cố định cũ'
     : isEdit || formState.mode === 'assign'
       ? 'Sửa buổi học'
       : 'Thêm buổi học'
@@ -1215,11 +1223,16 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
 
       <div class="schedule-form-grid" data-schedule-form-scroll-region="form">
         ${
-          isFixedSlotForm
+          isCompactFixedScheduleForm
             ? `
-              ${renderFixedSlotContext(displayValues, selectedClassSession, formState)}
+              ${
+                isFixedSlotForm
+                  ? renderFixedSlotContext(displayValues, selectedClassSession, formState)
+                  : renderOrphanFixedSlotContext(displayValues)
+              }
               ${renderHiddenScheduleField('scheduleType', 'recurring')}
-              ${renderHiddenScheduleField('classSessionId', displayValues.classSessionId)}
+              ${renderHiddenScheduleField('classSessionId', displayValues.classSessionId || '')}
+              ${renderHiddenScheduleField('title', repairScheduleDisplayText(displayValues.title))}
               ${renderHiddenScheduleField('dayOfWeek', displayValues.dayOfWeek)}
               ${renderHiddenScheduleField('startTime', displayValues.startTime)}
               ${renderHiddenScheduleField('endTime', displayValues.endTime)}
@@ -1262,9 +1275,9 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         }
         ${renderField('room', 'Phòng *', formState, 'text')}
         ${renderTeacherSelect(formState, teachers)}
-        ${isFixedSlotForm ? '' : renderField('teacherName', 'Tên giáo viên fallback', formState, 'text')}
-        ${isFixedSlotForm ? '' : renderField('groupName', 'Nhóm/lớp', formState, 'text')}
-        ${isFixedSlotForm ? '' : renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
+        ${isCompactFixedScheduleForm ? '' : renderField('teacherName', 'Tên giáo viên fallback', formState, 'text')}
+        ${isCompactFixedScheduleForm ? '' : renderField('groupName', 'Nhóm/lớp', formState, 'text')}
+        ${isCompactFixedScheduleForm ? '' : renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
         ${renderSelectField('status', 'Trạng thái', formState, scheduleStatuses.map((status) => [status, getStatusLabel(status)]))}
         ${renderStudentPicker(formState, students, teachers)}
         ${renderTextareaField('note', scheduleType === 'oneOff' ? 'Ghi chú / lý do chi tiết' : 'Ghi chú', formState)}
@@ -1320,16 +1333,16 @@ function renderScheduleReportPanel(
   const teacher = session.teacherId ? teacherLookup.get(String(session.teacherId)) : null
   const teacherLabel = getSessionTeacherLabel(session, teacher)
   const reportMode = reportState.mode || 'teacherReport'
+  const existingReport = findSessionReport(sessionReports, session.id, session.occurrenceDate)
 
   if (reportMode === 'roleGateway') {
     return renderScheduleReportRoleGateway(session, teacherLabel)
   }
 
   if (reportMode === 'adminPlaceholder') {
-    return renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup, adminAttendanceState)
+    return renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup, adminAttendanceState, existingReport)
   }
 
-  const existingReport = findSessionReport(sessionReports, session.id, session.occurrenceDate)
   const activeDraft =
     reportAttendanceState?.sessionId === session.id &&
     reportAttendanceState?.occurrenceDate === session.occurrenceDate
@@ -1367,7 +1380,7 @@ function renderScheduleReportPanel(
       <div class="schedule-report-header">
         <div class="schedule-report-compact-title">
           <strong>Báo cáo ca dạy</strong>
-          <span>${escapeHtml(session.title || 'Buổi học')}</span>
+          <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))}</span>
           <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
           <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
           ${teacherLabel.warning ? `<span class="schedule-warning-badge">${escapeHtml(teacherLabel.warning)}</span>` : ''}
@@ -1405,7 +1418,7 @@ function renderScheduleReportRoleGateway(session, teacherLabel) {
       <div class="schedule-report-header">
         <div class="schedule-report-compact-title">
           <strong>Bạn là?</strong>
-          <span>${escapeHtml(session.title || 'Buổi học')}</span>
+          <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))}</span>
           <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
           <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
         </div>
@@ -1426,7 +1439,13 @@ function renderScheduleReportRoleGateway(session, teacherLabel) {
   `
 }
 
-function renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup, adminAttendanceState = null) {
+function renderScheduleAdminAttendanceForm(
+  session,
+  teacherLabel,
+  studentLookup,
+  adminAttendanceState = null,
+  teacherReport = null,
+) {
   const studentIds = normalizeIdArray(session.studentIds)
   const rowsByStudentId = new Map(
     (Array.isArray(adminAttendanceState?.rows) ? adminAttendanceState.rows : [])
@@ -1442,6 +1461,17 @@ function renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup,
     },
   }))
   const summary = getAdminAttendanceSummary(studentRows)
+  const teacherReportStatus = teacherReport
+    ? {
+        label: 'Giáo viên đã báo cáo',
+        detail: getTeacherReportReceivedLabel(teacherReport),
+        tone: 'available',
+      }
+    : {
+        label: 'Chưa có báo cáo giáo viên',
+        detail: 'Admin chỉ đang điểm danh nhanh; chưa ghi nhận báo cáo giáo viên.',
+        tone: 'missing',
+      }
   const statusMessage = adminAttendanceState?.error
     ? `<p class="session-report-save-state error">${escapeHtml(adminAttendanceState.error)}</p>`
     : adminAttendanceState?.saveState === 'saved'
@@ -1450,11 +1480,11 @@ function renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup,
 
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
-    <section class="schedule-report-panel schedule-admin-attendance-panel" aria-label="Điểm danh Admin cơ sở">
+    <section class="schedule-report-panel schedule-admin-attendance-panel schedule-admin-attendance-compact" aria-label="Điểm danh Admin cơ sở">
       <div class="schedule-report-header">
         <div class="schedule-report-compact-title">
           <strong>Điểm danh Admin cơ sở</strong>
-          <span>${escapeHtml(session.title || 'Buổi học')}</span>
+          <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))}</span>
           <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
           <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
           <span>Học viên trong ca: ${studentRows.length}</span>
@@ -1466,33 +1496,32 @@ function renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup,
       </div>
 
       <div class="schedule-admin-attendance-body">
-        <section class="schedule-report-section">
-          <div class="session-report-section-heading">
-            <h5>Thông tin điểm danh</h5>
-            <div>
-              <button type="button" data-admin-attendance-action="mark-all-present">Đánh dấu tất cả có mặt</button>
-              <button type="button" data-admin-attendance-action="clear">Xóa nhập liệu</button>
-              <button type="button" data-admin-attendance-action="save">Lưu điểm danh</button>
-            </div>
+        <section class="schedule-admin-attendance-compact-top">
+          <div class="schedule-admin-teacher-report-status is-${escapeAttribute(teacherReportStatus.tone)}" role="status">
+            <strong>${escapeHtml(teacherReportStatus.label)}</strong>
+            <span>${escapeHtml(teacherReportStatus.detail)}</span>
           </div>
-          <div class="session-report-summary schedule-admin-attendance-summary" aria-label="Tổng quan điểm danh Admin">
-            <span>Học viên trong ca: ${studentRows.length}</span>
-            <span>Có mặt: ${summary.present}</span>
-            <span>Vắng: ${summary.absent}</span>
-            <span>Có phép: ${summary.excused}</span>
-            <span>Học bù: ${summary.makeup}</span>
-            <span>Học thử: ${summary.trial}</span>
-            <span>Chưa chọn: ${summary.empty}</span>
+          <div class="schedule-admin-attendance-actions">
+            <button type="button" class="is-secondary" data-admin-attendance-action="mark-all-present">Đánh dấu tất cả có mặt</button>
+            <button type="button" class="is-danger-ghost" data-admin-attendance-action="clear">Xóa nhập liệu</button>
+            <button type="button" class="is-primary" data-admin-attendance-action="save">Lưu điểm danh</button>
           </div>
-          ${statusMessage}
-          ${
-            studentRows.length
-              ? `<div class="schedule-admin-attendance-rows">${studentRows
-                  .map(({ studentId, student, row }) => renderAdminAttendanceStudentRow(studentId, student, row))
-                  .join('')}</div>`
-              : '<p class="schedule-report-empty">Ca học này chưa có học viên.</p>'
-          }
         </section>
+        ${statusMessage}
+        <div class="schedule-admin-attendance-summary" aria-label="Tổng quan điểm danh Admin">
+          <span>Học viên trong ca: ${studentRows.length}</span>
+          <span>Có mặt: ${summary.present}</span>
+          <span>Vắng: ${summary.absent}</span>
+          <span>Có phép: ${summary.excused}</span>
+          <span>Chưa chọn: ${summary.empty}</span>
+        </div>
+        ${
+          studentRows.length
+            ? `<div class="schedule-admin-attendance-rows">${studentRows
+                .map(({ studentId, student, row }) => renderAdminAttendanceStudentRow(studentId, student, row))
+                .join('')}</div>`
+            : '<p class="schedule-report-empty">Ca học này chưa có học viên.</p>'
+        }
       </div>
     </section>
   `
@@ -1509,15 +1538,35 @@ function renderAdminAttendanceStudentRow(studentId, student, row = {}) {
         <strong>${escapeHtml(studentName)}</strong>
         <span>${escapeHtml(studentMeta || 'Trong ca học')}</span>
       </div>
-      <select class="schedule-admin-attendance-status" data-admin-attendance-status data-admin-attendance-student-id="${escapeAttribute(studentId)}" aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}">
-        <option value=""${status ? '' : ' selected'}>Chưa chọn</option>
+      <div class="schedule-admin-attendance-choice-group" role="group" aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}">
         ${adminAttendanceStatuses
-          .map(([value, label]) => `<option value="${escapeAttribute(value)}"${status === value ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+          .filter(([value]) => ['present', 'absent', 'excused'].includes(value))
+          .map(([value, label]) => `
+            <button
+              type="button"
+              class="${status === value ? 'is-selected' : ''}"
+              value="${escapeAttribute(value)}"
+              data-admin-attendance-status
+              data-admin-attendance-student-id="${escapeAttribute(studentId)}"
+              aria-pressed="${status === value ? 'true' : 'false'}"
+            >${escapeHtml(label)}</button>
+          `)
           .join('')}
-      </select>
-      <input class="schedule-admin-attendance-note" type="text" maxlength="160" data-admin-attendance-note data-admin-attendance-student-id="${escapeAttribute(studentId)}" value="${escapeAttribute(row.note || '')}" aria-label="Ghi chú điểm danh của ${escapeAttribute(studentName)}">
+      </div>
+      <input class="schedule-admin-attendance-note" type="text" maxlength="160" data-admin-attendance-note data-admin-attendance-student-id="${escapeAttribute(studentId)}" value="${escapeAttribute(row.note || '')}" placeholder="Ghi chú (không bắt buộc)" aria-label="Ghi chú điểm danh của ${escapeAttribute(studentName)}">
     </div>
   `
+}
+
+function getTeacherReportReceivedLabel(report) {
+  const updatedAt = report?.updatedAt || report?.createdAt || report?.submittedAt || ''
+
+  if (!updatedAt) {
+    return 'Đã nhận báo cáo giáo viên.'
+  }
+
+  const dateLabel = formatReportDate(String(updatedAt).slice(0, 10) || updatedAt)
+  return `Đã nhận báo cáo giáo viên · ${dateLabel}`
 }
 
 function getAdminAttendanceSummary(studentRows = []) {
@@ -2104,6 +2153,20 @@ function renderFixedSlotContext(values, classSession, formState) {
       <strong>${escapeHtml(slotLabel || 'Chưa chọn ca học')}</strong>
       <span>${escapeHtml([dayLabel, timeLabel].filter(Boolean).join(' · ') || 'Chưa đủ thông tin ca')}</span>
       ${formState.errors.classSessionId ? `<small>${escapeHtml(formState.errors.classSessionId)}</small>` : ''}
+    </div>
+  `
+}
+
+function renderOrphanFixedSlotContext(values) {
+  const dayLabel = getScheduleDayLabel(values.dayOfWeek)
+  const timeLabel = [values.startTime, values.endTime].filter(Boolean).join('-')
+  const title = repairScheduleDisplayText(values.title || values.groupName || 'Lịch cố định cũ')
+
+  return `
+    <div class="schedule-fixed-slot-context span-full has-error">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml([dayLabel, timeLabel].filter(Boolean).join(' · ') || 'Lịch cố định thiếu nguồn ca học')}</span>
+      <small>Lịch cũ không còn trong Cài đặt cơ sở. Có thể cập nhật thông tin vận hành hoặc xóa lịch cũ.</small>
     </div>
   `
 }
@@ -2712,8 +2775,8 @@ function buildClassSessionScheduleSlot(classSession, assignment, dayOfWeek, occu
   const hasAssignment = Boolean(assignment)
   const startTime = String(classSession?.startTime ?? assignment?.startTime ?? '').trim()
   const endTime = String(classSession?.endTime ?? assignment?.endTime ?? '').trim()
-  const assignmentTitle = String(assignment?.title ?? '').trim()
-  const assignmentGroupName = String(assignment?.groupName ?? '').trim()
+  const assignmentTitle = repairScheduleDisplayText(String(assignment?.title ?? '').trim())
+  const assignmentGroupName = repairScheduleDisplayText(String(assignment?.groupName ?? '').trim())
   const classSessionLabel = getScheduleClassSessionLabel(classSession)
 
   return {
@@ -2790,6 +2853,42 @@ function getScheduleDaysFromClassSession(classSession) {
 
 function getScheduleClassSessionLabel(classSession) {
   return String(classSession?.displayLabel || classSession?.name || classSession?.daysLabel || 'Ca học').trim()
+}
+
+function getScheduleSessionTitleForDisplay(session, fallback = 'Buổi học mới') {
+  return repairScheduleDisplayText(session?.title || session?.groupName || fallback) || fallback
+}
+
+function repairScheduleDisplayText(value) {
+  const text = String(value ?? '').trim().normalize('NFC')
+
+  if (!text) {
+    return ''
+  }
+
+  if (isMojibakeNewLessonTitle(text)) {
+    return 'Buổi học mới'
+  }
+
+  return text
+}
+
+function isMojibakeNewLessonTitle(text) {
+  const lowerText = text.toLowerCase()
+  const hasMojibakeMarker = [
+    '\u00c3',
+    '\u00c2',
+    '\u0102',
+    '\u00a1\u00c2',
+    '\u00c2\u00bb',
+    '\u00e2\u20ac',
+    '\u00bb',
+    '\u2022',
+    '\u009d',
+    '\u203a',
+  ].some((marker) => text.includes(marker))
+
+  return hasMojibakeMarker && lowerText.includes('bu') && lowerText.includes('h') && lowerText.includes('m')
 }
 
 function getScheduleDayLabel(dayOfWeek) {

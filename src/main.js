@@ -12742,12 +12742,14 @@ function bindEvents() {
     })
 
   document.querySelectorAll('[data-admin-attendance-status]').forEach((control) => {
-    control.addEventListener('change', () => {
+    const updateAdminAttendanceStatus = () => {
       updateScheduleAdminAttendanceRow(control.dataset.adminAttendanceStudentId, {
         attendanceStatus: control.value,
       })
       render()
-    })
+    }
+
+    control.addEventListener(control.tagName === 'BUTTON' ? 'click' : 'change', updateAdminAttendanceStatus)
   })
 
   document.querySelectorAll('[data-admin-attendance-note]').forEach((control) => {
