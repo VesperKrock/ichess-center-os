@@ -121,6 +121,7 @@ import {
   addQuickNoteToParentContact,
   buildEnrollmentSummary,
   buildParentContactFromForm,
+  createEnrollmentDraftFromContact,
   createEmptyParentAppointmentDraft,
   createEmptyParentCareLogDraft,
   createEditParentContactFormState,
@@ -394,6 +395,7 @@ const preservedScrollTargets = [
   ['.student-care-form', 'student-care-form'],
   ['.student-learning-window', 'student-learning'],
   ['.parent-consultation-table-wrap', 'parent-table'],
+  ['.parent-contact-detail-scroll', 'parent-contact-detail'],
   ['.parent-note-history-list', 'parent-note-history'],
   ['.parent-student-picker-results', 'parent-student-picker'],
   ['.teacher-table-wrap', 'teacher-table'],
@@ -1007,6 +1009,10 @@ function getStableElementSelector(element) {
     'data-settings-class-session-field',
     'data-schedule-form-field',
     'data-parent-consultation-filter',
+    'data-parent-contact-field',
+    'data-parent-care-log-field',
+    'data-parent-appointment-field',
+    'data-parent-enrollment-field',
     'data-parent-form-field',
     'data-tuition-filter',
     'data-tuition-scroll-region',
@@ -11886,6 +11892,29 @@ function bindEvents() {
     }
   })
 
+  document.querySelectorAll('[data-parent-quick-note-suggestion]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+
+      if (!parentQuickNoteState) {
+        return
+      }
+
+      const suggestion = button.dataset.parentQuickNoteSuggestion || ''
+      const currentContent = String(parentQuickNoteState.content || '').trim()
+
+      parentQuickNoteState = {
+        ...parentQuickNoteState,
+        content: currentContent ? `${currentContent}\n${suggestion}` : suggestion,
+        error: '',
+      }
+      render()
+
+      const textarea = document.querySelector('[data-parent-quick-note-field="content"]')
+      focusElementWithoutScrolling(textarea)
+    })
+  })
+
   document.querySelectorAll('[data-parent-quick-note-action="cancel"]').forEach((button) => {
     button.addEventListener('click', () => {
       parentQuickNoteState = null
@@ -11929,6 +11958,18 @@ function bindEvents() {
     render()
   })
 
+  document.querySelector('.parent-contact-form')?.addEventListener('pointerdown', (event) => {
+    event.stopPropagation()
+  })
+
+  document.querySelector('.parent-contact-form')?.addEventListener('mousedown', (event) => {
+    event.stopPropagation()
+  })
+
+  document.querySelector('.parent-contact-form')?.addEventListener('click', (event) => {
+    event.stopPropagation()
+  })
+
   document.querySelectorAll('[data-parent-contact-field]').forEach((control) => {
     const eventName = control.matches('select') ? 'change' : 'input'
 
@@ -11938,7 +11979,6 @@ function bindEvents() {
       }
 
       const fieldName = control.dataset.parentContactField
-      const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
       const fieldValue = fieldName === 'studentBirthYear'
         ? control.value.replace(/\D/g, '').slice(0, 4)
         : control.value
@@ -11947,13 +11987,17 @@ function bindEvents() {
         control.value = fieldValue
       }
 
+      const calculatedLeadStudentAge = fieldName === 'studentBirthYear'
+        ? calculateParentContactAgeFromBirthYear(fieldValue)
+        : ''
+
       parentConsultationFormState = {
         ...parentConsultationFormState,
         values: {
           ...parentConsultationFormState.values,
           [fieldName]: fieldValue,
           ...(fieldName === 'studentBirthYear'
-            ? { leadStudentAge: calculateParentContactAgeFromBirthYear(fieldValue) }
+            ? { leadStudentAge: calculatedLeadStudentAge }
             : {}),
         },
         errors: {
@@ -11962,14 +12006,15 @@ function bindEvents() {
         },
       }
 
-      if (fieldName === 'studentSearch' || fieldName === 'studentBirthYear') {
-        render()
+      if (fieldName === 'studentSearch') {
+        renderParentStudentPickerResults(fieldValue)
+      }
 
-        const nextControl = document.querySelector(`[data-parent-contact-field="${fieldName}"]`)
-        focusElementWithoutScrolling(nextControl)
+      if (fieldName === 'studentBirthYear') {
+        const ageControl = document.querySelector('[data-parent-contact-field="leadStudentAge"]')
 
-        if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
-          nextControl.setSelectionRange(cursorPosition, cursorPosition)
+        if (ageControl) {
+          ageControl.value = calculatedLeadStudentAge
         }
       }
     })
@@ -11997,12 +12042,13 @@ function bindEvents() {
       }
 
       const nextStep = clampParentContactWizardStep(button.dataset.parentContactStep)
+      const collectedFormState = collectParentContactWizardValuesFromDOM(parentConsultationFormState)
 
-      parentConsultationFormState = {
-        ...parentConsultationFormState,
+      parentConsultationFormState = syncParentContactWizardStep4Draft({
+        ...collectedFormState,
         activeStep: nextStep,
         scrollTop: 0,
-      }
+      }, { forceContactValues: nextStep === 4 })
       skipNextParentContactScrollCapture = true
       render()
     })
@@ -12018,24 +12064,34 @@ function bindEvents() {
       const nextStep = clampParentContactWizardStep(
         (parentConsultationFormState.activeStep || 1) + direction,
       )
+      const collectedFormState = collectParentContactWizardValuesFromDOM(parentConsultationFormState)
 
-      parentConsultationFormState = {
-        ...parentConsultationFormState,
+      parentConsultationFormState = syncParentContactWizardStep4Draft({
+        ...collectedFormState,
         activeStep: nextStep,
         scrollTop: 0,
-      }
+      }, { forceContactValues: nextStep === 4 })
       skipNextParentContactScrollCapture = true
       render()
     })
   })
 
-  document.querySelectorAll('[data-parent-student-select-id]').forEach((button) => {
-    button.addEventListener('click', () => {
-      if (!parentConsultationFormState) {
-        return
-      }
+  document.querySelector('[data-parent-student-picker]')?.addEventListener('click', (event) => {
+    if (!parentConsultationFormState) {
+      return
+    }
 
-      const selectedStudent = students.find((student) => student.id === button.dataset.parentStudentSelectId)
+    const selectButton = event.target.closest('[data-parent-student-select-id]')
+    const clearButton = event.target.closest('[data-parent-student-clear]')
+
+    if (!selectButton && !clearButton) {
+      return
+    }
+
+    event.preventDefault()
+
+    if (selectButton) {
+      const selectedStudent = students.find((student) => student.id === selectButton.dataset.parentStudentSelectId)
 
       if (!selectedStudent) {
         return
@@ -12050,12 +12106,9 @@ function bindEvents() {
           studentSearch: selectedStudent.fullName,
         },
       }
-      render()
-    })
-  })
-
-  document.querySelector('[data-parent-student-clear]')?.addEventListener('click', () => {
-    if (!parentConsultationFormState) {
+      setParentStudentPickerSearchValue(selectedStudent.fullName)
+      renderParentStudentPickerSelection(selectedStudent)
+      renderParentStudentPickerResults(selectedStudent.fullName)
       return
     }
 
@@ -12068,7 +12121,9 @@ function bindEvents() {
         studentSearch: '',
       },
     }
-    render()
+    setParentStudentPickerSearchValue('')
+    renderParentStudentPickerSelection(null)
+    renderParentStudentPickerResults('')
   })
 
   document.querySelectorAll('[data-parent-care-log-field]').forEach((control) => {
@@ -12173,13 +12228,17 @@ function bindEvents() {
         control.value = fieldValue
       }
 
+      const calculatedEnrollmentStudentAge = fieldName === 'studentBirthYear'
+        ? calculateParentContactAgeFromBirthYear(fieldValue)
+        : ''
+
       parentConsultationFormState = {
         ...parentConsultationFormState,
         enrollmentDraft: {
           ...parentConsultationFormState.enrollmentDraft,
           [fieldName]: fieldValue,
           ...(fieldName === 'studentBirthYear'
-            ? { studentAge: calculateParentContactAgeFromBirthYear(fieldValue) }
+            ? { studentAge: calculatedEnrollmentStudentAge }
             : {}),
         },
         enrollmentErrors: {
@@ -12191,14 +12250,10 @@ function bindEvents() {
       }
 
       if (fieldName === 'studentBirthYear') {
-        const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
-        render()
+        const ageControl = document.querySelector('[data-parent-enrollment-field="studentAge"]')
 
-        const nextControl = document.querySelector('[data-parent-enrollment-field="studentBirthYear"]')
-        focusElementWithoutScrolling(nextControl)
-
-        if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
-          nextControl.setSelectionRange(cursorPosition, cursorPosition)
+        if (ageControl) {
+          ageControl.value = calculatedEnrollmentStudentAge
         }
       }
     })
@@ -12414,6 +12469,11 @@ function bindEvents() {
     if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
       return
     }
+
+    parentConsultationFormState = syncParentContactWizardStep4Draft(
+      collectParentContactWizardValuesFromDOM(parentConsultationFormState),
+      { forceContactValues: true },
+    )
 
     const contact = parentConsultations.find(
       (item) => item.id === parentConsultationFormState.contactId,
@@ -14427,6 +14487,11 @@ function saveParentEnrollmentDraft(markReady = false) {
     return
   }
 
+  parentConsultationFormState = syncParentContactWizardStep4Draft(
+    collectParentContactWizardValuesFromDOM(parentConsultationFormState),
+    { forceContactValues: true },
+  )
+
   if (parentConsultationFormState.mode !== 'edit') {
     parentConsultationFormState = {
       ...parentConsultationFormState,
@@ -14490,6 +14555,115 @@ function saveParentEnrollmentDraft(markReady = false) {
       : 'Đã lưu thông tin học thử và cập nhật lịch hẹn nếu có ngày học thử.',
   }
   render()
+}
+
+function collectParentContactWizardValuesFromDOM(formState) {
+  if (!formState) {
+    return formState
+  }
+
+  const values = { ...(formState.values ?? {}) }
+  const enrollmentDraft = { ...(formState.enrollmentDraft ?? {}) }
+  let hasContactValueChanges = false
+  let hasEnrollmentDraftChanges = false
+
+  document.querySelectorAll('[data-parent-contact-field]').forEach((control) => {
+    const fieldName = control.dataset.parentContactField
+
+    if (!fieldName || !('value' in control)) {
+      return
+    }
+
+    const fieldValue = fieldName === 'studentBirthYear'
+      ? control.value.replace(/\D/g, '').slice(0, 4)
+      : control.value
+
+    values[fieldName] = fieldValue
+    hasContactValueChanges = true
+
+    if (fieldName === 'studentBirthYear') {
+      values.leadStudentAge = calculateParentContactAgeFromBirthYear(fieldValue)
+    }
+  })
+
+  document.querySelectorAll('[data-parent-enrollment-field]').forEach((control) => {
+    const fieldName = control.dataset.parentEnrollmentField
+
+    if (!fieldName || !('value' in control)) {
+      return
+    }
+
+    const fieldValue = fieldName === 'studentBirthYear'
+      ? control.value.replace(/\D/g, '').slice(0, 4)
+      : control.value
+
+    enrollmentDraft[fieldName] = fieldValue
+    hasEnrollmentDraftChanges = true
+
+    if (fieldName === 'studentBirthYear') {
+      enrollmentDraft.studentAge = calculateParentContactAgeFromBirthYear(fieldValue)
+    }
+  })
+
+  if (!hasContactValueChanges && !hasEnrollmentDraftChanges) {
+    return formState
+  }
+
+  return {
+    ...formState,
+    values,
+    enrollmentDraft,
+  }
+}
+
+function syncParentContactWizardStep4Draft(formState, options = {}) {
+  if (!formState || Number(formState.activeStep) !== 4) {
+    return formState
+  }
+
+  const forceContactValues = options.forceContactValues !== false
+  const draft = formState.enrollmentDraft ?? {}
+  const values = formState.values ?? {}
+  const syncedDraft = createEnrollmentDraftFromContact({
+    ...values,
+    enrollmentDraft: draft,
+  })
+  const contactStudentName = values.leadStudentName || values.studentName || ''
+  const contactLearningGoal = values.leadNeed || ''
+
+  return {
+    ...formState,
+    enrollmentDraft: {
+      ...syncedDraft,
+      studentName: forceContactValues
+        ? contactStudentName
+        : draft.studentName || contactStudentName || syncedDraft.studentName,
+      studentAge: forceContactValues
+        ? values.leadStudentAge || ''
+        : draft.studentAge || values.leadStudentAge || syncedDraft.studentAge,
+      studentBirthYear: forceContactValues
+        ? values.studentBirthYear || ''
+        : draft.studentBirthYear || values.studentBirthYear || syncedDraft.studentBirthYear,
+      parentName: forceContactValues
+        ? values.parentName || ''
+        : draft.parentName || values.parentName || syncedDraft.parentName,
+      phone: forceContactValues
+        ? values.phone || ''
+        : draft.phone || values.phone || syncedDraft.phone,
+      interestedProgram: forceContactValues
+        ? values.interestedProgram || ''
+        : draft.interestedProgram || values.interestedProgram || syncedDraft.interestedProgram,
+      preferredSchedule: forceContactValues
+        ? values.preferredSchedule || ''
+        : draft.preferredSchedule || values.preferredSchedule || syncedDraft.preferredSchedule,
+      learningGoal: forceContactValues
+        ? contactLearningGoal
+        : draft.learningGoal || contactLearningGoal || syncedDraft.learningGoal,
+      advisorName: forceContactValues
+        ? values.consultantName || ''
+        : draft.advisorName || values.consultantName || syncedDraft.advisorName,
+    },
+  }
 }
 
 function createRenewedTuitionRecord(currentRecord, normalizedValues) {
@@ -14779,6 +14953,93 @@ function escapeHtml(value) {
 
 function escapeAttribute(value) {
   return escapeHtml(value)
+}
+
+function normalizeParentStudentPickerSearch(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+}
+
+function getParentStudentPickerMatches(searchValue) {
+  const normalizedSearch = normalizeParentStudentPickerSearch(searchValue)
+  const activeStudents = students.filter((student) => !student.isDeleted)
+
+  return (normalizedSearch
+    ? activeStudents.filter((student) =>
+        [student.fullName, student.parentName, student.phone].some((value) =>
+          normalizeParentStudentPickerSearch(value).includes(normalizedSearch),
+        ),
+      )
+    : activeStudents
+  ).slice(0, 8)
+}
+
+function renderParentStudentPickerResultButton(student, selectedStudentId) {
+  const contactInfo = [student.parentName, student.phone].filter(Boolean).join(' · ')
+  const isSelected = student.id === selectedStudentId
+
+  return `
+    <button
+      type="button"
+      class="parent-student-picker-result ${isSelected ? 'is-selected' : ''}"
+      data-parent-student-select-id="${escapeAttribute(student.id)}"
+      data-parent-student-name="${escapeAttribute(student.fullName || '')}"
+    >
+      <strong>${escapeHtml(student.fullName)}</strong>
+      <span>${escapeHtml(contactInfo || 'Chưa có thông tin liên hệ')}</span>
+    </button>
+  `
+}
+
+function renderParentStudentPickerResults(searchValue) {
+  const resultsElement = document.querySelector('[data-parent-student-picker-results]')
+
+  if (!resultsElement || !parentConsultationFormState) {
+    return
+  }
+
+  const matches = getParentStudentPickerMatches(searchValue)
+  const selectedStudentId = parentConsultationFormState.values?.studentId || ''
+
+  resultsElement.innerHTML = matches.length
+    ? matches.map((student) => renderParentStudentPickerResultButton(student, selectedStudentId)).join('')
+    : '<div class="parent-student-picker-empty">Không tìm thấy học viên phù hợp.</div>'
+}
+
+function setParentStudentPickerSearchValue(value) {
+  const input = document.querySelector('[data-parent-student-search-input]')
+
+  if (input) {
+    input.value = value || ''
+  }
+}
+
+function renderParentStudentPickerSelection(student) {
+  const picker = document.querySelector('[data-parent-student-picker]')
+
+  if (!picker) {
+    return
+  }
+
+  picker.querySelector('[data-parent-student-selected]')?.remove()
+
+  if (!student) {
+    return
+  }
+
+  const selectedElement = document.createElement('div')
+  selectedElement.className = 'parent-student-selected'
+  selectedElement.dataset.parentStudentSelected = ''
+  selectedElement.innerHTML = `
+    <span>${escapeHtml(student.fullName || '')}</span>
+    <button type="button" data-parent-student-clear>Không chọn học viên</button>
+  `
+
+  const helperText = picker.querySelector(':scope > small')
+  helperText?.insertAdjacentElement('afterend', selectedElement)
 }
 
 function bindShortcutDragging() {

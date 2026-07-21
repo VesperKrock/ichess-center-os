@@ -98,6 +98,7 @@ const VALID_ADVISORY_CARE_STATUSES = [
   'completed',
 ]
 const VALID_PARENT_CONTACT_TYPES = ['currentParent', 'consultingLead', 'reservedParent', 'stoppedParent']
+const VALID_PARENT_CUSTOMER_STAGES = ['lead', 'consulting', 'converted']
 const VALID_CONSULTATION_STATUSES = [
   'activeCare',
   'newLead',
@@ -1508,6 +1509,11 @@ function normalizeParentConsultations(contacts) {
         email: String(contact.email || ''),
         studentName: String(contact.studentName || ''),
         studentId: normalizeNullableId(contact.studentId),
+        customerStage: normalizeParentCustomerStage(contact),
+        consultantId: normalizeNullableId(contact.consultantId),
+        consultantName: String(contact.consultantName || contact.advisorName || ''),
+        advisorName: String(contact.advisorName || contact.consultantName || ''),
+        linkedStudentIds: normalizeParentLinkedStudentIds(contact.linkedStudentIds, contact.studentId),
         leadStudentName: String(contact.leadStudentName || ''),
         studentBirthYear,
         leadStudentAge: String(contact.leadStudentAge || calculatedAge || ''),
@@ -1525,6 +1531,8 @@ function normalizeParentConsultations(contacts) {
         lastContactAt: contact.lastContactAt ? normalizeDateTime(contact.lastContactAt) : '',
         lastNote: String(contact.lastNote || ''),
         nextAction: String(contact.nextAction || ''),
+        nextFollowUpAt: contact.nextFollowUpAt ? normalizeDateTime(contact.nextFollowUpAt) : '',
+        potentialLevel: String(contact.potentialLevel || ''),
         careLogs: normalizeParentCareLogs(contact.careLogs, {
           createdAt,
           updatedAt: contact.updatedAt ? normalizeDateTime(contact.updatedAt) : createdAt,
@@ -1541,6 +1549,25 @@ function normalizeParentConsultations(contacts) {
         updatedAt: contact.updatedAt ? normalizeDateTime(contact.updatedAt) : createdAt,
       }
     })
+}
+
+function normalizeParentCustomerStage(contact = {}) {
+  const explicitStage = String(contact.customerStage || '').trim()
+  return VALID_PARENT_CUSTOMER_STAGES.includes(explicitStage) ? explicitStage : ''
+}
+
+function normalizeParentLinkedStudentIds(value, fallbackStudentId = '') {
+  const ids = Array.isArray(value)
+    ? value
+    : String(value || '')
+      .split(',')
+      .map((item) => item.trim())
+
+  if (fallbackStudentId) {
+    ids.push(fallbackStudentId)
+  }
+
+  return Array.from(new Set(ids.map((item) => normalizeNullableId(item)).filter(Boolean)))
 }
 
 function normalizeParentContactType(contactType) {

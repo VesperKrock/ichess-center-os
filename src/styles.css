@@ -1632,9 +1632,34 @@ h3 {
   align-items: center;
 }
 
+.parent-consultation-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.parent-consultation-title h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 1.08rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parent-consultation-title span {
+  overflow: hidden;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .parent-consultation-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1681,6 +1706,15 @@ h3 {
 
 .parent-consultation-stat-card.is-warning strong {
   color: #ffe4b8;
+}
+
+.parent-consultation-stat-card.is-success {
+  border-color: rgba(82, 209, 139, 0.28);
+  background: rgba(82, 209, 139, 0.075);
+}
+
+.parent-consultation-stat-card.is-success strong {
+  color: #bff4d2;
 }
 
 .parent-consultation-add-button {
@@ -1742,7 +1776,7 @@ h3 {
 
 .parent-consultation-toolbar {
   display: grid;
-  grid-template-columns: minmax(240px, 1.35fr) minmax(150px, 0.75fr) minmax(170px, 0.85fr) minmax(160px, 0.8fr);
+  grid-template-columns: minmax(220px, 1.2fr) minmax(140px, 0.72fr) minmax(150px, 0.78fr) minmax(160px, 0.82fr) minmax(150px, 0.75fr);
   gap: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 8px 10px;
@@ -1818,29 +1852,33 @@ h3 {
 
 .parent-consultation-table {
   width: 100%;
-  min-width: 880px;
+  min-width: 1080px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
 .parent-consultation-table th:nth-child(1) {
-  width: 235px;
+  width: 210px;
 }
 
 .parent-consultation-table th:nth-child(2) {
-  width: 230px;
+  width: 165px;
 }
 
 .parent-consultation-table th:nth-child(3) {
-  width: 132px;
+  width: 160px;
 }
 
 .parent-consultation-table th:nth-child(4) {
-  width: 150px;
+  width: 220px;
 }
 
 .parent-consultation-table th:nth-child(5) {
-  width: 245px;
+  width: 190px;
+}
+
+.parent-consultation-table th:nth-child(6) {
+  width: 210px;
 }
 
 .parent-consultation-table th,
@@ -1884,6 +1922,9 @@ h3 {
 
 .parent-contact-cell,
 .parent-student-cell,
+.parent-stage-cell,
+.parent-advisor-cell,
+.parent-next-action-cell,
 .parent-note-cell {
   display: grid;
   min-width: 0;
@@ -1891,7 +1932,9 @@ h3 {
 }
 
 .parent-contact-cell strong,
-.parent-student-cell strong {
+.parent-student-cell strong,
+.parent-advisor-cell strong,
+.parent-next-action-cell strong {
   overflow: hidden;
   color: #ffffff;
   font-size: 0.92rem;
@@ -1902,6 +1945,9 @@ h3 {
 .parent-contact-cell span,
 .parent-contact-cell small,
 .parent-student-cell span,
+.parent-student-cell small,
+.parent-advisor-cell span,
+.parent-next-action-cell span,
 .parent-note-cell span,
 .parent-note-cell small,
 .parent-action-cell {
@@ -1987,6 +2033,7 @@ h3 {
 }
 
 .parent-contact-badge,
+.parent-stage-badge,
 .parent-status-badge,
 .parent-source-badge {
   display: inline-flex;
@@ -2001,6 +2048,24 @@ h3 {
   font-size: 0.72rem;
   font-weight: 900;
   line-height: 1.2;
+}
+
+.parent-stage-badge.is-lead {
+  border-color: rgba(118, 164, 231, 0.38);
+  color: #cfe0ff;
+  background: rgba(31, 93, 153, 0.22);
+}
+
+.parent-stage-badge.is-consulting {
+  border-color: rgba(240, 180, 91, 0.38);
+  color: #ffe4b8;
+  background: rgba(154, 96, 18, 0.15);
+}
+
+.parent-stage-badge.is-converted {
+  border-color: rgba(82, 209, 139, 0.36);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
 }
 
 .parent-contact-badge.is-currentParent,
@@ -2080,8 +2145,10 @@ h3 {
   z-index: 4;
   display: grid;
   place-items: center;
-  padding: 14px 18px 24px;
+  min-height: 0;
+  padding: 8px 12px max(52px, env(safe-area-inset-bottom));
   background: rgba(3, 7, 12, 0.62);
+  overflow: hidden;
 }
 
 .parent-note-modal-backdrop {
@@ -2151,6 +2218,14 @@ h3 {
   justify-content: flex-end;
 }
 
+.parent-note-modal-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 6px;
+}
+
 .parent-note-modal-actions button:last-child {
   border-color: rgba(118, 164, 231, 0.55);
   background: rgba(31, 93, 153, 0.42);
@@ -2186,6 +2261,31 @@ h3 {
 .parent-note-modal small {
   color: #ffb4b4;
   font-size: 0.78rem;
+}
+
+.parent-care-suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.parent-care-suggestion-chips button {
+  min-height: 28px;
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #cfe0ff;
+  background: rgba(31, 93, 153, 0.18);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.parent-care-suggestion-chips button:hover,
+.parent-care-suggestion-chips button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.68);
+  outline: none;
+  background: rgba(31, 93, 153, 0.34);
 }
 
 .parent-note-history-list {
@@ -2244,16 +2344,23 @@ h3 {
 
 .parent-contact-form {
   display: grid;
-  width: min(1320px, calc(100% - 24px));
-  height: min(860px, calc(100% - 34px));
+  width: min(1400px, calc(100% - 8px));
+  height: min(960px, calc(100dvh - 64px), calc(100% - 4px));
   max-width: 100%;
-  max-height: calc(100% - 34px);
+  max-height: min(calc(100dvh - 64px), calc(100% - 4px));
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   overflow: hidden;
-  border: 1px solid rgba(160, 184, 214, 0.22);
+  border: 1px solid rgba(160, 184, 214, 0.34);
   border-radius: 8px;
   background: #101923;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 24px 70px rgba(0, 0, 0, 0.42);
+  color-scheme: dark;
+}
+
+.parent-contact-wizard-modal {
+  isolation: isolate;
 }
 
 .parent-contact-form-header,
@@ -2265,8 +2372,8 @@ h3 {
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 11px 12px;
-  background: rgba(17, 24, 33, 0.96);
+  padding: 11px 14px;
+  background: #111821;
 }
 
 .parent-contact-form-header h3 {
@@ -2315,6 +2422,8 @@ h3 {
   justify-content: space-between;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   border-bottom: 0;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  background: #111821;
 }
 
 .parent-contact-form-header-actions button:first-child,
@@ -2397,8 +2506,29 @@ h3 {
 .parent-contact-form-scroll {
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px 104px;
+  padding: 14px 16px 18px;
   overscroll-behavior: contain;
+  background: #0b121a;
+  scrollbar-color: rgba(118, 164, 231, 0.5) rgba(255, 255, 255, 0.055);
+  scrollbar-width: thin;
+}
+
+.parent-contact-form-scroll::-webkit-scrollbar,
+.parent-student-picker-results::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.parent-contact-form-scroll::-webkit-scrollbar-track,
+.parent-student-picker-results::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.parent-contact-form-scroll::-webkit-scrollbar-thumb,
+.parent-student-picker-results::-webkit-scrollbar-thumb {
+  border: 2px solid #0b121a;
+  border-radius: 999px;
+  background: rgba(118, 164, 231, 0.55);
 }
 
 .parent-contact-form-section {
@@ -2428,6 +2558,27 @@ h3 {
 
 .parent-contact-form-grid.is-compact {
   grid-template-columns: minmax(220px, 0.5fr);
+}
+
+.parent-child-consultation-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.parent-child-new-card {
+  min-width: 0;
+}
+
+.parent-child-new-card .parent-contact-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 780px) {
+  .parent-child-new-card .parent-contact-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .parent-contact-form-grid label {
@@ -2500,6 +2651,45 @@ h3 {
   display: grid;
   min-width: 0;
   gap: 6px;
+  align-self: stretch;
+  border: 1px solid rgba(160, 184, 214, 0.12);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.parent-student-picker-search {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.parent-student-picker-search span {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.parent-student-picker-search-input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+  font: inherit;
+  color-scheme: dark;
+}
+
+.parent-student-picker-search-input::placeholder {
+  color: #6f8198;
+}
+
+.parent-student-picker-search-input:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
 }
 
 .parent-student-picker > small {
@@ -2551,6 +2741,9 @@ h3 {
   max-height: 220px;
   gap: 6px;
   overflow: auto;
+  background: #0b121a;
+  scrollbar-color: rgba(118, 164, 231, 0.5) rgba(255, 255, 255, 0.055);
+  scrollbar-width: thin;
 }
 
 .parent-student-picker-result {
@@ -10467,6 +10660,42 @@ h3 {
   padding-right: 4px;
 }
 
+.parent-convert-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(240, 180, 91, 0.26);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(154, 96, 18, 0.1);
+}
+
+.parent-convert-preview h4 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 0.94rem;
+}
+
+.parent-convert-preview p {
+  margin: 4px 0 0;
+  color: #ffe4b8;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.parent-convert-preview button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.2);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #aebbd0;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: not-allowed;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .parent-linked-students,
 .parent-detail-note-history {
   display: grid;
@@ -10479,6 +10708,32 @@ h3 {
   margin: 0;
   color: #ffffff;
   font-size: 0.92rem;
+}
+
+.parent-detail-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.parent-detail-section-heading button {
+  min-height: 30px;
+  border: 1px solid rgba(118, 164, 231, 0.45);
+  border-radius: 7px;
+  padding: 5px 9px;
+  color: #edf4fc;
+  background: rgba(31, 93, 153, 0.32);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.parent-detail-section-heading button:hover,
+.parent-detail-section-heading button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+  background: rgba(31, 93, 153, 0.48);
 }
 
 .parent-linked-students-list {
@@ -17111,6 +17366,7 @@ h3 {
     .parent-consultation-topbar,
     .parent-consultation-stats,
     .parent-consultation-toolbar,
+    .parent-child-consultation-layout,
     .parent-appointment-layout,
     .parent-enrollment-form,
     .parent-care-layout,
