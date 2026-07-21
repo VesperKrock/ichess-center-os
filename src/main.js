@@ -159,6 +159,7 @@ import {
 } from './inventory-module.js'
 import { createSampleNotifications } from './notifications.js'
 import { sampleScheduleSessions } from './schedule-data.js'
+import { loadStoredCenterCalendarItems } from './center-calendar-data.js'
 import {
   buildSessionReportFromAttendance,
   buildSessionReportFromLearningGroups,
@@ -4191,6 +4192,7 @@ function renderWindowBody(windowItem) {
       scheduleAdminAttendanceState,
       {
         attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        centerCalendarItems: loadStoredCenterCalendarItems(getCurrentResolvedCenterId()),
         classSessions,
       },
     )

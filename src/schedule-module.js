@@ -6,6 +6,11 @@ import {
   scheduleTypes,
 } from './schedule-data.js'
 import { buildScheduleDeadlineAlerts } from './schedule-deadline.js'
+import {
+  CENTER_CALENDAR_ITEM_TYPE_LABELS,
+  getCenterCalendarItemsForRange,
+  getCenterCalendarPresetForType,
+} from './center-calendar-data.js'
 
 const DAY_INDEX_BY_ID = new Map(scheduleDays.map((day, index) => [day.id, index]))
 
@@ -139,6 +144,11 @@ export function renderScheduleModule(
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
   const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
+  const visibleCenterCalendarItems = getCenterCalendarItemsForRange(
+    deadlineOptions.centerCalendarItems,
+    `${normalizedWeekStart}T00:00:00.000Z`,
+    `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`,
+  )
   const teacherLookup = createLookup(teachers)
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
@@ -182,6 +192,7 @@ export function renderScheduleModule(
                 teacherLookup,
                 studentLookup,
                 conflictMap,
+                getCenterCalendarItemsByDate(visibleCenterCalendarItems, day.date),
               ),
             )
             .join('')}
@@ -973,17 +984,24 @@ export function getNextScheduleWeekStartDate(weekStartDate) {
   return addDays(normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate(), 7)
 }
 
-function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap) {
+function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = []) {
+  const calendarCountLabel = centerCalendarItems.length
+    ? ` · ${centerCalendarItems.length} hoạt động`
+    : ''
+
   return `
     <section class="schedule-day-column" aria-label="${escapeAttribute(`${day.label} ${formatDisplayDate(day.date)}`)}">
       <header class="schedule-day-header">
         <strong>${escapeHtml(day.label)}</strong>
-        <span>${escapeHtml(formatDisplayDate(day.date))} · ${sessions.length} buổi</span>
+        <span>${escapeHtml(formatDisplayDate(day.date))} · ${sessions.length} buổi${calendarCountLabel}</span>
       </header>
       <div class="schedule-day-sessions">
         ${
-          sessions.length
-            ? sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap)).join('')
+          sessions.length || centerCalendarItems.length
+            ? [
+                ...sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap)),
+                ...centerCalendarItems.map((item) => renderCenterCalendarItemCard(item)),
+              ].join('')
             : '<div class="schedule-empty-day">Chưa có lịch</div>'
         }
       </div>
@@ -998,6 +1016,55 @@ function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMa
       </button>
     </section>
   `
+}
+
+function getCenterCalendarItemsByDate(centerCalendarItems = [], date) {
+  const dayStartAt = `${date}T00:00:00.000Z`
+  const dayEndAt = `${addDays(date, 1)}T00:00:00.000Z`
+
+  return getCenterCalendarItemsForRange(centerCalendarItems, dayStartAt, dayEndAt)
+}
+
+function renderCenterCalendarItemCard(item) {
+  const preset = getCenterCalendarPresetForType(item.itemType)
+  const color = item.customColor || preset.color
+  const typeLabel = CENTER_CALENDAR_ITEM_TYPE_LABELS[item.itemType] || CENTER_CALENDAR_ITEM_TYPE_LABELS.other
+  const locationLabel = item.location || item.roomId || ''
+  const cancelledLabel = item.isCancelled ? '<span class="schedule-calendar-item-status">Đã hủy</span>' : ''
+  const tagLabel = item.tagLabel ? `<span class="schedule-calendar-item-tag">${escapeHtml(item.tagLabel)}</span>` : ''
+  const description = item.description
+    ? `<p class="schedule-calendar-item-description">${escapeHtml(item.description)}</p>`
+    : ''
+
+  return `
+    <article
+      class="schedule-calendar-item schedule-calendar-item--${escapeAttribute(item.itemType)} ${item.isCancelled ? 'is-cancelled' : ''}"
+      data-center-calendar-item-id="${escapeAttribute(item.id)}"
+      style="--schedule-calendar-item-color: ${escapeAttribute(color)};"
+      aria-label="${escapeAttribute(`${typeLabel}: ${item.title}`)}"
+    >
+      <div class="schedule-calendar-item-header">
+        <span class="schedule-calendar-item-type">${escapeHtml(typeLabel)}</span>
+        ${cancelledLabel}
+      </div>
+      <h4>${escapeHtml(item.title)}</h4>
+      <p class="schedule-calendar-item-time">${escapeHtml(formatCenterCalendarItemTime(item))}</p>
+      ${locationLabel ? `<p class="schedule-calendar-item-location">${escapeHtml(locationLabel)}</p>` : ''}
+      ${tagLabel}
+      ${description}
+    </article>
+  `
+}
+
+function formatCenterCalendarItemTime(item) {
+  if (item.allDay) {
+    return 'Cả ngày'
+  }
+
+  const startTime = formatTimeFromIsoDateTime(item.startAt)
+  const endTime = formatTimeFromIsoDateTime(item.endAt)
+
+  return [startTime, endTime].filter(Boolean).join('-') || 'Chưa có giờ'
 }
 
 function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
@@ -2504,6 +2571,16 @@ function formatSessionTime(session) {
   const startTime = String(session.startTime || '').trim()
   const endTime = String(session.endTime || '').trim()
   return [startTime, endTime].filter(Boolean).join('-') || 'Chưa có giờ'
+}
+
+function formatTimeFromIsoDateTime(value) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function formatWeekRange(weekStartDate) {
