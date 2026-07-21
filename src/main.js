@@ -445,6 +445,7 @@ let notificationOutsidePointerBound = false
 let centerProfileOutsidePointerBound = false
 let moduleNotificationOutsidePointerBound = false
 let textEditingActionPointerUntil = 0
+let textEditingFieldPointerUntil = 0
 let nativeSelectInteractionUntil = 0
 let nativeSelectChangeRenderUntil = 0
 let pendingWindowFocusAfterRender = null
@@ -911,6 +912,7 @@ function isInteractiveActionElement(element) {
         '[type="submit"]',
         '[data-action]',
         '[data-window-action]',
+        '[data-module-launcher]',
         '[data-student-action]',
         '[data-teacher-action]',
         '[data-settings-class-session-action]',
@@ -918,7 +920,6 @@ function isInteractiveActionElement(element) {
         '[data-notification-action]',
         '[data-notification-module-id]',
         '[data-taskbar-window-id]',
-        '[data-module-id]',
       ].join(','),
     ),
   )
@@ -926,6 +927,10 @@ function isInteractiveActionElement(element) {
 
 function shouldDelayTextEditingRenderFlushForAction() {
   return Date.now() < textEditingActionPointerUntil
+}
+
+function shouldDelayTextEditingRenderFlushForFieldTransition() {
+  return Date.now() < textEditingFieldPointerUntil
 }
 
 function getActiveElementRenderSnapshot() {
@@ -1056,7 +1061,7 @@ function deferRenderUntilTextEditingEnds() {
 }
 
 function flushDeferredTextEditingRender() {
-  if (shouldDelayTextEditingRenderFlushForAction()) {
+  if (shouldDelayTextEditingRenderFlushForAction() || shouldDelayTextEditingRenderFlushForFieldTransition()) {
     window.setTimeout(flushDeferredTextEditingRender, 80)
     return
   }
@@ -1069,7 +1074,11 @@ function flushDeferredTextEditingRender() {
   render()
 }
 
-function scheduleDeferredTextEditingRenderFlush() {
+function scheduleDeferredTextEditingRenderFlush(event = null) {
+  if (event?.type === 'focusout' && isTextEditingElement(event.relatedTarget)) {
+    return
+  }
+
   window.setTimeout(flushDeferredTextEditingRender, 0)
 }
 
@@ -1077,6 +1086,10 @@ function installTextEditingRenderProtection() {
   document.addEventListener(
     'pointerdown',
     (event) => {
+      if (isTextEditingElement(event.target)) {
+        textEditingFieldPointerUntil = Date.now() + 220
+      }
+
       if (isNativeSelectElement(event.target)) {
         markNativeSelectInteraction()
       }
@@ -3968,6 +3981,7 @@ function renderDashboard() {
           <button
             class="module-button designer-theme-hook"
             type="button"
+            data-module-launcher="desktop"
             data-module-id="${moduleItem.id}"
             data-shortcut-id="${moduleItem.id}"
             data-module-title="${escapeAttribute(moduleItem.name)}"
@@ -5092,7 +5106,7 @@ function renderStartMenu() {
   const moduleItems = modules
     .map(
       (moduleItem) => `
-        <button class="start-menu-module" type="button" data-module-id="${moduleItem.id}">
+        <button class="start-menu-module" type="button" data-module-launcher="start-menu" data-module-id="${moduleItem.id}">
           ${moduleItem.name}
         </button>
       `,
@@ -5115,6 +5129,25 @@ function renderStartMenu() {
       </div>
     </nav>
   `
+}
+
+const moduleLauncherSelector = [
+  '.module-button[data-module-launcher][data-module-id]',
+  '.start-menu-module[data-module-launcher][data-module-id]',
+].join(',')
+
+function getModuleLauncherFromEventTarget(target) {
+  if (isTextEditingElement(target)) {
+    return null
+  }
+
+  const launcher = target?.closest?.(moduleLauncherSelector)
+
+  if (!launcher || launcher.closest('.desktop-window')) {
+    return null
+  }
+
+  return launcher
 }
 
 function openModuleWindow(moduleId) {
@@ -5565,8 +5598,7 @@ function bringWindowToFront(windowId) {
     ...openWindows.filter((windowItem) => windowItem.id !== windowId),
     {
       ...targetWindow,
-      minimized: false,
-      zIndex: nextZIndex,
+      minimized: false, zIndex: nextZIndex,
     },
   ]
 }
@@ -8825,8 +8857,13 @@ function bindEvents() {
     })
   })
 
-  document.querySelectorAll('[data-module-id]').forEach((button) => {
-    button.addEventListener('click', () => {
+  document.querySelectorAll(moduleLauncherSelector).forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const launcher = getModuleLauncherFromEventTarget(event.target)
+      if (launcher !== button) {
+        return
+      }
+
       if (suppressNextModuleClick) {
         suppressNextModuleClick = false
         return
