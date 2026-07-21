@@ -7561,6 +7561,14 @@ h3 {
   white-space: nowrap;
 }
 
+.schedule-calendar-add-button {
+  border-color: rgba(234, 179, 8, 0.34) !important;
+  color: #fff7d6 !important;
+  background: rgba(133, 77, 14, 0.42) !important;
+  cursor: pointer !important;
+  white-space: nowrap;
+}
+
 .schedule-week-scroll {
   min-height: 0;
   overflow: auto;
@@ -7759,6 +7767,16 @@ h3 {
     ),
     rgba(8, 12, 18, 0.72);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+}
+
+.schedule-calendar-item:hover,
+.schedule-calendar-item:focus-visible {
+  border-color: color-mix(in srgb, var(--schedule-calendar-item-color) 72%, rgba(255, 255, 255, 0.18));
+  outline: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--schedule-calendar-item-color) 22%, transparent),
+    0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
 .schedule-calendar-item.is-cancelled {
@@ -9591,6 +9609,146 @@ h3 {
 .schedule-form-field textarea {
   min-height: 70px;
   resize: vertical;
+}
+
+.schedule-calendar-checkbox input {
+  width: auto;
+  min-height: auto;
+  justify-self: start;
+  accent-color: #eab308;
+}
+
+.schedule-calendar-color-palette {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.schedule-calendar-color-palette legend {
+  margin-bottom: 7px;
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.schedule-calendar-color-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.schedule-calendar-color-swatch {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--schedule-calendar-item-color) 42%, rgba(255, 255, 255, 0.16));
+  border-radius: 7px;
+  padding: 7px 8px;
+  color: #f8fbff;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--schedule-calendar-item-color) 74%, rgba(10, 15, 22, 0.12)),
+      color-mix(in srgb, var(--schedule-calendar-item-color) 30%, rgba(10, 15, 22, 0.72))
+    );
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.schedule-calendar-color-swatch span {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  color: #0b131c;
+  background: rgba(255, 255, 255, 0.86);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.schedule-calendar-color-swatch strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-calendar-color-swatch.is-selected {
+  border-color: #ffffff;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--schedule-calendar-item-color) 30%, transparent),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+
+.schedule-calendar-reset-color {
+  justify-self: start;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: #dbe8f7;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.schedule-calendar-detail-list dd {
+  min-width: 0;
+}
+
+.schedule-calendar-detail-color {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--schedule-calendar-item-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--schedule-calendar-item-color) 18%, transparent);
+}
+
+.schedule-calendar-detail-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.schedule-calendar-detail-list div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding-bottom: 8px;
+}
+
+.schedule-calendar-detail-list dt {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.schedule-calendar-detail-list dd {
+  margin: 0;
+  color: #f4f7fb;
+  overflow-wrap: anywhere;
+  font-size: 0.86rem;
+  font-weight: 780;
+  line-height: 1.4;
+}
+
+.schedule-calendar-detail-list dd:has(.schedule-calendar-detail-color) {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .schedule-form-field input:focus,

@@ -161,14 +161,23 @@ import { createSampleNotifications } from './notifications.js'
 import { sampleScheduleSessions } from './schedule-data.js'
 import { loadStoredCenterCalendarItems } from './center-calendar-data.js'
 import {
+  getCenterCalendarItemById,
+  saveStoredCenterCalendarItems,
+} from './center-calendar-data.js'
+import {
   buildSessionReportFromAttendance,
   buildSessionReportFromLearningGroups,
   buildLearningGroupFromForm,
   buildGuestParticipantFromForm,
   buildScheduleSessionFromForm,
+  buildCenterCalendarItemFromForm,
   buildSessionReportFromExtraInfo,
+  createCenterCalendarItemDeleteState,
+  createCenterCalendarItemDetailState,
+  createEditCenterCalendarItemFormState,
   createEditScheduleFormState,
   createEditLearningGroupFormState,
+  createEmptyCenterCalendarItemFormState,
   createEmptyScheduleFormState,
   createScheduleFormStateForDay,
   createEmptyLearningGroupFormState,
@@ -190,6 +199,7 @@ import {
   validateLearningGroupForm,
   validateGuestParticipantForm,
   validateSessionReportAttendance,
+  validateCenterCalendarItemForm,
   validateScheduleForm,
 } from './schedule-module.js'
 import {
@@ -480,6 +490,7 @@ let attendanceBaselineDraftBaseRecords = null
 let attendanceBaselineDraftState = null
 let pendingAttendanceBaselineCellFocus = null
 let scheduleFormState = null
+let scheduleCalendarItemState = null
 let scheduleReportState = null
 let scheduleAdminAttendanceState = null
 let sessionReportAttendanceState = null
@@ -695,6 +706,7 @@ function resetTransientStateForCenterSwitch() {
   parentContactDetailId = null
   parentConvertPreviewState = null
   scheduleFormState = null
+  scheduleCalendarItemState = null
   scheduleReportState = null
   scheduleAdminAttendanceState = null
   sessionReportAttendanceState = null
@@ -4206,6 +4218,7 @@ function renderWindowBody(windowItem) {
       scheduleAdminAttendanceState,
       {
         attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        centerCalendarItemState: scheduleCalendarItemState,
         centerCalendarItems: loadStoredCenterCalendarItems(getCurrentResolvedCenterId()),
         classSessions,
       },
@@ -12849,6 +12862,151 @@ function bindEvents() {
   document.querySelector('[data-teacher-form]')?.addEventListener('submit', handleTeacherFormSave)
   document.querySelector('[data-teacher-action="save-form"]')?.addEventListener('click', handleTeacherFormSave)
 
+  const closeScheduleActivityPanels = () => {
+    scheduleCalendarItemState = null
+  }
+
+  const resetScheduleReportPanels = () => {
+    scheduleReportState = null
+    scheduleAdminAttendanceState = null
+    sessionReportAttendanceState = null
+    sessionReportLearningState = null
+    sessionReportLearningFormState = null
+    sessionReportExtraState = null
+    isSessionReportExtraExpanded = false
+    sessionReportGuestFormState = null
+  }
+
+  const getCurrentCenterCalendarItems = () =>
+    loadStoredCenterCalendarItems(getCurrentResolvedCenterId())
+
+  const getCurrentCenterCalendarItem = (itemId) =>
+    getCenterCalendarItemById(getCurrentCenterCalendarItems(), itemId)
+
+  const openCenterCalendarItemDetail = (itemId) => {
+    const item = getCurrentCenterCalendarItem(itemId)
+
+    if (!item) {
+      scheduleCalendarItemState = null
+      render()
+      return
+    }
+
+    scheduleFormState = null
+    resetScheduleReportPanels()
+    scheduleCalendarItemState = createCenterCalendarItemDetailState(item)
+    render()
+  }
+
+  const getCenterCalendarFormValuesFromDom = () => {
+    const formElement = document.querySelector('[data-center-calendar-form]')
+    const values = {
+      ...(scheduleCalendarItemState?.values ?? {}),
+    }
+
+    formElement?.querySelectorAll('[data-center-calendar-form-field]').forEach((control) => {
+      const fieldName = control.dataset.centerCalendarFormField
+
+      if (!fieldName) {
+        return
+      }
+
+      values[fieldName] = control.type === 'checkbox' ? control.checked : control.value
+    })
+
+    return values
+  }
+
+  const getDefaultCenterCalendarColorKeyForType = (itemType) => {
+    const defaults = {
+      meeting: 'orange',
+      event: 'green',
+      tournament: 'emerald',
+      other: 'yellow',
+    }
+
+    return defaults[itemType] || defaults.other
+  }
+
+  const isCenterCalendarColorOverridden = (values = {}) =>
+    values.colorOverridden === true || values.colorOverridden === 'true'
+
+  const updateCenterCalendarPaletteDom = (colorKey, colorOverridden) => {
+    const formElement = document.querySelector('[data-center-calendar-form]')
+
+    if (!formElement) {
+      return
+    }
+
+    formElement.querySelectorAll('[data-center-calendar-color-key]').forEach((button) => {
+      const isSelected = button.dataset.centerCalendarColorKey === colorKey
+      button.classList.toggle('is-selected', isSelected)
+      button.setAttribute('aria-pressed', isSelected ? 'true' : 'false')
+      const checkElement = button.querySelector('span')
+
+      if (checkElement) {
+        checkElement.textContent = isSelected ? '✓' : ''
+      }
+    })
+
+    const colorInput = formElement.querySelector('[data-center-calendar-form-field="colorKey"]')
+    const overrideInput = formElement.querySelector('[data-center-calendar-form-field="colorOverridden"]')
+
+    if (colorInput) {
+      colorInput.value = colorKey
+    }
+
+    if (overrideInput) {
+      overrideInput.value = colorOverridden ? 'true' : ''
+    }
+  }
+
+  const saveCenterCalendarItemFromForm = (event) => {
+    event?.preventDefault?.()
+
+    if (!scheduleCalendarItemState || !['create', 'edit'].includes(scheduleCalendarItemState.mode)) {
+      return
+    }
+
+    const formValues = getCenterCalendarFormValuesFromDom()
+    const errors = validateCenterCalendarItemForm(formValues)
+
+    if (Object.keys(errors).length) {
+      scheduleCalendarItemState = {
+        ...scheduleCalendarItemState,
+        values: formValues,
+        errors,
+      }
+      render()
+      return
+    }
+
+    const centerId = getCurrentResolvedCenterId()
+    const latestItems = loadStoredCenterCalendarItems(centerId)
+    const existingItem = scheduleCalendarItemState.mode === 'edit'
+      ? getCenterCalendarItemById(latestItems, scheduleCalendarItemState.itemId)
+      : null
+    const nextItem = buildCenterCalendarItemFromForm(formValues, existingItem, centerId)
+
+    if (!nextItem) {
+      scheduleCalendarItemState = {
+        ...scheduleCalendarItemState,
+        values: formValues,
+        errors: { form: 'Dữ liệu hoạt động không hợp lệ.' },
+      }
+      render()
+      return
+    }
+
+    const nextItems = existingItem
+      ? latestItems.map((item) => (item.id === existingItem.id ? nextItem : item))
+      : [nextItem, ...latestItems]
+
+    saveStoredCenterCalendarItems(centerId, nextItems)
+    scheduleCalendarItemState = null
+    render()
+  }
+
   document.querySelectorAll('[data-schedule-week-action]').forEach((button) => {
     button.addEventListener('click', () => {
       const action = button.dataset.scheduleWeekAction
@@ -12865,28 +13023,23 @@ function bindEvents() {
         scheduleWeekStartDate = getNextScheduleWeekStartDate(scheduleWeekStartDate)
       }
 
-      scheduleReportState = null
-      scheduleAdminAttendanceState = null
-      sessionReportAttendanceState = null
-      sessionReportLearningState = null
-      sessionReportLearningFormState = null
-      sessionReportExtraState = null
-      isSessionReportExtraExpanded = false
-      sessionReportGuestFormState = null
+      closeScheduleActivityPanels()
+      resetScheduleReportPanels()
       render()
     })
   })
 
   document.querySelector('[data-schedule-action="open-create"]')?.addEventListener('click', () => {
     scheduleFormState = createEmptyScheduleFormState()
-    scheduleReportState = null
-    scheduleAdminAttendanceState = null
-    sessionReportAttendanceState = null
-    sessionReportLearningState = null
-    sessionReportLearningFormState = null
-    sessionReportExtraState = null
-    isSessionReportExtraExpanded = false
-    sessionReportGuestFormState = null
+    closeScheduleActivityPanels()
+    resetScheduleReportPanels()
+    render()
+  })
+
+  document.querySelector('[data-center-calendar-action="open-create"]')?.addEventListener('click', () => {
+    scheduleFormState = null
+    resetScheduleReportPanels()
+    scheduleCalendarItemState = createEmptyCenterCalendarItemFormState(scheduleWeekStartDate)
     render()
   })
 
@@ -12897,20 +13050,15 @@ function bindEvents() {
         button.dataset.scheduleDayOfWeek,
         button.dataset.scheduleDate,
       )
-      scheduleReportState = null
-      scheduleAdminAttendanceState = null
-      sessionReportAttendanceState = null
-      sessionReportLearningState = null
-      sessionReportLearningFormState = null
-      sessionReportExtraState = null
-      isSessionReportExtraExpanded = false
-      sessionReportGuestFormState = null
+      closeScheduleActivityPanels()
+      resetScheduleReportPanels()
       render()
     })
   })
 
   document.querySelectorAll('[data-schedule-action="open-edit"]').forEach((card) => {
     const openScheduleSession = () => {
+      closeScheduleActivityPanels()
       const occurrenceDate = card.dataset.scheduleOccurrenceDate
       const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
         (item) => item.id === card.dataset.scheduleSessionId && item.occurrenceDate === occurrenceDate,
@@ -12983,6 +13131,180 @@ function bindEvents() {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         openScheduleSession()
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-center-calendar-item-id]').forEach((card) => {
+    const openCalendarItem = () => openCenterCalendarItemDetail(card.dataset.centerCalendarItemId)
+
+    card.addEventListener('click', (event) => {
+      event.stopPropagation()
+      openCalendarItem()
+    })
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        event.stopPropagation()
+        openCalendarItem()
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-center-calendar-form-field]').forEach((control) => {
+    const updateCalendarFormValue = () => {
+      if (!scheduleCalendarItemState || !['create', 'edit'].includes(scheduleCalendarItemState.mode)) {
+        return
+      }
+
+      const fieldName = control.dataset.centerCalendarFormField
+
+      if (!fieldName) {
+        return
+      }
+
+      scheduleCalendarItemState = {
+        ...scheduleCalendarItemState,
+        values: {
+          ...scheduleCalendarItemState.values,
+          [fieldName]: control.type === 'checkbox' ? control.checked : control.value,
+        },
+        errors: {
+          ...scheduleCalendarItemState.errors,
+          [fieldName]: undefined,
+        },
+      }
+
+      if (fieldName === 'itemType' && !isCenterCalendarColorOverridden(scheduleCalendarItemState.values)) {
+        const colorKey = getDefaultCenterCalendarColorKeyForType(control.value)
+        scheduleCalendarItemState = {
+          ...scheduleCalendarItemState,
+          values: {
+            ...scheduleCalendarItemState.values,
+            colorKey,
+          },
+        }
+        updateCenterCalendarPaletteDom(colorKey, false)
+      }
+    }
+
+    control.addEventListener('input', updateCalendarFormValue)
+    control.addEventListener('change', updateCalendarFormValue)
+  })
+
+  document.querySelectorAll('[data-center-calendar-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const action = button.dataset.centerCalendarAction
+
+      if (action === 'open-create') {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (action === 'close') {
+        scheduleCalendarItemState = null
+        render()
+        return
+      }
+
+      if (action === 'save') {
+        saveCenterCalendarItemFromForm(event)
+        return
+      }
+
+      if (action === 'select-color') {
+        if (!scheduleCalendarItemState || !['create', 'edit'].includes(scheduleCalendarItemState.mode)) {
+          return
+        }
+
+        const colorKey = button.dataset.centerCalendarColorKey || getDefaultCenterCalendarColorKeyForType(
+          scheduleCalendarItemState.values.itemType,
+        )
+        scheduleCalendarItemState = {
+          ...scheduleCalendarItemState,
+          values: {
+            ...scheduleCalendarItemState.values,
+            colorKey,
+            colorOverridden: true,
+          },
+          errors: {
+            ...scheduleCalendarItemState.errors,
+            colorKey: undefined,
+          },
+        }
+        updateCenterCalendarPaletteDom(colorKey, true)
+        return
+      }
+
+      if (action === 'reset-color') {
+        if (!scheduleCalendarItemState || !['create', 'edit'].includes(scheduleCalendarItemState.mode)) {
+          return
+        }
+
+        const colorKey = getDefaultCenterCalendarColorKeyForType(scheduleCalendarItemState.values.itemType)
+        scheduleCalendarItemState = {
+          ...scheduleCalendarItemState,
+          values: {
+            ...scheduleCalendarItemState.values,
+            colorKey,
+            colorOverridden: false,
+          },
+          errors: {
+            ...scheduleCalendarItemState.errors,
+            colorKey: undefined,
+          },
+        }
+        updateCenterCalendarPaletteDom(colorKey, false)
+        return
+      }
+
+      if (action === 'detail') {
+        openCenterCalendarItemDetail(button.dataset.centerCalendarItemId)
+        return
+      }
+
+      if (action === 'edit') {
+        const item = getCurrentCenterCalendarItem(button.dataset.centerCalendarItemId)
+
+        if (!item) {
+          scheduleCalendarItemState = null
+          render()
+          return
+        }
+
+        scheduleFormState = null
+        resetScheduleReportPanels()
+        scheduleCalendarItemState = createEditCenterCalendarItemFormState(item)
+        render()
+        return
+      }
+
+      if (action === 'confirm-delete') {
+        const item = getCurrentCenterCalendarItem(button.dataset.centerCalendarItemId)
+
+        if (!item) {
+          scheduleCalendarItemState = null
+          render()
+          return
+        }
+
+        scheduleCalendarItemState = createCenterCalendarItemDeleteState(item)
+        render()
+        return
+      }
+
+      if (action === 'delete') {
+        const centerId = getCurrentResolvedCenterId()
+        const itemId = button.dataset.centerCalendarItemId
+        const latestItems = loadStoredCenterCalendarItems(centerId)
+        saveStoredCenterCalendarItems(
+          centerId,
+          latestItems.filter((item) => item.id !== itemId),
+        )
+        scheduleCalendarItemState = null
+        render()
       }
     })
   })

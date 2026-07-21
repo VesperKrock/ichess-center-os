@@ -6,7 +6,6 @@ export const CENTER_CALENDAR_ITEM_TYPE_LABELS = {
   tournament: 'Giải đấu',
   other: 'Hoạt động khác',
 }
-
 export const CENTER_CALENDAR_REJECTED_CLASS_ITEM_TYPES = [
   'fixedClass',
   'makeupClass',
@@ -17,28 +16,74 @@ export const CENTER_CALENDAR_REJECTED_CLASS_ITEM_TYPES = [
 ]
 
 export const CENTER_CALENDAR_COLOR_PRESETS = {
-  meeting: {
-    key: 'orange',
-    label: 'Cam',
-    color: '#f97316',
+  blue: {
+    key: 'blue',
+    label: 'Xanh dương',
+    color: '#2563eb',
   },
-  event: {
+  green: {
     key: 'green',
     label: 'Xanh lá',
     color: '#22c55e',
   },
-  tournament: {
-    key: 'emerald',
-    label: 'Xanh giải đấu',
-    color: '#059669',
-  },
-  other: {
+  yellow: {
     key: 'yellow',
     label: 'Vàng',
     color: '#eab308',
   },
+  orange: {
+    key: 'orange',
+    label: 'Cam',
+    color: '#f97316',
+  },
+  red: {
+    key: 'red',
+    label: 'Đỏ',
+    color: '#ef4444',
+  },
+  purple: {
+    key: 'purple',
+    label: 'Tím',
+    color: '#8b5cf6',
+  },
+  pink: {
+    key: 'pink',
+    label: 'Hồng',
+    color: '#ec4899',
+  },
+  gray: {
+    key: 'gray',
+    label: 'Xám',
+    color: '#64748b',
+  },
+  emerald: {
+    key: 'emerald',
+    label: 'Xanh ngọc',
+    color: '#059669',
+  },
 }
 
+export const CENTER_CALENDAR_ITEM_TYPE_DEFAULT_COLOR_KEYS = {
+  meeting: 'orange',
+  event: 'green',
+  tournament: 'emerald',
+  other: 'yellow',
+}
+
+Object.defineProperties(CENTER_CALENDAR_COLOR_PRESETS, {
+  meeting: {
+    value: CENTER_CALENDAR_COLOR_PRESETS.orange,
+  },
+  event: {
+    value: CENTER_CALENDAR_COLOR_PRESETS.green,
+  },
+  tournament: {
+    value: CENTER_CALENDAR_COLOR_PRESETS.emerald,
+  },
+  other: {
+    value: CENTER_CALENDAR_COLOR_PRESETS.yellow,
+  },
+})
 export function normalizeCenterCalendarStorageCenterId(centerId) {
   const normalized = String(centerId ?? '')
     .trim()
@@ -107,7 +152,13 @@ export function isRejectedClassCalendarItemType(value) {
 
 export function getCenterCalendarPresetForType(itemType) {
   const normalizedType = normalizeCenterCalendarItemType(itemType)
-  return CENTER_CALENDAR_COLOR_PRESETS[normalizedType] || CENTER_CALENDAR_COLOR_PRESETS.other
+  const defaultColorKey = CENTER_CALENDAR_ITEM_TYPE_DEFAULT_COLOR_KEYS[normalizedType] || 'yellow'
+  return CENTER_CALENDAR_COLOR_PRESETS[defaultColorKey] || CENTER_CALENDAR_COLOR_PRESETS.yellow
+}
+
+export function getCenterCalendarPresetByColorKey(colorKey, itemType = 'other') {
+  const normalizedColorKey = normalizeText(colorKey)
+  return CENTER_CALENDAR_COLOR_PRESETS[normalizedColorKey] || getCenterCalendarPresetForType(itemType)
 }
 
 export function normalizeCenterCalendarItemType(value) {
@@ -272,7 +323,7 @@ export function getCenterCalendarTagById(tags, id) {
 function normalizeCenterCalendarColorKey(colorKey, itemType) {
   const normalizedColorKey = normalizeText(colorKey)
   const presetKeys = new Set(
-    Object.values(CENTER_CALENDAR_COLOR_PRESETS).map((preset) => preset.key),
+    Object.keys(CENTER_CALENDAR_COLOR_PRESETS),
   )
 
   return presetKeys.has(normalizedColorKey)
