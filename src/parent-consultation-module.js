@@ -20,6 +20,11 @@ export const parentCustomerStageLabels = {
   converted: 'Đã chuyển đổi',
 }
 
+export const parentConvertPreviewModeLabels = {
+  create: 'Tạo hồ sơ mới',
+  merge: 'Ghép với hồ sơ có sẵn',
+}
+
 const consultingStageStatuses = new Set([
   'waitingResponse',
   'trialScheduled',
@@ -971,6 +976,7 @@ export function renderParentConsultationModule(
   quickNoteState = null,
   noteHistoryContactId = null,
   detailContactId = null,
+  convertPreviewState = null,
 ) {
   const mergedContacts = mergeParentContactsWithStudents(contacts, students)
   const stats = getParentConsultationStats(mergedContacts)
@@ -1053,6 +1059,7 @@ export function renderParentConsultationModule(
       ${formState ? renderParentContactForm(formState, students) : ''}
       ${noteHistoryContactId ? renderNoteHistoryModal(mergedContacts, noteHistoryContactId) : ''}
       ${quickNoteState ? renderQuickNoteModal(mergedContacts, quickNoteState) : ''}
+      ${convertPreviewState ? renderParentConvertPreviewModal(mergedContacts, students, convertPreviewState) : ''}
     </section>
   `
 }
@@ -1219,13 +1226,7 @@ function renderParentContactDetailPanel(contact) {
               <strong>${escapeHtml(contact.lastNote || 'Chưa có ghi chú')}</strong>
             </article>
           </div>
-          <div class="parent-convert-preview" aria-label="Chuyển đổi khách hàng">
-            <div>
-              <h4>Chuyển đổi khách hàng</h4>
-              <p>Phase sau sẽ có preview chuyển khách tư vấn thành phụ huynh/học viên. F23.3B chưa tạo học viên, chưa tạo học phí.</p>
-            </div>
-            <button type="button" disabled>Chuyển đổi ở phase sau</button>
-          </div>
+          ${renderParentConvertEntry(contact, customerStage, relatedStudents)}
           <div class="parent-linked-students" aria-label="Học viên liên quan">
             <h4>Học viên liên quan</h4>
             <div class="parent-linked-students-list">
@@ -1261,6 +1262,202 @@ function renderParentContactDetailPanel(contact) {
           </div>
         </div>
       </section>
+    </div>
+  `
+}
+
+function renderParentConvertEntry(contact, customerStage, relatedStudents = []) {
+  if (customerStage === 'converted') {
+    return `
+      <div class="parent-convert-preview" aria-label="Chuyển đổi khách hàng">
+        <div>
+          <h4>Chuyển đổi khách hàng</h4>
+          <p>Khách hàng đã được chuyển đổi. Kiểm tra các học viên liên kết trước khi thao tác thêm ở phase sau.</p>
+          ${
+            relatedStudents.length
+              ? `<small>${escapeHtml(relatedStudents.map((student) => student.fullName || student.name).filter(Boolean).join(', '))}</small>`
+              : '<small>Chưa thấy học viên liên kết trong dữ liệu hiện tại.</small>'
+          }
+        </div>
+        <span class="parent-convert-status">Đã chuyển đổi</span>
+      </div>
+    `
+  }
+
+  const warningText = customerStage === 'lead'
+    ? 'Khách mới có thể chưa đủ dữ liệu. Bản xem trước chỉ giúp kiểm tra trước khi thao tác thật ở phase sau.'
+    : 'Bản xem trước chỉ đọc dữ liệu hiện tại, không tạo học viên, phụ huynh hoặc học phí.'
+
+  return `
+    <div class="parent-convert-preview" aria-label="Chuyển đổi khách hàng">
+      <div>
+        <h4>Chuyển đổi khách hàng</h4>
+        <p>${escapeHtml(warningText)}</p>
+      </div>
+      <button
+        type="button"
+        data-parent-convert-preview-action="open"
+        data-contact-id="${escapeAttribute(contact.id)}"
+      >
+        Chuẩn bị chuyển đổi
+      </button>
+    </div>
+  `
+}
+
+function renderParentConvertPreviewModal(contacts, students, previewState) {
+  const contact = contacts.find((item) => item.id === previewState.contactId)
+
+  if (!contact) {
+    return ''
+  }
+
+  const preview = buildParentConvertPreview(contact, contacts, students, previewState)
+  const selectedCandidate = preview.selectedCandidate
+  const isMergeMode = preview.mode === 'merge'
+
+  return `
+    <div class="parent-note-modal-backdrop" role="presentation">
+      <section class="parent-note-modal parent-convert-preview-modal" aria-label="Chuẩn bị chuyển đổi">
+        <div class="parent-note-modal-header">
+          <div>
+            <h3>Chuẩn bị chuyển đổi - ${escapeHtml(preview.source.parentName)}</h3>
+            <p>Đây chỉ là bản xem trước local-safe, không ghi dữ liệu nghiệp vụ thật.</p>
+          </div>
+          <button type="button" data-parent-convert-preview-action="close" aria-label="Đóng">X</button>
+        </div>
+        <div class="parent-convert-preview-scroll">
+          <section class="parent-convert-preview-section">
+            <div class="parent-convert-section-heading">
+              <h4>Nguồn dữ liệu CRM</h4>
+              <span class="parent-convert-warning is-${escapeAttribute(preview.warningLevel)}">${escapeHtml(preview.warningLabel)}</span>
+            </div>
+            ${renderParentConvertFieldGrid(preview.sourceRows)}
+          </section>
+
+          <section class="parent-convert-preview-section">
+            <div class="parent-convert-section-heading">
+              <h4>Kiểm tra hồ sơ có thể trùng</h4>
+              <span>Gợi ý kiểm tra, không phải kết luận trùng hồ sơ</span>
+            </div>
+            <p class="parent-convert-note">Không auto merge theo số điện thoại hoặc tên. Candidate chỉ phục vụ xem trước.</p>
+            <div class="parent-convert-candidate-list">
+              ${
+                preview.candidates.length
+                  ? preview.candidates.map((candidate) => renderParentConvertCandidate(candidate, selectedCandidate?.key)).join('')
+                  : '<div class="parent-convert-empty">Chưa thấy hồ sơ gần giống.</div>'
+              }
+            </div>
+          </section>
+
+          <section class="parent-convert-preview-section">
+            <h4>Phương án preview</h4>
+            <div class="parent-convert-mode-tabs" role="group" aria-label="Phương án preview">
+              ${Object.entries(parentConvertPreviewModeLabels).map(([mode, label]) => `
+                <button
+                  type="button"
+                  class="${preview.mode === mode ? 'is-active' : ''}"
+                  data-parent-convert-preview-action="mode"
+                  data-preview-mode="${escapeAttribute(mode)}"
+                >
+                  ${escapeHtml(label)}
+                </button>
+              `).join('')}
+            </div>
+            ${
+              isMergeMode && !selectedCandidate
+                ? '<div class="parent-convert-empty">Chọn một candidate để xem phương án ghép hồ sơ có sẵn. Không có thao tác merge thật trong phase này.</div>'
+                : renderParentConvertPlan(preview)
+            }
+          </section>
+
+          <section class="parent-convert-preview-section parent-convert-readonly-warning">
+            <h4>Những gì chưa được tạo</h4>
+            <ul>
+              <li>Đây chỉ là bản xem trước.</li>
+              <li>Chưa tạo hồ sơ phụ huynh.</li>
+              <li>Chưa tạo học viên.</li>
+              <li>Chưa tạo học phí.</li>
+              <li>Chưa gán lớp/lịch học.</li>
+              <li>Chưa tạo điểm danh.</li>
+              <li>Chưa đổi trạng thái khách hàng.</li>
+            </ul>
+          </section>
+        </div>
+        <div class="parent-note-modal-actions">
+          <button type="button" data-parent-convert-preview-action="close">Đóng bản xem trước</button>
+          <button type="button" disabled>Xác nhận chuyển đổi - chưa mở</button>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderParentConvertFieldGrid(rows) {
+  return `
+    <div class="parent-convert-field-grid">
+      ${rows.map((row) => `
+        <article>
+          <span>${escapeHtml(row.label)}</span>
+          <strong>${escapeHtml(displayPreviewValue(row.value))}</strong>
+        </article>
+      `).join('')}
+    </div>
+  `
+}
+
+function renderParentConvertCandidate(candidate, selectedKey = '') {
+  return `
+    <button
+      type="button"
+      class="parent-convert-candidate is-${escapeAttribute(candidate.level)} ${candidate.key === selectedKey ? 'is-selected' : ''}"
+      data-parent-convert-preview-action="candidate"
+      data-candidate-key="${escapeAttribute(candidate.key)}"
+    >
+      <strong>${escapeHtml(candidate.parentName)}</strong>
+      <span>${escapeHtml(candidate.phone)}</span>
+      <span>${escapeHtml(candidate.studentName)}</span>
+      <small>${escapeHtml(candidate.sourceLabel)} · ${escapeHtml(candidate.reasonLabels.join(', '))}</small>
+    </button>
+  `
+}
+
+function renderParentConvertPlan(preview) {
+  if (preview.mode === 'merge' && preview.selectedCandidate) {
+    return `
+      <div class="parent-convert-plan">
+        <div class="parent-convert-plan-summary">
+          <h5>Ghép với hồ sơ có sẵn</h5>
+          <p>Contact sẽ chỉ được xem trước liên kết với candidate đã chọn. Không ghi đè dữ liệu đang có.</p>
+          <strong>${escapeHtml(preview.selectedCandidate.studentName)} · ${escapeHtml(preview.selectedCandidate.parentName)}</strong>
+        </div>
+        ${renderParentConvertFieldGrid(preview.mergeRows)}
+      </div>
+    `
+  }
+
+  return `
+    <div class="parent-convert-plan">
+      <div class="parent-convert-plan-summary">
+        <h5>Tạo hồ sơ mới</h5>
+        <p>Preview dự kiến tạo phụ huynh, học viên và liên kết CRM trong phase sau. Phase này chưa ghi dữ liệu.</p>
+      </div>
+      <div class="parent-convert-plan-columns">
+        <section>
+          <h5>Phụ huynh dự kiến</h5>
+          ${renderParentConvertFieldGrid(preview.parentRows)}
+        </section>
+        <section>
+          <h5>Học viên dự kiến</h5>
+          ${renderParentConvertFieldGrid(preview.studentRows)}
+        </section>
+        <section>
+          <h5>Quan hệ dự kiến</h5>
+          <ul>
+            ${preview.relationshipRows.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+          </ul>
+        </section>
+      </div>
     </div>
   `
 }
@@ -2290,6 +2487,309 @@ function toDateOnlyIso(value) {
 
   const date = dateText ? new Date(dateText) : null
   return date && !Number.isNaN(date.getTime()) ? date.toISOString() : ''
+}
+
+export function buildParentConvertPreview(contact, contacts = [], students = [], options = {}) {
+  const mode = parentConvertPreviewModeLabels[options.mode] ? options.mode : 'create'
+  const source = getParentConvertSource(contact)
+  const candidates = getParentConvertCandidates(contact, contacts, students)
+  const selectedCandidate =
+    candidates.find((candidate) => candidate.key === options.selectedCandidateKey) || null
+  const warningLevel = candidates.some((candidate) => candidate.level === 'high')
+    ? 'high'
+    : candidates.some((candidate) => candidate.level === 'medium')
+      ? 'medium'
+      : 'low'
+
+  return {
+    mode,
+    source,
+    sourceRows: getParentConvertSourceRows(contact, source),
+    candidates,
+    selectedCandidate,
+    warningLevel,
+    warningLabel: getParentConvertWarningLabel(warningLevel),
+    parentRows: getParentConvertParentRows(source),
+    studentRows: getParentConvertStudentRows(source),
+    relationshipRows: getParentConvertRelationshipRows(),
+    mergeRows: getParentConvertMergeRows(source, selectedCandidate),
+  }
+}
+
+function getParentConvertSource(contact = {}) {
+  const customerStage = deriveParentCustomerStage(contact)
+  return {
+    id: contact.id || '',
+    parentName: contact.parentName || contact.name || 'Chưa có dữ liệu',
+    phone: contact.phone || '',
+    secondaryPhone: contact.secondaryPhone || '',
+    email: contact.email || '',
+    locationArea: contact.locationArea || '',
+    sourceLabel: contact.sourceLabel || parentContactSourceLabels[contact.source] || 'Chưa rõ',
+    consultantName: getConsultantDisplayName(contact),
+    leadNeed: contact.leadNeed || contact.lastNote || '',
+    leadStudentName: contact.leadStudentName || contact.studentName || '',
+    leadStudentAge: contact.leadStudentAge || '',
+    studentBirthYear: contact.studentBirthYear || '',
+    interestedProgram: contact.interestedProgram || '',
+    preferredSchedule: contact.preferredSchedule || '',
+    customerStage,
+    customerStageLabel: parentCustomerStageLabels[customerStage] || 'Khách mới',
+    consultationStatusLabel: parentConsultationStatusLabels[contact.consultationStatus] || 'Chưa rõ',
+    careLogCount: Array.isArray(contact.careLogs) ? contact.careLogs.length : 0,
+    appointmentCount: Array.isArray(contact.appointments) ? contact.appointments.length : 0,
+  }
+}
+
+function getParentConvertSourceRows(contact, source) {
+  return [
+    { label: 'Tên phụ huynh/khách', value: source.parentName },
+    { label: 'Số điện thoại', value: source.phone },
+    { label: 'Số phụ', value: source.secondaryPhone },
+    { label: 'Email', value: source.email },
+    { label: 'Khu vực', value: source.locationArea },
+    { label: 'Nguồn khách', value: source.sourceLabel },
+    { label: 'Tư vấn phụ trách', value: source.consultantName },
+    { label: 'Nhu cầu học', value: source.leadNeed },
+    { label: 'Tên bé', value: source.leadStudentName },
+    { label: 'Tuổi/năm sinh', value: [source.leadStudentAge, source.studentBirthYear].filter(Boolean).join(' / ') },
+    { label: 'Chương trình quan tâm', value: source.interestedProgram },
+    { label: 'Lịch mong muốn', value: source.preferredSchedule },
+    { label: 'Stage hiện tại', value: source.customerStageLabel },
+    { label: 'Trạng thái tư vấn', value: source.consultationStatusLabel },
+    { label: 'Số ghi chú chăm sóc', value: source.careLogCount },
+    { label: 'Số lịch hẹn', value: source.appointmentCount },
+    { label: 'Học viên liên kết hiện có', value: getLinkedStudentCount(contact) || '' },
+  ]
+}
+
+function getParentConvertParentRows(source) {
+  return [
+    { label: 'Tên', value: source.parentName },
+    { label: 'Số điện thoại', value: source.phone },
+    { label: 'Email', value: source.email },
+    { label: 'Khu vực', value: source.locationArea },
+    { label: 'Nguồn khách', value: source.sourceLabel },
+    { label: 'Tư vấn ban đầu', value: source.consultantName },
+  ]
+}
+
+function getParentConvertStudentRows(source) {
+  return [
+    { label: 'Họ tên', value: source.leadStudentName },
+    { label: 'Năm sinh / tuổi', value: [source.studentBirthYear, source.leadStudentAge].filter(Boolean).join(' / ') },
+    { label: 'Phụ huynh chính', value: source.parentName },
+    { label: 'Nhu cầu học', value: source.leadNeed },
+    { label: 'Chương trình quan tâm', value: source.interestedProgram },
+    { label: 'Lịch mong muốn', value: source.preferredSchedule },
+    { label: 'Nguồn tạo', value: 'CRM' },
+  ]
+}
+
+function getParentConvertRelationshipRows() {
+  return [
+    'contact → parent',
+    'parent → student',
+    'contact → linkedStudentIds',
+    'student → initialConsultantId',
+  ]
+}
+
+function getParentConvertMergeRows(source, candidate) {
+  if (!candidate) {
+    return []
+  }
+
+  return [
+    { label: 'Contact sẽ xem trước liên kết', value: source.parentName },
+    { label: 'Student được chọn', value: candidate.studentName },
+    { label: 'Phụ huynh/hồ sơ có sẵn', value: candidate.parentName },
+    { label: 'Field CRM giữ ở CRM', value: 'careLogs, appointments, leadNeed, nextAction' },
+    { label: 'Field dự kiến bổ sung nếu thiếu', value: 'phone, email, consultantName, interestedProgram' },
+    { label: 'Cảnh báo', value: 'Không tự ghi đè dữ liệu đang có' },
+  ]
+}
+
+export function getParentConvertCandidates(contact = {}, contacts = [], students = []) {
+  const contactPhones = getPreviewPhones([contact.phone, contact.secondaryPhone])
+  const contactParentName = normalizeText(contact.parentName || contact.name)
+  const contactStudentName = normalizeText(contact.leadStudentName || contact.studentName)
+  const contactBirthYear = String(contact.studentBirthYear || '').trim()
+  const candidates = []
+
+  ;(students ?? []).forEach((student) => {
+    const studentPhones = getPreviewPhones([
+      student.parentPhone,
+      student.motherPhone,
+      student.fatherPhone,
+      student.phone,
+    ])
+    const reasons = []
+    let level = ''
+
+    if (hasPhoneOverlap(contactPhones, studentPhones)) {
+      reasons.push('Trùng số điện thoại')
+      level = 'high'
+    }
+
+    const parentNameMatches =
+      contactParentName &&
+      normalizeText(student.parentName).includes(contactParentName.slice(0, 6))
+    const studentNameMatches =
+      contactStudentName &&
+      normalizeText(student.fullName || student.name).includes(contactStudentName.slice(0, 6))
+    const birthYearMatches =
+      contactBirthYear &&
+      getStudentBirthYear(student) &&
+      contactBirthYear === getStudentBirthYear(student)
+
+    if (studentNameMatches && birthYearMatches) {
+      reasons.push('Trùng tên bé và năm sinh')
+      level = level || 'medium'
+    } else if (studentNameMatches) {
+      reasons.push('Trùng tên bé')
+      level = level || 'low'
+    }
+
+    if (parentNameMatches && studentNameMatches) {
+      reasons.push('Tên phụ huynh gần giống')
+      level = level === 'high' ? level : 'medium'
+    } else if (parentNameMatches && !level) {
+      reasons.push('Tên phụ huynh gần giống')
+      level = 'low'
+    }
+
+    if (!reasons.length && (contact.studentId === student.id || (contact.linkedStudentIds ?? []).includes(student.id))) {
+      reasons.push('Học viên đã liên kết')
+      level = 'high'
+    }
+
+    if (reasons.length) {
+      candidates.push({
+        key: `student:${student.id}`,
+        id: student.id,
+        level,
+        source: 'student',
+        sourceLabel: 'Hồ sơ học viên',
+        parentName: student.parentName || 'Chưa có dữ liệu',
+        phone: student.parentPhone || student.motherPhone || student.fatherPhone || 'Chưa có dữ liệu',
+        studentName: student.fullName || student.name || 'Chưa có dữ liệu',
+        birthYear: getStudentBirthYear(student),
+        reasonLabels: Array.from(new Set(reasons)),
+      })
+    }
+  })
+
+  ;(contacts ?? []).forEach((candidateContact) => {
+    if (!candidateContact || candidateContact.id === contact.id) {
+      return
+    }
+
+    const candidatePhones = getPreviewPhones([candidateContact.phone, candidateContact.secondaryPhone])
+    const reasons = []
+    let level = ''
+
+    if (hasPhoneOverlap(contactPhones, candidatePhones)) {
+      reasons.push('Trùng số điện thoại')
+      level = 'high'
+    }
+
+    const parentNameMatches =
+      contactParentName &&
+      normalizeText(candidateContact.parentName).includes(contactParentName.slice(0, 6))
+    const studentNameMatches =
+      contactStudentName &&
+      normalizeText(candidateContact.leadStudentName || candidateContact.studentName).includes(contactStudentName.slice(0, 6))
+    const birthYearMatches =
+      contactBirthYear &&
+      candidateContact.studentBirthYear &&
+      contactBirthYear === String(candidateContact.studentBirthYear)
+
+    if (studentNameMatches && birthYearMatches) {
+      reasons.push('Trùng tên bé và năm sinh')
+      level = level || 'medium'
+    } else if (studentNameMatches) {
+      reasons.push('Trùng tên bé')
+      level = level || 'low'
+    }
+
+    if (parentNameMatches && studentNameMatches) {
+      reasons.push('Tên phụ huynh gần giống')
+      level = level === 'high' ? level : 'medium'
+    } else if (parentNameMatches && !level) {
+      reasons.push('Tên phụ huynh gần giống')
+      level = 'low'
+    }
+
+    if (reasons.length) {
+      candidates.push({
+        key: `contact:${candidateContact.id}`,
+        id: candidateContact.id,
+        level,
+        source: 'contact',
+        sourceLabel: 'Liên hệ CRM',
+        parentName: candidateContact.parentName || 'Chưa có dữ liệu',
+        phone: candidateContact.phone || candidateContact.secondaryPhone || 'Chưa có dữ liệu',
+        studentName: candidateContact.leadStudentName || candidateContact.studentName || 'Chưa có dữ liệu',
+        birthYear: candidateContact.studentBirthYear || '',
+        reasonLabels: Array.from(new Set(reasons)),
+      })
+    }
+  })
+
+  const levelRank = { high: 0, medium: 1, low: 2 }
+  return candidates.sort((a, b) => levelRank[a.level] - levelRank[b.level])
+}
+
+function getParentConvertWarningLabel(level) {
+  if (level === 'high') {
+    return 'Có khả năng trùng cao'
+  }
+
+  if (level === 'medium') {
+    return 'Cần kiểm tra thủ công'
+  }
+
+  return 'Chưa thấy hồ sơ gần giống'
+}
+
+function getPreviewPhones(values = []) {
+  return values.map((value) => normalizePreviewPhone(value)).filter(Boolean)
+}
+
+function normalizePreviewPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+
+  if (!digits) {
+    return ''
+  }
+
+  if (digits.startsWith('84') && digits.length >= 10) {
+    return `0${digits.slice(2)}`
+  }
+
+  return digits
+}
+
+function hasPhoneOverlap(leftPhones, rightPhones) {
+  return leftPhones.some((phone) => rightPhones.includes(phone))
+}
+
+function getStudentBirthYear(student = {}) {
+  if (student.birthYear) {
+    return String(student.birthYear)
+  }
+
+  const birthDate = String(student.birthDate || '').trim()
+  return /^\d{4}/.test(birthDate) ? birthDate.slice(0, 4) : ''
+}
+
+function displayPreviewValue(value) {
+  if (value === 0) {
+    return '0'
+  }
+
+  return String(value || '').trim() || 'Chưa có dữ liệu'
 }
 
 function formatDateTime(value, includeTime = false) {

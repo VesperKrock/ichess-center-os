@@ -94,7 +94,7 @@ assert(html.includes('student-existing-1') || html.includes('1 học viên liên
 assert(html.includes('Ghi chú chăm sóc'), 'Detail shows CRM care notes.')
 assert(html.includes('data-parent-quick-note-contact-id="old-consulting"'), 'Detail can add a CRM care note.')
 assert(html.includes('Chuyển đổi khách hàng'), 'Convert preview box is present.')
-assert(html.includes('disabled>Chuyển đổi ở phase sau</button>'), 'Convert CTA is disabled.')
+assert(html.includes('data-parent-convert-preview-action="open"'), 'Convert preview action is present and local-safe.')
 
 const createHtml = renderParentConsultationModule(
   [oldLead],

@@ -465,6 +465,7 @@ let skipNextParentContactScrollCapture = false
 let parentQuickNoteState = null
 let parentNoteHistoryContactId = null
 let parentContactDetailId = null
+let parentConvertPreviewState = null
 let staffFilters = { ...initialStaffFilters }
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'initial-load' })
@@ -690,6 +691,7 @@ function resetTransientStateForCenterSwitch() {
   parentQuickNoteState = null
   parentNoteHistoryContactId = null
   parentContactDetailId = null
+  parentConvertPreviewState = null
   scheduleFormState = null
   scheduleReportState = null
   scheduleAdminAttendanceState = null
@@ -4145,6 +4147,7 @@ function renderWindowBody(windowItem) {
       parentQuickNoteState,
       parentNoteHistoryContactId,
       parentContactDetailId,
+      parentConvertPreviewState,
     )
   }
 
@@ -11808,6 +11811,7 @@ function bindEvents() {
       }
 
       parentContactDetailId = row.dataset.parentContactRowId || null
+      parentConvertPreviewState = null
       render()
     })
 
@@ -11822,6 +11826,7 @@ function bindEvents() {
 
       event.preventDefault()
       parentContactDetailId = row.dataset.parentContactRowId || null
+      parentConvertPreviewState = null
       render()
     })
   })
@@ -11829,6 +11834,7 @@ function bindEvents() {
   document.querySelectorAll('[data-parent-contact-action="detail"]').forEach((button) => {
     button.addEventListener('click', () => {
       parentContactDetailId = button.dataset.contactId || null
+      parentConvertPreviewState = null
       render()
     })
   })
@@ -11836,6 +11842,69 @@ function bindEvents() {
   document.querySelectorAll('[data-parent-contact-action="close-detail"]').forEach((button) => {
     button.addEventListener('click', () => {
       parentContactDetailId = null
+      parentConvertPreviewState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-convert-preview-action="open"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const contactId = button.dataset.contactId || ''
+      const contact = parentConsultations.find((item) => item.id === contactId)
+
+      if (!contact) {
+        return
+      }
+
+      parentConvertPreviewState = {
+        contactId,
+        mode: 'create',
+        selectedCandidateKey: '',
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-convert-preview-action="close"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      parentConvertPreviewState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-convert-preview-action="mode"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+
+      if (!parentConvertPreviewState) {
+        return
+      }
+
+      parentConvertPreviewState = {
+        ...parentConvertPreviewState,
+        mode: button.dataset.previewMode || 'create',
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-convert-preview-action="candidate"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+
+      if (!parentConvertPreviewState) {
+        return
+      }
+
+      parentConvertPreviewState = {
+        ...parentConvertPreviewState,
+        mode: 'merge',
+        selectedCandidateKey: button.dataset.candidateKey || '',
+      }
       render()
     })
   })
@@ -11857,6 +11926,7 @@ function bindEvents() {
       }
 
       parentContactDetailId = null
+      parentConvertPreviewState = null
       openStudentDetailWindowFromChildInteraction(studentId)
     })
   })
@@ -12299,6 +12369,10 @@ function bindEvents() {
 
       if (parentNoteHistoryContactId === contact.id) {
         parentNoteHistoryContactId = null
+      }
+
+      if (parentConvertPreviewState?.contactId === contact.id) {
+        parentConvertPreviewState = null
       }
 
       render()
