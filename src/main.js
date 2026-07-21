@@ -506,6 +506,8 @@ let tuitionFormState = null
 let tuitionPaymentFormState = null
 let tuitionDetailState = null
 let tuitionRollbackPreviewState = null
+let tuitionCareNoteState = null
+let tuitionAdvisoryWindowState = null
 let cashflowTransactions = getStoredCashflow(sampleCashflowTransactions)
 let cashflowCategories = getStoredCashflowCategories(sampleCashflowCategories)
 let cashflowFilters = { ...initialCashflowFilters }
@@ -698,6 +700,8 @@ function resetTransientStateForCenterSwitch() {
   tuitionPaymentFormState = null
   tuitionDetailState = null
   tuitionRollbackPreviewState = null
+  tuitionCareNoteState = null
+  tuitionAdvisoryWindowState = null
   cashflowFormState = null
   cashbookSettingsFormState = null
   cashbookReconciliationFormState = null
@@ -1005,6 +1009,7 @@ function getStableElementSelector(element) {
     'data-parent-consultation-filter',
     'data-parent-form-field',
     'data-tuition-filter',
+    'data-tuition-scroll-region',
     'data-cashflow-filter',
     'data-inventory-filter',
     'data-attendance-board-filter',
@@ -4198,6 +4203,8 @@ function renderWindowBody(windowItem) {
         sessionReports,
         storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
       }),
+      tuitionCareNoteState,
+      tuitionAdvisoryWindowState,
     )
   }
 
@@ -4395,6 +4402,73 @@ function getLatestCareNoteContent(careNotes) {
   return [...(careNotes ?? [])].sort(
     (firstNote, secondNote) => new Date(secondNote.createdAt) - new Date(firstNote.createdAt),
   )[0]?.content ?? ''
+}
+
+function createTuitionCareNoteState(studentId, patch = {}) {
+  return {
+    studentId,
+    values: {
+      tag: '',
+      content: '',
+      ...(patch.values || {}),
+    },
+    error: '',
+    saveState: '',
+    ...patch,
+  }
+}
+
+function saveTuitionCareNote() {
+  if (!tuitionCareNoteState?.studentId) {
+    return
+  }
+
+  const studentId = tuitionCareNoteState.studentId
+  const tag = String(tuitionCareNoteState.values?.tag || '').trim()
+  const content = String(tuitionCareNoteState.values?.content || '').trim()
+
+  if (!tag && !content) {
+    tuitionCareNoteState = createTuitionCareNoteState(studentId, {
+      values: tuitionCareNoteState.values,
+      error: 'Nhập tag/chủ đề hoặc nội dung ghi chú trước khi lưu.',
+    })
+    render()
+    return
+  }
+
+  const now = new Date().toISOString()
+  const noteContent = content || tag
+  students = students.map((student) => {
+    if (String(student.id) !== String(studentId)) {
+      return student
+    }
+
+    const currentCareNotes = Array.isArray(student.careNotes) ? student.careNotes : []
+    const nextCareNotes = [
+      {
+        id: `tuition-note-${studentId}-${Date.now()}`,
+        createdAt: now,
+        updatedAt: now,
+        author: 'Admin DreamHome',
+        content: noteContent,
+        tags: tag ? [tag] : ['Học phí'],
+        sourceModule: 'tuition',
+      },
+      ...currentCareNotes,
+    ]
+
+    return {
+      ...student,
+      careNotes: nextCareNotes,
+      latestCareNote: getLatestCareNoteContent(nextCareNotes),
+      updatedAt: now,
+    }
+  })
+  saveStoredStudents(students)
+  tuitionCareNoteState = createTuitionCareNoteState(studentId, {
+    saveState: 'saved',
+  })
+  render()
 }
 
 function renderPlannedList(title, items) {
@@ -7020,6 +7094,8 @@ async function openTuitionRollbackPreview(tuitionRecord) {
   tuitionFormState = null
   tuitionPaymentFormState = null
   tuitionDetailState = null
+  tuitionCareNoteState = null
+  tuitionAdvisoryWindowState = null
   render()
 
   const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
@@ -8904,55 +8980,59 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-tuition-filter]').forEach((control) => {
-    control.addEventListener('input', () => {
+    control.addEventListener('input', (event) => {
       const filterName = control.dataset.tuitionFilter
       const selectionStart = 'selectionStart' in control ? control.selectionStart : null
       const selectionEnd = 'selectionEnd' in control ? control.selectionEnd : null
 
-      tuitionFilters = {
-        ...tuitionFilters,
-        [filterName]: control.value,
-      }
-      render()
+      withTuitionViewportLock(() => {
+        tuitionFilters = {
+          ...tuitionFilters,
+          [filterName]: control.value,
+        }
+        render()
 
-      const nextControl = document.querySelector(`[data-tuition-filter="${filterName}"]`)
-      focusElementWithoutScrolling(nextControl)
+        const nextControl = document.querySelector(`[data-tuition-filter="${filterName}"]`)
+        focusElementWithoutScrolling(nextControl)
 
-      if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
-        nextControl.setSelectionRange(selectionStart, selectionEnd)
-      }
+        if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
+          nextControl.setSelectionRange(selectionStart, selectionEnd)
+        }
+      }, event)
     })
   })
 
   document.querySelectorAll('[data-tuition-advisory-action="save"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const studentId = button.dataset.studentId
-      const monthKey = button.dataset.monthKey
-      const careStatus =
-        document.querySelector(`[data-tuition-advisory-care-status="${studentId}"]`)?.value ||
-        'auto'
-      const note =
-        document.querySelector(`[data-tuition-advisory-note="${studentId}"]`)?.value || ''
-      const identity = `${studentId}:${monthKey}`
-      const nextNote = {
-        id: `advisory-note-${studentId}-${monthKey}`,
-        studentId,
-        monthKey,
-        careStatus,
-        note: note.trim(),
-        updatedAt: new Date().toISOString(),
-      }
-      const hasExistingNote = attendanceAdvisoryNotes.some(
-        (item) => `${item.studentId}:${item.monthKey}` === identity,
-      )
+    button.addEventListener('click', (event) => {
+      withTuitionViewportLock(() => {
+        const studentId = button.dataset.studentId
+        const monthKey = button.dataset.monthKey
+        const careStatus =
+          document.querySelector(`[data-tuition-advisory-care-status="${studentId}"]`)?.value ||
+          'auto'
+        const note =
+          document.querySelector(`[data-tuition-advisory-note="${studentId}"]`)?.value || ''
+        const identity = `${studentId}:${monthKey}`
+        const nextNote = {
+          id: `advisory-note-${studentId}-${monthKey}`,
+          studentId,
+          monthKey,
+          careStatus,
+          note: note.trim(),
+          updatedAt: new Date().toISOString(),
+        }
+        const hasExistingNote = attendanceAdvisoryNotes.some(
+          (item) => `${item.studentId}:${item.monthKey}` === identity,
+        )
 
-      attendanceAdvisoryNotes = hasExistingNote
-        ? attendanceAdvisoryNotes.map((item) =>
-            `${item.studentId}:${item.monthKey}` === identity ? nextNote : item,
-          )
-        : [...attendanceAdvisoryNotes, nextNote]
-      saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
-      render()
+        attendanceAdvisoryNotes = hasExistingNote
+          ? attendanceAdvisoryNotes.map((item) =>
+              `${item.studentId}:${item.monthKey}` === identity ? nextNote : item,
+            )
+          : [...attendanceAdvisoryNotes, nextNote]
+        saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
+        render()
+      }, event)
     })
   })
 
@@ -10422,7 +10502,8 @@ function bindEvents() {
       if (
         event.target.closest('[data-tuition-action="open-debt"]') ||
         event.target.closest('[data-tuition-action="open-detail"]') ||
-        event.target.closest('[data-tuition-action="open-rollback-preview"]')
+        event.target.closest('[data-tuition-action="open-rollback-preview"]') ||
+        event.target.closest('[data-tuition-action="open-care-notes"]')
       ) {
         return
       }
@@ -10438,7 +10519,8 @@ function bindEvents() {
       if (
         event.target.closest('[data-tuition-action="open-debt"]') ||
         event.target.closest('[data-tuition-action="open-detail"]') ||
-        event.target.closest('[data-tuition-action="open-rollback-preview"]')
+        event.target.closest('[data-tuition-action="open-rollback-preview"]') ||
+        event.target.closest('[data-tuition-action="open-care-notes"]')
       ) {
         return
       }
@@ -10460,6 +10542,8 @@ function bindEvents() {
       tuitionPaymentFormState = createPaymentFormState(student, tuitionRecord)
       tuitionFormState = null
       tuitionRollbackPreviewState = null
+      tuitionCareNoteState = null
+      tuitionAdvisoryWindowState = null
       render()
     })
   })
@@ -10483,6 +10567,8 @@ function bindEvents() {
       tuitionFormState = null
       tuitionDetailState = null
       tuitionRollbackPreviewState = null
+      tuitionCareNoteState = null
+      tuitionAdvisoryWindowState = null
       render()
     })
   })
@@ -10496,6 +10582,8 @@ function bindEvents() {
       tuitionFormState = null
       tuitionPaymentFormState = null
       tuitionRollbackPreviewState = null
+      tuitionCareNoteState = null
+      tuitionAdvisoryWindowState = null
       render()
     })
   })
@@ -10510,6 +10598,40 @@ function bindEvents() {
       }
 
       void openTuitionRollbackPreview(tuitionRecord)
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="open-care-notes"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      withTuitionViewportLock(() => {
+        const studentId = button.dataset.tuitionStudentId
+
+        if (!students.some((student) => String(student.id) === String(studentId))) {
+          return
+        }
+
+        tuitionCareNoteState = createTuitionCareNoteState(studentId)
+        tuitionFormState = null
+        tuitionPaymentFormState = null
+        tuitionDetailState = null
+        tuitionRollbackPreviewState = null
+        tuitionAdvisoryWindowState = null
+        render()
+      }, event)
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-action="open-advisory-window"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      withTuitionViewportLock(() => {
+        tuitionAdvisoryWindowState = { isOpen: true }
+        tuitionFormState = null
+        tuitionPaymentFormState = null
+        tuitionDetailState = null
+        tuitionRollbackPreviewState = null
+        tuitionCareNoteState = null
+        render()
+      }, event)
     })
   })
 
@@ -10540,6 +10662,84 @@ function bindEvents() {
     button.addEventListener('click', () => {
       tuitionRollbackPreviewState = null
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-care-note-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!tuitionCareNoteState) {
+        return
+      }
+
+      tuitionCareNoteState = {
+        ...tuitionCareNoteState,
+        values: {
+          ...tuitionCareNoteState.values,
+          [control.dataset.tuitionCareNoteField]: control.value,
+        },
+        error: '',
+        saveState: '',
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-care-note-suggestion]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      withTuitionViewportLock(() => {
+      if (!tuitionCareNoteState) {
+        return
+      }
+
+      const suggestion = button.dataset.tuitionCareNoteSuggestion || ''
+      const currentContent = String(tuitionCareNoteState.values.content || '').trim()
+
+      tuitionCareNoteState = {
+        ...tuitionCareNoteState,
+        values: {
+          ...tuitionCareNoteState.values,
+          tag: tuitionCareNoteState.values.tag || 'Học phí',
+          content: currentContent ? `${currentContent}\n${suggestion}` : suggestion,
+        },
+        error: '',
+        saveState: '',
+      }
+      render()
+      }, event)
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-care-note-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      withTuitionViewportLock(() => {
+      const action = button.dataset.tuitionCareNoteAction
+
+      if (action === 'close') {
+        tuitionCareNoteState = null
+        render()
+        return
+      }
+
+      if (action === 'clear') {
+        tuitionCareNoteState = tuitionCareNoteState
+          ? createTuitionCareNoteState(tuitionCareNoteState.studentId)
+          : null
+        render()
+        return
+      }
+
+      if (action === 'save') {
+        saveTuitionCareNote()
+      }
+      }, event)
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-advisory-window-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      withTuitionViewportLock(() => {
+        tuitionAdvisoryWindowState = null
+        render()
+      }, event)
     })
   })
 
@@ -14216,6 +14416,9 @@ function openTuitionPackageForm(studentId) {
     : createEmptyTuitionFormState(student)
   tuitionPaymentFormState = null
   tuitionDetailState = null
+  tuitionRollbackPreviewState = null
+  tuitionCareNoteState = null
+  tuitionAdvisoryWindowState = null
   render()
 }
 
@@ -14807,6 +15010,108 @@ function focusElementWithoutScrolling(element) {
   } catch {
     element.focus()
   }
+}
+
+function getScrollableTuitionElements(anchorElement = null) {
+  const elements = new Set()
+  const selectors = [
+    '.window-content',
+    '.tuition-module',
+    '.tuition-module-content',
+    '.tuition-table-wrap',
+    '.tuition-full-window-panel',
+    '.tuition-full-window-body',
+    '.tuition-care-note-window',
+    '.tuition-advisory-window-body',
+    '.tuition-advisory-table-wrap',
+    '[data-tuition-scroll-region]',
+  ]
+
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((element) => elements.add(element))
+  })
+
+  let currentElement = anchorElement
+  while (currentElement && currentElement !== document.body) {
+    if (currentElement instanceof HTMLElement) {
+      const style = window.getComputedStyle(currentElement)
+      const canScrollY = /(auto|scroll|overlay)/.test(style.overflowY) && currentElement.scrollHeight > currentElement.clientHeight
+      const canScrollX = /(auto|scroll|overlay)/.test(style.overflowX) && currentElement.scrollWidth > currentElement.clientWidth
+
+      if (canScrollY || canScrollX) {
+        elements.add(currentElement)
+      }
+    }
+
+    currentElement = currentElement.parentElement
+  }
+
+  return [...elements]
+}
+
+function captureTuitionViewportState(anchorElement = null) {
+  return {
+    windowX: window.scrollX,
+    windowY: window.scrollY,
+    activeSelector: getStableElementSelector(document.activeElement),
+    scrollPositions: getScrollableTuitionElements(anchorElement).map((element) => ({
+      selector: getStableElementSelector(element),
+      element,
+      scrollTop: element.scrollTop,
+      scrollLeft: element.scrollLeft,
+    })),
+  }
+}
+
+function restoreTuitionViewportState(viewportState) {
+  if (!viewportState) {
+    return
+  }
+
+  viewportState.scrollPositions.forEach((item) => {
+    const element = item.selector ? document.querySelector(item.selector) : item.element
+
+    if (!element) {
+      return
+    }
+
+    element.scrollTop = item.scrollTop
+    element.scrollLeft = item.scrollLeft
+  })
+
+  window.scrollTo(viewportState.windowX, viewportState.windowY)
+
+  if (viewportState.activeSelector) {
+    focusElementWithoutScrolling(document.querySelector(viewportState.activeSelector))
+  }
+}
+
+function restoreTuitionViewportStateAfterRender(viewportState) {
+  restoreTuitionViewportState(viewportState)
+
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => {
+      restoreTuitionViewportState(viewportState)
+      window.requestAnimationFrame(() => {
+        restoreTuitionViewportState(viewportState)
+        window.requestAnimationFrame(() => restoreTuitionViewportState(viewportState))
+      })
+    })
+    return
+  }
+
+  setTimeout(() => restoreTuitionViewportState(viewportState), 0)
+}
+
+function withTuitionViewportLock(action, event) {
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+
+  const target = event?.currentTarget || event?.target || null
+  const viewportState = captureTuitionViewportState(target instanceof HTMLElement ? target : null)
+
+  action()
+  restoreTuitionViewportStateAfterRender(viewportState)
 }
 
 function updateClock() {

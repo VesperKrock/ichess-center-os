@@ -55,6 +55,18 @@ const discountPresetOptions = [
 
 const percentDiscountPresets = [5, 10, 15, 20, 30]
 const fixedDiscountPresets = [100000, 200000, 300000, 500000]
+const tuitionCareNoteSuggestions = [
+  'Phụ huynh cần được nhắc học phí',
+  'Sắp hết buổi',
+  'Còn nợ học phí',
+  'Đã nhắc lần 1',
+  'Đã hẹn ngày thanh toán',
+  'Cần gửi bảng phí',
+  'Phụ huynh muốn đổi lịch học',
+  'Cần gọi lại phụ huynh',
+  'Đã trao đổi với phụ huynh',
+  'Cần tư vấn gói mới',
+]
 
 export function createEmptyTuitionFormState(student) {
   return {
@@ -150,6 +162,8 @@ export function renderTuitionModule(
   advisoryMonthKey = getCurrentMonthKey(),
   rollbackPreviewState = null,
   attendanceRecords = [],
+  careNoteState = null,
+  advisoryWindowState = null,
 ) {
   const rows = buildTuitionRows(students, tuitionRecords, attendanceRecords)
   const visibleRows = filterTuitionRows(rows, filters)
@@ -170,7 +184,13 @@ export function renderTuitionModule(
   const detailRow = detailState
     ? rows.find((row) => row.student.id === detailState.studentId)
     : null
-  const hasPanel = Boolean(formState || paymentFormState || detailState || rollbackPreviewState)
+  const careNoteStudent = careNoteState
+    ? students.find((student) => String(student.id) === String(careNoteState.studentId))
+    : null
+  const hasAdvisoryWindow = Boolean(advisoryWindowState?.isOpen)
+  const hasPanel = Boolean(
+    formState || paymentFormState || detailState || rollbackPreviewState || careNoteStudent || hasAdvisoryWindow,
+  )
   const advisoryRows = buildAttendanceAdvisoryRows(
     students,
     tuitionRecords,
@@ -180,8 +200,8 @@ export function renderTuitionModule(
   )
 
   return `
-    <section class="tuition-module ${hasPanel ? 'form-open' : ''}">
-      <div class="tuition-module-content">
+    <section class="tuition-module ${hasPanel ? 'form-open' : ''}" data-tuition-scroll-region="module">
+      <div class="tuition-module-content" data-tuition-scroll-region="content">
         <div class="tuition-overview">
           <div class="tuition-filter-row">
             <label>
@@ -216,7 +236,7 @@ export function renderTuitionModule(
             ${renderStat('Còn nợ', stats.debt)}
           </div>
         </div>
-        <div class="tuition-table-wrap">
+        <div class="tuition-table-wrap" data-tuition-scroll-region="table">
           <table class="tuition-table">
             <thead>
               <tr>
@@ -242,7 +262,7 @@ export function renderTuitionModule(
             </tbody>
           </table>
         </div>
-        ${renderAttendanceAdvisory(advisoryRows, advisoryMonthKey)}
+        ${renderAttendanceAdvisoryEntry(advisoryRows, advisoryMonthKey)}
       </div>
       ${formState && formStudent ? renderTuitionForm(formStudent, formState) : ''}
       ${
@@ -252,23 +272,43 @@ export function renderTuitionModule(
       }
       ${detailState && detailStudent ? renderTuitionDetailPanel(detailStudent, detailTuition, detailRow?.attendanceTuitionPreview) : ''}
       ${rollbackPreviewState ? renderRollbackPreviewPanel(rollbackPreviewState) : ''}
+      ${careNoteStudent ? renderTuitionCareNotePanel(careNoteStudent, careNoteState) : ''}
+      ${hasAdvisoryWindow ? renderAttendanceAdvisoryWindow(advisoryRows, advisoryMonthKey) : ''}
     </section>
   `
 }
 
-function renderAttendanceAdvisory(rows, monthKey) {
+function renderAttendanceAdvisoryEntry(rows, monthKey) {
   const [year, month] = monthKey.split('-')
 
   return `
-    <section class="tuition-attendance-advisory" aria-label="Bảng chăm sóc cuối tháng">
+    <section class="tuition-advisory-entry" aria-label="Chăm sóc cuối tháng">
       <div class="tuition-advisory-header">
         <div>
-          <h3>Bảng chăm sóc cuối tháng</h3>
+          <h3>Chăm sóc cuối tháng</h3>
+          <p>Tháng ${month}/${year} · ${rows.length} học viên cần theo dõi.</p>
+        </div>
+        <button type="button" data-tuition-action="open-advisory-window">Mở bảng chăm sóc</button>
+      </div>
+    </section>
+  `
+}
+
+function renderAttendanceAdvisoryWindow(rows, monthKey) {
+  const [year, month] = monthKey.split('-')
+
+  return `
+    <div class="tuition-form-backdrop" data-tuition-advisory-window-action="close"></div>
+    <section class="tuition-form-panel tuition-full-window-panel tuition-advisory-window-panel" aria-label="Bảng chăm sóc cuối tháng">
+      <div class="tuition-form-header">
+        <div>
+          <h4>Bảng chăm sóc cuối tháng</h4>
           <p>Tháng ${month}/${year} · Tự tổng hợp từ điểm danh và học phí, không ghi ngược vào gói học phí.</p>
         </div>
-        <span>${rows.length} học viên</span>
+        <button type="button" data-tuition-advisory-window-action="close" aria-label="Đóng bảng chăm sóc cuối tháng">X</button>
       </div>
-      <div class="tuition-advisory-table-wrap">
+      <div class="tuition-full-window-body tuition-advisory-window-body" data-tuition-scroll-region="advisory-window">
+      <div class="tuition-advisory-table-wrap" data-tuition-scroll-region="advisory-table">
         <table class="tuition-advisory-table">
           <thead>
             <tr>
@@ -286,6 +326,7 @@ function renderAttendanceAdvisory(rows, monthKey) {
             ${rows.map((row) => renderAttendanceAdvisoryRow(row)).join('')}
           </tbody>
         </table>
+      </div>
       </div>
     </section>
   `
@@ -360,9 +401,11 @@ export function buildTuitionRows(students, tuitionRecords, attendanceRecords = [
     )
 
     if (!tuition) {
+      const careNotes = getStudentCareNotes(student)
       return {
         student,
         tuition: null,
+        careNotes,
         familyTuitionLink,
         attendanceTuitionPreview,
         packageKind: 'no-package',
@@ -374,7 +417,7 @@ export function buildTuitionRows(students, tuitionRecords, attendanceRecords = [
         remainingSessions: null,
         debtAmount: null,
         searchableText: normalizeSearchText(
-          `${student.fullName} ${student.parentName} ${student.parentPhone} ${student.fatherPhone} ${student.motherPhone} ${familyTuitionLink.warnings.map((warning) => warning.label).join(' ')} Cần gán gói học phí`,
+          `${student.fullName} ${student.parentName} ${student.parentPhone} ${student.fatherPhone} ${student.motherPhone} ${familyTuitionLink.warnings.map((warning) => warning.label).join(' ')} ${getCareNotesSearchText(careNotes)} Cần gán gói học phí`,
         ),
       }
     }
@@ -387,6 +430,7 @@ export function buildTuitionRows(students, tuitionRecords, attendanceRecords = [
     return {
       student,
       tuition,
+      careNotes: getStudentCareNotes(student),
       packageKind,
       status,
       remainingSessions,
@@ -394,9 +438,38 @@ export function buildTuitionRows(students, tuitionRecords, attendanceRecords = [
       familyTuitionLink,
       attendanceTuitionPreview,
       searchableText: normalizeSearchText(
-        `${student.fullName} ${student.parentName} ${student.parentPhone} ${student.fatherPhone} ${student.motherPhone} ${familyTuitionLink.warnings.map((warning) => warning.label).join(' ')} ${tuition.note}`,
+        `${student.fullName} ${student.parentName} ${student.parentPhone} ${student.fatherPhone} ${student.motherPhone} ${familyTuitionLink.warnings.map((warning) => warning.label).join(' ')} ${tuition.note} ${getCareNotesSearchText(getStudentCareNotes(student))}`,
       ),
     }
+  })
+}
+
+function getStudentCareNotes(student) {
+  return (Array.isArray(student?.careNotes) ? student.careNotes : [])
+    .filter((note) => note && typeof note === 'object')
+    .slice()
+    .sort((firstNote, secondNote) => new Date(secondNote.createdAt) - new Date(firstNote.createdAt))
+}
+
+function getCareNotesSearchText(careNotes = []) {
+  return careNotes
+    .map((note) => {
+      const tags = Array.isArray(note.tags) ? note.tags.join(' ') : ''
+      return `${note.content || ''} ${tags}`
+    })
+    .join(' ')
+}
+
+function formatDateTime(value) {
+  const date = value ? new Date(value) : null
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return 'Chưa có thời gian'
+  }
+
+  return date.toLocaleString('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
   })
 }
 
@@ -734,7 +807,7 @@ function filterTuitionRows(rows, filters) {
 function renderTuitionRow(row) {
   const tuition = row.tuition
   const compactStudentName = getCompactStudentName(row.student.fullName)
-  const note = tuition?.note || 'Cần gán gói học phí'
+  const careNotes = Array.isArray(row.careNotes) ? row.careNotes : []
   const hasOverpayment = tuition ? getTuitionOverpaidAmount(tuition) > 0 : false
   const conflictMarker = tuition?.conflictMarker || null
   const hasSyncConflict = Boolean(tuition?.syncConflict || conflictMarker?.syncConflict)
@@ -811,8 +884,8 @@ function renderTuitionRow(row) {
           ${row.status.label}
         </button>
       </td>
-      <td title="${escapeHtml(note)}">
-        <span class="tuition-note-text">${escapeHtml(note)}</span>
+      <td>
+        ${renderTuitionCareNoteButton(row.student, careNotes)}
         ${
           tuition
             ? `
@@ -831,6 +904,124 @@ function renderTuitionRow(row) {
         ${renderTuitionCareBadges(familyLink)}
       </td>
     </tr>
+  `
+}
+
+function renderTuitionCareNoteButton(student, careNotes = []) {
+  const noteCount = careNotes.length
+  const latestNote = careNotes[0]
+  const label = noteCount ? `Có ghi chú (${noteCount})` : 'Chưa có ghi chú'
+  const title = latestNote?.content || label
+
+  return `
+    <button
+      class="tuition-care-note-button ${noteCount ? 'has-note' : 'is-empty'}"
+      type="button"
+      data-tuition-action="open-care-notes"
+      data-tuition-student-id="${escapeHtml(student.id)}"
+      title="${escapeAttribute(title)}"
+    >
+      ${escapeHtml(label)}
+    </button>
+  `
+}
+
+function renderTuitionCareNotePanel(student, state = {}) {
+  const draft = {
+    tag: String(state?.values?.tag || ''),
+    content: String(state?.values?.content || ''),
+    error: String(state?.error || ''),
+    saveState: String(state?.saveState || ''),
+  }
+
+  return `
+    <div class="tuition-form-backdrop" data-tuition-care-note-action="close"></div>
+    <section class="tuition-form-panel tuition-full-window-panel tuition-care-note-panel" aria-label="Chăm sóc / Ghi chú - ${escapeAttribute(student.fullName)}">
+      <div class="tuition-form-header">
+        <div>
+          <h4>Chăm sóc / Ghi chú - ${escapeHtml(student.fullName)}</h4>
+          <p>Ghi chú lưu chung theo học viên để Module Học phí và Module Học viên cùng đọc được.</p>
+        </div>
+        <button type="button" data-tuition-care-note-action="close" aria-label="Đóng ghi chú chăm sóc">X</button>
+      </div>
+      <section class="student-care-notes student-care-window tuition-care-note-window tuition-full-window-body" data-tuition-scroll-region="care-note-window">
+        <div class="student-care-layout">
+          <div class="student-care-history-panel">
+            <h4>Lịch sử ghi chú chăm sóc</h4>
+            ${renderTuitionCareNoteHistory(student)}
+          </div>
+          <div class="student-care-form">
+            <h4>Thêm ghi chú chăm sóc</h4>
+            <label>
+              <span>Tag / chủ đề</span>
+              <input
+                type="text"
+                value="${escapeAttribute(draft.tag)}"
+                data-tuition-care-note-field="tag"
+                placeholder="Ví dụ: Học phí, Tư vấn gói mới"
+              />
+            </label>
+            <label>
+              <span>Nội dung ghi chú</span>
+              <textarea
+                data-tuition-care-note-field="content"
+                placeholder="Nhập nội dung đã trao đổi hoặc việc cần theo dõi..."
+              >${escapeHtml(draft.content)}</textarea>
+            </label>
+            ${draft.error ? `<p class="care-note-error">${escapeHtml(draft.error)}</p>` : ''}
+            ${draft.saveState === 'saved' ? '<p class="tuition-care-note-success">Đã lưu ghi chú chăm sóc.</p>' : ''}
+            <div class="care-note-suggestions" aria-label="Gợi ý nhanh ghi chú học phí">
+              ${tuitionCareNoteSuggestions
+                .map(
+                  (suggestion) => `
+                    <button type="button" data-tuition-care-note-suggestion="${escapeAttribute(suggestion)}">
+                      ${escapeHtml(suggestion)}
+                    </button>
+                  `,
+                )
+                .join('')}
+            </div>
+            <div class="care-note-actions">
+              <button type="button" data-tuition-care-note-action="save" data-student-id="${escapeHtml(student.id)}">Lưu ghi chú</button>
+              <button type="button" data-tuition-care-note-action="clear">Hủy nhập</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+  `
+}
+
+function renderTuitionCareNoteHistory(student) {
+  const careNotes = getStudentCareNotes(student)
+
+  if (!careNotes.length) {
+    return '<p class="care-note-empty">Chưa có ghi chú chăm sóc.</p>'
+  }
+
+  return `
+    <div class="care-note-list">
+      ${careNotes
+        .map((note) => {
+          const sourceLabel = note.sourceModule === 'tuition' ? 'Học phí' : 'Học viên'
+          const tags = Array.isArray(note.tags) ? note.tags : []
+
+          return `
+            <article class="care-note-item">
+              <div>
+                <strong>${escapeHtml(note.author || 'Admin DreamHome')}</strong>
+                <time datetime="${escapeAttribute(note.createdAt || '')}">${escapeHtml(formatDateTime(note.createdAt))}</time>
+              </div>
+              <p>${escapeHtml(note.content || '')}</p>
+              <div class="care-note-tags">
+                <span>${escapeHtml(sourceLabel)}</span>
+                ${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}
+              </div>
+            </article>
+          `
+        })
+        .join('')}
+    </div>
   `
 }
 
@@ -1728,4 +1919,8 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;')
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value)
 }

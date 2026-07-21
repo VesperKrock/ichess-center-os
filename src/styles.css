@@ -14391,6 +14391,80 @@ h3 {
   color: #ffffff;
 }
 
+.tuition-care-note-button {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.tuition-care-note-button.has-note {
+  border-color: rgba(74, 222, 128, 0.34);
+  color: #d8ffe7;
+  background: rgba(22, 101, 52, 0.2);
+}
+
+.tuition-care-note-button.is-empty {
+  border-style: dashed;
+  color: #b8c6d8;
+}
+
+.tuition-care-note-button:hover,
+.tuition-care-note-button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.68);
+  color: #ffffff;
+  outline: none;
+  background: rgba(31, 93, 153, 0.22);
+}
+
+.tuition-full-window-panel {
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  width: auto;
+  max-height: none;
+  height: auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  transform: none;
+  overflow: hidden;
+}
+
+.tuition-full-window-body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.tuition-care-note-panel {
+  min-width: 0;
+}
+
+.tuition-care-note-window {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.tuition-care-note-success {
+  margin: 0;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #bbf7d0;
+  background: rgba(22, 101, 52, 0.22);
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
 .tuition-rollback-preview-panel {
   max-width: min(760px, calc(100vw - 32px));
 }
@@ -14706,16 +14780,29 @@ h3 {
   text-align: center;
 }
 
+.tuition-advisory-entry,
 .tuition-attendance-advisory {
   display: grid;
   min-height: 0;
-  max-height: 330px;
   flex: 0 0 auto;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   background: rgba(8, 12, 18, 0.62);
+}
+
+.tuition-advisory-entry {
+  grid-template-rows: auto;
+}
+
+.tuition-advisory-window-panel {
+  padding-bottom: 12px;
+}
+
+.tuition-advisory-window-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .tuition-advisory-header {
@@ -14743,6 +14830,27 @@ h3 {
   color: #9fb1c7;
   font-size: 0.76rem;
   font-weight: 800;
+}
+
+.tuition-advisory-header button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid rgba(118, 164, 231, 0.48);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #edf4fc;
+  background: rgba(31, 93, 153, 0.36);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.tuition-advisory-header button:hover,
+.tuition-advisory-header button:focus-visible {
+  border-color: rgba(178, 213, 255, 0.78);
+  outline: none;
+  background: rgba(31, 93, 153, 0.58);
 }
 
 .tuition-advisory-table-wrap {
@@ -14927,6 +15035,19 @@ h3 {
   padding: 12px;
   background: #101821;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+}
+
+.tuition-form-panel.tuition-full-window-panel {
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  width: auto;
+  height: auto;
+  max-height: none;
+  grid-template-rows: auto minmax(0, 1fr);
+  transform: none;
+  overflow: hidden;
 }
 
 .tuition-form-header {
