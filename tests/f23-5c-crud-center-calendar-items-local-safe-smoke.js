@@ -127,7 +127,7 @@ for (const lessonReason of ['makeup', 'trial', 'extra']) {
   assert(!formHtml.includes(`value="${lessonReason}"`), `Activity form must not include lesson reason: ${lessonReason}`)
 }
 assert(!formHtml.includes('data-center-calendar-form-field="tagIds"'), 'Later tag UI must stay single-label and not add multi-tag.')
-assert(!formHtml.includes('data-center-calendar-form-field="recurrenceRule"'), 'F23.5C must not add recurrence UI.')
+assert(!formHtml.includes('data-center-calendar-form-field="recurrenceRule"'), 'Recurrence UI must save structured fields, not a raw recurrenceRule field.')
 assert.equal((formHtml.match(/data-center-calendar-color-key=/g) || []).length, 9, 'Activity palette should render about 8 basic color swatches.')
 for (const colorKey of ['blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'gray', 'emerald']) {
   assert(formHtml.includes(`data-center-calendar-color-key="${colorKey}"`), `Missing palette color: ${colorKey}`)
@@ -265,7 +265,7 @@ assert(!main.includes("document.querySelectorAll('[data-module-id]').forEach((bu
 assert(main.includes('moduleLauncherSelector'), 'Launcher guard must still use marked launcher selector.')
 assert(!formHtml.includes('data-module-launcher'), 'Calendar form/card must not be marked as module launcher.')
 
-for (const forbiddenPhase of ['custom color picker', 'recurrenceRule', 'conflict detection', 'PDF', 'print preview', 'colorblind mode']) {
+for (const forbiddenPhase of ['custom color picker', 'PDF', 'print preview', 'colorblind mode']) {
   assert(!docs.includes(`${forbiddenPhase}: implemented`), `Docs must not claim out-of-scope feature: ${forbiddenPhase}`)
 }
 

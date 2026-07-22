@@ -343,7 +343,7 @@ assert(conflictSource.includes('schedule-session'), 'Conflict module must map sc
 assert(conflictSource.includes('center-calendar-item'), 'Conflict module must map calendar items.')
 assert(!conflictSource.includes('document.'), 'Conflict module must be DOM-free.')
 assert(!conflictSource.includes('localStorage'), 'Conflict module must not read storage directly.')
-assert(!conflictSource.includes('recurrenceRule'), 'F23.5E1 must not implement recurrence.')
+assert(conflictSource.includes('expandWeeklyCenterCalendarOccurrences'), 'F23.5E2A must let E1 conflict checks see recurring occurrence sources.')
 assert(!conflictSource.includes('teacherId') && !conflictSource.includes('participant'), 'F23.5E1 must not implement teacher/participant conflict.')
 for (const forbidden of ['saveStoredSchedule', 'saveStoredClassSessions', 'attendanceRecords', 'tuition.usedSessions', 'Teacher Workspace', 'supabase.from']) {
   assert(!main.includes(`${forbidden}(`) || !saveFlow.includes(forbidden), `Save flow must not touch forbidden flow: ${forbidden}`)
