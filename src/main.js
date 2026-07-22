@@ -166,6 +166,7 @@ import {
   saveStoredCenterCalendarItems,
   saveStoredCenterCalendarTags,
 } from './center-calendar-data.js'
+import { detectCenterCalendarConflicts } from './center-calendar-conflicts.js'
 import {
   buildSessionReportFromAttendance,
   buildSessionReportFromLearningGroups,
@@ -177,6 +178,7 @@ import {
   buildSessionReportFromExtraInfo,
   createCenterCalendarItemDeleteState,
   createCenterCalendarItemDetailState,
+  createCenterCalendarItemConflictState,
   createCenterCalendarTagManagerState,
   createEditCenterCalendarItemFormState,
   createEditCenterCalendarTagFormState,
@@ -13024,6 +13026,15 @@ function bindEvents() {
     }
   }
 
+  const persistCenterCalendarItem = (centerId, nextItem, existingItem = null) => {
+    const latestItems = loadStoredCenterCalendarItems(centerId)
+    const nextItems = existingItem
+      ? latestItems.map((item) => (item.id === existingItem.id ? nextItem : item))
+      : [nextItem, ...latestItems]
+
+    saveStoredCenterCalendarItems(centerId, nextItems)
+  }
+
   const saveCenterCalendarItemFromForm = (event) => {
     event?.preventDefault?.()
 
@@ -13078,11 +13089,30 @@ function bindEvents() {
       return
     }
 
-    const nextItems = existingItem
-      ? latestItems.map((item) => (item.id === existingItem.id ? nextItem : item))
-      : [nextItem, ...latestItems]
+    const conflictResult = detectCenterCalendarConflicts({
+      candidate: nextItem,
+      centerId,
+      classSessions,
+      scheduleSessions,
+      centerCalendarItems: latestItems,
+      currentItemId: existingItem?.id || '',
+    })
 
-    saveStoredCenterCalendarItems(centerId, nextItems)
+    if (conflictResult.hasHard || conflictResult.hasSoft) {
+      scheduleCalendarItemState = createCenterCalendarItemConflictState({
+        previousState: {
+          ...scheduleCalendarItemState,
+          values: formValues,
+          errors: {},
+        },
+        conflictResult,
+        pendingItem: nextItem,
+      })
+      render()
+      return
+    }
+
+    persistCenterCalendarItem(centerId, nextItem, existingItem)
     scheduleCalendarItemState = null
     render()
   }
@@ -13499,6 +13529,60 @@ function bindEvents() {
       event.stopPropagation()
 
       if (action === 'close') {
+        scheduleCalendarItemState = null
+        render()
+        return
+      }
+
+      if (action === 'conflict-return') {
+        if (scheduleCalendarItemState?.mode !== 'conflict') {
+          return
+        }
+
+        scheduleCalendarItemState = {
+          mode: scheduleCalendarItemState.previousMode || 'create',
+          itemId: scheduleCalendarItemState.itemId || null,
+          values: {
+            ...(scheduleCalendarItemState.values ?? {}),
+          },
+          errors: {},
+        }
+        render()
+        return
+      }
+
+      if (action === 'conflict-save') {
+        if (scheduleCalendarItemState?.mode !== 'conflict' || !scheduleCalendarItemState.pendingItem) {
+          return
+        }
+
+        const centerId = getCurrentResolvedCenterId()
+        const pendingItem = scheduleCalendarItemState.pendingItem
+
+        if (pendingItem.centerId && pendingItem.centerId !== centerId) {
+          scheduleCalendarItemState = {
+            ...scheduleCalendarItemState,
+            errors: { form: 'Không thể lưu vì cơ sở đã thay đổi. Vui lòng mở lại form.' },
+          }
+          render()
+          return
+        }
+
+        const latestItems = loadStoredCenterCalendarItems(centerId)
+        const existingItem = scheduleCalendarItemState.previousMode === 'edit'
+          ? getCenterCalendarItemById(latestItems, scheduleCalendarItemState.itemId)
+          : null
+
+        if (scheduleCalendarItemState.previousMode === 'edit' && !existingItem) {
+          scheduleCalendarItemState = {
+            ...scheduleCalendarItemState,
+            errors: { form: 'Hoạt động này không còn tồn tại trong cơ sở hiện tại.' },
+          }
+          render()
+          return
+        }
+
+        persistCenterCalendarItem(centerId, pendingItem, existingItem)
         scheduleCalendarItemState = null
         render()
         return

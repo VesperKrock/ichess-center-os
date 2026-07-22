@@ -1420,6 +1420,24 @@ export function createCenterCalendarItemDeleteState(item) {
   }
 }
 
+export function createCenterCalendarItemConflictState({
+  previousState,
+  conflictResult,
+  pendingItem,
+} = {}) {
+  return {
+    mode: 'conflict',
+    previousMode: previousState?.mode || 'create',
+    itemId: previousState?.itemId || pendingItem?.id || null,
+    values: {
+      ...(previousState?.values ?? {}),
+    },
+    errors: {},
+    conflictResult: conflictResult || { conflicts: [], hard: [], soft: [], informational: [] },
+    pendingItem: pendingItem || null,
+  }
+}
+
 export function createEditCenterCalendarItemFormState(item) {
   return {
     mode: 'edit',
@@ -1472,8 +1490,8 @@ export function validateCenterCalendarItemForm(values = {}) {
       const start = parseDateTime(values.date, values.startTime)
       const end = parseDateTime(values.date, values.endTime)
 
-      if (!start || !end || end.getTime() <= start.getTime()) {
-        errors.endTime = 'Giờ kết thúc phải sau giờ bắt đầu.'
+      if (!start || !end) {
+        errors.endTime = 'Giờ kết thúc không hợp lệ.'
       }
     }
   }
@@ -1486,7 +1504,11 @@ export function buildCenterCalendarItemFromForm(values = {}, existingItem = null
   const allDay = Boolean(values.allDay)
   const date = normalizeDateString(values.date) || getCurrentScheduleWeekStartDate()
   const start = allDay ? parseDateTime(date, '00:00') : parseDateTime(date, values.startTime)
-  const end = allDay ? parseDateTime(addDays(date, 1), '00:00') : parseDateTime(date, values.endTime)
+  let end = allDay ? parseDateTime(addDays(date, 1), '00:00') : parseDateTime(date, values.endTime)
+
+  if (!allDay && start && end && end.getTime() <= start.getTime()) {
+    end = new Date(end.getTime() + 24 * 60 * 60 * 1000)
+  }
   const now = new Date().toISOString()
   const preset = getCenterCalendarPresetByColorKey(values.colorKey, itemType)
   const tagId = String(values.tagId || '').trim()
@@ -1663,7 +1685,7 @@ function renderScheduleAlertBell(alerts = []) {
 
   return `
     <details class="schedule-alert-bell" aria-label="ChuĂ´ng cáº£nh bĂ¡o TKB">
-      <summary aria-label="Má»Ÿ danh sĂ¡ch cáº£nh bĂ¡o TKB">
+      <summary aria-label="Mở danh sách cảnh báo TKB">
         <span class="schedule-alert-bell-icon" aria-hidden="true">!</span>
         <span>Cáº£nh bĂ¡o</span>
         ${alertItems.length ? `<strong>${alertItems.length}</strong>` : ''}
@@ -1671,14 +1693,14 @@ function renderScheduleAlertBell(alerts = []) {
       <div class="schedule-alert-popover" role="status">
         <div class="schedule-alert-popover-header">
           <strong>Cáº£nh bĂ¡o ca dáº¡y</strong>
-          <span>${alertItems.length ? `${alertItems.length} ca cáº§n kiá»ƒm tra` : '0 ca'}</span>
+          <span>${alertItems.length ? `${alertItems.length} ca cần kiểm tra` : '0 ca'}</span>
         </div>
         ${
           alertItems.length
             ? `
               <div class="schedule-alert-popover-groups" aria-label="NhĂ³m cáº£nh bĂ¡o">
-                <span>GiĂ¡o viĂªn trá»… bĂ¡o cĂ¡o: ${teacherCount}</span>
-                <span>Admin/TÆ° váº¥n cáº§n kiá»ƒm tra: ${adminCount}</span>
+                <span>Giáo viên trễ báo cáo: ${teacherCount}</span>
+                <span>Admin/Tư vấn cần kiểm tra: ${adminCount}</span>
                 <span>Cáº§n QTV/anh Háº£i chĂº Ă½: ${qtvCount || adminCount}</span>
               </div>
               <div class="schedule-alert-popover-list">${alertItems
@@ -1944,7 +1966,83 @@ function renderCenterCalendarItemState(state, centerCalendarTags = []) {
     return renderCenterCalendarItemDeleteConfirm(state.item)
   }
 
+  if (state.mode === 'conflict') {
+    return renderCenterCalendarConflictPanel(state)
+  }
+
   return renderCenterCalendarItemForm(state, centerCalendarTags)
+}
+
+function renderCenterCalendarConflictPanel(state) {
+  const conflictResult = state.conflictResult || {}
+  const hardConflicts = Array.isArray(conflictResult.hard) ? conflictResult.hard : []
+  const softConflicts = Array.isArray(conflictResult.soft) ? conflictResult.soft : []
+  const informationalConflicts = Array.isArray(conflictResult.informational) ? conflictResult.informational : []
+  const isHard = hardConflicts.length > 0
+  const visibleConflicts = [
+    ...hardConflicts,
+    ...softConflicts,
+    ...informationalConflicts,
+  ].slice(0, 6)
+  const totalCount = Number(conflictResult.total || visibleConflicts.length)
+
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-form-panel schedule-calendar-conflict-panel" data-center-calendar-conflict-panel>
+      <div class="schedule-form-header">
+        <div>
+          <h4>${isHard ? 'Không thể lưu do trùng lịch' : 'Hoạt động đang trùng lịch'}</h4>
+          <span>${isHard ? 'Lớp học hoặc buổi học thật đang dùng phòng này.' : 'Bạn có thể quay lại chỉnh sửa hoặc vẫn lưu hoạt động này.'}</span>
+        </div>
+        <button type="button" data-center-calendar-action="conflict-return" aria-label="Quay lại chỉnh sửa">×</button>
+      </div>
+      <div class="schedule-calendar-conflict-summary">
+        <p>${escapeHtml(`${totalCount} xung đột được tìm thấy. Record hiện có sẽ không bị sửa.`)}</p>
+        ${state.errors?.form ? `<div class="schedule-form-error" role="alert"><p>${escapeHtml(state.errors.form)}</p></div>` : ''}
+        <div class="schedule-calendar-conflict-list">
+          ${visibleConflicts.map((conflict) => renderCenterCalendarConflictRow(conflict)).join('')}
+        </div>
+      </div>
+      <div class="schedule-form-actions">
+        <span></span>
+        <div>
+          <button type="button" data-center-calendar-action="conflict-return">Quay lại chỉnh sửa</button>
+          ${isHard ? '' : '<button class="schedule-save-button" type="button" data-center-calendar-action="conflict-save">Vẫn lưu</button>'}
+        </div>
+      </div>
+    </section>
+  `
+}
+
+function renderCenterCalendarConflictRow(conflict) {
+  const severityLabels = {
+    hard: 'Trùng phòng',
+    soft: 'Xung đột thời gian',
+    informational: 'Thông tin',
+  }
+  const timeLabel = formatCenterCalendarConflictTime(conflict)
+  const roomLabel = conflict.roomLabel || conflict.location || conflict.roomId || 'Chưa có phòng'
+  const sourceLabel = conflict.sourceLabel || 'Lịch'
+
+  return `
+    <article class="schedule-calendar-conflict-row is-${escapeAttribute(conflict.severity || 'informational')}">
+      <strong>${escapeHtml(severityLabels[conflict.severity] || 'Xung đột thời gian')}</strong>
+      <span>${escapeHtml(sourceLabel)} · ${escapeHtml(conflict.title || 'Lịch')}</span>
+      <small>${escapeHtml([timeLabel, roomLabel].filter(Boolean).join(' · '))}</small>
+    </article>
+  `
+}
+
+function formatCenterCalendarConflictTime(conflict) {
+  const startDate = getDateFromIsoDateTime(conflict.startAt)
+  const endDate = getDateFromIsoDateTime(conflict.endAt)
+  const dateLabel = formatDisplayDate(startDate)
+  const startTime = formatTimeFromIsoDateTime(conflict.startAt)
+  const endTime = formatTimeFromIsoDateTime(conflict.endAt)
+  const timeLabel = [startTime, endTime].filter(Boolean).join('-')
+  const endDateSuffix = endDate && endDate !== startDate ? ` -> ${formatDisplayDate(endDate)}` : ''
+
+  return [dateLabel ? `${dateLabel}${endDateSuffix}` : '', timeLabel].filter(Boolean).join(' · ')
 }
 
 function renderCenterCalendarItemForm(formState, centerCalendarTags = []) {

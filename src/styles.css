@@ -9821,6 +9821,77 @@ h3 {
   font-weight: 850;
 }
 
+.schedule-calendar-conflict-panel {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.schedule-calendar-conflict-summary {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.schedule-calendar-conflict-summary > p {
+  margin: 0;
+  color: #c9d8ea;
+  font-size: 0.84rem;
+  font-weight: 820;
+  line-height: 1.45;
+}
+
+.schedule-calendar-conflict-list {
+  display: grid;
+  gap: 8px;
+}
+
+.schedule-calendar-conflict-row {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-left: 3px solid #94a3b8;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.schedule-calendar-conflict-row.is-hard {
+  border-left-color: #ef4444;
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.schedule-calendar-conflict-row.is-soft {
+  border-left-color: #f59e0b;
+  background: rgba(146, 64, 14, 0.16);
+}
+
+.schedule-calendar-conflict-row strong,
+.schedule-calendar-conflict-row span,
+.schedule-calendar-conflict-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-calendar-conflict-row strong {
+  color: #ffffff;
+  font-size: 0.8rem;
+}
+
+.schedule-calendar-conflict-row span {
+  color: #dbe8f7;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.schedule-calendar-conflict-row small {
+  color: #93a7bf;
+  font-size: 0.72rem;
+  font-weight: 780;
+}
+
 .schedule-calendar-detail-list dd {
   min-width: 0;
 }

@@ -139,7 +139,11 @@ assert(formHtml.includes('Đặt lại theo loại'), 'Palette must include rese
 
 assert(validateCenterCalendarItemForm({ ...emptyState.values, title: '' }).title, 'Empty title must be invalid.')
 assert(validateCenterCalendarItemForm({ ...emptyState.values, itemType: 'classSession', title: 'Bad' }).itemType, 'Class/session item type must be rejected.')
-assert(validateCenterCalendarItemForm({ ...emptyState.values, title: 'Bad time', startTime: '10:00', endTime: '09:00' }).endTime, 'End time must be after start time.')
+assert.equal(
+  validateCenterCalendarItemForm({ ...emptyState.values, title: 'Overnight', startTime: '22:00', endTime: '01:00' }).endTime,
+  undefined,
+  'Overnight activity time should be valid for the conflict foundation.'
+)
 assert.deepEqual(validateCenterCalendarItemForm({ ...emptyState.values, title: 'Hop team' }), {}, 'Valid meeting form should pass.')
 
 const created = buildCenterCalendarItemFromForm(
