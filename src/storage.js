@@ -598,6 +598,20 @@ export function saveStoredCashflow(transactions) {
   localStorage.setItem(CASHFLOW_KEY, JSON.stringify(normalizeCashflowTransactions(transactions)))
 }
 
+export function readStoredCashflow(defaultTransactions = []) {
+  try {
+    const storedTransactions = JSON.parse(localStorage.getItem(CASHFLOW_KEY))
+
+    if (Array.isArray(storedTransactions)) {
+      return normalizeCashflowTransactions(storedTransactions)
+    }
+  } catch {
+    return normalizeCashflowTransactions(defaultTransactions)
+  }
+
+  return normalizeCashflowTransactions(defaultTransactions)
+}
+
 export function getStoredCashflowCategories(defaultCategories) {
   try {
     const storedCategories = JSON.parse(localStorage.getItem(CASHFLOW_CATEGORIES_KEY))
@@ -1737,6 +1751,7 @@ function normalizeNullableId(value) {
 function normalizeCashflowTransactions(transactions) {
   return transactions.map((transaction, index) => {
     const normalizedTransaction = {
+      ...transaction,
       id: String(transaction.id || `cashflow-${String(index + 1).padStart(3, '0')}`),
       type: transaction.type === 'expense' ? 'expense' : 'income',
       category: String(transaction.category || 'KhĂ¡c'),

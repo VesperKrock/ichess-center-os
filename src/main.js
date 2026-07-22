@@ -43,6 +43,7 @@ import {
   getDesktopModuleOrder,
   getStoredCashflow,
   getStoredCashflowCategories,
+  readStoredCashflow,
   getStoredCashbookReconciliations,
   getStoredCashbookSettings,
   getStoredInventory,
@@ -5466,14 +5467,45 @@ function openStudentEditForm(studentId) {
 }
 
 function openCashflowEditForm(transactionId) {
+  const currentCenterId = getCurrentResolvedCenterId()
   const transaction = cashflowTransactions.find((item) => item.id === transactionId)
 
   if (!transaction) {
     return
   }
 
-  cashflowFormState = createEditCashflowFormState(transaction)
+  cashflowFormState = createEditCashflowFormState(transaction, currentCenterId)
   render()
+}
+
+function getCashflowSampleFallbackForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
+  return isProductionCenter(centerId) ? [] : sampleCashflowTransactions
+}
+
+function readLatestCashflowTransactionsForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
+  return readStoredCashflow(getCashflowSampleFallbackForCurrentCenter(centerId))
+}
+
+function collectCashflowFormValues(form, fallbackValues = {}) {
+  const values = { ...fallbackValues }
+
+  form?.querySelectorAll('[data-cashflow-form-field]').forEach((control) => {
+    values[control.dataset.cashflowFormField] = control.value
+  })
+
+  return values
+}
+
+function createCashflowFormErrorState(formState, message, values = formState?.values || {}) {
+  return {
+    ...formState,
+    isSaving: false,
+    values,
+    errors: {
+      ...(formState?.errors || {}),
+      form: message,
+    },
+  }
 }
 
 function openInventoryEditForm(itemId) {
@@ -10165,7 +10197,10 @@ function bindEvents() {
   )
 
   document.querySelector('[data-cashflow-action="open-create"]')?.addEventListener('click', () => {
-    cashflowFormState = createEmptyCashflowFormStateWithCategories(cashflowCategories)
+    cashflowFormState = createEmptyCashflowFormStateWithCategories(
+      cashflowCategories,
+      getCurrentResolvedCenterId(),
+    )
     render()
   })
 
@@ -10368,7 +10403,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-cashflow-form-field]').forEach((control) => {
-    control.addEventListener('input', () => {
+    const updateCashflowDraftField = () => {
       if (!cashflowFormState) {
         return
       }
@@ -10394,7 +10429,10 @@ function bindEvents() {
           },
         }
       }
-    })
+    }
+
+    control.addEventListener('input', updateCashflowDraftField)
+    control.addEventListener('change', updateCashflowDraftField)
   })
 
   document.querySelectorAll('[data-cashflow-category-field]').forEach((control) => {
@@ -10549,36 +10587,87 @@ function bindEvents() {
   document.querySelector('[data-cashflow-form]')?.addEventListener('submit', (event) => {
     event.preventDefault()
 
-    if (!cashflowFormState) {
+    if (!cashflowFormState || cashflowFormState.isSaving) {
       return
     }
 
-    const errors = validateCashflowForm(cashflowFormState.values)
+    const formValues = collectCashflowFormValues(event.currentTarget, cashflowFormState.values)
+    const errors = validateCashflowForm(formValues)
 
     if (Object.keys(errors).length) {
       cashflowFormState = {
         ...cashflowFormState,
+        values: formValues,
         errors,
       }
       render()
       return
     }
 
-    const existingTransaction = cashflowTransactions.find(
-      (transaction) => transaction.id === cashflowFormState.transactionId,
-    )
+    const currentCenterId = getCurrentResolvedCenterId()
+    const formCenterId = String(cashflowFormState.centerId || currentCenterId).trim()
+
+    if (formCenterId !== currentCenterId) {
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Cơ sở đã thay đổi. Vui lòng mở lại giao dịch ở đúng cơ sở trước khi lưu.',
+        formValues,
+      )
+      render()
+      return
+    }
+
+    cashflowFormState = {
+      ...cashflowFormState,
+      isSaving: true,
+      values: formValues,
+      errors: {},
+    }
+
+    const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
+    const existingTransaction = cashflowFormState.mode === 'edit'
+      ? latestCashflowTransactions.find(
+          (transaction) => transaction.id === cashflowFormState.transactionId,
+        )
+      : null
+
+    if (cashflowFormState.mode === 'edit' && !existingTransaction) {
+      cashflowTransactions = latestCashflowTransactions
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Giao dịch này không còn tồn tại. Danh sách đã được tải lại, vui lòng kiểm tra trước khi lưu.',
+        formValues,
+      )
+      render()
+      return
+    }
+
     const nextTransaction = buildCashflowTransactionFromForm(
-      cashflowFormState.values,
+      formValues,
       existingTransaction,
     )
-    const previousCashflowTransactions = cashflowTransactions
+    const previousCashflowTransactions = latestCashflowTransactions
+    let replacedCount = 0
 
     cashflowTransactions =
       cashflowFormState.mode === 'edit'
-        ? cashflowTransactions.map((transaction) =>
-            transaction.id === nextTransaction.id ? nextTransaction : transaction,
+        ? latestCashflowTransactions.map((transaction) =>
+            transaction.id === nextTransaction.id
+              ? (replacedCount += 1, nextTransaction)
+              : transaction,
           )
-        : [nextTransaction, ...cashflowTransactions]
+        : [nextTransaction, ...latestCashflowTransactions]
+
+    if (cashflowFormState.mode === 'edit' && replacedCount !== 1) {
+      cashflowTransactions = latestCashflowTransactions
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Không thể cập nhật đúng một giao dịch. Vui lòng mở lại giao dịch và thử lại.',
+        formValues,
+      )
+      render()
+      return
+    }
 
     try {
       saveStoredCashflow(cashflowTransactions)
@@ -10586,6 +10675,8 @@ function bindEvents() {
       cashflowTransactions = previousCashflowTransactions
       cashflowFormState = {
         ...cashflowFormState,
+        isSaving: false,
+        values: formValues,
         errors: {
           ...cashflowFormState.errors,
           attachment: 'Không lưu được giao dịch. Ảnh có thể làm đầy bộ nhớ local.',

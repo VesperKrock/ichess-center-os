@@ -39,12 +39,14 @@ export function createEmptyCashflowFormState() {
   return createEmptyCashflowFormStateWithCategories()
 }
 
-export function createEmptyCashflowFormStateWithCategories(categories = []) {
+export function createEmptyCashflowFormStateWithCategories(categories = [], centerId = '') {
   const defaultCategory = getDefaultCategoryNameForType(categories, 'income') || 'Học phí'
 
   return {
     mode: 'create',
     transactionId: null,
+    centerId: String(centerId || '').trim(),
+    isSaving: false,
     values: {
       ...emptyCashflowFormValues,
       category: defaultCategory,
@@ -54,10 +56,13 @@ export function createEmptyCashflowFormStateWithCategories(categories = []) {
   }
 }
 
-export function createEditCashflowFormState(transaction) {
+export function createEditCashflowFormState(transaction, centerId = '') {
   return {
     mode: 'edit',
     transactionId: transaction.id,
+    centerId: String(centerId || '').trim(),
+    openedUpdatedAt: transaction.updatedAt || '',
+    isSaving: false,
     values: {
       type: transaction.type ?? 'income',
       category: transaction.category ?? 'Khác',
@@ -620,6 +625,8 @@ export function parseCashflowMoneyInput(value) {
 
 function renderCashflowForm(formState, categories = []) {
   const isEditMode = formState.mode === 'edit'
+  const isSaving = Boolean(formState.isSaving)
+  const disabledAttribute = isSaving ? 'disabled' : ''
   const categoryOptions = getAvailableCashflowCategoriesForType(
     categories,
     formState.values.type,
@@ -628,13 +635,13 @@ function renderCashflowForm(formState, categories = []) {
 
   return `
     <div class="cashflow-form-backdrop" role="presentation">
-      <form class="cashflow-form-panel" data-cashflow-form>
+      <form class="cashflow-form-panel" data-cashflow-form data-cashflow-form-mode="${escapeAttribute(formState.mode)}">
         <div class="cashflow-form-header">
           <div>
             <h4>${isEditMode ? 'Sửa giao dịch' : 'Thêm giao dịch'}</h4>
             <p>${isEditMode ? 'Cập nhật giao dịch thu/chi thủ công.' : 'Nhập giao dịch thu/chi thủ công mới.'}</p>
           </div>
-          <button type="button" data-cashflow-action="cancel-form" aria-label="Đóng form">×</button>
+          <button type="button" data-cashflow-action="cancel-form" aria-label="Đóng form" ${disabledAttribute}>×</button>
         </div>
         <div class="cashflow-form-grid">
           ${renderSelectField('Loại giao dịch', 'type', formState, [
@@ -662,19 +669,19 @@ function renderCashflowForm(formState, categories = []) {
           ${renderInputField('Người ghi nhận', 'recordedBy', formState)}
           <label class="cashflow-field cashflow-field-wide">
             <span>Ghi chú</span>
-            <textarea data-cashflow-form-field="note">${escapeHtml(formState.values.note ?? '')}</textarea>
+            <textarea data-cashflow-form-field="note" ${disabledAttribute}>${escapeHtml(formState.values.note ?? '')}</textarea>
           </label>
         </div>
         ${renderFormErrors(formState.errors)}
         <div class="cashflow-form-actions">
           ${
             isEditMode
-              ? '<button class="cashflow-delete-button" type="button" data-cashflow-action="delete-transaction">Xóa giao dịch</button>'
+              ? `<button class="cashflow-delete-button" type="button" data-cashflow-action="delete-transaction" ${disabledAttribute}>Xóa giao dịch</button>`
               : '<span></span>'
           }
           <div>
-            <button type="button" data-cashflow-action="cancel-form">Hủy</button>
-            <button class="cashflow-save-button" type="submit">Lưu giao dịch</button>
+            <button type="button" data-cashflow-action="cancel-form" ${disabledAttribute}>Hủy</button>
+            <button class="cashflow-save-button" type="submit" ${disabledAttribute}>${isSaving ? 'Đang lưu...' : 'Lưu giao dịch'}</button>
           </div>
         </div>
       </form>
@@ -777,6 +784,8 @@ function renderCategorySelectField(label, name, formState) {
 }
 
 function renderInputField(label, name, formState, type = 'text', placeholder = '') {
+  const disabledAttribute = formState.isSaving ? 'disabled' : ''
+
   return `
     <label class="cashflow-field">
       <span>${label}</span>
@@ -785,6 +794,7 @@ function renderInputField(label, name, formState, type = 'text', placeholder = '
         value="${escapeAttribute(formState.values[name] ?? '')}"
         placeholder="${escapeAttribute(placeholder)}"
         data-cashflow-form-field="${name}"
+        ${disabledAttribute}
       />
       ${renderFieldError(formState.errors[name])}
     </label>
@@ -792,10 +802,12 @@ function renderInputField(label, name, formState, type = 'text', placeholder = '
 }
 
 function renderSelectField(label, name, formState, options) {
+  const disabledAttribute = formState.isSaving ? 'disabled' : ''
+
   return `
     <label class="cashflow-field">
       <span>${label}</span>
-      <select data-cashflow-form-field="${name}">
+      <select data-cashflow-form-field="${name}" ${disabledAttribute}>
         ${options.map(([value, optionLabel]) => renderOption(value, optionLabel, formState.values[name])).join('')}
       </select>
       ${renderFieldError(formState.errors[name])}
@@ -1489,10 +1501,16 @@ function formatDate(value) {
 }
 
 function parseMoneyInput(value) {
-  const normalizedValue = String(value ?? '').replace(/[^\d]/g, '')
+  const rawValue = String(value ?? '').trim()
+  const isNegative = /^-/.test(rawValue) || /^−/.test(rawValue)
+  const normalizedValue = rawValue.replace(/[^\d]/g, '')
   const amount = Number(normalizedValue)
 
-  return Number.isFinite(amount) ? amount : 0
+  if (!Number.isFinite(amount)) {
+    return 0
+  }
+
+  return isNegative ? -amount : amount
 }
 
 function formatAmountForInput(amount) {
@@ -1548,7 +1566,7 @@ function normalizeText(value) {
 }
 
 function escapeAttribute(value) {
-  return String(value ?? '').replace(/"/g, '&quot;')
+  return escapeHtml(value)
 }
 
 function escapeHtml(value) {
