@@ -11,11 +11,16 @@ import {
   CENTER_CALENDAR_ITEM_TYPE_LABELS,
   CENTER_CALENDAR_COLOR_PRESETS,
   CENTER_CALENDAR_ITEM_TYPE_DEFAULT_COLOR_KEYS,
+  CENTER_CALENDAR_TAG_LABEL_MAX_LENGTH,
   getCenterCalendarItemsForRange,
   getCenterCalendarPresetByColorKey,
   getCenterCalendarPresetForType,
+  getCenterCalendarTagById,
   isRejectedClassCalendarItemType,
   normalizeCenterCalendarItem,
+  normalizeCenterCalendarTag,
+  normalizeCenterCalendarTagLabel,
+  normalizeCenterCalendarTags,
 } from './center-calendar-data.js'
 
 const DAY_INDEX_BY_ID = new Map(scheduleDays.map((day, index) => [day.id, index]))
@@ -37,6 +42,8 @@ const centerCalendarColorPaletteKeys = [
   'gray',
   'emerald',
 ]
+const centerCalendarAllFilterValue = 'all'
+const centerCalendarNoTagFilterValue = '__none__'
 
 export const attendanceStatuses = [
   ['present', 'Có mặt'],
@@ -168,12 +175,16 @@ export function renderScheduleModule(
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
   const centerCalendarItemState = deadlineOptions.centerCalendarItemState || null
+  const centerCalendarTagState = deadlineOptions.centerCalendarTagState || null
+  const centerCalendarTags = normalizeCenterCalendarTags(deadlineOptions.centerCalendarTags)
+  const centerCalendarFilters = normalizeCenterCalendarFilters(deadlineOptions.centerCalendarFilters)
   const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
-  const visibleCenterCalendarItems = getCenterCalendarItemsForRange(
+  const weekCenterCalendarItems = getCenterCalendarItemsForRange(
     deadlineOptions.centerCalendarItems,
     `${normalizedWeekStart}T00:00:00.000Z`,
     `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`,
   )
+  const visibleCenterCalendarItems = filterCenterCalendarItems(weekCenterCalendarItems, centerCalendarFilters)
   const teacherLookup = createLookup(teachers)
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
@@ -187,7 +198,7 @@ export function renderScheduleModule(
   })
 
   return `
-    <section class="schedule-module ${formState || reportState || centerCalendarItemState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
+    <section class="schedule-module ${formState || reportState || centerCalendarItemState || centerCalendarTagState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
       <div class="schedule-compact-header">
         <div class="schedule-stats" aria-label="Tổng quan lịch tuần">
         ${renderStatCard('Buổi trong tuần', stats.totalSessions)}
@@ -200,6 +211,7 @@ export function renderScheduleModule(
         <div class="schedule-toolbar" aria-label="Điều hướng tuần">
           <button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>
           <button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>
+          <button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>
           <div class="schedule-week-controls">
           <button type="button" data-schedule-week-action="previous">&lt; Tuần trước</button>
           <button type="button" data-schedule-week-action="today">Tuần này</button>
@@ -208,6 +220,13 @@ export function renderScheduleModule(
           <strong class="schedule-week-label">${escapeHtml(formatWeekRange(normalizedWeekStart))}</strong>
         </div>
       </div>
+      ${renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)}
+      ${renderCenterCalendarLegend(centerCalendarTags, weekCenterCalendarItems)}
+      ${
+        weekCenterCalendarItems.length && !visibleCenterCalendarItems.length
+          ? '<p class="schedule-calendar-filter-empty">Không có hoạt động phù hợp bộ lọc</p>'
+          : ''
+      }
       <div class="schedule-week-scroll">
         <div class="schedule-week-grid">
           ${weekDays
@@ -219,13 +238,15 @@ export function renderScheduleModule(
                 studentLookup,
                 conflictMap,
                 getCenterCalendarItemsByDate(visibleCenterCalendarItems, day.date),
+                centerCalendarTags,
               ),
             )
             .join('')}
         </div>
       </div>
       ${formState ? renderScheduleForm(formState, teachers, students, sessions, normalizedWeekStart, classSessions) : ''}
-      ${centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState) : ''}
+      ${centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags) : ''}
+      ${centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
       ${
         reportState
           ? renderScheduleReportPanel(
@@ -1011,7 +1032,322 @@ export function getNextScheduleWeekStartDate(weekStartDate) {
   return addDays(normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate(), 7)
 }
 
-function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = []) {
+export function createCenterCalendarTagManagerState(overrides = {}) {
+  return {
+    mode: 'list',
+    tagId: null,
+    values: {
+      label: '',
+      colorKey: 'gray',
+      defaultItemType: '',
+      description: '',
+    },
+    errors: {},
+    ...overrides,
+  }
+}
+
+export function createEmptyCenterCalendarTagFormState() {
+  return createCenterCalendarTagManagerState({ mode: 'create' })
+}
+
+export function createEditCenterCalendarTagFormState(tag) {
+  return createCenterCalendarTagManagerState({
+    mode: 'edit',
+    tagId: tag?.id || null,
+    values: {
+      label: tag?.label || '',
+      colorKey: getCenterCalendarPresetByColorKey(tag?.colorKey, tag?.defaultItemType || 'other').key,
+      defaultItemType: tag?.defaultItemType || '',
+      description: tag?.description || '',
+    },
+  })
+}
+
+export function validateCenterCalendarTagForm(values = {}, existingTags = [], currentTagId = '') {
+  const errors = {}
+  const label = normalizeCenterCalendarTagLabel(values.label)
+  const labelKey = normalizeTagDuplicateKey(label)
+  const colorKey = String(values.colorKey || '').trim()
+  const defaultItemType = String(values.defaultItemType || '').trim()
+  const normalizedTags = normalizeCenterCalendarTags(existingTags)
+
+  if (!label) {
+    errors.label = 'Tên nhãn là bắt buộc.'
+  }
+
+  if (String(values.label || '').trim().length > CENTER_CALENDAR_TAG_LABEL_MAX_LENGTH) {
+    errors.label = `Tên nhãn tối đa ${CENTER_CALENDAR_TAG_LABEL_MAX_LENGTH} ký tự.`
+  }
+
+  if (!centerCalendarColorPaletteKeys.includes(colorKey)) {
+    errors.colorKey = 'Màu nhãn không hợp lệ.'
+  }
+
+  if (defaultItemType && !CENTER_CALENDAR_ITEM_TYPES.includes(defaultItemType)) {
+    errors.defaultItemType = 'Loại hoạt động mặc định không hợp lệ.'
+  }
+
+  if (labelKey) {
+    const duplicate = normalizedTags.find(
+      (tag) => tag.id !== currentTagId && normalizeTagDuplicateKey(tag.label) === labelKey,
+    )
+
+    if (duplicate?.isActive) {
+      errors.label = 'Đã có nhãn đang dùng với tên này trong cơ sở.'
+    } else if (duplicate) {
+      errors.label = 'Đã có nhãn lưu trữ cùng tên. Hãy khôi phục nhãn đó thay vì tạo mới.'
+    }
+  }
+
+  return errors
+}
+
+export function buildCenterCalendarTagFromForm(values = {}, existingTag = null, centerId = '') {
+  const now = new Date().toISOString()
+
+  return normalizeCenterCalendarTag(
+    {
+      ...(existingTag ?? {}),
+      id: existingTag?.id || createCenterCalendarRuntimeTagId(values.label),
+      centerId,
+      label: normalizeCenterCalendarTagLabel(values.label),
+      colorKey: centerCalendarColorPaletteKeys.includes(values.colorKey) ? values.colorKey : 'gray',
+      customColor: '',
+      defaultItemType: CENTER_CALENDAR_ITEM_TYPES.includes(values.defaultItemType) ? values.defaultItemType : '',
+      description: String(values.description || '').trim().slice(0, 120),
+      isActive: existingTag?.isActive === undefined ? true : existingTag.isActive,
+      createdAt: existingTag?.createdAt || now,
+      updatedAt: now,
+    },
+    { centerId },
+  )
+}
+
+function normalizeCenterCalendarFilters(filters = {}) {
+  const itemType = CENTER_CALENDAR_ITEM_TYPES.includes(filters.itemType) ? filters.itemType : centerCalendarAllFilterValue
+  const tagId = String(filters.tagId || centerCalendarAllFilterValue).trim() || centerCalendarAllFilterValue
+
+  return { itemType, tagId }
+}
+
+function filterCenterCalendarItems(items = [], filters = {}) {
+  return items.filter((item) => {
+    const typeMatches = filters.itemType === centerCalendarAllFilterValue || item.itemType === filters.itemType
+    const tagMatches = filters.tagId === centerCalendarAllFilterValue ||
+      (filters.tagId === centerCalendarNoTagFilterValue ? !item.tagId : item.tagId === filters.tagId)
+
+    return typeMatches && tagMatches
+  })
+}
+
+function renderCenterCalendarFilterBar(filters, tags = [], weekItems = []) {
+  const activeTags = tags.filter((tag) => tag.isActive)
+  const archivedWeekTagIds = new Set(
+    weekItems
+      .map((item) => item.tagId)
+      .filter((tagId) => tagId && !activeTags.some((tag) => tag.id === tagId)),
+  )
+  const archivedWeekTags = tags.filter((tag) => archivedWeekTagIds.has(tag.id))
+  const hasActiveFilter = filters.itemType !== centerCalendarAllFilterValue || filters.tagId !== centerCalendarAllFilterValue
+
+  return `
+    <div class="schedule-calendar-filters" aria-label="Lọc hoạt động">
+      <label>
+        <span>Loại hoạt động</span>
+        <select data-center-calendar-filter="itemType">
+          <option value="${centerCalendarAllFilterValue}" ${filters.itemType === centerCalendarAllFilterValue ? 'selected' : ''}>Tất cả loại</option>
+          ${CENTER_CALENDAR_ITEM_TYPES.map((type) => `
+            <option value="${escapeAttribute(type)}" ${filters.itemType === type ? 'selected' : ''}>${escapeHtml(CENTER_CALENDAR_ITEM_TYPE_LABELS[type])}</option>
+          `).join('')}
+        </select>
+      </label>
+      <label>
+        <span>Nhãn</span>
+        <select data-center-calendar-filter="tagId">
+          <option value="${centerCalendarAllFilterValue}" ${filters.tagId === centerCalendarAllFilterValue ? 'selected' : ''}>Tất cả nhãn</option>
+          <option value="${centerCalendarNoTagFilterValue}" ${filters.tagId === centerCalendarNoTagFilterValue ? 'selected' : ''}>Không gắn nhãn</option>
+          ${activeTags.map((tag) => `
+            <option value="${escapeAttribute(tag.id)}" ${filters.tagId === tag.id ? 'selected' : ''}>${escapeHtml(tag.label)}</option>
+          `).join('')}
+          ${archivedWeekTags.map((tag) => `
+            <option value="${escapeAttribute(tag.id)}" ${filters.tagId === tag.id ? 'selected' : ''}>${escapeHtml(`${tag.label} (đã lưu trữ)`)}</option>
+          `).join('')}
+        </select>
+      </label>
+      ${hasActiveFilter ? '<button type="button" data-center-calendar-filter-action="clear">Xóa bộ lọc</button>' : ''}
+    </div>
+  `
+}
+
+function renderCenterCalendarLegend(tags = [], weekItems = []) {
+  const tagCounts = getCenterCalendarTagUsageCounts(weekItems)
+  const weekTags = tags.filter((tag) => tagCounts.has(tag.id))
+
+  return `
+    <div class="schedule-calendar-legend" aria-label="Chú giải thời khóa biểu">
+      <div class="schedule-calendar-legend-group">
+        <span>Loại hoạt động</span>
+        ${CENTER_CALENDAR_ITEM_TYPES.map((type) => {
+          const preset = getCenterCalendarPresetForType(type)
+          return `<span class="schedule-calendar-legend-chip" style="--schedule-calendar-item-color: ${escapeAttribute(preset.color)};"><i></i>${escapeHtml(CENTER_CALENDAR_ITEM_TYPE_LABELS[type])}</span>`
+        }).join('')}
+      </div>
+      <div class="schedule-calendar-legend-group">
+        <span>Nhãn trong tuần</span>
+        ${
+          weekTags.length
+            ? weekTags.map((tag) => renderCenterCalendarTagChip(tag, tagCounts.get(tag.id))).join('')
+            : '<em>Chưa có nhãn</em>'
+        }
+      </div>
+    </div>
+  `
+}
+
+function renderCenterCalendarTagManager(state, tags = [], items = []) {
+  const activeTags = tags.filter((tag) => tag.isActive)
+  const archivedTags = tags.filter((tag) => !tag.isActive)
+  const counts = getCenterCalendarTagUsageCounts(items)
+
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-form-panel schedule-calendar-tag-manager" data-center-calendar-tag-manager>
+      <div class="schedule-form-header">
+        <div>
+          <h4>Quản lý nhãn hoạt động</h4>
+          <span>Nhãn dùng để phân nhóm và lọc, không đổi màu thẻ hoạt động.</span>
+        </div>
+        <button type="button" data-center-calendar-tag-action="close" aria-label="Đóng">×</button>
+      </div>
+      <div class="schedule-calendar-tag-manager-body">
+        ${state.errors?.form ? `<div class="schedule-form-error" role="alert"><p>${escapeHtml(state.errors.form)}</p></div>` : ''}
+        ${
+          state.mode === 'create' || state.mode === 'edit'
+            ? renderCenterCalendarTagForm(state)
+            : `
+              <button class="schedule-calendar-tag-create-button" type="button" data-center-calendar-tag-action="create">+ Tạo nhãn</button>
+              ${activeTags.length ? activeTags.map((tag) => renderCenterCalendarTagRow(tag, counts.get(tag.id) || 0, false)).join('') : '<div class="schedule-calendar-tag-empty">Chưa có nhãn hoạt động</div>'}
+              <details class="schedule-calendar-tag-archived" ${archivedTags.length ? '' : 'open'}>
+                <summary>Nhãn đã lưu trữ</summary>
+                ${archivedTags.length ? archivedTags.map((tag) => renderCenterCalendarTagRow(tag, counts.get(tag.id) || 0, true)).join('') : '<div class="schedule-calendar-tag-empty">Chưa có nhãn đã lưu trữ</div>'}
+              </details>
+            `
+        }
+      </div>
+    </section>
+  `
+}
+
+function renderCenterCalendarTagForm(state) {
+  const selectedColorKey = centerCalendarColorPaletteKeys.includes(state.values.colorKey) ? state.values.colorKey : 'gray'
+  const isEdit = state.mode === 'edit'
+
+  return `
+    <form class="schedule-calendar-tag-form" data-center-calendar-tag-form>
+      <label class="schedule-form-field span-full">
+        <span>Tên nhãn *</span>
+        <input type="text" maxlength="${CENTER_CALENDAR_TAG_LABEL_MAX_LENGTH}" placeholder="Ví dụ: Nội bộ, Ưu tiên, Phụ huynh" value="${escapeAttribute(state.values.label || '')}" data-center-calendar-tag-field="label" />
+        ${state.errors.label ? `<small>${escapeHtml(state.errors.label)}</small>` : ''}
+      </label>
+      <fieldset class="schedule-form-field schedule-calendar-color-palette span-full" data-center-calendar-tag-palette>
+        <legend>Màu nhãn</legend>
+        <div class="schedule-calendar-color-options" role="group" aria-label="Chọn màu nhãn">
+          ${centerCalendarColorPaletteKeys.map((colorKey) => {
+            const preset = CENTER_CALENDAR_COLOR_PRESETS[colorKey] || CENTER_CALENDAR_COLOR_PRESETS.gray
+            const isSelected = preset.key === selectedColorKey
+            return `
+              <button type="button" class="schedule-calendar-color-swatch ${isSelected ? 'is-selected' : ''}" data-center-calendar-tag-action="select-color" data-center-calendar-tag-color-key="${escapeAttribute(preset.key)}" aria-pressed="${isSelected ? 'true' : 'false'}" style="--schedule-calendar-item-color: ${escapeAttribute(preset.color)};">
+                <span aria-hidden="true">${isSelected ? '✓' : ''}</span>
+                <strong>${escapeHtml(preset.label)}</strong>
+              </button>
+            `
+          }).join('')}
+        </div>
+        <input type="hidden" value="${escapeAttribute(selectedColorKey)}" data-center-calendar-tag-field="colorKey" />
+        ${state.errors.colorKey ? `<small>${escapeHtml(state.errors.colorKey)}</small>` : ''}
+      </fieldset>
+      <label class="schedule-form-field">
+        <span>Loại hoạt động mặc định</span>
+        <select data-center-calendar-tag-field="defaultItemType">
+          <option value="" ${state.values.defaultItemType ? '' : 'selected'}>Không giới hạn</option>
+          ${CENTER_CALENDAR_ITEM_TYPES.map((type) => `
+            <option value="${escapeAttribute(type)}" ${state.values.defaultItemType === type ? 'selected' : ''}>${escapeHtml(CENTER_CALENDAR_ITEM_TYPE_LABELS[type])}</option>
+          `).join('')}
+        </select>
+        ${state.errors.defaultItemType ? `<small>${escapeHtml(state.errors.defaultItemType)}</small>` : ''}
+      </label>
+      <label class="schedule-form-field span-full">
+        <span>Mô tả</span>
+        <textarea data-center-calendar-tag-field="description">${escapeHtml(state.values.description || '')}</textarea>
+      </label>
+      ${renderFormErrors(state.errors)}
+      <div class="schedule-form-actions">
+        <button type="button" data-center-calendar-tag-action="list">Hủy</button>
+        <button class="schedule-save-button" type="button" data-center-calendar-tag-action="save">${isEdit ? 'Lưu nhãn' : 'Tạo nhãn'}</button>
+      </div>
+    </form>
+  `
+}
+
+function renderCenterCalendarTagRow(tag, count, isArchived) {
+  const preset = getCenterCalendarPresetByColorKey(tag.colorKey, tag.defaultItemType || 'other')
+  const defaultTypeLabel = tag.defaultItemType ? CENTER_CALENDAR_ITEM_TYPE_LABELS[tag.defaultItemType] : 'Không giới hạn'
+
+  return `
+    <article class="schedule-calendar-tag-row ${isArchived ? 'is-archived' : ''}">
+      <span class="schedule-calendar-tag-swatch" style="--schedule-calendar-tag-color: ${escapeAttribute(preset.color)};"></span>
+      <div>
+        <strong>${escapeHtml(tag.label)}</strong>
+        <small>${escapeHtml(defaultTypeLabel)} · ${count} hoạt động · ${isArchived ? 'Đã lưu trữ' : 'Đang dùng'}</small>
+      </div>
+      <div class="schedule-calendar-tag-row-actions">
+        ${
+          isArchived
+            ? `<button type="button" data-center-calendar-tag-action="restore" data-center-calendar-tag-id="${escapeAttribute(tag.id)}">Khôi phục</button>`
+            : `
+              <button type="button" data-center-calendar-tag-action="edit" data-center-calendar-tag-id="${escapeAttribute(tag.id)}">Chỉnh sửa</button>
+              <button type="button" data-center-calendar-tag-action="archive" data-center-calendar-tag-id="${escapeAttribute(tag.id)}">Lưu trữ</button>
+            `
+        }
+      </div>
+    </article>
+  `
+}
+
+function renderCenterCalendarTagChip(tag, count = 0) {
+  const preset = getCenterCalendarPresetByColorKey(tag.colorKey, tag.defaultItemType || 'other')
+  return `<span class="schedule-calendar-tag-chip ${tag.isActive ? '' : 'is-archived'}" title="${escapeAttribute(tag.isActive ? tag.label : `${tag.label} - nhãn đã lưu trữ`)}" style="--schedule-calendar-tag-color: ${escapeAttribute(preset.color)};"><i></i>${escapeHtml(tag.label)}${count ? ` <b>${count}</b>` : ''}</span>`
+}
+
+function getCenterCalendarTagUsageCounts(items = []) {
+  const counts = new Map()
+  items.forEach((item) => {
+    if (item?.tagId) {
+      counts.set(item.tagId, (counts.get(item.tagId) || 0) + 1)
+    }
+  })
+  return counts
+}
+
+function normalizeTagDuplicateKey(value) {
+  return String(value || '').trim().toLocaleLowerCase('vi-VN')
+}
+
+function createCenterCalendarRuntimeTagId(label) {
+  const asciiSlug = String(label || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  const suffix = Math.random().toString(36).slice(2, 8)
+
+  return `center-calendar-tag-${asciiSlug || 'tag'}-${Date.now()}-${suffix}`
+}
+
+function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = [], centerCalendarTags = []) {
   const calendarCountLabel = centerCalendarItems.length
     ? ` · ${centerCalendarItems.length} hoạt động`
     : ''
@@ -1027,7 +1363,7 @@ function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMa
           sessions.length || centerCalendarItems.length
             ? [
                 ...sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap)),
-                ...centerCalendarItems.map((item) => renderCenterCalendarItemCard(item)),
+                ...centerCalendarItems.map((item) => renderCenterCalendarItemCard(item, centerCalendarTags)),
               ].join('')
             : '<div class="schedule-empty-day">Chưa có lịch</div>'
         }
@@ -1060,6 +1396,7 @@ export function createEmptyCenterCalendarItemFormState(date = getCurrentSchedule
       description: '',
       colorKey: getDefaultCenterCalendarColorKey('meeting'),
       colorOverridden: false,
+      tagId: '',
     },
     errors: {},
   }
@@ -1098,6 +1435,7 @@ export function createEditCenterCalendarItemFormState(item) {
       description: item?.description || '',
       colorKey: getCenterCalendarPresetByColorKey(item?.colorKey, item?.itemType).key,
       colorOverridden: getCenterCalendarPresetByColorKey(item?.colorKey, item?.itemType).key !== getDefaultCenterCalendarColorKey(item?.itemType),
+      tagId: item?.tagId || '',
     },
     errors: {},
   }
@@ -1151,6 +1489,8 @@ export function buildCenterCalendarItemFromForm(values = {}, existingItem = null
   const end = allDay ? parseDateTime(addDays(date, 1), '00:00') : parseDateTime(date, values.endTime)
   const now = new Date().toISOString()
   const preset = getCenterCalendarPresetByColorKey(values.colorKey, itemType)
+  const tagId = String(values.tagId || '').trim()
+  const tagLabel = String(values.tagLabel || '').trim()
 
   return normalizeCenterCalendarItem(
     {
@@ -1164,6 +1504,8 @@ export function buildCenterCalendarItemFromForm(values = {}, existingItem = null
       allDay,
       location: String(values.location || '').trim(),
       colorKey: preset.key,
+      tagId,
+      tagLabel: tagId ? tagLabel : '',
       sourceModule: 'centerCalendar',
       createdAt: existingItem?.createdAt || now,
       updatedAt: now,
@@ -1179,13 +1521,16 @@ function getCenterCalendarItemsByDate(centerCalendarItems = [], date) {
   return getCenterCalendarItemsForRange(centerCalendarItems, dayStartAt, dayEndAt)
 }
 
-function renderCenterCalendarItemCard(item) {
+function renderCenterCalendarItemCard(item, centerCalendarTags = []) {
   const preset = getCenterCalendarPresetByColorKey(item.colorKey, item.itemType)
   const color = item.customColor || preset.color
   const typeLabel = CENTER_CALENDAR_ITEM_TYPE_LABELS[item.itemType] || CENTER_CALENDAR_ITEM_TYPE_LABELS.other
   const locationLabel = item.location || item.roomId || ''
   const cancelledLabel = item.isCancelled ? '<span class="schedule-calendar-item-status">Đã hủy</span>' : ''
-  const tagLabel = item.tagLabel ? `<span class="schedule-calendar-item-tag">${escapeHtml(item.tagLabel)}</span>` : ''
+  const tagMeta = getCenterCalendarItemTagMeta(item, centerCalendarTags)
+  const tagLabel = tagMeta
+    ? `<span class="schedule-calendar-item-tag ${tagMeta.tag.isActive ? '' : 'is-archived'}" title="${escapeAttribute(tagMeta.tag.isActive ? tagMeta.tag.label : `${tagMeta.tag.label} - nhãn đã lưu trữ`)}" style="--schedule-calendar-tag-color: ${escapeAttribute(tagMeta.color)};">${escapeHtml(tagMeta.tag.label)}</span>`
+    : ''
   const description = item.description
     ? `<p class="schedule-calendar-item-description">${escapeHtml(item.description)}</p>`
     : ''
@@ -1210,6 +1555,59 @@ function renderCenterCalendarItemCard(item) {
       ${description}
     </article>
   `
+}
+
+function renderCenterCalendarTagSelectField(formState, centerCalendarTags = []) {
+  const selectedTagId = String(formState.values.tagId || '').trim()
+  const activeTags = centerCalendarTags.filter((tag) => tag.isActive)
+  const selectedArchivedTag = selectedTagId
+    ? centerCalendarTags.find((tag) => tag.id === selectedTagId && !tag.isActive)
+    : null
+
+  return `
+    <label class="schedule-form-field span-full schedule-calendar-tag-select">
+      <span>Nhãn</span>
+      <select data-center-calendar-form-field="tagId">
+        <option value="" ${selectedTagId ? '' : 'selected'}>Không gắn nhãn</option>
+        ${activeTags.map((tag) => `
+          <option value="${escapeAttribute(tag.id)}" ${selectedTagId === tag.id ? 'selected' : ''}>${escapeHtml(tag.label)}</option>
+        `).join('')}
+        ${
+          selectedArchivedTag
+            ? `<option value="${escapeAttribute(selectedArchivedTag.id)}" selected>${escapeHtml(`${selectedArchivedTag.label} (đã lưu trữ)`)}</option>`
+            : ''
+        }
+      </select>
+      <small>Nhãn chỉ hiển thị badge và filter, không đổi màu thẻ.</small>
+      ${formState.errors.tagId ? `<small>${escapeHtml(formState.errors.tagId)}</small>` : ''}
+    </label>
+  `
+}
+
+function getCenterCalendarItemTagMeta(item, centerCalendarTags = []) {
+  if (!item?.tagId && !item?.tagLabel) {
+    return null
+  }
+
+  const tag = item.tagId ? getCenterCalendarTagById(centerCalendarTags, item.tagId) : null
+  const fallbackTag = tag || {
+    id: item.tagId || '',
+    label: item.tagLabel || '',
+    colorKey: 'gray',
+    defaultItemType: '',
+    isActive: true,
+  }
+
+  if (!fallbackTag.label) {
+    return null
+  }
+
+  const preset = getCenterCalendarPresetByColorKey(fallbackTag.colorKey, fallbackTag.defaultItemType || 'other')
+
+  return {
+    tag: fallbackTag,
+    color: preset.color,
+  }
 }
 
 function formatCenterCalendarItemTime(item) {
@@ -1537,19 +1935,19 @@ function getScheduleOccurrenceReasonOptions(formState) {
   return options
 }
 
-function renderCenterCalendarItemState(state) {
+function renderCenterCalendarItemState(state, centerCalendarTags = []) {
   if (state.mode === 'detail') {
-    return renderCenterCalendarItemDetail(state.item)
+    return renderCenterCalendarItemDetail(state.item, centerCalendarTags)
   }
 
   if (state.mode === 'delete') {
     return renderCenterCalendarItemDeleteConfirm(state.item)
   }
 
-  return renderCenterCalendarItemForm(state)
+  return renderCenterCalendarItemForm(state, centerCalendarTags)
 }
 
-function renderCenterCalendarItemForm(formState) {
+function renderCenterCalendarItemForm(formState, centerCalendarTags = []) {
   const isEdit = formState.mode === 'edit'
   const itemType = CENTER_CALENDAR_ITEM_TYPES.includes(formState.values.itemType)
     ? formState.values.itemType
@@ -1591,6 +1989,7 @@ function renderCenterCalendarItemForm(formState) {
         ${renderCenterCalendarField('endTime', 'Giờ kết thúc *', formState, 'time')}
         ${renderCenterCalendarField('location', 'Địa điểm', formState, 'text', { className: 'span-full' })}
         ${renderCenterCalendarTextareaField('description', 'Mô tả', formState)}
+        ${renderCenterCalendarTagSelectField(formState, centerCalendarTags)}
         ${renderCenterCalendarColorPalette(formState, preset)}
       </div>
 
@@ -1607,7 +2006,7 @@ function renderCenterCalendarItemForm(formState) {
   `
 }
 
-function renderCenterCalendarItemDetail(item) {
+function renderCenterCalendarItemDetail(item, centerCalendarTags = []) {
   if (!item) {
     return ''
   }
@@ -1618,6 +2017,7 @@ function renderCenterCalendarItemDetail(item) {
   const timeLabel = formatCenterCalendarItemTime(item)
   const locationLabel = item.location || item.roomId || 'Chưa có'
   const descriptionLabel = item.description || 'Chưa có'
+  const tagMeta = getCenterCalendarItemTagMeta(item, centerCalendarTags)
 
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
@@ -1635,6 +2035,7 @@ function renderCenterCalendarItemDetail(item) {
         <div><dt>Ngày</dt><dd>${escapeHtml(dateLabel)}</dd></div>
         <div><dt>Giờ</dt><dd>${escapeHtml(timeLabel)}</dd></div>
         <div><dt>Địa điểm</dt><dd>${escapeHtml(locationLabel)}</dd></div>
+        <div><dt>Nhãn</dt><dd>${tagMeta ? renderCenterCalendarTagChip(tagMeta.tag) : 'Không gắn nhãn'}</dd></div>
         <div><dt>Mô tả</dt><dd>${escapeHtml(descriptionLabel)}</dd></div>
         <div><dt>Màu</dt><dd><span class="schedule-calendar-detail-color" style="--schedule-calendar-item-color: ${escapeAttribute(preset.color)};"></span>${escapeHtml(preset.label)}</dd></div>
         ${item.isCancelled ? '<div><dt>Trạng thái</dt><dd>Đã hủy</dd></div>' : ''}

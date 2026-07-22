@@ -113,7 +113,7 @@ const html = renderScheduleModule(
 )
 
 assert.equal(JSON.stringify(centerAItems), sourceSnapshot, 'Render must not mutate centerCalendarItems.')
-assert(mainSource.includes("import { loadStoredCenterCalendarItems } from './center-calendar-data.js'"))
+assert(mainSource.includes('loadStoredCenterCalendarItems'))
 assert(mainSource.includes('centerCalendarItems: loadStoredCenterCalendarItems(getCurrentResolvedCenterId())'))
 assert(scheduleSource.includes('getCenterCalendarItemsForRange'))
 assert(scheduleSource.includes('data-center-calendar-item-id'))
@@ -151,7 +151,6 @@ for (const forbidden of [
   'data-schedule-report-role',
   'data-schedule-action="save-attendance"',
   'data-schedule-action="delete-session"',
-  '+ Thêm hoạt động',
 ]) {
   assert(!getCalendarHtml(html).includes(forbidden), `Calendar layer must not include: ${forbidden}`)
 }

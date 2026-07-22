@@ -70,6 +70,8 @@ export const CENTER_CALENDAR_ITEM_TYPE_DEFAULT_COLOR_KEYS = {
   other: 'yellow',
 }
 
+export const CENTER_CALENDAR_TAG_LABEL_MAX_LENGTH = 50
+
 Object.defineProperties(CENTER_CALENDAR_COLOR_PRESETS, {
   meeting: {
     value: CENTER_CALENDAR_COLOR_PRESETS.orange,
@@ -171,6 +173,15 @@ export function normalizeCenterCalendarCustomColor(value) {
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : ''
 }
 
+export function isCenterCalendarSafeColorKey(colorKey) {
+  const normalizedColorKey = normalizeText(colorKey)
+  return CENTER_CALENDAR_COLOR_PRESETS[normalizedColorKey]?.key === normalizedColorKey
+}
+
+export function normalizeCenterCalendarTagLabel(value) {
+  return normalizeText(value).slice(0, CENTER_CALENDAR_TAG_LABEL_MAX_LENGTH)
+}
+
 export function normalizeCenterCalendarItem(item, options = {}) {
   if (!item || typeof item !== 'object') {
     return null
@@ -246,15 +257,15 @@ export function normalizeCenterCalendarTag(tag, options = {}) {
     return null
   }
 
-  const label = normalizeText(tag.label)
+  const label = normalizeCenterCalendarTagLabel(tag.label)
   if (!label) {
     return null
   }
 
   const now = new Date().toISOString()
   const centerId = normalizeText(tag.centerId || options.centerId)
-  const defaultItemType = normalizeCenterCalendarItemType(tag.defaultItemType) || 'other'
-  const colorKey = normalizeCenterCalendarColorKey(tag.colorKey, defaultItemType)
+  const defaultItemType = normalizeCenterCalendarItemType(tag.defaultItemType)
+  const colorKey = isCenterCalendarSafeColorKey(tag.colorKey) ? normalizeText(tag.colorKey) : 'gray'
   const customColor = normalizeCenterCalendarCustomColor(tag.customColor)
 
   return {

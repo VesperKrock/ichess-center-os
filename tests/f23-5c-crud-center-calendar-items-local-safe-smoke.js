@@ -55,7 +55,8 @@ const lessonCreateHtml = renderScheduleModule([], lessonCreateState, null, [], n
 for (const label of ['Học bù', 'Học thử', 'Học thêm', 'Buổi học khác']) {
   assert(lessonCreateHtml.includes(label), `Lesson create form missing reason: ${label}`)
 }
-assert(!lessonCreateHtml.includes('value="event"'), 'Lesson create form must not offer event as a new reason.')
+const lessonReasonSelectHtml = getSnippetAround(lessonCreateHtml, 'data-schedule-form-field="occurrenceReason"', 900)
+assert(!lessonReasonSelectHtml.includes('value="event"'), 'Lesson create form must not offer event as a new reason.')
 assert(!lessonCreateHtml.includes('>Khác<'), 'Lesson create form must not use generic Khac label.')
 
 const legacyEventEditHtml = renderScheduleModule(
@@ -125,7 +126,7 @@ for (const type of CENTER_CALENDAR_ITEM_TYPES) {
 for (const lessonReason of ['makeup', 'trial', 'extra']) {
   assert(!formHtml.includes(`value="${lessonReason}"`), `Activity form must not include lesson reason: ${lessonReason}`)
 }
-assert(!formHtml.includes('data-center-calendar-form-field="tagId"'), 'F23.5C must not add custom tag UI.')
+assert(!formHtml.includes('data-center-calendar-form-field="tagIds"'), 'Later tag UI must stay single-label and not add multi-tag.')
 assert(!formHtml.includes('data-center-calendar-form-field="recurrenceRule"'), 'F23.5C must not add recurrence UI.')
 assert.equal((formHtml.match(/data-center-calendar-color-key=/g) || []).length, 9, 'Activity palette should render about 8 basic color swatches.')
 for (const colorKey of ['blue', 'green', 'yellow', 'orange', 'red', 'purple', 'pink', 'gray', 'emerald']) {
@@ -228,7 +229,7 @@ for (const marker of [
   'updateCenterCalendarPaletteDom',
   "document.querySelectorAll('[data-center-calendar-form-field]').forEach((control) =>",
   "document.querySelectorAll('[data-center-calendar-action]').forEach((button) =>",
-  "document.querySelectorAll('[data-center-calendar-item-id]').forEach((card) =>",
+  "document.querySelectorAll('.schedule-calendar-item[data-center-calendar-item-id]').forEach((card) =>",
 ]) {
   assert(main.includes(marker), `Missing main runtime marker: ${marker}`)
 }
@@ -236,7 +237,7 @@ for (const marker of [
 const fieldBinding = getBetween(
   main,
   "document.querySelectorAll('[data-center-calendar-form-field]').forEach((control) =>",
-  "document.querySelectorAll('[data-center-calendar-action]').forEach((button) =>",
+  "document.querySelectorAll('[data-center-calendar-tag-field]').forEach((control) =>",
 )
 assert(fieldBinding.includes("control.addEventListener('input', updateCalendarFormValue)"))
 assert(fieldBinding.includes("control.addEventListener('change', updateCalendarFormValue)"))
@@ -298,6 +299,13 @@ function getSnippetAfter(source, marker, length) {
   const start = source.indexOf(marker)
   assert.notEqual(start, -1, `Missing marker: ${marker}`)
   return source.slice(start, start + length)
+}
+
+function getSnippetAround(source, marker, length) {
+  const center = source.indexOf(marker)
+  assert.notEqual(center, -1, `Missing marker: ${marker}`)
+  const start = Math.max(0, center - length)
+  return source.slice(start, center + length)
 }
 
 function getBetween(source, startMarker, endMarker) {

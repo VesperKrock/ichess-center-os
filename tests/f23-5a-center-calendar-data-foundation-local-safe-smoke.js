@@ -110,7 +110,7 @@ assert.equal(normalizedTag.defaultItemType, 'meeting')
 assert.equal(normalizedTag.isActive, true)
 assert.equal(normalizedTag.customColor, '#00ffaa')
 assert.equal(normalizeCenterCalendarTag({ label: '' }), null)
-assert.equal(normalizeCenterCalendarTag({ label: 'Tag lỗi', defaultItemType: 'fixedClass' }).defaultItemType, 'other')
+assert.equal(normalizeCenterCalendarTag({ label: 'Tag lỗi', defaultItemType: 'fixedClass' }).defaultItemType, '')
 
 const storage = createMemoryStorage()
 assert.deepEqual(loadStoredCenterCalendarItems('dreamhome', storage), [])
