@@ -314,8 +314,10 @@ const detailHtml = renderScheduleModule(
 )
 assert(detailHtml.includes('Chi tiết hoạt động lặp lại'))
 assert(detailHtml.includes('Hoạt động lặp lại'))
-assert(!detailHtml.includes('data-center-calendar-action="edit"'), 'Occurrence detail must not expose edit in E2A.')
-assert(!detailHtml.includes('data-center-calendar-action="confirm-delete"'), 'Occurrence detail must not expose delete in E2A.')
+assert(detailHtml.includes('data-center-calendar-action="edit-series"'), 'F23.5E2B exposes whole-series edit from occurrence detail.')
+assert(detailHtml.includes('data-center-calendar-action="confirm-series-delete"'), 'F23.5E2B exposes whole-series delete from occurrence detail.')
+assert(!detailHtml.includes('data-center-calendar-action="edit"'), 'Occurrence detail must not expose single-item edit by occurrence id.')
+assert(!detailHtml.includes('data-center-calendar-action="confirm-delete"'), 'Occurrence detail must not expose single-item delete by occurrence id.')
 
 assert.equal(CENTER_CALENDAR_RECURRENCE_MAX_OCCURRENCES, 52)
 assert(recurrenceSource.includes('export function normalizeCenterCalendarRecurrenceRule'))
@@ -336,7 +338,7 @@ assert(!centerCalendarSaveFlow.includes('window.confirm') && !centerCalendarActi
 assert(conflictSource.includes('expandWeeklyCenterCalendarOccurrences'), 'Conflict engine must expand recurring source items.')
 assert(scheduleSource.includes('getCenterCalendarItemsForDisplayRange'), 'Schedule render must use display range expansion.')
 assert(scheduleSource.includes('data-center-calendar-master-id'), 'Occurrence cards must retain master id.')
-assert(scheduleSource.includes('data-center-calendar-occurrence-detail'), 'Occurrence detail must be read-only boundary.')
+assert(scheduleSource.includes('data-center-calendar-occurrence-detail'), 'Occurrence detail must keep a dedicated occurrence boundary.')
 assert(!scheduleSource.includes('data-module-launcher"][data-center-calendar-recurrence-day'), 'Weekday buttons must not be module launchers.')
 assert(!scheduleSource.includes('data-center-calendar-form-field="recurrenceRule"'), 'Form must not save raw recurrenceRule text.')
 for (const forbidden of ['attendanceRecords', 'tuition.usedSessions', 'Teacher Workspace', 'Supabase', 'SQL']) {

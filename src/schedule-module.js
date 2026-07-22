@@ -1451,6 +1451,25 @@ export function createCenterCalendarItemDeleteState(item) {
   }
 }
 
+export function createEditCenterCalendarSeriesFormState(masterItem, occurrenceDate = '') {
+  return {
+    ...createEditCenterCalendarItemFormState(masterItem),
+    isSeriesEdit: true,
+    openedFromOccurrenceDate: occurrenceDate || '',
+  }
+}
+
+export function createCenterCalendarSeriesDeleteState(masterItem, occurrenceDate = '') {
+  return {
+    mode: 'seriesDelete',
+    itemId: masterItem?.id || null,
+    masterId: masterItem?.id || null,
+    occurrenceDate: occurrenceDate || '',
+    item: masterItem || null,
+    errors: {},
+  }
+}
+
 export function createCenterCalendarItemConflictState({
   previousState,
   conflictResult,
@@ -1463,6 +1482,8 @@ export function createCenterCalendarItemConflictState({
     values: {
       ...(previousState?.values ?? {}),
     },
+    isSeriesEdit: Boolean(previousState?.isSeriesEdit),
+    openedFromOccurrenceDate: previousState?.openedFromOccurrenceDate || '',
     errors: {},
     conflictResult: conflictResult || { conflicts: [], hard: [], soft: [], informational: [] },
     pendingItem: pendingItem || null,
@@ -2039,6 +2060,10 @@ function renderCenterCalendarItemState(state, centerCalendarTags = []) {
     return renderCenterCalendarItemDeleteConfirm(state.item)
   }
 
+  if (state.mode === 'seriesDelete') {
+    return renderCenterCalendarSeriesDeleteConfirm(state)
+  }
+
   if (state.mode === 'conflict') {
     return renderCenterCalendarConflictPanel(state)
   }
@@ -2074,7 +2099,7 @@ function renderCenterCalendarConflictPanel(state) {
         <button type="button" data-center-calendar-action="conflict-return" aria-label="Quay lại chỉnh sửa">×</button>
       </div>
       <div class="schedule-calendar-conflict-summary">
-        <p>${escapeHtml(`${totalCount} xung đột được tìm thấy. Record hiện có sẽ không bị sửa.`)}</p>
+        <p>${escapeHtml(conflictSummary)}</p>
         ${state.errors?.form ? `<div class="schedule-form-error" role="alert"><p>${escapeHtml(state.errors.form)}</p></div>` : ''}
         <div class="schedule-calendar-conflict-list">
           ${visibleConflicts.map((conflict) => renderCenterCalendarConflictRow(conflict)).join('')}
@@ -2084,7 +2109,7 @@ function renderCenterCalendarConflictPanel(state) {
         <span></span>
         <div>
           <button type="button" data-center-calendar-action="conflict-return">Quay lại chỉnh sửa</button>
-          ${isHard ? '' : '<button class="schedule-save-button" type="button" data-center-calendar-action="conflict-save">Vẫn lưu</button>'}
+          ${isHard ? '' : `<button class="schedule-save-button" type="button" data-center-calendar-action="conflict-save">${escapeHtml(overrideLabel)}</button>`}
         </div>
       </div>
     </section>
@@ -2124,22 +2149,30 @@ function formatCenterCalendarConflictTime(conflict) {
 
 function renderCenterCalendarItemForm(formState, centerCalendarTags = []) {
   const isEdit = formState.mode === 'edit'
+  const isSeriesEdit = Boolean(formState.isSeriesEdit)
   const itemType = CENTER_CALENDAR_ITEM_TYPES.includes(formState.values.itemType)
     ? formState.values.itemType
     : 'other'
   const preset = getCenterCalendarPresetByColorKey(formState.values.colorKey, itemType)
   const allDay = Boolean(formState.values.allDay)
+  const recurrenceFrequency = formState.values.recurrenceFrequency === 'weekly' ? 'weekly' : 'none'
 
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
     <form class="schedule-form-panel schedule-calendar-form-panel" data-center-calendar-form>
       <div class="schedule-form-header">
         <div>
-          <h4>${isEdit ? 'Chỉnh sửa hoạt động' : 'Thêm hoạt động'}</h4>
-          <span>Nội dung riêng của trung tâm, không phải buổi học.</span>
+          <h4>${isSeriesEdit ? 'Chỉnh sửa chuỗi hoạt động' : isEdit ? 'Chỉnh sửa hoạt động' : 'Thêm hoạt động'}</h4>
+          <span>${isSeriesEdit ? 'Thay đổi sẽ áp dụng cho toàn bộ chuỗi hoạt động.' : 'Nội dung riêng của trung tâm, không phải buổi học.'}</span>
         </div>
         <button type="button" data-center-calendar-action="close" aria-label="Đóng form">×</button>
       </div>
+
+      ${
+        isSeriesEdit && recurrenceFrequency === 'none'
+          ? '<div class="schedule-form-hint">Chuỗi sẽ trở thành một hoạt động đơn lẻ tại ngày bắt đầu của chuỗi.</div>'
+          : ''
+      }
 
       <div class="schedule-form-grid">
         ${renderCenterCalendarSelectField(
@@ -2195,6 +2228,7 @@ function renderCenterCalendarOccurrenceDetail(item, centerCalendarTags = []) {
   const descriptionLabel = item.description || 'Chưa có'
   const tagMeta = getCenterCalendarItemTagMeta(item, centerCalendarTags)
   const recurrenceSummary = formatCenterCalendarRecurrenceSummary(item.recurrenceRule || item.masterItem?.recurrenceRule)
+  const masterId = item.masterId || item.masterItem?.id || ''
 
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
@@ -2220,9 +2254,10 @@ function renderCenterCalendarOccurrenceDetail(item, centerCalendarTags = []) {
         ${item.isCancelled ? '<div><dt>Trạng thái</dt><dd>Đã hủy</dd></div>' : ''}
       </dl>
       <div class="schedule-form-actions">
-        <span>Chỉnh sửa và xóa toàn bộ chuỗi sẽ được bổ sung ở bước tiếp theo.</span>
+        <button class="schedule-danger-button" type="button" data-center-calendar-action="confirm-series-delete" data-center-calendar-master-id="${escapeAttribute(masterId)}" data-center-calendar-occurrence-date="${escapeAttribute(item.occurrenceDate || '')}">Xóa toàn bộ chuỗi</button>
         <div>
           <button type="button" data-center-calendar-action="close">Đóng</button>
+          <button class="schedule-save-button" type="button" data-center-calendar-action="edit-series" data-center-calendar-master-id="${escapeAttribute(masterId)}" data-center-calendar-occurrence-date="${escapeAttribute(item.occurrenceDate || '')}">Chỉnh sửa toàn bộ chuỗi</button>
         </div>
       </div>
     </section>
@@ -2297,6 +2332,40 @@ function renderCenterCalendarItemDeleteConfirm(item) {
         <div>
           <button type="button" data-center-calendar-action="detail" data-center-calendar-item-id="${escapeAttribute(item.id)}">Hủy</button>
           <button class="schedule-danger-button" type="button" data-center-calendar-action="delete" data-center-calendar-item-id="${escapeAttribute(item.id)}">Xóa hoạt động</button>
+        </div>
+      </div>
+    </section>
+  `
+}
+
+function renderCenterCalendarSeriesDeleteConfirm(state) {
+  const item = state?.item
+  if (!item) {
+    return ''
+  }
+
+  const recurrenceSummary = formatCenterCalendarRecurrenceSummary(item.recurrenceRule)
+
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-form-panel schedule-calendar-delete-panel" data-center-calendar-series-delete-confirm>
+      <div class="schedule-form-header">
+        <div>
+          <h4>Xóa toàn bộ chuỗi hoạt động?</h4>
+          <span>${escapeHtml(item.title)}</span>
+        </div>
+        <button type="button" data-center-calendar-action="detail-series" data-center-calendar-master-id="${escapeAttribute(item.id)}" data-center-calendar-occurrence-date="${escapeAttribute(state.occurrenceDate || '')}" aria-label="Đóng">×</button>
+      </div>
+      <div class="schedule-form-error" role="alert">
+        <p>Tất cả các lần lặp của chuỗi sẽ biến mất.</p>
+        <small>${escapeHtml(recurrenceSummary)}</small>
+        ${state.errors?.form ? `<p>${escapeHtml(state.errors.form)}</p>` : ''}
+      </div>
+      <div class="schedule-form-actions">
+        <span></span>
+        <div>
+          <button type="button" data-center-calendar-action="detail-series" data-center-calendar-master-id="${escapeAttribute(item.id)}" data-center-calendar-occurrence-date="${escapeAttribute(state.occurrenceDate || '')}">Hủy</button>
+          <button class="schedule-danger-button" type="button" data-center-calendar-action="delete-series" data-center-calendar-master-id="${escapeAttribute(item.id)}">Xóa toàn bộ chuỗi</button>
         </div>
       </div>
     </section>

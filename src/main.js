@@ -187,9 +187,11 @@ import {
   createCenterCalendarItemDeleteState,
   createCenterCalendarItemDetailState,
   createCenterCalendarOccurrenceDetailState,
+  createCenterCalendarSeriesDeleteState,
   createCenterCalendarItemConflictState,
   createCenterCalendarTagManagerState,
   createEditCenterCalendarItemFormState,
+  createEditCenterCalendarSeriesFormState,
   createEditCenterCalendarTagFormState,
   createEditScheduleFormState,
   createEditLearningGroupFormState,
@@ -12958,6 +12960,57 @@ function bindEvents() {
     render()
   }
 
+  const resolveCurrentCenterCalendarSeriesMaster = (masterId) => {
+    const centerId = getCurrentResolvedCenterId()
+    const latestItems = loadStoredCenterCalendarItems(centerId)
+    const masterItem = getCenterCalendarItemById(latestItems, masterId)
+
+    if (!masterItem || masterItem.centerId !== centerId || !isWeeklyRecurringCenterCalendarItem(masterItem)) {
+      return { centerId, latestItems, masterItem: null }
+    }
+
+    return { centerId, latestItems, masterItem }
+  }
+
+  const openCenterCalendarSeriesEdit = (masterId, occurrenceDate = '') => {
+    const { masterItem } = resolveCurrentCenterCalendarSeriesMaster(masterId)
+
+    if (!masterItem) {
+      scheduleCalendarItemState = {
+        mode: 'occurrenceDetail',
+        masterId,
+        item: null,
+        errors: { form: 'Chuỗi hoạt động không còn tồn tại trong cơ sở hiện tại.' },
+      }
+      render()
+      return
+    }
+
+    scheduleFormState = null
+    resetScheduleReportPanels()
+    scheduleCalendarItemState = createEditCenterCalendarSeriesFormState(masterItem, occurrenceDate)
+    render()
+  }
+
+  const openCenterCalendarSeriesDelete = (masterId, occurrenceDate = '') => {
+    const { masterItem } = resolveCurrentCenterCalendarSeriesMaster(masterId)
+
+    if (!masterItem) {
+      scheduleCalendarItemState = {
+        ...createCenterCalendarSeriesDeleteState(null, occurrenceDate),
+        masterId,
+        errors: { form: 'Chuỗi hoạt động không còn tồn tại trong cơ sở hiện tại.' },
+      }
+      render()
+      return
+    }
+
+    scheduleFormState = null
+    resetScheduleReportPanels()
+    scheduleCalendarItemState = createCenterCalendarSeriesDeleteState(masterItem, occurrenceDate)
+    render()
+  }
+
   const getCenterCalendarFormValuesFromDom = () => {
     const formElement = document.querySelector('[data-center-calendar-form]')
     const values = {
@@ -13715,6 +13768,8 @@ function bindEvents() {
         scheduleCalendarItemState = {
           mode: scheduleCalendarItemState.previousMode || 'create',
           itemId: scheduleCalendarItemState.itemId || null,
+          isSeriesEdit: Boolean(scheduleCalendarItemState.isSeriesEdit),
+          openedFromOccurrenceDate: scheduleCalendarItemState.openedFromOccurrenceDate || '',
           values: {
             ...(scheduleCalendarItemState.values ?? {}),
           },
@@ -13763,6 +13818,19 @@ function bindEvents() {
 
       if (action === 'save') {
         saveCenterCalendarItemFromForm(event)
+        return
+      }
+
+      if (action === 'delete') {
+        const centerId = getCurrentResolvedCenterId()
+        const itemId = button.dataset.centerCalendarItemId
+        const latestItems = loadStoredCenterCalendarItems(centerId)
+        saveStoredCenterCalendarItems(
+          centerId,
+          latestItems.filter((item) => item.id !== itemId),
+        )
+        scheduleCalendarItemState = null
+        render()
         return
       }
 
@@ -13817,6 +13885,22 @@ function bindEvents() {
         return
       }
 
+      if (action === 'detail-series') {
+        openCenterCalendarOccurrenceDetail(
+          button.dataset.centerCalendarMasterId,
+          button.dataset.centerCalendarOccurrenceDate,
+        )
+        return
+      }
+
+      if (action === 'edit-series') {
+        openCenterCalendarSeriesEdit(
+          button.dataset.centerCalendarMasterId,
+          button.dataset.centerCalendarOccurrenceDate,
+        )
+        return
+      }
+
       if (action === 'edit') {
         const item = getCurrentCenterCalendarItem(button.dataset.centerCalendarItemId)
 
@@ -13830,6 +13914,14 @@ function bindEvents() {
         resetScheduleReportPanels()
         scheduleCalendarItemState = createEditCenterCalendarItemFormState(item)
         render()
+        return
+      }
+
+      if (action === 'confirm-series-delete') {
+        openCenterCalendarSeriesDelete(
+          button.dataset.centerCalendarMasterId,
+          button.dataset.centerCalendarOccurrenceDate,
+        )
         return
       }
 
@@ -13847,16 +13939,31 @@ function bindEvents() {
         return
       }
 
-      if (action === 'delete') {
-        const centerId = getCurrentResolvedCenterId()
-        const itemId = button.dataset.centerCalendarItemId
-        const latestItems = loadStoredCenterCalendarItems(centerId)
+      if (action === 'delete-series') {
+        const { centerId, latestItems, masterItem } = resolveCurrentCenterCalendarSeriesMaster(
+          button.dataset.centerCalendarMasterId,
+        )
+
+        if (!masterItem) {
+          scheduleCalendarItemState = {
+            ...scheduleCalendarItemState,
+            errors: { form: 'Chuỗi hoạt động không còn tồn tại trong cơ sở hiện tại.' },
+          }
+          render()
+          return
+        }
+
         saveStoredCenterCalendarItems(
           centerId,
-          latestItems.filter((item) => item.id !== itemId),
+          latestItems.filter((item) => item.id !== masterItem.id),
         )
         scheduleCalendarItemState = null
         render()
+        return
+      }
+
+      if (action === 'delete') {
+        return
       }
     })
   })
