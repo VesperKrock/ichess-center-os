@@ -166,7 +166,15 @@ import {
   saveStoredCenterCalendarItems,
   saveStoredCenterCalendarTags,
 } from './center-calendar-data.js'
-import { detectCenterCalendarConflicts } from './center-calendar-conflicts.js'
+import {
+  detectCenterCalendarConflicts,
+  detectCenterCalendarSeriesConflicts,
+} from './center-calendar-conflicts.js'
+import {
+  expandWeeklyCenterCalendarOccurrences,
+  getCenterCalendarSeriesRange,
+  isWeeklyRecurringCenterCalendarItem,
+} from './center-calendar-recurrence.js'
 import {
   buildSessionReportFromAttendance,
   buildSessionReportFromLearningGroups,
@@ -178,6 +186,7 @@ import {
   buildSessionReportFromExtraInfo,
   createCenterCalendarItemDeleteState,
   createCenterCalendarItemDetailState,
+  createCenterCalendarOccurrenceDetailState,
   createCenterCalendarItemConflictState,
   createCenterCalendarTagManagerState,
   createEditCenterCalendarItemFormState,
@@ -12921,6 +12930,34 @@ function bindEvents() {
     render()
   }
 
+  const openCenterCalendarOccurrenceDetail = (masterId, occurrenceDate) => {
+    const masterItem = getCurrentCenterCalendarItem(masterId)
+
+    if (!masterItem || !isWeeklyRecurringCenterCalendarItem(masterItem)) {
+      scheduleCalendarItemState = null
+      render()
+      return
+    }
+
+    const occurrenceRangeStart = `${occurrenceDate}T00:00:00.000Z`
+    const occurrenceRangeEnd = `${occurrenceDate}T23:59:59.999Z`
+    const occurrence = expandWeeklyCenterCalendarOccurrences([masterItem], {
+      rangeStart: occurrenceRangeStart,
+      rangeEnd: occurrenceRangeEnd,
+    }).find((item) => item.occurrenceDate === occurrenceDate)
+
+    if (!occurrence) {
+      scheduleCalendarItemState = null
+      render()
+      return
+    }
+
+    scheduleFormState = null
+    resetScheduleReportPanels()
+    scheduleCalendarItemState = createCenterCalendarOccurrenceDetailState(occurrence, masterItem)
+    render()
+  }
+
   const getCenterCalendarFormValuesFromDom = () => {
     const formElement = document.querySelector('[data-center-calendar-form]')
     const values = {
@@ -13026,6 +13063,54 @@ function bindEvents() {
     }
   }
 
+  const getDefaultCenterCalendarRecurrenceDay = (date) => {
+    const dayIndex = new Date(`${date}T00:00:00`).getDay()
+    return ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dayIndex] || 'mon'
+  }
+
+  const updateCenterCalendarRecurrenceDaysDom = (selectedDays) => {
+    const formElement = document.querySelector('[data-center-calendar-form]')
+
+    if (!formElement) {
+      return
+    }
+
+    const selectedDaySet = new Set(selectedDays)
+    formElement.querySelectorAll('[data-center-calendar-recurrence-day]').forEach((button) => {
+      const isSelected = selectedDaySet.has(button.dataset.centerCalendarRecurrenceDay)
+      button.classList.toggle('is-selected', isSelected)
+      button.setAttribute('aria-pressed', isSelected ? 'true' : 'false')
+    })
+
+    const daysInput = formElement.querySelector('[data-center-calendar-form-field="recurrenceDays"]')
+    if (daysInput) {
+      daysInput.value = selectedDays.join(',')
+    }
+  }
+
+  const updateCenterCalendarRecurrenceModeDom = (frequency, endMode) => {
+    const formElement = document.querySelector('[data-center-calendar-form]')
+    const recurrenceElement = formElement?.querySelector('[data-center-calendar-recurrence]')
+
+    if (!recurrenceElement) {
+      return
+    }
+
+    recurrenceElement.classList.toggle('is-weekly', frequency === 'weekly')
+    recurrenceElement.classList.toggle('is-none', frequency !== 'weekly')
+
+    const untilElement = recurrenceElement.querySelector('[data-center-calendar-recurrence-until]')
+    const countElement = recurrenceElement.querySelector('[data-center-calendar-recurrence-count]')
+
+    if (untilElement) {
+      untilElement.classList.toggle('is-hidden', endMode === 'count')
+    }
+
+    if (countElement) {
+      countElement.classList.toggle('is-hidden', endMode !== 'count')
+    }
+  }
+
   const persistCenterCalendarItem = (centerId, nextItem, existingItem = null) => {
     const latestItems = loadStoredCenterCalendarItems(centerId)
     const nextItems = existingItem
@@ -13089,14 +13174,33 @@ function bindEvents() {
       return
     }
 
-    const conflictResult = detectCenterCalendarConflicts({
-      candidate: nextItem,
-      centerId,
-      classSessions,
-      scheduleSessions,
-      centerCalendarItems: latestItems,
-      currentItemId: existingItem?.id || '',
-    })
+    const seriesRange = isWeeklyRecurringCenterCalendarItem(nextItem)
+      ? getCenterCalendarSeriesRange(nextItem)
+      : null
+    const candidateOccurrences = seriesRange
+      ? expandWeeklyCenterCalendarOccurrences([nextItem], {
+          rangeStart: seriesRange.startAt,
+          rangeEnd: seriesRange.endAt,
+        })
+      : []
+    const conflictResult = candidateOccurrences.length
+      ? detectCenterCalendarSeriesConflicts({
+          candidate: nextItem,
+          occurrences: candidateOccurrences,
+          centerId,
+          classSessions,
+          scheduleSessions,
+          centerCalendarItems: latestItems,
+          currentItemId: existingItem?.id || nextItem.id,
+        })
+      : detectCenterCalendarConflicts({
+          candidate: nextItem,
+          centerId,
+          classSessions,
+          scheduleSessions,
+          centerCalendarItems: latestItems,
+          currentItemId: existingItem?.id || '',
+        })
 
     if (conflictResult.hasHard || conflictResult.hasSoft) {
       scheduleCalendarItemState = createCenterCalendarItemConflictState({
@@ -13326,7 +13430,17 @@ function bindEvents() {
   })
 
   document.querySelectorAll('.schedule-calendar-item[data-center-calendar-item-id]').forEach((card) => {
-    const openCalendarItem = () => openCenterCalendarItemDetail(card.dataset.centerCalendarItemId)
+    const openCalendarItem = () => {
+      if (card.dataset.centerCalendarMasterId && card.dataset.centerCalendarOccurrenceDate) {
+        openCenterCalendarOccurrenceDetail(
+          card.dataset.centerCalendarMasterId,
+          card.dataset.centerCalendarOccurrenceDate,
+        )
+        return
+      }
+
+      openCenterCalendarItemDetail(card.dataset.centerCalendarItemId)
+    }
 
     card.addEventListener('click', (event) => {
       event.stopPropagation()
@@ -13363,6 +13477,28 @@ function bindEvents() {
           ...scheduleCalendarItemState.errors,
           [fieldName]: undefined,
         },
+      }
+
+      if (fieldName === 'recurrenceFrequency') {
+        const nextValues = { ...scheduleCalendarItemState.values }
+        if (control.value === 'weekly' && !String(nextValues.recurrenceDays || '').trim()) {
+          nextValues.recurrenceDays = getDefaultCenterCalendarRecurrenceDay(nextValues.date)
+        }
+        scheduleCalendarItemState = {
+          ...scheduleCalendarItemState,
+          values: nextValues,
+        }
+        updateCenterCalendarRecurrenceModeDom(control.value, nextValues.recurrenceEndMode || 'until')
+        updateCenterCalendarRecurrenceDaysDom(String(nextValues.recurrenceDays || '').split(/[,\s/]+/).filter(Boolean))
+        return
+      }
+
+      if (fieldName === 'recurrenceEndMode') {
+        updateCenterCalendarRecurrenceModeDom(
+          scheduleCalendarItemState.values.recurrenceFrequency,
+          control.value,
+        )
+        return
       }
 
       if (fieldName === 'itemType' && !isCenterCalendarColorOverridden(scheduleCalendarItemState.values)) {
@@ -13409,6 +13545,43 @@ function bindEvents() {
 
     control.addEventListener('input', updateCalendarTagFormValue)
     control.addEventListener('change', updateCalendarTagFormValue)
+  })
+
+  document.querySelectorAll('[data-center-calendar-recurrence-day]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (!scheduleCalendarItemState || !['create', 'edit'].includes(scheduleCalendarItemState.mode)) {
+        return
+      }
+
+      const day = button.dataset.centerCalendarRecurrenceDay
+      if (!day) {
+        return
+      }
+
+      const selectedDays = String(scheduleCalendarItemState.values.recurrenceDays || '')
+        .split(/[,\s/]+/)
+        .filter(Boolean)
+      const nextDays = selectedDays.includes(day)
+        ? selectedDays.filter((item) => item !== day)
+        : [...selectedDays, day]
+      const orderedDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter((item) => nextDays.includes(item))
+
+      scheduleCalendarItemState = {
+        ...scheduleCalendarItemState,
+        values: {
+          ...scheduleCalendarItemState.values,
+          recurrenceDays: orderedDays.join(','),
+        },
+        errors: {
+          ...scheduleCalendarItemState.errors,
+          recurrenceDays: undefined,
+        },
+      }
+      updateCenterCalendarRecurrenceDaysDom(orderedDays)
+    })
   })
 
   document.querySelectorAll('[data-center-calendar-tag-action]').forEach((button) => {

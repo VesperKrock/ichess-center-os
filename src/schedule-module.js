@@ -22,6 +22,20 @@ import {
   normalizeCenterCalendarTagLabel,
   normalizeCenterCalendarTags,
 } from './center-calendar-data.js'
+import {
+  CENTER_CALENDAR_RECURRENCE_MAX_OCCURRENCES,
+  CENTER_CALENDAR_WEEKDAY_KEYS,
+  CENTER_CALENDAR_RECURRENCE_TIMEZONE,
+  createCenterCalendarRecurrenceRuleFromFormValues,
+  expandWeeklyCenterCalendarOccurrences,
+  formatCenterCalendarRecurrenceSummary,
+  getCenterCalendarRecurrenceFormValues,
+  getCenterCalendarSeriesRange,
+  getCenterCalendarWeekdayKeyFromDate,
+  getCenterCalendarWeekdayOptions,
+  isWeeklyRecurringCenterCalendarItem,
+  validateCenterCalendarRecurrenceRule,
+} from './center-calendar-recurrence.js'
 
 const DAY_INDEX_BY_ID = new Map(scheduleDays.map((day, index) => [day.id, index]))
 const scheduleCreateOccurrenceReasons = scheduleOccurrenceReasons
@@ -179,10 +193,12 @@ export function renderScheduleModule(
   const centerCalendarTags = normalizeCenterCalendarTags(deadlineOptions.centerCalendarTags)
   const centerCalendarFilters = normalizeCenterCalendarFilters(deadlineOptions.centerCalendarFilters)
   const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
-  const weekCenterCalendarItems = getCenterCalendarItemsForRange(
+  const weekRangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
+  const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
+  const weekCenterCalendarItems = getCenterCalendarItemsForDisplayRange(
     deadlineOptions.centerCalendarItems,
-    `${normalizedWeekStart}T00:00:00.000Z`,
-    `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`,
+    weekRangeStartAt,
+    weekRangeEndAt,
   )
   const visibleCenterCalendarItems = filterCenterCalendarItems(weekCenterCalendarItems, centerCalendarFilters)
   const teacherLookup = createLookup(teachers)
@@ -1397,6 +1413,7 @@ export function createEmptyCenterCalendarItemFormState(date = getCurrentSchedule
       colorKey: getDefaultCenterCalendarColorKey('meeting'),
       colorOverridden: false,
       tagId: '',
+      ...getCenterCalendarRecurrenceFormValues(null, normalizeDateString(date) || getCurrentScheduleWeekStartDate()),
     },
     errors: {},
   }
@@ -1407,6 +1424,20 @@ export function createCenterCalendarItemDetailState(item) {
     mode: 'detail',
     itemId: item?.id || null,
     item,
+    errors: {},
+  }
+}
+
+export function createCenterCalendarOccurrenceDetailState(occurrence, masterItem = null) {
+  return {
+    mode: 'occurrenceDetail',
+    itemId: occurrence?.id || null,
+    masterId: masterItem?.id || occurrence?.masterId || null,
+    item: {
+      ...(occurrence ?? {}),
+      masterItem: masterItem || occurrence?.masterItem || null,
+      isVirtualOccurrence: true,
+    },
     errors: {},
   }
 }
@@ -1454,6 +1485,7 @@ export function createEditCenterCalendarItemFormState(item) {
       colorKey: getCenterCalendarPresetByColorKey(item?.colorKey, item?.itemType).key,
       colorOverridden: getCenterCalendarPresetByColorKey(item?.colorKey, item?.itemType).key !== getDefaultCenterCalendarColorKey(item?.itemType),
       tagId: item?.tagId || '',
+      ...getCenterCalendarRecurrenceFormValues(item?.recurrenceRule, getDateFromIsoDateTime(item?.startAt)),
     },
     errors: {},
   }
@@ -1496,7 +1528,13 @@ export function validateCenterCalendarItemForm(values = {}) {
     }
   }
 
-  return errors
+  const recurrenceRule = createCenterCalendarRecurrenceRuleFromFormValues(values)
+  const recurrenceErrors = validateCenterCalendarRecurrenceRule(recurrenceRule, { anchorDate: values.date })
+
+  return {
+    ...errors,
+    ...recurrenceErrors,
+  }
 }
 
 export function buildCenterCalendarItemFromForm(values = {}, existingItem = null, centerId = '') {
@@ -1528,6 +1566,7 @@ export function buildCenterCalendarItemFromForm(values = {}, existingItem = null
       colorKey: preset.key,
       tagId,
       tagLabel: tagId ? tagLabel : '',
+      recurrenceRule: createCenterCalendarRecurrenceRuleFromFormValues(values),
       sourceModule: 'centerCalendar',
       createdAt: existingItem?.createdAt || now,
       updatedAt: now,
@@ -1543,13 +1582,41 @@ function getCenterCalendarItemsByDate(centerCalendarItems = [], date) {
   return getCenterCalendarItemsForRange(centerCalendarItems, dayStartAt, dayEndAt)
 }
 
+function getCenterCalendarItemsForDisplayRange(centerCalendarItems = [], rangeStartAt, rangeEndAt) {
+  const sourceItems = Array.isArray(centerCalendarItems) ? centerCalendarItems : []
+  const singleItems = getCenterCalendarItemsForRange(
+    sourceItems.filter((item) => !isWeeklyRecurringCenterCalendarItem(item)),
+    rangeStartAt,
+    rangeEndAt,
+  )
+  const recurringOccurrences = expandWeeklyCenterCalendarOccurrences(
+    sourceItems.filter((item) => isWeeklyRecurringCenterCalendarItem(item)),
+    {
+      rangeStart: rangeStartAt,
+      rangeEnd: rangeEndAt,
+    },
+  )
+
+  return [...singleItems, ...recurringOccurrences].sort(compareCenterCalendarDisplayItems)
+}
+
+function compareCenterCalendarDisplayItems(firstItem, secondItem) {
+  return (
+    String(firstItem.startAt || '').localeCompare(String(secondItem.startAt || '')) ||
+    String(firstItem.title || '').localeCompare(String(secondItem.title || ''), 'vi', { sensitivity: 'base' }) ||
+    String(firstItem.id || '').localeCompare(String(secondItem.id || ''))
+  )
+}
+
 function renderCenterCalendarItemCard(item, centerCalendarTags = []) {
   const preset = getCenterCalendarPresetByColorKey(item.colorKey, item.itemType)
   const color = item.customColor || preset.color
   const typeLabel = CENTER_CALENDAR_ITEM_TYPE_LABELS[item.itemType] || CENTER_CALENDAR_ITEM_TYPE_LABELS.other
   const locationLabel = item.location || item.roomId || ''
   const cancelledLabel = item.isCancelled ? '<span class="schedule-calendar-item-status">Đã hủy</span>' : ''
+  const recurrenceLabel = item.isVirtualOccurrence ? '<span class="schedule-calendar-item-recurring">Lặp hàng tuần</span>' : ''
   const tagMeta = getCenterCalendarItemTagMeta(item, centerCalendarTags)
+
   const tagLabel = tagMeta
     ? `<span class="schedule-calendar-item-tag ${tagMeta.tag.isActive ? '' : 'is-archived'}" title="${escapeAttribute(tagMeta.tag.isActive ? tagMeta.tag.label : `${tagMeta.tag.label} - nhãn đã lưu trữ`)}" style="--schedule-calendar-tag-color: ${escapeAttribute(tagMeta.color)};">${escapeHtml(tagMeta.tag.label)}</span>`
     : ''
@@ -1559,8 +1626,9 @@ function renderCenterCalendarItemCard(item, centerCalendarTags = []) {
 
   return `
     <article
-      class="schedule-calendar-item schedule-calendar-item--${escapeAttribute(item.itemType)} ${item.isCancelled ? 'is-cancelled' : ''}"
+      class="schedule-calendar-item schedule-calendar-item--${escapeAttribute(item.itemType)} ${item.isCancelled ? 'is-cancelled' : ''} ${item.isVirtualOccurrence ? 'is-recurring-occurrence' : ''}"
       data-center-calendar-item-id="${escapeAttribute(item.id)}"
+      ${item.isVirtualOccurrence ? `data-center-calendar-master-id="${escapeAttribute(item.masterId || '')}" data-center-calendar-occurrence-date="${escapeAttribute(item.occurrenceDate || '')}"` : ''}
       role="button"
       tabindex="0"
       style="--schedule-calendar-item-color: ${escapeAttribute(color)};"
@@ -1569,6 +1637,7 @@ function renderCenterCalendarItemCard(item, centerCalendarTags = []) {
       <div class="schedule-calendar-item-header">
         <span class="schedule-calendar-item-type">${escapeHtml(typeLabel)}</span>
         ${cancelledLabel}
+        ${recurrenceLabel}
       </div>
       <h4>${escapeHtml(item.title)}</h4>
       <p class="schedule-calendar-item-time">${escapeHtml(formatCenterCalendarItemTime(item))}</p>
@@ -1958,6 +2027,10 @@ function getScheduleOccurrenceReasonOptions(formState) {
 }
 
 function renderCenterCalendarItemState(state, centerCalendarTags = []) {
+  if (state.mode === 'occurrenceDetail') {
+    return renderCenterCalendarOccurrenceDetail(state.item, centerCalendarTags)
+  }
+
   if (state.mode === 'detail') {
     return renderCenterCalendarItemDetail(state.item, centerCalendarTags)
   }
@@ -1985,6 +2058,10 @@ function renderCenterCalendarConflictPanel(state) {
     ...informationalConflicts,
   ].slice(0, 6)
   const totalCount = Number(conflictResult.total || visibleConflicts.length)
+  const conflictedOccurrenceCount = Number(conflictResult.conflictedOccurrenceCount || 0)
+  const isSeriesConflict = isWeeklyRecurringCenterCalendarItem(state.pendingItem)
+  const conflictSummary = `${totalCount} xung đột được tìm thấy${conflictedOccurrenceCount ? ` trên ${conflictedOccurrenceCount} occurrence` : ''}. Record hiện có sẽ không bị sửa.`
+  const overrideLabel = isSeriesConflict ? 'Vẫn lưu toàn bộ chuỗi' : 'Vẫn lưu'
 
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
@@ -2088,6 +2165,7 @@ function renderCenterCalendarItemForm(formState, centerCalendarTags = []) {
         ${renderCenterCalendarField('location', 'Địa điểm', formState, 'text', { className: 'span-full' })}
         ${renderCenterCalendarTextareaField('description', 'Mô tả', formState)}
         ${renderCenterCalendarTagSelectField(formState, centerCalendarTags)}
+        ${renderCenterCalendarRecurrenceFields(formState)}
         ${renderCenterCalendarColorPalette(formState, preset)}
       </div>
 
@@ -2101,6 +2179,53 @@ function renderCenterCalendarItemForm(formState, centerCalendarTags = []) {
         </div>
       </div>
     </form>
+  `
+}
+
+function renderCenterCalendarOccurrenceDetail(item, centerCalendarTags = []) {
+  if (!item) {
+    return ''
+  }
+
+  const preset = getCenterCalendarPresetByColorKey(item.colorKey, item.itemType)
+  const typeLabel = CENTER_CALENDAR_ITEM_TYPE_LABELS[item.itemType] || CENTER_CALENDAR_ITEM_TYPE_LABELS.other
+  const dateLabel = formatDisplayDate(getDateFromIsoDateTime(item.startAt))
+  const timeLabel = formatCenterCalendarItemTime(item)
+  const locationLabel = item.location || item.roomId || 'Chưa có'
+  const descriptionLabel = item.description || 'Chưa có'
+  const tagMeta = getCenterCalendarItemTagMeta(item, centerCalendarTags)
+  const recurrenceSummary = formatCenterCalendarRecurrenceSummary(item.recurrenceRule || item.masterItem?.recurrenceRule)
+
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-form-panel schedule-calendar-detail-panel" data-center-calendar-detail data-center-calendar-occurrence-detail>
+      <div class="schedule-form-header">
+        <div>
+          <h4>Chi tiết hoạt động lặp lại</h4>
+          <span>${escapeHtml(`Hoạt động lặp lại · ${typeLabel}`)}</span>
+        </div>
+        <button type="button" data-center-calendar-action="close" aria-label="Đóng">×</button>
+      </div>
+      <dl class="schedule-calendar-detail-list">
+        <div><dt>Phạm vi</dt><dd>Hoạt động lặp lại</dd></div>
+        <div><dt>Loại</dt><dd>${escapeHtml(typeLabel)}</dd></div>
+        <div><dt>Tiêu đề</dt><dd>${escapeHtml(item.title)}</dd></div>
+        <div><dt>Ngày occurrence</dt><dd>${escapeHtml(dateLabel)}</dd></div>
+        <div><dt>Giờ occurrence</dt><dd>${escapeHtml(timeLabel)}</dd></div>
+        <div><dt>Địa điểm</dt><dd>${escapeHtml(locationLabel)}</dd></div>
+        <div><dt>Nhãn</dt><dd>${tagMeta ? renderCenterCalendarTagChip(tagMeta.tag) : 'Không gắn nhãn'}</dd></div>
+        <div><dt>Mô tả</dt><dd>${escapeHtml(descriptionLabel)}</dd></div>
+        <div><dt>Màu</dt><dd><span class="schedule-calendar-detail-color" style="--schedule-calendar-item-color: ${escapeAttribute(preset.color)};"></span>${escapeHtml(preset.label)}</dd></div>
+        <div><dt>Lặp lại</dt><dd>${escapeHtml(recurrenceSummary)}</dd></div>
+        ${item.isCancelled ? '<div><dt>Trạng thái</dt><dd>Đã hủy</dd></div>' : ''}
+      </dl>
+      <div class="schedule-form-actions">
+        <span>Chỉnh sửa và xóa toàn bộ chuỗi sẽ được bổ sung ở bước tiếp theo.</span>
+        <div>
+          <button type="button" data-center-calendar-action="close">Đóng</button>
+        </div>
+      </div>
+    </section>
   `
 }
 
@@ -2175,6 +2300,73 @@ function renderCenterCalendarItemDeleteConfirm(item) {
         </div>
       </div>
     </section>
+  `
+}
+
+function renderCenterCalendarRecurrenceFields(formState) {
+  const values = formState.values || {}
+  const frequency = values.recurrenceFrequency === 'weekly' ? 'weekly' : 'none'
+  const isWeekly = frequency === 'weekly'
+  const selectedDays = new Set(
+    String(values.recurrenceDays || '')
+      .split(/[,\s/]+/)
+      .filter((day) => CENTER_CALENDAR_WEEKDAY_KEYS.includes(day)),
+  )
+  const weekdayOptions = getCenterCalendarWeekdayOptions()
+  const endMode = values.recurrenceEndMode === 'count' ? 'count' : 'until'
+  const recurrenceRule = createCenterCalendarRecurrenceRuleFromFormValues(values)
+  const summary = isWeekly ? formatCenterCalendarRecurrenceSummary(recurrenceRule) : 'Không lặp'
+
+  return `
+    <fieldset class="schedule-form-field schedule-calendar-recurrence span-full is-${escapeAttribute(frequency)}" data-center-calendar-recurrence>
+      <legend>Lặp lại</legend>
+      <label class="schedule-calendar-recurrence-mode ${formState.errors.recurrenceFrequency ? 'has-error' : ''}">
+        <span>Kiểu lặp</span>
+        <select data-center-calendar-form-field="recurrenceFrequency">
+          <option value="none" ${frequency === 'none' ? 'selected' : ''}>Không lặp</option>
+          <option value="weekly" ${frequency === 'weekly' ? 'selected' : ''}>Hàng tuần</option>
+        </select>
+      </label>
+      ${
+        true
+          ? `
+            <div class="schedule-calendar-weekday-toggle ${formState.errors.recurrenceDays ? 'has-error' : ''}" role="group" aria-label="Chọn thứ trong tuần">
+              ${weekdayOptions.map((day) => {
+                const isSelected = selectedDays.has(day.key)
+                return `
+                  <button type="button" class="schedule-calendar-weekday-button ${isSelected ? 'is-selected' : ''}" data-center-calendar-recurrence-day="${escapeAttribute(day.key)}" aria-pressed="${isSelected ? 'true' : 'false'}">
+                    ${escapeHtml(day.shortLabel)}
+                  </button>
+                `
+              }).join('')}
+              <input type="hidden" value="${escapeAttribute(Array.from(selectedDays).join(','))}" data-center-calendar-form-field="recurrenceDays" />
+              ${formState.errors.recurrenceDays ? `<small>${escapeHtml(formState.errors.recurrenceDays)}</small>` : ''}
+            </div>
+            <label class="schedule-calendar-recurrence-mode ${formState.errors.recurrenceEndMode ? 'has-error' : ''}">
+              <span>Kết thúc</span>
+              <select data-center-calendar-form-field="recurrenceEndMode">
+                <option value="until" ${endMode === 'until' ? 'selected' : ''}>Vào ngày</option>
+                <option value="count" ${endMode === 'count' ? 'selected' : ''}>Sau số lần</option>
+              </select>
+              ${formState.errors.recurrenceEndMode ? `<small>${escapeHtml(formState.errors.recurrenceEndMode)}</small>` : ''}
+            </label>
+            <label class="schedule-calendar-recurrence-mode ${endMode === 'until' ? '' : 'is-hidden'} ${formState.errors.recurrenceUntilDate ? 'has-error' : ''}" data-center-calendar-recurrence-until>
+              <span>Ngày kết thúc</span>
+              <input type="date" value="${escapeAttribute(values.recurrenceUntilDate || '')}" data-center-calendar-form-field="recurrenceUntilDate" />
+              ${formState.errors.recurrenceUntilDate ? `<small>${escapeHtml(formState.errors.recurrenceUntilDate)}</small>` : ''}
+            </label>
+            <label class="schedule-calendar-recurrence-mode ${endMode === 'count' ? '' : 'is-hidden'} ${formState.errors.recurrenceCount ? 'has-error' : ''}" data-center-calendar-recurrence-count>
+              <span>Số lần</span>
+              <input type="number" min="1" max="${CENTER_CALENDAR_RECURRENCE_MAX_OCCURRENCES}" value="${escapeAttribute(values.recurrenceCount || '8')}" data-center-calendar-form-field="recurrenceCount" />
+              ${formState.errors.recurrenceCount ? `<small>${escapeHtml(formState.errors.recurrenceCount)}</small>` : ''}
+            </label>
+          `
+          : ''
+      }
+      <small class="schedule-calendar-recurrence-summary">${escapeHtml(summary)}</small>
+      <small class="schedule-calendar-recurrence-note">Chỉ lưu một master, không tạo từng occurrence vật lý.</small>
+      ${formState.errors.recurrenceRule ? `<small>${escapeHtml(formState.errors.recurrenceRule)}</small>` : ''}
+    </fieldset>
   `
 }
 

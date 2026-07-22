@@ -1,5 +1,10 @@
 export const CENTER_CALENDAR_CONFLICT_SEVERITIES = ['hard', 'soft', 'informational']
 
+import {
+  expandWeeklyCenterCalendarOccurrences,
+  isWeeklyRecurringCenterCalendarItem,
+} from './center-calendar-recurrence.js'
+
 const SEVERITY_RANK = {
   hard: 0,
   soft: 1,
@@ -65,6 +70,8 @@ export function detectCenterCalendarConflicts({
     ...buildCenterCalendarItemConflictEntries(centerCalendarItems, {
       centerId: normalizedCenterId,
       currentItemId: currentItemId || candidateEntry.sourceId,
+      rangeStartAt: candidateEntry.startAt,
+      rangeEndAt: candidateEntry.endAt,
     }),
   ]
 
@@ -74,6 +81,49 @@ export function detectCenterCalendarConflicts({
     .sort(compareConflicts)
 
   return createConflictResult(conflicts)
+}
+
+export function detectCenterCalendarSeriesConflicts({
+  candidate,
+  occurrences = [],
+  centerId = '',
+  classSessions = [],
+  scheduleSessions = [],
+  centerCalendarItems = [],
+  currentItemId = '',
+} = {}) {
+  const normalizedCenterId = normalizeText(centerId || candidate?.centerId)
+  const candidateMasterId = normalizeText(currentItemId || candidate?.id)
+  const candidateOccurrences = Array.isArray(occurrences) && occurrences.length ? occurrences : [candidate].filter(Boolean)
+
+  const conflicts = candidateOccurrences
+    .flatMap((occurrence) => {
+      const result = detectCenterCalendarConflicts({
+        candidate: occurrence,
+        centerId: normalizedCenterId,
+        classSessions,
+        scheduleSessions,
+        centerCalendarItems,
+        currentItemId: candidateMasterId || normalizeText(occurrence?.masterId || occurrence?.id),
+      })
+
+      return result.conflicts.map((conflict) => ({
+        ...conflict,
+        occurrenceDate: occurrence.occurrenceDate || getLocalDateString(occurrence.startAt),
+        occurrenceId: occurrence.occurrenceId || occurrence.id,
+        candidateMasterId: candidateMasterId || occurrence.masterId || occurrence.id,
+      }))
+    })
+    .sort(compareConflicts)
+
+  return {
+    ...createConflictResult(conflicts),
+    conflictedOccurrenceCount: new Set(
+      conflicts
+        .filter((conflict) => conflict.severity === 'hard' || conflict.severity === 'soft')
+        .map((conflict) => conflict.occurrenceId || conflict.occurrenceDate),
+    ).size,
+  }
 }
 
 export function normalizeCenterCalendarConflictEntry(record, options = {}) {
@@ -269,18 +319,31 @@ export function buildScheduleSessionConflictEntries({
 export function buildCenterCalendarItemConflictEntries(items = [], options = {}) {
   const centerId = normalizeText(options.centerId)
   const currentItemId = normalizeText(options.currentItemId)
+  const rangeStartAt = normalizeIsoDateTime(options.rangeStartAt)
+  const rangeEndAt = normalizeIsoDateTime(options.rangeEndAt)
 
   return (Array.isArray(items) ? items : [])
     .filter((item) => item && typeof item === 'object')
     .filter((item) => !centerId || !normalizeText(item.centerId) || normalizeText(item.centerId) === centerId)
     .filter((item) => !currentItemId || normalizeText(item.id) !== currentItemId)
     .filter((item) => !isCancelledRecord(item))
-    .map((item) =>
-      normalizeCenterCalendarConflictEntry(item, {
-        sourceKind: 'center-calendar-item',
-        centerId: normalizeText(item.centerId) || centerId,
-      }),
-    )
+    .flatMap((item) => {
+      const sourceItems = isWeeklyRecurringCenterCalendarItem(item) && rangeStartAt && rangeEndAt
+        ? expandWeeklyCenterCalendarOccurrences([item], {
+            rangeStart: rangeStartAt,
+            rangeEnd: rangeEndAt,
+            excludeMasterId: currentItemId,
+          })
+        : [item]
+
+      return sourceItems.map((sourceItem) =>
+        normalizeCenterCalendarConflictEntry(sourceItem, {
+          sourceKind: 'center-calendar-item',
+          sourceId: sourceItem.occurrenceId || sourceItem.id,
+          centerId: normalizeText(item.centerId) || centerId,
+        }),
+      )
+    })
     .filter(Boolean)
     .sort(compareEntries)
 }

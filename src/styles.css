@@ -9892,6 +9892,66 @@ h3 {
   font-weight: 780;
 }
 
+.schedule-calendar-item-recurring {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #e0f2fe;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.schedule-calendar-recurrence {
+  display: grid;
+  gap: 10px;
+}
+
+.schedule-calendar-recurrence-mode {
+  display: grid;
+  gap: 6px;
+}
+
+.schedule-calendar-weekday-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.schedule-calendar-weekday-button {
+  min-width: 38px;
+  border: 1px solid rgba(160, 184, 214, 0.26);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #dbeafe;
+  font-weight: 850;
+}
+
+.schedule-calendar-weekday-button.is-selected {
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.22);
+  color: #ffffff;
+}
+
+.schedule-calendar-recurrence .is-hidden {
+  display: none;
+}
+
+.schedule-calendar-recurrence.is-none .schedule-calendar-weekday-toggle,
+.schedule-calendar-recurrence.is-none [data-center-calendar-recurrence-until],
+.schedule-calendar-recurrence.is-none [data-center-calendar-recurrence-count],
+.schedule-calendar-recurrence.is-none .schedule-calendar-recurrence-mode:has([data-center-calendar-form-field="recurrenceEndMode"]) {
+  display: none;
+}
+
+.schedule-calendar-recurrence-summary,
+.schedule-calendar-recurrence-note {
+  color: #9fb4cc;
+  font-size: 0.76rem;
+  font-weight: 760;
+}
+
 .schedule-calendar-detail-list dd {
   min-width: 0;
 }
