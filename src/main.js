@@ -176,6 +176,13 @@ import {
   isWeeklyRecurringCenterCalendarItem,
 } from './center-calendar-recurrence.js'
 import {
+  SCHEDULE_PRINT_FILTER_ALL,
+  createSchedulePrintSnapshot,
+  getSchedulePrintDocumentTitle,
+  getSchedulePrintFilteredSnapshot,
+  renderSchedulePrintDocument,
+} from './schedule-print-module.js'
+import {
   buildSessionReportFromAttendance,
   buildSessionReportFromLearningGroups,
   buildLearningGroupFromForm,
@@ -676,6 +683,55 @@ function createInternalCenterSwitchState(overrides = {}) {
 function getCurrentResolvedCenterId() {
   const binding = resolveAppCenterBinding(cloudStatus)
   return binding.currentCenterId || getCurrentStorageCenterId()
+}
+
+function createCurrentSchedulePrintSnapshot() {
+  const centerProfile = getTaskbarCenterProfileState()
+  const centerId = getCurrentResolvedCenterId()
+
+  return createSchedulePrintSnapshot({
+    centerId,
+    centerName: centerProfile.centerName || centerId,
+    weekStartDate: scheduleWeekStartDate,
+    sessions: scheduleSessions,
+    classSessions,
+    centerCalendarItems: loadStoredCenterCalendarItems(centerId),
+    centerCalendarTags: loadStoredCenterCalendarTags(centerId),
+    teachers,
+    activityFilters: scheduleCalendarFilters,
+    createdAt: new Date().toISOString(),
+  })
+}
+
+function printCurrentScheduleWeek() {
+  const filteredSnapshot = getSchedulePrintFilteredSnapshot(
+    createCurrentSchedulePrintSnapshot(),
+    SCHEDULE_PRINT_FILTER_ALL,
+  )
+  const previousTitle = document.title
+  const printRoot = document.createElement('div')
+  let didCleanup = false
+
+  printRoot.className = 'schedule-print-runtime-root'
+  printRoot.dataset.schedulePrintRuntimeRoot = 'true'
+  printRoot.innerHTML = renderSchedulePrintDocument(filteredSnapshot)
+  document.body.appendChild(printRoot)
+  document.title = getSchedulePrintDocumentTitle(filteredSnapshot)
+
+  const cleanup = () => {
+    if (didCleanup) {
+      return
+    }
+
+    didCleanup = true
+    document.title = previousTitle
+    printRoot.remove()
+    window.removeEventListener('afterprint', cleanup)
+  }
+
+  window.addEventListener('afterprint', cleanup, { once: true })
+  window.print()
+  window.setTimeout(cleanup, 2000)
 }
 
 function isProductionCenter(centerId = getCurrentResolvedCenterId()) {
@@ -13378,6 +13434,12 @@ function bindEvents() {
     event.stopPropagation()
     scheduleCalendarFilters = { itemType: 'all', tagId: 'all' }
     render()
+  })
+
+  document.querySelector('[data-schedule-print-action="print"]')?.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    printCurrentScheduleWeek()
   })
 
   document.querySelector('[data-center-calendar-tag-action="open-manager"]')?.addEventListener('click', (event) => {

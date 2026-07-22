@@ -228,6 +228,7 @@ export function renderScheduleModule(
           <button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>
           <button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>
           <button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>
+          <button class="schedule-print-button" type="button" data-schedule-print-action="print">In / Lưu PDF</button>
           <div class="schedule-week-controls">
           <button type="button" data-schedule-week-action="previous">&lt; Tuần trước</button>
           <button type="button" data-schedule-week-action="today">Tuần này</button>

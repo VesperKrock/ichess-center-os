@@ -18659,6 +18659,332 @@ h3 {
   }
 }
 
+.schedule-print-button {
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.12s ease;
+}
+
+.schedule-print-button:hover {
+  border-color: rgba(37, 99, 235, 0.48);
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.16);
+}
+
+.schedule-print-button:active {
+  background: #dbeafe;
+  transform: translateY(1px);
+}
+
+.schedule-print-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.schedule-print-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  box-shadow: none;
+  transform: none;
+}
+
+.schedule-print-runtime-root {
+  display: none;
+}
+
+.schedule-print-document {
+  --schedule-print-border: #cbd5e1;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 18px;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid var(--schedule-print-border);
+  border-radius: 8px;
+}
+
+.schedule-print-document-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #0f172a;
+  break-inside: avoid;
+}
+
+.schedule-print-kicker {
+  margin: 0 0 4px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  color: #334155;
+}
+
+.schedule-print-document-header h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+.schedule-print-document-header p,
+.schedule-print-meta span {
+  margin: 4px 0 0;
+  color: #475569;
+}
+
+.schedule-print-meta {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  text-align: right;
+  font-size: 13px;
+}
+
+.schedule-print-legend {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.8fr;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid var(--schedule-print-border);
+  border-radius: 6px;
+  background: #f8fafc;
+  break-inside: avoid;
+}
+
+.schedule-print-legend div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedule-print-legend strong {
+  width: 100%;
+  font-size: 12px;
+}
+
+.schedule-print-legend span,
+.schedule-print-card-badges span,
+.schedule-print-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.schedule-print-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--schedule-print-entry-color, #64748b);
+  border: 1px solid #334155;
+}
+
+.schedule-print-tag {
+  border-color: var(--schedule-print-tag-color, #64748b);
+}
+
+.schedule-print-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+
+.schedule-print-day {
+  min-width: 0;
+  border: 1px solid var(--schedule-print-border);
+  border-radius: 6px;
+  background: #ffffff;
+  break-inside: avoid-page;
+}
+
+.schedule-print-day > header {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-bottom: 1px solid var(--schedule-print-border);
+  background: #e2e8f0;
+  color: #0f172a;
+  break-after: avoid;
+}
+
+.schedule-print-day > header strong {
+  font-size: 13px;
+}
+
+.schedule-print-day > header span {
+  font-size: 11px;
+}
+
+.schedule-print-all-day,
+.schedule-print-day-items {
+  display: grid;
+  gap: 6px;
+  padding: 7px;
+}
+
+.schedule-print-all-day {
+  border-bottom: 1px dashed #cbd5e1;
+  background: #f8fafc;
+}
+
+.schedule-print-all-day > span {
+  font-weight: 700;
+  font-size: 11px;
+  color: #334155;
+}
+
+.schedule-print-card {
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid #94a3b8;
+  border-left: 4px solid var(--schedule-print-entry-color, #64748b);
+  border-radius: 5px;
+  background: #ffffff;
+  color: #0f172a;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.schedule-print-card.is-activity {
+  background: color-mix(in srgb, var(--schedule-print-entry-color, #64748b) 10%, #ffffff);
+}
+
+.schedule-print-card.is-cancelled {
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+.schedule-print-card.is-cancelled strong {
+  text-decoration: line-through;
+}
+
+.schedule-print-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.schedule-print-card-time {
+  font-weight: 800;
+}
+
+.schedule-print-card-type {
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  padding: 1px 5px;
+  background: #ffffff;
+}
+
+.schedule-print-card strong {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.schedule-print-card p,
+.schedule-print-day-empty,
+.schedule-print-empty {
+  margin: 0;
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.schedule-print-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.schedule-print-empty {
+  padding: 20px;
+  border: 1px dashed #94a3b8;
+  border-radius: 6px;
+  text-align: center;
+}
+
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
+
+@media print {
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  body:has(.schedule-print-runtime-root) .app-shell,
+  body:has(.schedule-print-runtime-root) > :not(.schedule-print-runtime-root),
+  .desktop-area,
+  .taskbar,
+  .desktop-shortcuts,
+  .start-menu,
+  .notification-center,
+  .schedule-toolbar,
+  .schedule-calendar-filters,
+  .schedule-form-panel,
+  .schedule-form-backdrop {
+    display: none !important;
+  }
+
+  .schedule-print-runtime-root {
+    display: block !important;
+  }
+
+  .schedule-print-runtime-root .schedule-print-document {
+    display: block !important;
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .schedule-print-document {
+    font-size: 11px;
+  }
+
+  .schedule-print-week-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .schedule-print-document-header,
+  .schedule-print-legend,
+  .schedule-print-card,
+  .schedule-print-day > header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
 @media print {
   body {
     background: #ffffff;
