@@ -16593,6 +16593,75 @@ h3 {
   font-size: 0.84rem;
 }
 
+.tuition-ledger-note,
+.tuition-paid-readonly small,
+.tuition-payment-action-row small {
+  margin: 0;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+}
+
+.tuition-paid-readonly,
+.tuition-payment-evidence-field {
+  display: grid;
+  gap: 7px;
+}
+
+.tuition-paid-readonly {
+  border: 1px solid rgba(120, 198, 145, 0.26);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(46, 125, 79, 0.12);
+}
+
+.tuition-paid-readonly span,
+.tuition-payment-evidence-field > span {
+  color: #9fb1c7;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.tuition-paid-readonly strong {
+  color: #ffffff;
+}
+
+.tuition-payment-evidence-field > input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tuition-payment-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tuition-payment-action-row button {
+  border: 1px solid rgba(118, 164, 231, 0.55);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #ffffff;
+  background: #1f5d99;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tuition-payment-action-row button:hover,
+.tuition-payment-action-row button:focus-visible {
+  border-color: rgba(176, 210, 255, 0.9);
+  background: #276cab;
+}
+
+.tuition-payment-action-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .tuition-payment-history {
   display: grid;
   gap: 8px;
