@@ -14655,6 +14655,107 @@ h3 {
   line-height: 1.2;
 }
 
+.cashflow-evidence-field {
+  position: relative;
+}
+
+.cashflow-evidence-field > input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cashflow-evidence-field.has-error {
+  color: #ffb29e;
+}
+
+.cashflow-evidence-preview {
+  display: grid;
+  min-height: 62px;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cashflow-evidence-preview img,
+.cashflow-evidence-thumb {
+  width: 58px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.cashflow-evidence-thumb {
+  display: grid;
+  place-items: center;
+  color: #9fb1c7;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.cashflow-evidence-preview > div {
+  min-width: 0;
+}
+
+.cashflow-evidence-preview strong,
+.cashflow-evidence-preview small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cashflow-evidence-preview strong {
+  color: #ffffff;
+  font-size: 0.8rem;
+}
+
+.cashflow-evidence-actions,
+.cashflow-evidence-empty {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.cashflow-evidence-empty {
+  min-height: 32px;
+}
+
+.cashflow-evidence-actions button,
+.cashflow-evidence-empty button {
+  min-height: 30px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.cashflow-evidence-actions button:hover,
+.cashflow-evidence-empty button:hover,
+.cashflow-evidence-actions button:focus-visible,
+.cashflow-evidence-empty button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+  background: rgba(31, 93, 153, 0.22);
+}
+
+.cashflow-evidence-actions button:active,
+.cashflow-evidence-empty button:active {
+  transform: translateY(1px);
+}
+
 .cashflow-form-errors {
   display: grid;
   gap: 3px;
@@ -18927,6 +19028,20 @@ h3 {
 @page {
   size: A4 landscape;
   margin: 10mm;
+}
+
+@media (max-width: 720px) {
+  .cashflow-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cashflow-evidence-preview {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .cashflow-evidence-actions {
+    grid-column: 1 / -1;
+  }
 }
 
 @media print {

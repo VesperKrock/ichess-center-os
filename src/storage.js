@@ -1787,21 +1787,48 @@ function normalizeCashflowAttachment(attachment) {
     return null
   }
 
-  const type = String(attachment.type || '')
+  const type = String(attachment.type || attachment.mimeType || '')
   const dataUrl = String(attachment.dataUrl || '')
-  const size = normalizeNumber(attachment.size)
+  const size = normalizeNumber(attachment.size ?? attachment.sizeBytes)
+  const storagePath = String(attachment.storagePath || '')
 
-  if (!type.startsWith('image/') || !dataUrl.startsWith('data:image/') || size > CASHFLOW_ATTACHMENT_MAX_SIZE) {
+  if (!type.startsWith('image/')) {
+    return null
+  }
+
+  if (dataUrl) {
+    if (!dataUrl.startsWith('data:image/') || size > CASHFLOW_ATTACHMENT_MAX_SIZE) {
+      return null
+    }
+
+    return {
+      ...attachment,
+      id: String(attachment.id || `attachment-${Date.now()}`),
+      name: String(attachment.name || attachment.fileName || attachment.originalName || 'anh-giao-dich'),
+      type,
+      size,
+      dataUrl,
+      createdAt: attachment.createdAt || attachment.uploadedAt || new Date().toISOString(),
+    }
+  }
+
+  if (!storagePath || storagePath.includes('\\') || storagePath.includes('//')) {
     return null
   }
 
   return {
+    ...attachment,
     id: String(attachment.id || `attachment-${Date.now()}`),
-    name: String(attachment.name || 'anh-giao-dich'),
+    name: String(attachment.name || attachment.fileName || attachment.originalName || 'anh-giao-dich'),
     type,
+    mimeType: type,
     size,
-    dataUrl,
-    createdAt: attachment.createdAt || new Date().toISOString(),
+    sizeBytes: size,
+    storagePath,
+    storageBucket: String(attachment.storageBucket || 'transaction-images'),
+    transactionCode: String(attachment.transactionCode || ''),
+    metadataId: String(attachment.metadataId || attachment.id || ''),
+    createdAt: attachment.createdAt || attachment.uploadedAt || new Date().toISOString(),
   }
 }
 

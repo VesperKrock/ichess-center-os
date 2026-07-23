@@ -20,8 +20,10 @@ import {
   createTransactionAttachmentMetadata,
   deleteTransactionAttachmentMetadata,
   getCurrentMonthKey,
+  isTransactionAttachmentRoleAllowed,
   listTransactionAttachmentsByMonth,
   listTransactionAttachmentsByTransactionCode,
+  updateTransactionAttachmentMetadata,
 } from './transaction-attachments.js'
 import {
   compressTransactionImage,
@@ -102,10 +104,15 @@ import {
   buildCashflowTransactionFromForm,
   buildCashflowCsvExport,
   buildCashflowCategoryFromForm,
+  createCashflowAttachmentDraftFromExisting,
   createEditCashflowCategoryFormState,
   createEditCashflowFormState,
+  createEmptyCashflowAttachmentDraft,
   createEmptyCashflowCategoryFormState,
   createEmptyCashflowFormStateWithCategories,
+  createErrorCashflowAttachmentDraft,
+  CASHFLOW_EVIDENCE_ACCEPT,
+  formatFileSize,
   getDefaultCategoryNameForType,
   initialCashflowFilters,
   renderCashflowModule,
@@ -558,6 +565,7 @@ let cashflowTransactions = getStoredCashflow(sampleCashflowTransactions)
 let cashflowCategories = getStoredCashflowCategories(sampleCashflowCategories)
 let cashflowFilters = { ...initialCashflowFilters }
 let cashflowFormState = null
+let cashflowAttachmentHydrateToken = 0
 let isCashflowCategoryPanelOpen = false
 let cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
 let cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
@@ -686,6 +694,70 @@ function getCurrentResolvedCenterId() {
   return binding.currentCenterId || getCurrentStorageCenterId()
 }
 
+function getCloudAttachmentAccessContext() {
+  const binding = resolveAppCenterBinding(cloudStatus)
+  const centerId = String(binding.currentCenterId || cloudStatus.centerId || '').trim()
+  const role = String(binding.role || cloudStatus.role || '').trim()
+
+  if (cloudStatus.configStatus !== 'configured') {
+    return {
+      ok: false,
+      centerId,
+      role,
+      error: 'Chua cau hinh Supabase Cloud.',
+      reason: 'missing-config',
+    }
+  }
+
+  if (cloudStatus.authStatus !== 'signed-in' || !cloudStatus.user) {
+    return {
+      ok: false,
+      centerId,
+      role,
+      error: 'Vui long dang nhap Supabase Cloud truoc.',
+      reason: 'signed-out',
+    }
+  }
+
+  if (cloudStatus.membershipStatus === 'loading') {
+    return {
+      ok: false,
+      centerId,
+      role,
+      error: 'Dang kiem tra quyen co so. Vui long thu lai sau vai giay.',
+      reason: 'membership-loading',
+    }
+  }
+
+  if (cloudStatus.membershipStatus !== 'loaded' || !centerId) {
+    return {
+      ok: false,
+      centerId,
+      role,
+      error: `Tai khoan chua duoc cap quyen cho co so ${centerId || 'hien tai'}.`,
+      reason: 'no-center-membership',
+    }
+  }
+
+  if (!isTransactionAttachmentRoleAllowed(role)) {
+    return {
+      ok: false,
+      centerId,
+      role,
+      error: `Role ${role || 'khong xac dinh'} khong co quyen quan ly chung tu giao dich.`,
+      reason: 'role-denied',
+    }
+  }
+
+  return {
+    ok: true,
+    centerId,
+    role,
+    error: '',
+    reason: '',
+  }
+}
+
 function createCurrentSchedulePrintSnapshot() {
   const centerProfile = getTaskbarCenterProfileState()
   const centerId = getCurrentResolvedCenterId()
@@ -801,7 +873,9 @@ function resetTransientStateForCenterSwitch() {
   tuitionRollbackPreviewState = null
   tuitionCareNoteState = null
   tuitionAdvisoryWindowState = null
+  revokeCashflowAttachmentDraftObjectUrl()
   cashflowFormState = null
+  cashflowAttachmentHydrateToken += 1
   cashbookSettingsFormState = null
   cashbookReconciliationFormState = null
   inventoryFormState = null
@@ -5468,14 +5542,25 @@ function openStudentEditForm(studentId) {
 
 function openCashflowEditForm(transactionId) {
   const currentCenterId = getCurrentResolvedCenterId()
-  const transaction = cashflowTransactions.find((item) => item.id === transactionId)
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
+  const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
 
   if (!transaction) {
     return
   }
 
-  cashflowFormState = createEditCashflowFormState(transaction, currentCenterId)
+  cashflowTransactions = latestCashflowTransactions
+  cashflowAttachmentHydrateToken += 1
+  const hydrateToken = cashflowAttachmentHydrateToken
+  cashflowFormState = createEditCashflowFormState(transaction, currentCenterId, {
+    hydrateAttachment: true,
+  })
   render()
+  hydrateCashflowEditAttachment({
+    transactionId,
+    centerId: currentCenterId,
+    hydrateToken,
+  })
 }
 
 function getCashflowSampleFallbackForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
@@ -5484,6 +5569,161 @@ function getCashflowSampleFallbackForCurrentCenter(centerId = getCurrentResolved
 
 function readLatestCashflowTransactionsForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
   return readStoredCashflow(getCashflowSampleFallbackForCurrentCenter(centerId))
+}
+
+async function hydrateCashflowEditAttachment({ transactionId, centerId, hydrateToken }) {
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
+  const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
+
+  if (!transaction) {
+    applyCashflowAttachmentHydrateResult({
+      transactionId,
+      centerId,
+      hydrateToken,
+      draft: createErrorCashflowAttachmentDraft(
+        'Giao dịch này không còn tồn tại.',
+        null,
+      ),
+      attachment: null,
+    })
+    return
+  }
+
+  const transactionCode = getCashflowTransactionCodesForTransactions(latestCashflowTransactions)[transaction.id]
+  const legacyAttachment = transaction.attachment || null
+  const result = transactionCode
+    ? await listTransactionAttachmentsByTransactionCode({
+        centerId,
+        transactionCode,
+      })
+    : { ok: true, data: [] }
+
+  if (!result.ok) {
+    applyCashflowAttachmentHydrateResult({
+      transactionId,
+      centerId,
+      hydrateToken,
+      draft: createErrorCashflowAttachmentDraft(result.error, legacyAttachment),
+      attachment: legacyAttachment,
+    })
+    return
+  }
+
+  const cloudAttachment = getPrimaryCashflowCloudAttachment(result.data, transactionCode)
+
+  if (cloudAttachment) {
+    const signedUrlResult = await createTransactionImageSignedUrl(
+      cloudAttachment.storagePath,
+      60 * 10,
+      centerId,
+    )
+    const hydratedCloudAttachment = {
+      ...cloudAttachment,
+      signedUrl: signedUrlResult.ok ? signedUrlResult.data.signedUrl : '',
+      signedUrlError: signedUrlResult.ok ? '' : signedUrlResult.error,
+    }
+
+    applyCashflowAttachmentHydrateResult({
+      transactionId,
+      centerId,
+      hydrateToken,
+      draft: {
+        ...createCashflowAttachmentDraftFromExisting(hydratedCloudAttachment, 'cloud'),
+        error: signedUrlResult.ok
+          ? ''
+          : signedUrlResult.error || 'Không thể tải ảnh xem trước.',
+      },
+      attachment: hydratedCloudAttachment,
+    })
+    return
+  }
+
+  applyCashflowAttachmentHydrateResult({
+    transactionId,
+    centerId,
+    hydrateToken,
+    draft: legacyAttachment
+      ? createCashflowAttachmentDraftFromExisting(legacyAttachment, 'legacy')
+      : createEmptyCashflowAttachmentDraft(),
+    attachment: legacyAttachment,
+  })
+}
+
+function applyCashflowAttachmentHydrateResult({
+  transactionId,
+  centerId,
+  hydrateToken,
+  draft,
+  attachment,
+}) {
+  if (
+    hydrateToken !== cashflowAttachmentHydrateToken ||
+    !cashflowFormState ||
+    cashflowFormState.mode !== 'edit' ||
+    cashflowFormState.transactionId !== transactionId ||
+    String(cashflowFormState.centerId || '').trim() !== String(centerId || '').trim() ||
+    String(getCurrentResolvedCenterId() || '').trim() !== String(centerId || '').trim()
+  ) {
+    return
+  }
+
+  const currentDraft = cashflowFormState.attachmentDraft || createEmptyCashflowAttachmentDraft()
+  if (currentDraft.mode !== 'loading') {
+    return
+  }
+
+  cashflowFormState = {
+    ...cashflowFormState,
+    attachmentDraft: draft,
+    values: {
+      ...cashflowFormState.values,
+      attachment,
+    },
+    errors: {
+      ...cashflowFormState.errors,
+      attachment: undefined,
+    },
+  }
+
+  syncCashflowEvidencePreview()
+}
+
+function getPrimaryCashflowCloudAttachment(attachments = [], transactionCode = '') {
+  return attachments
+    .map((attachment) => createCashflowCloudAttachmentReference(attachment, transactionCode))
+    .filter(Boolean)
+    .sort((first, second) =>
+      String(second.createdAt || '').localeCompare(String(first.createdAt || '')),
+    )[0] || null
+}
+
+function createCashflowCloudAttachmentReference(attachment, transactionCode = '') {
+  const storagePath = String(attachment?.storagePath || '').trim()
+  const mimeType = String(attachment?.mimeType || attachment?.type || '').trim().toLowerCase()
+
+  if (!storagePath || !mimeType.startsWith('image/')) {
+    return null
+  }
+
+  return {
+    id: String(attachment.id || `attachment-${Date.now()}`),
+    metadataId: String(attachment.metadataId || attachment.id || ''),
+    name: String(attachment.fileName || attachment.name || attachment.originalName || 'anh-giao-dich'),
+    originalName: String(attachment.originalName || ''),
+    fileName: String(attachment.fileName || attachment.name || 'anh-giao-dich'),
+    type: mimeType,
+    mimeType,
+    size: Number(attachment.sizeBytes || attachment.size || 0),
+    sizeBytes: Number(attachment.sizeBytes || attachment.size || 0),
+    storageBucket: String(attachment.storageBucket || 'transaction-images'),
+    storagePath,
+    transactionCode: String(attachment.transactionCode || transactionCode || ''),
+    uploadedAt: attachment.createdAt || attachment.uploadedAt || '',
+    uploadedBy: String(attachment.uploadedBy || ''),
+    uploadedByName: String(attachment.uploadedByName || ''),
+    createdAt: attachment.createdAt || attachment.uploadedAt || '',
+    centerId: String(attachment.centerId || ''),
+  }
 }
 
 function collectCashflowFormValues(form, fallbackValues = {}) {
@@ -5506,6 +5746,307 @@ function createCashflowFormErrorState(formState, message, values = formState?.va
       form: message,
     },
   }
+}
+
+function revokeCashflowAttachmentDraftObjectUrl(formState = cashflowFormState) {
+  const objectUrl = formState?.attachmentDraft?.objectUrl
+
+  if (objectUrl) {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+function clearCashflowAttachmentDraft() {
+  revokeCashflowAttachmentDraftObjectUrl()
+  cashflowFormState = null
+  cashflowAttachmentHydrateToken += 1
+  const input = document.querySelector('[data-cashflow-evidence-input]')
+  if (input) {
+    input.value = ''
+  }
+}
+
+function updateCashflowAttachmentDraft(nextDraft) {
+  if (!cashflowFormState) {
+    return
+  }
+
+  cashflowFormState = {
+    ...cashflowFormState,
+    attachmentDraft: nextDraft,
+    errors: {
+      ...cashflowFormState.errors,
+      attachment: undefined,
+    },
+  }
+
+  syncCashflowEvidencePreview()
+}
+
+function stageCashflowEvidenceFile(file) {
+  if (!cashflowFormState) {
+    return
+  }
+
+  const previousDraft = cashflowFormState.attachmentDraft || createEmptyCashflowAttachmentDraft()
+  const validation = validateTransactionImageFile(file)
+
+  if (!validation.ok) {
+    updateCashflowAttachmentDraft({
+      ...previousDraft,
+      error: validation.error,
+    })
+    return
+  }
+
+  revokeCashflowAttachmentDraftObjectUrl(cashflowFormState)
+  updateCashflowAttachmentDraft({
+    mode: 'staged-new',
+    file,
+    fileName: validation.data.name,
+    mimeType: validation.data.mimeType,
+    sizeBytes: validation.data.sizeBytes,
+    objectUrl: URL.createObjectURL(file),
+    existingAttachment: previousDraft.existingAttachment || null,
+    source: previousDraft.source || '',
+    error: '',
+    isUploading: false,
+  })
+}
+
+function removeCashflowEvidenceDraft() {
+  if (!cashflowFormState) {
+    return
+  }
+
+  const previousDraft = cashflowFormState.attachmentDraft || createEmptyCashflowAttachmentDraft()
+  revokeCashflowAttachmentDraftObjectUrl(cashflowFormState)
+
+  updateCashflowAttachmentDraft({
+    ...createEmptyCashflowAttachmentDraft(),
+    mode:
+      previousDraft.mode === 'staged-new' && previousDraft.existingAttachment
+        ? `keep-existing-${previousDraft.source || 'legacy'}`
+        : previousDraft.existingAttachment
+          ? 'remove-existing'
+          : 'none',
+    existingAttachment: previousDraft.existingAttachment || null,
+    source: previousDraft.existingAttachment ? previousDraft.source || 'legacy' : '',
+  })
+
+  const input = document.querySelector('[data-cashflow-evidence-input]')
+  if (input) {
+    input.value = ''
+  }
+}
+
+function syncCashflowEvidencePreview() {
+  const field = document.querySelector('[data-cashflow-evidence-field]')
+
+  if (!field || !cashflowFormState) {
+    return
+  }
+
+  const draft = cashflowFormState.attachmentDraft || createEmptyCashflowAttachmentDraft()
+  const existing = draft.existingAttachment
+  const hasStaged = draft.mode === 'staged-new' && draft.objectUrl
+  const hasExisting = isKeepExistingCashflowAttachmentDraft(draft) && existing
+  const isRemoved = draft.mode === 'remove-existing'
+  const isLoading = draft.mode === 'loading'
+  const isError = draft.mode === 'error'
+  const summary = hasStaged
+    ? {
+        name: draft.fileName || 'anh-giao-dich',
+        type: draft.mimeType || 'image/*',
+        size: draft.sizeBytes,
+        imageUrl: draft.objectUrl,
+        status: 'Ảnh mới, sẽ tải lên khi lưu',
+      }
+    : hasExisting
+      ? {
+          name: getCashflowAttachmentDisplayName(existing),
+          type: existing.mimeType || existing.type || 'image/*',
+          size: existing.sizeBytes || existing.size || 0,
+          imageUrl: existing.dataUrl || existing.signedUrl || '',
+          status: draft.source === 'cloud' ? 'Có chứng từ' : 'Chứng từ legacy hiện có',
+        }
+      : null
+  const error = cashflowFormState.errors.attachment || draft.error || ''
+  const input = field.querySelector('[data-cashflow-evidence-input]')
+
+  field.classList.toggle('has-error', Boolean(error))
+  field.innerHTML = `
+    <span>Chứng từ</span>
+    <input
+      type="file"
+      accept="${escapeAttributeForRuntime(CASHFLOW_EVIDENCE_ACCEPT)}"
+      data-cashflow-evidence-input
+      tabindex="-1"
+      ${cashflowFormState.isSaving ? 'disabled' : ''}
+    />
+    ${
+      summary
+        ? `
+          <div class="cashflow-evidence-preview" data-cashflow-evidence-preview>
+            ${
+              summary.imageUrl
+                ? `<img src="${escapeAttributeForRuntime(summary.imageUrl)}" alt="${escapeAttributeForRuntime(summary.name)}" />`
+                : '<div class="cashflow-evidence-thumb" aria-hidden="true">IMG</div>'
+            }
+            <div>
+              <strong title="${escapeAttributeForRuntime(summary.name)}">${escapeHtmlForRuntime(summary.name)}</strong>
+              <small>${escapeHtmlForRuntime(summary.type)} · ${formatFileSize(summary.size)}</small>
+              <small>${escapeHtmlForRuntime(summary.status)}</small>
+            </div>
+            <div class="cashflow-evidence-actions">
+              <button type="button" data-cashflow-evidence-action="preview">Xem trước</button>
+              <button type="button" data-cashflow-evidence-action="replace">Thay ảnh</button>
+              <button type="button" data-cashflow-evidence-action="remove">Gỡ</button>
+            </div>
+          </div>
+        `
+        : isLoading
+          ? `
+          <div class="cashflow-evidence-empty is-loading" data-cashflow-evidence-preview>
+            <button type="button" data-cashflow-evidence-action="insert" disabled>Chèn ảnh</button>
+            <small>Đang tải chứng từ...</small>
+          </div>
+        `
+          : isError
+            ? `
+          <div class="cashflow-evidence-empty is-error" data-cashflow-evidence-preview>
+            <button type="button" data-cashflow-evidence-action="insert" disabled>Chèn ảnh</button>
+            <small>Không thể tải thông tin chứng từ</small>
+          </div>
+        `
+            : `
+          <div class="cashflow-evidence-empty" data-cashflow-evidence-preview>
+            <button type="button" data-cashflow-evidence-action="insert">Chèn ảnh</button>
+            <small>${isRemoved ? 'Chứng từ sẽ được gỡ khi lưu.' : 'Không có chứng từ'}</small>
+          </div>
+        `
+    }
+    ${error ? `<small>${escapeHtmlForRuntime(error)}</small>` : ''}
+  `
+
+  const nextInput = field.querySelector('[data-cashflow-evidence-input]')
+  if (input?.files?.length && nextInput) {
+    nextInput.value = ''
+  }
+  bindCashflowEvidenceControls(field)
+}
+
+function bindCashflowEvidenceControls(root = document) {
+  const input = root.querySelector('[data-cashflow-evidence-input]')
+
+  root.querySelectorAll('[data-cashflow-evidence-action="insert"], [data-cashflow-evidence-action="replace"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      if (input) {
+        input.value = ''
+        input.click()
+      }
+    })
+  })
+
+  root.querySelector('[data-cashflow-evidence-action="remove"]')?.addEventListener('click', (event) => {
+    event.stopPropagation()
+    removeCashflowEvidenceDraft()
+  })
+
+  root.querySelector('[data-cashflow-evidence-action="preview"]')?.addEventListener('click', async (event) => {
+    event.stopPropagation()
+    await previewCashflowEvidenceDraft()
+  })
+
+  input?.addEventListener('click', (event) => {
+    event.stopPropagation()
+  })
+
+  input?.addEventListener('change', (event) => {
+    event.stopPropagation()
+    const file = event.target.files?.[0]
+
+    if (file) {
+      stageCashflowEvidenceFile(file)
+    }
+  })
+}
+
+async function previewCashflowEvidenceDraft() {
+  const draft = cashflowFormState?.attachmentDraft
+  const attachment = draft?.existingAttachment
+  let previewUrl = draft?.mode === 'staged-new' ? draft.objectUrl : ''
+
+  if (!previewUrl && attachment?.dataUrl) {
+    previewUrl = attachment.dataUrl
+  }
+
+  if (!previewUrl && attachment?.storagePath) {
+    const centerId = String(cashflowFormState?.centerId || getCurrentResolvedCenterId()).trim()
+    const signedUrlResult = await createTransactionImageSignedUrl(
+      attachment.storagePath,
+      60 * 10,
+      centerId,
+    )
+
+    if (!signedUrlResult.ok) {
+      updateCashflowAttachmentDraft({
+        ...draft,
+        error: signedUrlResult.error || 'Không thể xem trước chứng từ.',
+      })
+      return
+    }
+
+    previewUrl = signedUrlResult.data.signedUrl
+  }
+
+  if (!isSafeImagePreviewUrl(previewUrl)) {
+    updateCashflowAttachmentDraft({
+      ...draft,
+      error: 'Không thể xem trước chứng từ.',
+    })
+    return
+  }
+
+  window.open(previewUrl, '_blank', 'noopener,noreferrer')
+}
+
+function isSafeImagePreviewUrl(value) {
+  const url = String(value || '').trim()
+  return (
+    url.startsWith('blob:') ||
+    url.startsWith('data:image/') ||
+    url.startsWith('https://') ||
+    url.startsWith('http://localhost') ||
+    url.startsWith('http://127.0.0.1')
+  )
+}
+
+function getCashflowAttachmentDisplayName(attachment) {
+  return String(
+    attachment?.fileName ||
+      attachment?.name ||
+      attachment?.originalName ||
+      'Ảnh giao dịch',
+  )
+}
+
+function isKeepExistingCashflowAttachmentDraft(draft) {
+  return ['keep-existing', 'keep-existing-cloud', 'keep-existing-legacy'].includes(draft?.mode)
+}
+
+function escapeHtmlForRuntime(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function escapeAttributeForRuntime(value) {
+  return escapeHtmlForRuntime(value)
 }
 
 function openInventoryEditForm(itemId) {
@@ -6182,7 +6723,8 @@ function getCurrentCloudBootstrapContext() {
 
 function renderCashflowCloudAuthNotice(status) {
   const isSignedIn = status.authStatus === 'signed-in' && status.user
-  const hasMembership = status.membershipStatus === 'loaded' && status.role
+  const hasMembership =
+    status.membershipStatus === 'loaded' && isTransactionAttachmentRoleAllowed(status.role)
 
   if (isSignedIn && hasMembership) {
     return `
@@ -8204,13 +8746,18 @@ async function loadCenterMemberProfiles(syncId = cloudUserSyncId) {
 
 async function loadCurrentMonthCloudAttachments(syncId = cloudUserSyncId) {
   const monthKey = getCurrentMonthKey()
-  const result = await listTransactionAttachmentsByMonth({ monthKey })
+  const access = getCloudAttachmentAccessContext()
+  const result = access.ok
+    ? await listTransactionAttachmentsByMonth({ centerId: access.centerId, monthKey })
+    : { ok: false, data: [], error: access.error }
 
   if (syncId !== cloudUserSyncId) {
     return
   }
 
-  const attachments = result.ok ? await addSignedUrlsToAttachments(result.data) : []
+  const attachments = result.ok
+    ? await addSignedUrlsToAttachments(result.data, access.centerId)
+    : []
 
   if (syncId !== cloudUserSyncId) {
     return
@@ -8226,10 +8773,14 @@ async function loadCurrentMonthCloudAttachments(syncId = cloudUserSyncId) {
   render()
 }
 
-async function addSignedUrlsToAttachments(attachments) {
+async function addSignedUrlsToAttachments(attachments, centerId = getCloudAttachmentAccessContext().centerId) {
   return Promise.all(
     attachments.map(async (attachment) => {
-      const signedUrlResult = await createTransactionImageSignedUrl(attachment.storagePath)
+      const signedUrlResult = await createTransactionImageSignedUrl(
+        attachment.storagePath,
+        60 * 60,
+        centerId || attachment.centerId,
+      )
 
       return {
         ...attachment,
@@ -8241,7 +8792,11 @@ async function addSignedUrlsToAttachments(attachments) {
 }
 
 function getCashflowTransactionCodes() {
-  const transactionsByDate = cashflowTransactions.reduce((groups, transaction) => {
+  return getCashflowTransactionCodesForTransactions(cashflowTransactions)
+}
+
+function getCashflowTransactionCodesForTransactions(transactions = []) {
+  const transactionsByDate = transactions.reduce((groups, transaction) => {
     const transactionDate = String(transaction.transactionDate ?? '')
     groups[transactionDate] = [...(groups[transactionDate] ?? []), transaction]
     return groups
@@ -8285,6 +8840,13 @@ function getTransactionIdsByCode() {
 }
 
 async function openCloudGallery() {
+  const access = getCloudAttachmentAccessContext()
+
+  if (!access.ok) {
+    setCloudUploadMessage(access.error, 'error')
+    return
+  }
+
   if (
     cloudStatus.configStatus !== 'configured' ||
     cloudStatus.authStatus !== 'signed-in'
@@ -8294,7 +8856,7 @@ async function openCloudGallery() {
   }
 
   if (cloudStatus.membershipStatus !== 'loaded' || !cloudStatus.role) {
-    setCloudUploadMessage('Tài khoản chưa được cấp quyền cho DreamHome.', 'error')
+    setCloudUploadMessage('Tai khoan chua duoc cap quyen chung tu cho co so hien tai.', 'error')
     return
   }
 
@@ -8307,6 +8869,7 @@ async function openCloudGallery() {
     message: '',
     messageTone: '',
     currentUser: cloudStatus.user,
+    centerId: access.centerId,
     memberProfileMap: cloudStatus.memberProfileMap,
     transactionIdsByCode: getTransactionIdsByCode(),
   }
@@ -8320,13 +8883,26 @@ async function loadCloudGalleryAttachments() {
   }
 
   const monthKey = cloudGalleryState.monthKey
-  const result = await listTransactionAttachmentsByMonth({ monthKey })
+  const centerId = String(cloudGalleryState.centerId || '').trim()
+  const access = getCloudAttachmentAccessContext()
+
+  if (!access.ok || access.centerId !== centerId) {
+    cloudGalleryState = {
+      ...cloudGalleryState,
+      status: 'error',
+      error: access.error || 'Co so hien tai da thay doi. Vui long mo lai kho anh.',
+    }
+    render()
+    return
+  }
+
+  const result = await listTransactionAttachmentsByMonth({ centerId, monthKey })
 
   if (cloudGalleryState?.monthKey !== monthKey) {
     return
   }
 
-  const attachments = result.ok ? await addSignedUrlsToAttachments(result.data) : []
+  const attachments = result.ok ? await addSignedUrlsToAttachments(result.data, centerId) : []
 
   if (cloudGalleryState?.monthKey !== monthKey) {
     return
@@ -8377,9 +8953,17 @@ async function openTransactionImageManager(transactionId) {
   }
 
   const transactionCode = getCashflowTransactionCodes()[transaction.id]
+  const access = getCloudAttachmentAccessContext()
+
+  if (!access.ok) {
+    setCloudUploadMessage(access.error, 'error')
+    return
+  }
+
   transactionImageManagerState = {
     transaction,
     transactionCode,
+    centerId: access.centerId,
     attachments: [],
     status: 'loading',
     error: '',
@@ -8400,7 +8984,22 @@ async function refreshTransactionImageManager() {
   }
 
   const transactionCode = transactionImageManagerState.transactionCode
+  const centerId = transactionImageManagerState.centerId
+  const access = getCloudAttachmentAccessContext()
+
+  if (!access.ok || access.centerId !== centerId) {
+    transactionImageManagerState = {
+      ...transactionImageManagerState,
+      status: 'error',
+      error: access.error || 'Co so hien tai da thay doi. Vui long mo lai giao dich.',
+      deletingAttachmentId: null,
+    }
+    render()
+    return
+  }
+
   const result = await listTransactionAttachmentsByTransactionCode({
+    centerId,
     transactionCode,
   })
 
@@ -8408,7 +9007,7 @@ async function refreshTransactionImageManager() {
     return
   }
 
-  const attachments = result.ok ? await addSignedUrlsToAttachments(result.data) : []
+  const attachments = result.ok ? await addSignedUrlsToAttachments(result.data, centerId) : []
 
   if (transactionImageManagerState?.transactionCode !== transactionCode) {
     return
@@ -8434,8 +9033,22 @@ async function deleteManagedTransactionAttachment(attachmentId) {
     (item) => item.id === attachmentId,
   )
   const transactionCode = transactionImageManagerState?.transactionCode
+  const centerId = transactionImageManagerState?.centerId
 
   if (!attachment || !transactionCode) {
+    return
+  }
+
+  const access = getCloudAttachmentAccessContext()
+
+  if (!access.ok || access.centerId !== centerId) {
+    transactionImageManagerState = {
+      ...transactionImageManagerState,
+      deletingAttachmentId: null,
+      message: access.error || 'Co so hien tai da thay doi. Vui long mo lai giao dich.',
+      messageTone: 'error',
+    }
+    render()
     return
   }
 
@@ -8455,7 +9068,7 @@ async function deleteManagedTransactionAttachment(attachmentId) {
   }
   render()
 
-  const storageResult = await deleteTransactionImageObject(attachment.storagePath)
+  const storageResult = await deleteTransactionImageObject(attachment.storagePath, centerId)
   const storageWasMissing =
     !storageResult.ok && isMissingStorageObjectError(storageResult.error)
 
@@ -8474,7 +9087,7 @@ async function deleteManagedTransactionAttachment(attachmentId) {
     return
   }
 
-  const metadataResult = await deleteTransactionAttachmentMetadata(attachment.id)
+  const metadataResult = await deleteTransactionAttachmentMetadata(attachment.id, centerId)
 
   if (!metadataResult.ok) {
     const message = `File Storage đã được xử lý nhưng xóa metadata thất bại: ${metadataResult.error}`
@@ -8535,7 +9148,7 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
   }
 
   if (cloudStatus.membershipStatus !== 'loaded' || !cloudStatus.role) {
-    setCloudUploadMessage('Tài khoản chưa được cấp quyền cho DreamHome.', 'error')
+    setCloudUploadMessage('Tai khoan chua duoc cap quyen chung tu cho co so hien tai.', 'error')
     return
   }
 
@@ -8566,8 +9179,18 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
     return
   }
 
+  const access = getCloudAttachmentAccessContext()
+
+  if (!access.ok) {
+    cloudUploadingTransactionId = null
+    updateTransactionImageManagerUploadState(access.error, 'error')
+    setCloudUploadMessage(access.error, 'error')
+    return
+  }
+
   const transactionCode = getCashflowTransactionCodes()[transaction.id]
   const existingResult = await listTransactionAttachmentsByTransactionCode({
+    centerId: access.centerId,
     transactionCode,
   })
 
@@ -8586,10 +9209,12 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     fileName = buildAttachmentFileName(transactionCode, attachmentIndex, 'jpg')
     storagePath = buildTransactionImageStoragePath({
+      centerId: access.centerId,
       dateInput: transaction.transactionDate,
       fileName,
     })
     uploadResult = await uploadTransactionImageBlob({
+      centerId: access.centerId,
       storagePath,
       blob: compressionResult.data.blob,
     })
@@ -8612,6 +9237,7 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
   }
 
   const metadataResult = await createTransactionAttachmentMetadata({
+    centerId: access.centerId,
     transactionCode,
     transactionDate: transaction.transactionDate,
     amount: transaction.amount,
@@ -8676,6 +9302,164 @@ function updateTransactionImageManagerUploadState(message, tone) {
 
 function isDuplicateStorageError(error) {
   return /already exists|duplicate|resource exists|409/i.test(String(error ?? ''))
+}
+
+async function uploadStagedCashflowEvidence({
+  transaction,
+  transactionCode,
+  file,
+  centerId,
+} = {}) {
+  const validation = validateTransactionImageFile(file)
+
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: validation.error,
+      attachment: null,
+    }
+  }
+
+  const compressionResult = await compressTransactionImage(file)
+
+  if (!compressionResult.ok) {
+    return {
+      ok: false,
+      error: compressionResult.error,
+      attachment: null,
+    }
+  }
+
+  const existingResult = await listTransactionAttachmentsByTransactionCode({
+    centerId,
+    transactionCode,
+  })
+
+  if (!existingResult.ok) {
+    return {
+      ok: false,
+      error: existingResult.error,
+      attachment: null,
+    }
+  }
+
+  let attachmentIndex = existingResult.data.length + 1
+  let fileName = ''
+  let storagePath = ''
+  let uploadResult = null
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    fileName = buildAttachmentFileName(transactionCode, attachmentIndex, 'jpg')
+    storagePath = buildTransactionImageStoragePath({
+      centerId,
+      dateInput: transaction.transactionDate,
+      fileName,
+    })
+    uploadResult = await uploadTransactionImageBlob({
+      centerId,
+      storagePath,
+      blob: compressionResult.data.blob,
+    })
+
+    if (uploadResult.ok || !isDuplicateStorageError(uploadResult.error)) {
+      break
+    }
+
+    attachmentIndex += 1
+  }
+
+  if (!uploadResult?.ok) {
+    return {
+      ok: false,
+      error: uploadResult?.error || 'Không thể tải ảnh lên.',
+      attachment: null,
+    }
+  }
+
+  const metadataResult = await createTransactionAttachmentMetadata({
+    centerId,
+    transactionCode,
+    transactionDate: transaction.transactionDate,
+    amount: transaction.amount,
+    cashflowType: transaction.type,
+    note: transaction.note,
+    originalName: file.name,
+    fileName,
+    mimeType: compressionResult.data.mimeType,
+    sizeBytes: compressionResult.data.sizeBytes,
+    storagePath,
+    uploadedByName: getUploaderDisplayName(
+      { uploadedBy: cloudStatus.user?.id },
+      cloudStatus.user,
+      cloudStatus.memberProfileMap,
+    ),
+  })
+
+  if (!metadataResult.ok) {
+    await deleteTransactionImageObject(storagePath, centerId)
+    return {
+      ok: false,
+      error: `Ảnh đã upload nhưng lưu metadata thất bại: ${metadataResult.error}`,
+      attachment: null,
+    }
+  }
+
+  return {
+    ok: true,
+    error: '',
+    attachment: {
+      id: metadataResult.data.id || `attachment-${Date.now()}`,
+      metadataId: metadataResult.data.id || '',
+      name: metadataResult.data.fileName || fileName,
+      originalName: metadataResult.data.originalName || file.name,
+      fileName: metadataResult.data.fileName || fileName,
+      type: metadataResult.data.mimeType || compressionResult.data.mimeType,
+      mimeType: metadataResult.data.mimeType || compressionResult.data.mimeType,
+      size: metadataResult.data.sizeBytes || compressionResult.data.sizeBytes,
+      sizeBytes: metadataResult.data.sizeBytes || compressionResult.data.sizeBytes,
+      storageBucket: metadataResult.data.storageBucket || 'transaction-images',
+      storagePath: metadataResult.data.storagePath || storagePath,
+      transactionCode,
+      uploadedAt: metadataResult.data.createdAt || new Date().toISOString(),
+      uploadedBy: metadataResult.data.uploadedBy || cloudStatus.user?.id || '',
+      uploadedByName: metadataResult.data.uploadedByName || '',
+      createdAt: metadataResult.data.createdAt || new Date().toISOString(),
+    },
+  }
+}
+
+async function cleanupCloudCashflowAttachment(attachment, centerId) {
+  if (!attachment?.storagePath) {
+    return {
+      ok: true,
+      error: '',
+    }
+  }
+
+  const storageResult = await deleteTransactionImageObject(attachment.storagePath, centerId)
+  const storageWasMissing =
+    !storageResult.ok && isMissingStorageObjectError(storageResult.error)
+
+  if (!storageResult.ok && !storageWasMissing) {
+    return {
+      ok: false,
+      error: storageResult.error,
+    }
+  }
+
+  const metadataId = attachment.metadataId || attachment.id
+  if (!metadataId) {
+    return {
+      ok: true,
+      error: '',
+    }
+  }
+
+  const metadataResult = await deleteTransactionAttachmentMetadata(metadataId, centerId)
+
+  return metadataResult.ok
+    ? { ok: true, error: '' }
+    : { ok: false, error: metadataResult.error }
 }
 
 function setCloudUploadMessage(message, tone) {
@@ -10579,12 +11363,14 @@ function bindEvents() {
 
   document.querySelectorAll('[data-cashflow-action="cancel-form"]').forEach((button) => {
     button.addEventListener('click', () => {
-      cashflowFormState = null
+      clearCashflowAttachmentDraft()
       render()
     })
   })
 
-  document.querySelector('[data-cashflow-form]')?.addEventListener('submit', (event) => {
+  bindCashflowEvidenceControls(document)
+
+  document.querySelector('[data-cashflow-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!cashflowFormState || cashflowFormState.isSaving) {
@@ -10593,6 +11379,35 @@ function bindEvents() {
 
     const formValues = collectCashflowFormValues(event.currentTarget, cashflowFormState.values)
     const errors = validateCashflowForm(formValues)
+    const attachmentDraft = cashflowFormState.attachmentDraft || createEmptyCashflowAttachmentDraft()
+    const stagedFile = attachmentDraft.mode === 'staged-new' ? attachmentDraft.file : null
+
+    if (attachmentDraft.mode === 'loading') {
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Đang tải chứng từ. Vui lòng đợi tải xong trước khi lưu.',
+        formValues,
+      )
+      render()
+      return
+    }
+
+    if (attachmentDraft.mode === 'error') {
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Không thể tải thông tin chứng từ. Vui lòng mở lại giao dịch rồi thử lưu.',
+        formValues,
+      )
+      render()
+      return
+    }
+
+    if (stagedFile) {
+      const fileValidation = validateTransactionImageFile(stagedFile)
+      if (!fileValidation.ok) {
+        errors.attachment = fileValidation.error
+      }
+    }
 
     if (Object.keys(errors).length) {
       cashflowFormState = {
@@ -10617,10 +11432,33 @@ function bindEvents() {
       return
     }
 
+    if (
+      stagedFile &&
+      (
+        cloudStatus.configStatus !== 'configured' ||
+        cloudStatus.authStatus !== 'signed-in' ||
+        cloudStatus.membershipStatus !== 'loaded' ||
+        !isTransactionAttachmentRoleAllowed(cloudStatus.role)
+      )
+    ) {
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Không thể tải ảnh lên. Vui lòng kiểm tra đăng nhập/quyền cloud trước khi lưu chứng từ.',
+        formValues,
+      )
+      render()
+      return
+    }
+
     cashflowFormState = {
       ...cashflowFormState,
       isSaving: true,
       values: formValues,
+      attachmentDraft: {
+        ...attachmentDraft,
+        error: '',
+        isUploading: Boolean(stagedFile),
+      },
       errors: {},
     }
 
@@ -10642,10 +11480,72 @@ function bindEvents() {
       return
     }
 
+    if (
+      cashflowFormState.mode === 'edit' &&
+      String(existingTransaction.updatedAt || '') !== String(cashflowFormState.openedUpdatedAt || '')
+    ) {
+      cashflowTransactions = latestCashflowTransactions
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Giao dịch đã thay đổi từ lúc mở form. Vui lòng mở lại bản mới nhất trước khi lưu chứng từ.',
+        formValues,
+      )
+      render()
+      return
+    }
+
     const nextTransaction = buildCashflowTransactionFromForm(
-      formValues,
+      {
+        ...formValues,
+        attachment:
+          attachmentDraft.mode === 'remove-existing'
+            ? null
+            : isKeepExistingCashflowAttachmentDraft(attachmentDraft)
+              ? attachmentDraft.existingAttachment
+              : formValues.attachment,
+      },
       existingTransaction,
     )
+    const projectedTransactions =
+      cashflowFormState.mode === 'edit'
+        ? latestCashflowTransactions
+        : [nextTransaction, ...latestCashflowTransactions]
+    const transactionCode = getCashflowTransactionCodesForTransactions(projectedTransactions)[nextTransaction.id]
+    let uploadedAttachment = null
+
+    if (stagedFile) {
+      const uploadResult = await uploadStagedCashflowEvidence({
+        transaction: nextTransaction,
+        transactionCode,
+        file: stagedFile,
+        centerId: currentCenterId,
+      })
+
+      if (!uploadResult.ok) {
+        cashflowFormState = createCashflowFormErrorState(
+          {
+            ...cashflowFormState,
+            attachmentDraft: {
+              ...attachmentDraft,
+              isUploading: false,
+              error: uploadResult.error,
+            },
+          },
+          uploadResult.error || 'Không thể tải ảnh lên.',
+          formValues,
+        )
+        render()
+        return
+      }
+
+      uploadedAttachment = uploadResult.attachment
+      nextTransaction.attachment = uploadedAttachment
+    }
+
+    if (attachmentDraft.mode === 'remove-existing') {
+      delete nextTransaction.attachment
+    }
+
     const previousCashflowTransactions = latestCashflowTransactions
     let replacedCount = 0
 
@@ -10660,6 +11560,9 @@ function bindEvents() {
 
     if (cashflowFormState.mode === 'edit' && replacedCount !== 1) {
       cashflowTransactions = latestCashflowTransactions
+      if (uploadedAttachment) {
+        await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
+      }
       cashflowFormState = createCashflowFormErrorState(
         cashflowFormState,
         'Không thể cập nhật đúng một giao dịch. Vui lòng mở lại giao dịch và thử lại.',
@@ -10673,6 +11576,9 @@ function bindEvents() {
       saveStoredCashflow(cashflowTransactions)
     } catch {
       cashflowTransactions = previousCashflowTransactions
+      if (uploadedAttachment) {
+        await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
+      }
       cashflowFormState = {
         ...cashflowFormState,
         isSaving: false,
@@ -10686,7 +11592,78 @@ function bindEvents() {
       return
     }
 
-    cashflowFormState = null
+    if (
+      cashflowFormState.mode === 'edit' &&
+      uploadedAttachment &&
+      attachmentDraft.existingAttachment?.storagePath
+    ) {
+      const cleanupResult = await cleanupCloudCashflowAttachment(
+        attachmentDraft.existingAttachment,
+        currentCenterId,
+      )
+
+      if (!cleanupResult.ok) {
+        setCloudUploadMessage(
+          `Giao dịch đã lưu, nhưng chưa dọn được ảnh cũ: ${cleanupResult.error}`,
+          'error',
+        )
+      }
+    }
+
+    if (
+      cashflowFormState.mode === 'edit' &&
+      attachmentDraft.mode === 'remove-existing' &&
+      attachmentDraft.existingAttachment?.storagePath
+    ) {
+      const cleanupResult = await cleanupCloudCashflowAttachment(
+        attachmentDraft.existingAttachment,
+        currentCenterId,
+      )
+
+      if (!cleanupResult.ok) {
+        setCloudUploadMessage(
+          `Giao dịch đã gỡ chứng từ, nhưng chưa dọn được ảnh cloud: ${cleanupResult.error}`,
+          'error',
+        )
+      }
+    }
+
+    if (
+      cashflowFormState.mode === 'edit' &&
+      isKeepExistingCashflowAttachmentDraft(attachmentDraft) &&
+      attachmentDraft.source === 'cloud' &&
+      attachmentDraft.existingAttachment?.metadataId
+    ) {
+      const metadataUpdateResult = await updateTransactionAttachmentMetadata(
+        attachmentDraft.existingAttachment.metadataId,
+        {
+          centerId: currentCenterId,
+          transactionCode,
+          transactionDate: nextTransaction.transactionDate,
+          amount: nextTransaction.amount,
+          cashflowType: nextTransaction.type,
+          note: nextTransaction.note,
+        },
+      )
+
+      if (!metadataUpdateResult.ok) {
+        setCloudUploadMessage(
+          `Giao dịch đã lưu, nhưng chưa đồng bộ được metadata chứng từ: ${metadataUpdateResult.error}`,
+          'error',
+        )
+      } else {
+        await loadCurrentMonthCloudAttachments()
+      }
+    }
+
+    if (uploadedAttachment) {
+      setCloudUploadMessage('Đã lưu giao dịch kèm chứng từ.', 'success')
+      await loadCurrentMonthCloudAttachments()
+    } else if (attachmentDraft.mode === 'remove-existing') {
+      await loadCurrentMonthCloudAttachments()
+    }
+
+    clearCashflowAttachmentDraft()
     render()
   })
 
@@ -10708,7 +11685,7 @@ function bindEvents() {
         (transaction) => transaction.id !== cashflowFormState.transactionId,
       )
       saveStoredCashflow(cashflowTransactions)
-      cashflowFormState = null
+      clearCashflowAttachmentDraft()
       render()
     },
   )

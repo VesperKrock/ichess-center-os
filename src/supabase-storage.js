@@ -1,6 +1,9 @@
 import { CURRENT_CENTER_ID, getCurrentCenterMembership, getCurrentSupabaseUser } from './supabase-auth.js'
 import { getSupabaseClient } from './supabase-client.js'
-import { TRANSACTION_IMAGES_BUCKET } from './transaction-attachments.js'
+import {
+  isTransactionAttachmentRoleAllowed,
+  TRANSACTION_IMAGES_BUCKET,
+} from './transaction-attachments.js'
 
 export async function uploadTransactionImageBlob({
   centerId = CURRENT_CENTER_ID,
@@ -82,9 +85,14 @@ export async function deleteTransactionImageObject(
 
 async function runAuthorizedStorageOperation(centerId, operation) {
   const client = getSupabaseClient()
+  const normalizedCenterId = String(centerId ?? '').trim()
 
   if (!client) {
     return failure('Chưa cấu hình Supabase.')
+  }
+
+  if (!normalizedCenterId) {
+    return failure('Thieu ma co so hien tai.')
   }
 
   try {
@@ -94,10 +102,14 @@ async function runAuthorizedStorageOperation(centerId, operation) {
       return failure('Chưa đăng nhập Supabase.')
     }
 
-    const membership = await getCurrentCenterMembership(user.id, centerId)
+    const membership = await getCurrentCenterMembership(user.id, normalizedCenterId)
 
     if (!membership?.role) {
-      return failure('Tài khoản chưa được cấp quyền cho DreamHome.')
+      return failure(`Tai khoan chua duoc cap quyen cho co so ${normalizedCenterId}.`)
+    }
+
+    if (!isTransactionAttachmentRoleAllowed(membership.role)) {
+      return failure(`Role ${membership.role} khong co quyen quan ly chung tu giao dich.`)
     }
 
     return await operation(client, user, membership)

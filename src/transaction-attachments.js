@@ -2,6 +2,7 @@ import { CURRENT_CENTER_ID, getCurrentCenterMembership, getCurrentSupabaseUser }
 import { getSupabaseClient } from './supabase-client.js'
 
 export const TRANSACTION_IMAGES_BUCKET = 'transaction-images'
+const TRANSACTION_ATTACHMENT_ALLOWED_ROLES = new Set(['owner', 'center_admin'])
 const attachmentColumns =
   'id, center_id, transaction_code, transaction_date, month_key, amount, cashflow_type, note, original_name, file_name, mime_type, size_bytes, storage_bucket, storage_path, uploaded_by, uploaded_by_name, created_at'
 const legacyAttachmentColumns =
@@ -36,6 +37,12 @@ export function normalizeTransactionDate(dateInput, fallbackDate = new Date()) {
 export function getCurrentMonthKey(dateInput = new Date()) {
   const normalizedDate = normalizeTransactionDate(dateInput)
   return normalizedDate.ok ? normalizedDate.data.monthKey : ''
+}
+
+export function isTransactionAttachmentRoleAllowed(role) {
+  return TRANSACTION_ATTACHMENT_ALLOWED_ROLES.has(
+    String(role ?? '').trim().toLowerCase(),
+  )
 }
 
 export function buildTransactionCode(dateInput, sequenceNumber) {
@@ -257,11 +264,63 @@ export async function deleteTransactionAttachmentMetadata(
   })
 }
 
+export async function updateTransactionAttachmentMetadata(
+  id,
+  payload = {},
+) {
+  const attachmentId = String(id ?? '').trim()
+  const centerId = String(payload.centerId ?? CURRENT_CENTER_ID).trim()
+
+  if (!attachmentId) {
+    return failure('Thiếu id metadata attachment.')
+  }
+
+  return runAuthorizedAttachmentOperation(centerId, async (client) => {
+    const normalizedDate = normalizeTransactionDate(payload.transactionDate, null)
+
+    if (!normalizedDate.ok) {
+      return normalizedDate
+    }
+
+    const metadata = {
+      transaction_code: String(payload.transactionCode ?? '').trim(),
+      transaction_date: normalizedDate.data.dateIso,
+      month_key: normalizedDate.data.monthKey,
+      amount: normalizeNonNegativeNumber(payload.amount),
+      cashflow_type: String(payload.cashflowType ?? '').trim(),
+      note: String(payload.note ?? '').trim(),
+    }
+
+    if (!metadata.transaction_code) {
+      return failure('Thiếu mã giao dịch.')
+    }
+
+    const { data, error } = await client
+      .from('transaction_attachments')
+      .update(metadata)
+      .eq('id', attachmentId)
+      .eq('center_id', centerId)
+      .select()
+      .single()
+
+    if (error) {
+      return failure(error.message)
+    }
+
+    return success(mapTransactionAttachmentFromDatabase(data))
+  })
+}
+
 async function runAuthorizedAttachmentOperation(centerId, operation) {
   const client = getSupabaseClient()
+  const normalizedCenterId = String(centerId ?? '').trim()
 
   if (!client) {
     return failure('Chưa cấu hình Supabase.')
+  }
+
+  if (!normalizedCenterId) {
+    return failure('Thieu ma co so hien tai.')
   }
 
   try {
@@ -271,10 +330,14 @@ async function runAuthorizedAttachmentOperation(centerId, operation) {
       return failure('Chưa đăng nhập Supabase.')
     }
 
-    const membership = await getCurrentCenterMembership(user.id, centerId)
+    const membership = await getCurrentCenterMembership(user.id, normalizedCenterId)
 
     if (!membership?.role) {
       return failure(`Tài khoản chưa được cấp quyền cho cơ sở ${centerId}.`)
+    }
+
+    if (!isTransactionAttachmentRoleAllowed(membership.role)) {
+      return failure(`Role ${membership.role} khong co quyen quan ly chung tu giao dich.`)
     }
 
     return await operation(client, user, membership)

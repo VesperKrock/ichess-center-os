@@ -2,6 +2,7 @@ import { cashflowMethods } from './cashflow-data.js'
 import { getUploaderDisplayName } from './uploader-display.js'
 
 export const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
+export const CASHFLOW_EVIDENCE_ACCEPT = '.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp'
 
 export const initialCashflowFilters = {
   query: '',
@@ -47,6 +48,7 @@ export function createEmptyCashflowFormStateWithCategories(categories = [], cent
     transactionId: null,
     centerId: String(centerId || '').trim(),
     isSaving: false,
+    attachmentDraft: createEmptyCashflowAttachmentDraft(),
     values: {
       ...emptyCashflowFormValues,
       category: defaultCategory,
@@ -56,13 +58,22 @@ export function createEmptyCashflowFormStateWithCategories(categories = [], cent
   }
 }
 
-export function createEditCashflowFormState(transaction, centerId = '') {
+export function createEditCashflowFormState(
+  transaction,
+  centerId = '',
+  { hydrateAttachment = false } = {},
+) {
+  const legacyAttachment = normalizeCashflowAttachment(transaction.attachment)
+
   return {
     mode: 'edit',
     transactionId: transaction.id,
     centerId: String(centerId || '').trim(),
     openedUpdatedAt: transaction.updatedAt || '',
     isSaving: false,
+    attachmentDraft: hydrateAttachment
+      ? createLoadingCashflowAttachmentDraft(legacyAttachment)
+      : createCashflowAttachmentDraftFromExisting(legacyAttachment),
     values: {
       type: transaction.type ?? 'income',
       category: transaction.category ?? 'Khác',
@@ -72,9 +83,57 @@ export function createEditCashflowFormState(transaction, centerId = '') {
       personName: transaction.personName ?? '',
       recordedBy: transaction.recordedBy ?? 'Admin DreamHome',
       note: transaction.note ?? '',
-      attachment: normalizeCashflowAttachment(transaction.attachment),
+      attachment: legacyAttachment,
     },
     errors: {},
+  }
+}
+
+export function createEmptyCashflowAttachmentDraft() {
+  return {
+    mode: 'none',
+    fileName: '',
+    mimeType: '',
+    sizeBytes: 0,
+    objectUrl: '',
+    existingAttachment: null,
+    source: '',
+    error: '',
+    isUploading: false,
+  }
+}
+
+export function createCashflowAttachmentDraftFromExisting(attachment, source = 'legacy') {
+  const existingAttachment = normalizeCashflowAttachment(attachment)
+
+  return {
+    ...createEmptyCashflowAttachmentDraft(),
+    mode: existingAttachment ? `keep-existing-${source}` : 'none',
+    existingAttachment,
+    source: existingAttachment ? source : '',
+  }
+}
+
+export function createLoadingCashflowAttachmentDraft(legacyAttachment = null) {
+  const existingAttachment = normalizeCashflowAttachment(legacyAttachment)
+
+  return {
+    ...createEmptyCashflowAttachmentDraft(),
+    mode: 'loading',
+    existingAttachment,
+    source: existingAttachment ? 'legacy' : '',
+  }
+}
+
+export function createErrorCashflowAttachmentDraft(error, legacyAttachment = null) {
+  const existingAttachment = normalizeCashflowAttachment(legacyAttachment)
+
+  return {
+    ...createEmptyCashflowAttachmentDraft(),
+    mode: existingAttachment ? 'keep-existing-legacy' : 'error',
+    existingAttachment,
+    source: existingAttachment ? 'legacy' : '',
+    error: String(error || 'Không thể tải thông tin chứng từ'),
   }
 }
 
@@ -667,6 +726,7 @@ function renderCashflowForm(formState, categories = []) {
           )}
           ${renderInputField('Người liên quan', 'personName', formState, 'text', 'Phụ huynh, giáo viên, nhà cung cấp')}
           ${renderInputField('Người ghi nhận', 'recordedBy', formState)}
+          ${renderEvidenceField(formState)}
           <label class="cashflow-field cashflow-field-wide">
             <span>Ghi chú</span>
             <textarea data-cashflow-form-field="note" ${disabledAttribute}>${escapeHtml(formState.values.note ?? '')}</textarea>
@@ -685,6 +745,90 @@ function renderCashflowForm(formState, categories = []) {
           </div>
         </div>
       </form>
+    </div>
+  `
+}
+
+function renderEvidenceField(formState) {
+  const draft = formState.attachmentDraft || createEmptyCashflowAttachmentDraft()
+  const fieldError = formState.errors.attachment || draft.error
+  const disabledAttribute = formState.isSaving ? 'disabled' : ''
+  const hasStaged = draft.mode === 'staged-new' && draft.objectUrl
+  const hasExisting = isKeepExistingAttachmentDraft(draft) && draft.existingAttachment
+  const isRemoved = draft.mode === 'remove-existing'
+  const isLoading = draft.mode === 'loading'
+  const isError = draft.mode === 'error'
+  const summary = hasStaged
+    ? {
+        name: draft.fileName || 'anh-giao-dich',
+        type: draft.mimeType || 'image/*',
+        size: draft.sizeBytes,
+        imageUrl: draft.objectUrl,
+        status: 'Ảnh mới, sẽ tải lên khi lưu',
+      }
+    : hasExisting
+      ? {
+          name: getAttachmentDisplayName(draft.existingAttachment),
+          type: draft.existingAttachment.mimeType || draft.existingAttachment.type || 'image/*',
+          size: draft.existingAttachment.sizeBytes || draft.existingAttachment.size || 0,
+          imageUrl: draft.existingAttachment.dataUrl || draft.existingAttachment.signedUrl || '',
+          status: draft.source === 'cloud' ? 'Có chứng từ' : 'Chứng từ legacy hiện có',
+        }
+      : null
+
+  return `
+    <div class="cashflow-field cashflow-evidence-field ${fieldError ? 'has-error' : ''}" data-cashflow-evidence-field>
+      <span>Chứng từ</span>
+      <input
+        type="file"
+        accept="${escapeAttribute(CASHFLOW_EVIDENCE_ACCEPT)}"
+        data-cashflow-evidence-input
+        tabindex="-1"
+        ${disabledAttribute}
+      />
+      ${
+        summary
+          ? `
+            <div class="cashflow-evidence-preview" data-cashflow-evidence-preview>
+              ${
+                summary.imageUrl
+                  ? `<img src="${escapeAttribute(summary.imageUrl)}" alt="${escapeAttribute(summary.name)}" />`
+                  : '<div class="cashflow-evidence-thumb" aria-hidden="true">IMG</div>'
+              }
+              <div>
+                <strong title="${escapeAttribute(summary.name)}">${escapeHtml(summary.name)}</strong>
+                <small>${escapeHtml(summary.type)} · ${formatFileSize(summary.size)}</small>
+                <small>${escapeHtml(summary.status)}</small>
+              </div>
+              <div class="cashflow-evidence-actions">
+                <button type="button" data-cashflow-evidence-action="preview" ${disabledAttribute}>Xem trước</button>
+                <button type="button" data-cashflow-evidence-action="replace" ${disabledAttribute}>Thay ảnh</button>
+                <button type="button" data-cashflow-evidence-action="remove" ${disabledAttribute}>Gỡ</button>
+              </div>
+            </div>
+          `
+          : isLoading
+            ? `
+            <div class="cashflow-evidence-empty is-loading" data-cashflow-evidence-preview>
+              <button type="button" data-cashflow-evidence-action="insert" disabled>Chèn ảnh</button>
+              <small>Đang tải chứng từ...</small>
+            </div>
+          `
+            : isError
+              ? `
+            <div class="cashflow-evidence-empty is-error" data-cashflow-evidence-preview>
+              <button type="button" data-cashflow-evidence-action="insert" disabled>Chèn ảnh</button>
+              <small>Không thể tải thông tin chứng từ</small>
+            </div>
+          `
+              : `
+            <div class="cashflow-evidence-empty" data-cashflow-evidence-preview>
+              <button type="button" data-cashflow-evidence-action="insert" ${disabledAttribute}>Chèn ảnh</button>
+              <small>${isRemoved ? 'Chứng từ sẽ được gỡ khi lưu.' : 'Không có chứng từ'}</small>
+            </div>
+          `
+      }
+      ${fieldError ? `<small>${escapeHtml(fieldError)}</small>` : ''}
     </div>
   `
 }
@@ -848,6 +992,10 @@ function renderAttachmentField(formState) {
 
 function renderFieldError(error) {
   return error ? `<small>${escapeHtml(error)}</small>` : ''
+}
+
+function isKeepExistingAttachmentDraft(draft) {
+  return ['keep-existing', 'keep-existing-cloud', 'keep-existing-legacy'].includes(draft?.mode)
 }
 
 function renderFormErrors(errors) {
@@ -1217,24 +1365,51 @@ function normalizeCashflowAttachment(attachment) {
   }
 
   const dataUrl = String(attachment.dataUrl ?? '')
-  const type = String(attachment.type ?? '')
-  const size = Number(attachment.size || 0)
+  const type = String(attachment.type ?? attachment.mimeType ?? '')
+  const size = Number(attachment.size ?? attachment.sizeBytes ?? 0)
+  const storagePath = String(attachment.storagePath ?? '')
 
-  if (!type.startsWith('image/') || !dataUrl.startsWith('data:image/') || size > CASHFLOW_ATTACHMENT_MAX_SIZE) {
+  if (!type.startsWith('image/')) {
+    return null
+  }
+
+  if (dataUrl) {
+    if (!dataUrl.startsWith('data:image/') || size > CASHFLOW_ATTACHMENT_MAX_SIZE) {
+      return null
+    }
+
+    return {
+      ...attachment,
+      id: String(attachment.id || `attachment-${Date.now()}`),
+      name: String(attachment.name || attachment.fileName || attachment.originalName || 'anh-giao-dich'),
+      type,
+      size: Number.isFinite(size) ? size : 0,
+      dataUrl,
+      createdAt: attachment.createdAt || attachment.uploadedAt || new Date().toISOString(),
+    }
+  }
+
+  if (!storagePath || storagePath.includes('\\') || storagePath.includes('//')) {
     return null
   }
 
   return {
+    ...attachment,
     id: String(attachment.id || `attachment-${Date.now()}`),
-    name: String(attachment.name || 'anh-giao-dich'),
+    name: String(attachment.name || attachment.fileName || attachment.originalName || 'anh-giao-dich'),
     type,
+    mimeType: type,
     size: Number.isFinite(size) ? size : 0,
-    dataUrl,
-    createdAt: attachment.createdAt || new Date().toISOString(),
+    sizeBytes: Number.isFinite(size) ? size : 0,
+    storagePath,
+    storageBucket: String(attachment.storageBucket || 'transaction-images'),
+    transactionCode: String(attachment.transactionCode || ''),
+    metadataId: String(attachment.metadataId || attachment.id || ''),
+    createdAt: attachment.createdAt || attachment.uploadedAt || new Date().toISOString(),
   }
 }
 
-function formatFileSize(size) {
+export function formatFileSize(size) {
   const numberSize = Number(size || 0)
 
   if (numberSize >= 1024 * 1024) {
@@ -1242,6 +1417,15 @@ function formatFileSize(size) {
   }
 
   return `${Math.max(1, Math.round(numberSize / 1024)).toLocaleString('vi-VN')} KB`
+}
+
+function getAttachmentDisplayName(attachment) {
+  return String(
+    attachment?.fileName ||
+      attachment?.name ||
+      attachment?.originalName ||
+      'Ảnh giao dịch',
+  )
 }
 
 function getSourceBadgeLabel(sourceModule) {
