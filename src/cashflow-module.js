@@ -1430,7 +1430,7 @@ function getAttachmentDisplayName(attachment) {
 
 function getSourceBadgeLabel(sourceModule) {
   const labels = {
-    'hoc-phi': 'Từ Học phí',
+    'hoc-phi': 'Đồng bộ từ Học phí',
     'kho-hang': 'Từ Kho hàng',
   }
 

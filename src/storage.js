@@ -1766,9 +1766,12 @@ function normalizeCashflowTransactions(transactions) {
       sourcePaymentId: String(transaction.sourcePaymentId || ''),
       sourceTuitionId: String(transaction.sourceTuitionId || ''),
       sourceStudentId: String(transaction.sourceStudentId || ''),
+      sourceParentId: String(transaction.sourceParentId || ''),
       sourceTermId: String(transaction.sourceTermId || ''),
+      sourcePeriodId: String(transaction.sourcePeriodId || transaction.sourceTermId || ''),
       sourceMovementId: String(transaction.sourceMovementId || ''),
       sourceItemId: String(transaction.sourceItemId || ''),
+      status: String(transaction.status || 'active'),
       createdAt: transaction.createdAt || new Date().toISOString(),
       updatedAt: transaction.updatedAt || transaction.createdAt || new Date().toISOString(),
     }

@@ -3,6 +3,7 @@ import {
   buildAttendanceAdvisoryRows,
   getCurrentMonthKey,
 } from './attendance-advisory.js'
+import { CASHFLOW_EVIDENCE_ACCEPT, formatFileSize } from './cashflow-module.js'
 import { getStudentAttendanceCredits } from './attendance-records.js'
 import { buildStudentTuitionLink } from './student-tuition-links.js'
 
@@ -135,18 +136,39 @@ export function createRenewTuitionFormState(student, tuitionRecord) {
 }
 
 export function createPaymentFormState(student, tuitionRecord, mode = 'collect') {
+  const amounts = calculateTuitionAmounts(tuitionRecord)
+  const paymentId = `payment-${tuitionRecord.id}-${getCurrentTuitionPeriodId(tuitionRecord)}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
   return {
     mode,
     studentId: student.id,
     tuitionId: tuitionRecord.id,
+    centerId: '',
+    periodId: getCurrentTuitionPeriodId(tuitionRecord),
+    sourcePaymentId: paymentId,
+    isSaving: false,
+    attachmentDraft: createEmptyTuitionPaymentAttachmentDraft(),
     values: {
-      amount: '',
+      amount: mode === 'history' ? '' : formatMoneyInput(amounts.remainingDebt),
       paidAt: getTodayInputValue(),
       method: 'cash',
-      collectorName: 'Admin DreamHome',
+      payerName: student.parentName || '',
+      collectorName: 'Admin',
       note: '',
     },
     errors: {},
+  }
+}
+
+export function createEmptyTuitionPaymentAttachmentDraft() {
+  return {
+    mode: 'none',
+    fileName: '',
+    mimeType: '',
+    sizeBytes: 0,
+    objectUrl: '',
+    error: '',
+    isUploading: false,
   }
 }
 
@@ -164,8 +186,9 @@ export function renderTuitionModule(
   attendanceRecords = [],
   careNoteState = null,
   advisoryWindowState = null,
+  cashflowTransactions = [],
 ) {
-  const rows = buildTuitionRows(students, tuitionRecords, attendanceRecords)
+  const rows = buildTuitionRows(students, tuitionRecords, attendanceRecords, cashflowTransactions)
   const visibleRows = filterTuitionRows(rows, filters)
   const stats = getTuitionStats(rows)
   const formStudent = formState ? students.find((student) => student.id === formState.studentId) : null
@@ -264,13 +287,13 @@ export function renderTuitionModule(
         </div>
         ${renderAttendanceAdvisoryEntry(advisoryRows, advisoryMonthKey)}
       </div>
-      ${formState && formStudent ? renderTuitionForm(formStudent, formState) : ''}
+      ${formState && formStudent ? renderTuitionForm(formStudent, formState, cashflowTransactions) : ''}
       ${
         paymentFormState && paymentStudent && paymentTuition
-          ? renderPaymentForm(paymentStudent, paymentTuition, paymentFormState)
+          ? renderPaymentForm(paymentStudent, paymentTuition, paymentFormState, cashflowTransactions)
           : ''
       }
-      ${detailState && detailStudent ? renderTuitionDetailPanel(detailStudent, detailTuition, detailRow?.attendanceTuitionPreview) : ''}
+      ${detailState && detailStudent ? renderTuitionDetailPanel(detailStudent, detailTuition, detailRow?.attendanceTuitionPreview, cashflowTransactions) : ''}
       ${rollbackPreviewState ? renderRollbackPreviewPanel(rollbackPreviewState) : ''}
       ${careNoteStudent ? renderTuitionCareNotePanel(careNoteStudent, careNoteState) : ''}
       ${hasAdvisoryWindow ? renderAttendanceAdvisoryWindow(advisoryRows, advisoryMonthKey) : ''}
@@ -387,7 +410,12 @@ function renderAttendanceAdvisoryRow(row) {
   `
 }
 
-export function buildTuitionRows(students, tuitionRecords, attendanceRecords = []) {
+export function buildTuitionRows(
+  students,
+  tuitionRecords,
+  attendanceRecords = [],
+  cashflowTransactions = [],
+) {
   const tuitionByStudentId = new Map(tuitionRecords.map((record) => [record.studentId, record]))
   const attendancePreviewByStudentId = buildTuitionAttendancePreviewMap(attendanceRecords)
 
@@ -423,7 +451,8 @@ export function buildTuitionRows(students, tuitionRecords, attendanceRecords = [
     }
 
     const remainingSessions = tuition.totalSessions - tuition.usedSessions
-    const debtAmount = getTuitionDebtAmount(tuition)
+    const amounts = calculateTuitionAmounts(tuition, cashflowTransactions)
+    const debtAmount = amounts.remainingDebt
     const status = getTuitionWarningStatus(remainingSessions)
     const packageKind = getPackageKind(tuition.totalSessions)
 
@@ -432,6 +461,7 @@ export function buildTuitionRows(students, tuitionRecords, attendanceRecords = [
       tuition,
       careNotes: getStudentCareNotes(student),
       packageKind,
+      amounts,
       status,
       remainingSessions,
       debtAmount,
@@ -634,8 +664,8 @@ export function getTuitionPayableAmount(tuitionRecord) {
   return calculateTuitionAmounts(tuitionRecord).payableAmount
 }
 
-export function getTuitionDebtAmount(tuitionRecord) {
-  return calculateTuitionAmounts(tuitionRecord).remainingDebt
+export function getTuitionDebtAmount(tuitionRecord, cashflowTransactions = null) {
+  return calculateTuitionAmounts(tuitionRecord, cashflowTransactions).remainingDebt
 }
 
 export function getTuitionOverpaidAmount(tuitionRecord) {
@@ -643,7 +673,7 @@ export function getTuitionOverpaidAmount(tuitionRecord) {
   return Math.max(amounts.paidAmount - amounts.payableAmount, 0)
 }
 
-export function calculateTuitionAmounts(tuitionRecord = {}) {
+export function calculateTuitionAmounts(tuitionRecord = {}, cashflowTransactions = null) {
   const tuitionAmount = normalizeSafeNumber(tuitionRecord.totalAmount)
   const discountType = normalizeDiscountType(tuitionRecord.discountType, tuitionRecord.discountAmount)
   const rawDiscountValue =
@@ -661,14 +691,24 @@ export function calculateTuitionAmounts(tuitionRecord = {}) {
       : discountValue
   const discountAmount = Math.min(Math.max(calculatedDiscount, 0), tuitionAmount)
   const payableAmount = Math.max(tuitionAmount - discountAmount, 0)
-  const paymentTotal = Array.isArray(tuitionRecord.payments)
-    ? tuitionRecord.payments.reduce(
-        (total, payment) => total + normalizeSafeNumber(payment?.amount),
-        0,
-      )
-    : 0
-  const paidAmount = Math.max(normalizeSafeNumber(tuitionRecord.paidAmount), paymentTotal)
+  const hasLedgerSource = Array.isArray(cashflowTransactions)
+  const paymentTotal = hasLedgerSource
+    ? getLinkedTuitionPaymentTransactions(
+        cashflowTransactions,
+        tuitionRecord.id,
+        getCurrentTuitionPeriodId(tuitionRecord),
+      ).reduce((total, transaction) => total + normalizeSafeNumber(transaction.amount), 0)
+    : Array.isArray(tuitionRecord.payments)
+      ? tuitionRecord.payments.reduce(
+          (total, payment) => total + normalizeSafeNumber(payment?.amount),
+          0,
+        )
+      : 0
+  const paidAmount = hasLedgerSource
+    ? paymentTotal
+    : Math.max(normalizeSafeNumber(tuitionRecord.paidAmount), paymentTotal)
   const remainingDebt = Math.max(payableAmount - paidAmount, 0)
+  const legacyPaidAmount = normalizeSafeNumber(tuitionRecord.paidAmount)
 
   return {
     tuitionAmount,
@@ -678,7 +718,68 @@ export function calculateTuitionAmounts(tuitionRecord = {}) {
     payableAmount,
     paidAmount,
     remainingDebt,
+    legacyPaidAmount,
+    hasLedgerSource,
   }
+}
+
+export function getCurrentTuitionPeriodId(tuitionRecord = {}) {
+  return String(
+    tuitionRecord.currentTermId ||
+      `term-${tuitionRecord.id || tuitionRecord.studentId || 'unknown'}-${tuitionRecord.currentTermNumber || 1}`,
+  )
+}
+
+export function isTuitionPaymentTransaction(transaction, tuitionId, periodId) {
+  if (!transaction || transaction.type !== 'income') {
+    return false
+  }
+
+  if (String(transaction.sourceModule || '') !== 'hoc-phi') {
+    return false
+  }
+
+  if (String(transaction.sourceType || '') !== 'tuition-payment') {
+    return false
+  }
+
+  if (String(transaction.sourceTuitionId || '') !== String(tuitionId || '')) {
+    return false
+  }
+
+  if (String(transaction.sourceTermId || '') !== String(periodId || '')) {
+    return false
+  }
+
+  if (['voided', 'refunded', 'reversed'].includes(String(transaction.status || ''))) {
+    return false
+  }
+
+  return normalizeSafeNumber(transaction.amount) > 0
+}
+
+export function getLinkedTuitionPaymentTransactions(
+  cashflowTransactions = [],
+  tuitionId,
+  periodId,
+) {
+  return (Array.isArray(cashflowTransactions) ? cashflowTransactions : []).filter((transaction) =>
+    isTuitionPaymentTransaction(transaction, tuitionId, periodId),
+  )
+}
+
+export function hasUnreconciledLegacyTuitionPaidAmount(
+  tuitionRecord = {},
+  cashflowTransactions = [],
+) {
+  return (
+    normalizeSafeNumber(tuitionRecord.paidAmount) > 0 &&
+    getLinkedTuitionPaymentTransactions(
+      cashflowTransactions,
+      tuitionRecord.id,
+      getCurrentTuitionPeriodId(tuitionRecord),
+    ).length === 0
+  )
 }
 
 export function normalizeTuitionFormValues(values) {
@@ -695,7 +796,7 @@ export function normalizeTuitionFormValues(values) {
     discountType: discount.type,
     discountValue: discount.value,
     discountAmount: discount.amount,
-    paidAmount: normalizeMoney(values.paidAmount),
+    paidAmount: 0,
     dueDate: String(values.dueDate || '').trim(),
     note: String(values.note || '').trim(),
   }
@@ -739,10 +840,6 @@ export function validateTuitionForm(values) {
     errors.discountAmount = 'Ưu đãi không nên lớn hơn học phí.'
   }
 
-  if (!Number.isFinite(normalizedValues.paidAmount) || normalizedValues.paidAmount < 0) {
-    errors.paidAmount = 'Số tiền đã đóng không hợp lệ.'
-  }
-
   return errors
 }
 
@@ -766,6 +863,7 @@ export function normalizePaymentFormValues(values) {
     amount: normalizeMoney(values.amount),
     paidAt: String(values.paidAt || '').trim(),
     method: ['cash', 'transfer', 'other'].includes(values.method) ? values.method : 'other',
+    payerName: String(values.payerName || '').trim(),
     collectorName: String(values.collectorName || '').trim(),
     note: String(values.note || '').trim(),
   }
@@ -774,8 +872,9 @@ export function normalizePaymentFormValues(values) {
 export function validatePaymentForm(values) {
   const normalizedValues = normalizePaymentFormValues(values)
   const errors = {}
+  const rawAmount = String(values.amount ?? '').trim()
 
-  if (!Number.isFinite(normalizedValues.amount) || normalizedValues.amount <= 0) {
+  if (/^-/.test(rawAmount) || !Number.isFinite(normalizedValues.amount) || normalizedValues.amount <= 0) {
     errors.amount = 'Số tiền đóng phải lớn hơn 0.'
   }
 
@@ -785,6 +884,10 @@ export function validatePaymentForm(values) {
 
   if (!normalizedValues.collectorName) {
     errors.collectorName = 'Cần nhập người thu.'
+  }
+
+  if (!normalizedValues.payerName) {
+    errors.payerName = 'Cần nhập người nộp.'
   }
 
   return errors
@@ -808,12 +911,12 @@ function renderTuitionRow(row) {
   const tuition = row.tuition
   const compactStudentName = getCompactStudentName(row.student.fullName)
   const careNotes = Array.isArray(row.careNotes) ? row.careNotes : []
-  const hasOverpayment = tuition ? getTuitionOverpaidAmount(tuition) > 0 : false
+  const hasOverpayment = tuition ? Math.max((row.amounts?.paidAmount || 0) - (row.amounts?.payableAmount || 0), 0) > 0 : false
   const conflictMarker = tuition?.conflictMarker || null
   const hasSyncConflict = Boolean(tuition?.syncConflict || conflictMarker?.syncConflict)
   const rowTitle = tuition ? 'Bấm để cập nhật gói học phí' : 'Bấm để gán gói học phí'
   const termNumber = tuition?.currentTermNumber || 1
-  const amounts = tuition ? calculateTuitionAmounts(tuition) : null
+  const amounts = tuition ? row.amounts || calculateTuitionAmounts(tuition) : null
   const familyLink = row.familyTuitionLink
 
   return `
@@ -1194,11 +1297,23 @@ function renderTuitionCareBadges(link) {
   `
 }
 
-function renderTuitionForm(student, formState) {
+function renderTuitionForm(student, formState, cashflowTransactions = []) {
   const isEdit = formState.mode === 'edit'
   const isRenew = formState.mode === 'renew'
   const { values, errors } = formState
-  const discountPreview = getDiscountPreview(values)
+  const baseDiscountPreview = getDiscountPreview(values)
+  const ledgerPaidAmount =
+    (isEdit || isRenew) && formState.record
+      ? calculateTuitionAmounts(formState.record, cashflowTransactions).paidAmount
+      : 0
+  const discountPreview =
+    isEdit || isRenew
+      ? {
+          ...baseDiscountPreview,
+          paidAmount: ledgerPaidAmount,
+          remainingDebt: Math.max(baseDiscountPreview.payableAmount - ledgerPaidAmount, 0),
+        }
+      : baseDiscountPreview
 
   return `
     <div class="tuition-form-backdrop" data-tuition-action="cancel-form"></div>
@@ -1210,7 +1325,7 @@ function renderTuitionForm(student, formState) {
         </div>
         <button type="button" data-tuition-action="cancel-form" aria-label="Đóng form">X</button>
       </div>
-      ${isEdit || isRenew ? renderCurrentTermSummary(formState.record) : ''}
+      ${isEdit || isRenew ? renderCurrentTermSummary(formState.record, cashflowTransactions) : ''}
       ${
         isRenew && formState.record && getTuitionOverpaidAmount(formState.record) > 0
           ? '<p class="tuition-payment-warning">Kỳ hiện tại có khoản đóng dư. Vui lòng nhập thủ công số tiền muốn ghi nhận cho kỳ mới.</p>'
@@ -1239,7 +1354,7 @@ function renderTuitionForm(student, formState) {
         ${renderDiscountPresetField(values, errors)}
         ${renderDiscountCustomField(values, errors)}
         ${renderDiscountPreview(discountPreview)}
-        ${renderTextField('paidAmount', isRenew ? 'Đã thanh toán ban đầu' : 'Đã thanh toán', values.paidAmount, errors.paidAmount)}
+        ${isEdit || isRenew ? renderReadOnlyPaidAmountNote(formState.record, cashflowTransactions) : ''}
         ${renderTextField('dueDate', 'Hạn đóng / ngày nhắc', values.dueDate, errors.dueDate, 'date')}
         <label class="span-full ${errors.note ? 'has-error' : ''}">
           <span>Ghi chú</span>
@@ -1263,12 +1378,12 @@ function renderTuitionForm(student, formState) {
   `
 }
 
-function renderCurrentTermSummary(tuitionRecord) {
+function renderCurrentTermSummary(tuitionRecord, cashflowTransactions = []) {
   if (!tuitionRecord) {
     return ''
   }
 
-  const amounts = calculateTuitionAmounts(tuitionRecord)
+  const amounts = calculateTuitionAmounts(tuitionRecord, cashflowTransactions)
 
   return `
     <section class="tuition-term-summary" aria-label="Kỳ hiện tại">
@@ -1282,6 +1397,18 @@ function renderCurrentTermSummary(tuitionRecord) {
       </div>
       ${renderTuitionFormula(amounts)}
     </section>
+  `
+}
+
+function renderReadOnlyPaidAmountNote(tuitionRecord, cashflowTransactions = []) {
+  const amounts = calculateTuitionAmounts(tuitionRecord, cashflowTransactions)
+
+  return `
+    <div class="tuition-paid-readonly">
+      <span>Đã thanh toán</span>
+      <strong>${formatMoney(amounts.paidAmount)}</strong>
+      <small>Tính từ các lần ghi nhận thanh toán trong Thu chi.</small>
+    </div>
   `
 }
 
@@ -1346,51 +1473,69 @@ function renderTermPayments(payments) {
   `
 }
 
-function renderPaymentForm(student, tuitionRecord, formState) {
+function renderPaymentForm(student, tuitionRecord, formState, cashflowTransactions = []) {
   const { values, errors } = formState
-  const amounts = calculateTuitionAmounts(tuitionRecord)
+  const amounts = calculateTuitionAmounts(tuitionRecord, cashflowTransactions)
   const debtAmount = amounts.remainingDebt
-  const overpaidAmount = getTuitionOverpaidAmount(tuitionRecord)
+  const overpaidAmount = Math.max(amounts.paidAmount - amounts.payableAmount, 0)
   const isHistoryOnly = formState.mode === 'history'
   const normalizedPayment = normalizePaymentFormValues(values)
   const isOverDebt = Number.isFinite(normalizedPayment.amount) && normalizedPayment.amount > debtAmount
+  const hasLegacyUnreconciled = hasUnreconciledLegacyTuitionPaidAmount(
+    tuitionRecord,
+    cashflowTransactions,
+  )
+  const linkedPayments = getLinkedTuitionPaymentTransactions(
+    cashflowTransactions,
+    tuitionRecord.id,
+    getCurrentTuitionPeriodId(tuitionRecord),
+  )
+  const disableSave = Boolean(formState.isSaving || debtAmount <= 0 || hasLegacyUnreconciled)
 
   return `
     <div class="tuition-form-backdrop" data-tuition-payment-action="cancel-payment"></div>
     <form class="tuition-form-panel tuition-payment-panel" ${isHistoryOnly ? '' : 'data-tuition-payment-form'}>
       <div class="tuition-form-header">
         <div>
-          <h4>${isHistoryOnly ? 'Lịch sử thanh toán' : 'Ghi nhận đóng tiền'}</h4>
-          <p>${escapeHtml(student.fullName)} · ${escapeHtml(tuitionRecord.packageName)} · ${escapeHtml(student.parentPhone || 'Chưa có SĐT')}</p>
+          <h4>${isHistoryOnly ? 'Thông tin thanh toán học phí' : 'Ghi nhận thanh toán học phí'}</h4>
+          <p>${escapeHtml(student.fullName)} · ${escapeHtml(student.parentName || 'Chưa có phụ huynh')} · ${escapeHtml(tuitionRecord.packageName)} · Kỳ ${tuitionRecord.currentTermNumber || 1}</p>
         </div>
         <button type="button" data-tuition-payment-action="cancel-payment" aria-label="Đóng form">X</button>
       </div>
       ${renderTuitionFormula(amounts)}
+      <p class="tuition-ledger-note">Đã thanh toán và Còn nợ được tính từ giao dịch Thu chi liên kết.</p>
       ${
         overpaidAmount > 0
           ? `<p class="tuition-payment-warning">Khoản dư ${formatMoney(overpaidAmount)} cần xử lý khi tái đăng ký/gia hạn gói ở phase sau.</p>`
           : ''
       }
       ${
+        hasLegacyUnreconciled
+          ? '<p class="tuition-payment-warning">Kỳ này có số tiền đã thanh toán cũ chưa được đối soát với Thu chi. F23.8D sẽ xử lý lịch sử/backfill trước khi ghi nhận thêm.</p>'
+          : ''
+      }
+      ${
         isOverDebt
-          ? '<p class="tuition-payment-warning">Số tiền đóng lớn hơn khoản còn nợ. Khoản dư nên được xử lý bằng tái đăng ký/gia hạn gói ở phase sau.</p>'
+          ? '<p class="tuition-payment-warning">Số tiền thanh toán lớn hơn khoản còn nợ. Vui lòng nhập lại, F23.8C chưa hỗ trợ đóng dư.</p>'
           : ''
       }
       ${
         isHistoryOnly
-          ? '<p class="tuition-payment-empty">Học viên không còn nợ. Panel này chỉ hiển thị lịch sử thanh toán.</p>'
+          ? '<p class="tuition-payment-empty">Học viên không còn nợ. Panel này chỉ hiển thị trạng thái thanh toán từ Thu chi.</p>'
           : `
             <div class="tuition-form-grid">
-              ${renderTextField('amount', 'Số tiền đóng lần này', values.amount, errors.amount, 'text', 'payment')}
-              ${renderTextField('paidAt', 'Ngày đóng', values.paidAt, errors.paidAt, 'date', 'payment')}
+              ${renderTextField('amount', 'Số tiền', values.amount, errors.amount, 'text', 'payment')}
+              ${renderTextField('paidAt', 'Ngày thanh toán', values.paidAt, errors.paidAt, 'date', 'payment')}
               <label class="${errors.method ? 'has-error' : ''}">
-                <span>Hình thức thanh toán</span>
+                <span>Phương thức</span>
                 <select data-tuition-payment-field="method">
                   ${renderOptions(paymentMethodOptions, values.method)}
                 </select>
                 ${errors.method ? `<small>${errors.method}</small>` : ''}
               </label>
-              ${renderTextField('collectorName', 'Người thu', values.collectorName, errors.collectorName, 'text', 'payment')}
+              ${renderTextField('payerName', 'Người nộp', values.payerName, errors.payerName, 'text', 'payment')}
+              ${renderTextField('collectorName', 'Người ghi nhận', values.collectorName, errors.collectorName, 'text', 'payment')}
+              ${renderTuitionPaymentEvidenceField(formState)}
               <label class="span-full ${errors.note ? 'has-error' : ''}">
                 <span>Ghi chú</span>
                 <textarea data-tuition-payment-field="note">${escapeHtml(values.note)}</textarea>
@@ -1399,20 +1544,25 @@ function renderPaymentForm(student, tuitionRecord, formState) {
             </div>
           `
       }
-      <section class="tuition-payment-history" aria-label="Lịch sử thanh toán">
-        <h5>Lịch sử thanh toán</h5>
-        ${renderPaymentHistory(tuitionRecord.payments ?? [])}
+      <section class="tuition-payment-history" aria-label="Thanh toán đã ghi nhận từ Thu chi">
+        <h5>Thanh toán đã ghi nhận từ Thu chi</h5>
+        ${renderLedgerPaymentList(linkedPayments)}
       </section>
       ${renderTermHistory(tuitionRecord.termHistory ?? [])}
       <div class="tuition-form-actions">
         <button type="button" data-tuition-payment-action="cancel-payment">${isHistoryOnly ? 'Đóng' : 'Hủy'}</button>
-        ${isHistoryOnly ? '' : '<button type="submit" data-tuition-payment-action="save-payment">Lưu thanh toán</button>'}
+        ${isHistoryOnly ? '' : `<button type="submit" data-tuition-payment-action="save-payment" ${disableSave ? 'disabled' : ''}>${formState.isSaving ? 'Đang lưu...' : 'Lưu thanh toán'}</button>`}
       </div>
     </form>
   `
 }
 
-function renderTuitionDetailPanel(student, tuitionRecord, attendanceTuitionPreview = null) {
+function renderTuitionDetailPanel(
+  student,
+  tuitionRecord,
+  attendanceTuitionPreview = null,
+  cashflowTransactions = [],
+) {
   return `
     <div class="tuition-form-backdrop" data-tuition-detail-action="close-detail"></div>
     <section class="tuition-form-panel tuition-detail-panel" aria-label="Chi tiết học phí">
@@ -1425,7 +1575,7 @@ function renderTuitionDetailPanel(student, tuitionRecord, attendanceTuitionPrevi
       </div>
       ${
         tuitionRecord
-          ? renderTuitionDetailContent(tuitionRecord, attendanceTuitionPreview)
+          ? renderTuitionDetailContent(tuitionRecord, attendanceTuitionPreview, cashflowTransactions)
           : `
             <div class="tuition-detail-empty">
               <strong>Học viên này chưa có gói học phí.</strong>
@@ -1440,11 +1590,20 @@ function renderTuitionDetailPanel(student, tuitionRecord, attendanceTuitionPrevi
   `
 }
 
-function renderTuitionDetailContent(tuitionRecord, attendanceTuitionPreview = null) {
+function renderTuitionDetailContent(
+  tuitionRecord,
+  attendanceTuitionPreview = null,
+  cashflowTransactions = [],
+) {
   const remainingSessions = tuitionRecord.totalSessions - tuitionRecord.usedSessions
-  const amounts = calculateTuitionAmounts(tuitionRecord)
-  const overpaidAmount = getTuitionOverpaidAmount(tuitionRecord)
+  const amounts = calculateTuitionAmounts(tuitionRecord, cashflowTransactions)
+  const overpaidAmount = Math.max(amounts.paidAmount - amounts.payableAmount, 0)
   const status = getTuitionWarningStatus(remainingSessions)
+  const hasLegacyUnreconciled = hasUnreconciledLegacyTuitionPaidAmount(
+    tuitionRecord,
+    cashflowTransactions,
+  )
+  const canCollectPayment = amounts.remainingDebt > 0 && !hasLegacyUnreconciled
 
   return `
     <section class="tuition-detail-overview" aria-label="Tổng quan kỳ hiện tại">
@@ -1459,6 +1618,24 @@ function renderTuitionDetailContent(tuitionRecord, attendanceTuitionPreview = nu
       ${renderDetailMetric('Ghi chú', escapeHtml(tuitionRecord.note || 'Không có ghi chú'), true)}
     </section>
     ${renderTuitionFormula(amounts)}
+    <div class="tuition-payment-action-row">
+      <button
+        type="button"
+        data-tuition-action="open-debt"
+        data-tuition-student-id="${escapeHtml(tuitionRecord.studentId)}"
+        ${canCollectPayment ? '' : 'disabled'}
+        title="${canCollectPayment ? 'Ghi nhận thanh toán học phí' : hasLegacyUnreconciled ? 'Kỳ có paidAmount legacy chưa đối soát' : 'Đã thanh toán đủ'}"
+      >
+        Ghi nhận thanh toán
+      </button>
+      <small>${canCollectPayment ? 'Tạo một giao dịch Thu chi liên kết.' : hasLegacyUnreconciled ? 'Cần đối soát legacy ở F23.8D trước khi ghi nhận thêm.' : 'Đã thanh toán đủ.'}</small>
+    </div>
+    <p class="tuition-ledger-note">Đã thanh toán và Còn nợ được tính từ các giao dịch Thu chi liên kết.</p>
+    ${
+      hasLegacyUnreconciled
+        ? '<p class="tuition-payment-warning">Kỳ này có số tiền đã thanh toán cũ chưa được đối soát với Thu chi.</p>'
+        : ''
+    }
     ${
       overpaidAmount > 0
         ? `<p class="tuition-payment-warning">Có đóng dư ${formatMoney(overpaidAmount)}. Khoản dư nên xử lý khi gia hạn/tạo kỳ mới.</p>`
@@ -1466,7 +1643,11 @@ function renderTuitionDetailContent(tuitionRecord, attendanceTuitionPreview = nu
     }
     <section class="tuition-payment-history" aria-label="Lịch sử thanh toán kỳ hiện tại">
       <h5>Lịch sử thanh toán kỳ hiện tại</h5>
-      ${renderPaymentHistory(tuitionRecord.payments ?? [], 'Chưa có thanh toán nào trong kỳ hiện tại.')}
+      ${renderLedgerPaymentList(getLinkedTuitionPaymentTransactions(
+        cashflowTransactions,
+        tuitionRecord.id,
+        getCurrentTuitionPeriodId(tuitionRecord),
+      ))}
     </section>
     ${renderTermHistory(tuitionRecord.termHistory ?? [])}
   `
@@ -1503,6 +1684,77 @@ function renderPaymentHistory(payments, emptyMessage = 'Chưa có lịch sử th
           `,
         )
         .join('')}
+    </div>
+  `
+}
+
+function renderLedgerPaymentList(transactions = []) {
+  if (!transactions.length) {
+    return '<p class="tuition-payment-empty">Chưa có giao dịch Thu chi liên kết cho kỳ hiện tại.</p>'
+  }
+
+  return `
+    <div class="tuition-payment-history-list">
+      ${[...transactions]
+        .sort((first, second) => new Date(second.transactionDate) - new Date(first.transactionDate))
+        .slice(0, 5)
+        .map(
+          (transaction) => `
+            <article class="tuition-payment-item">
+              <div>
+                <strong>${formatMoney(transaction.amount)}</strong>
+                <time datetime="${escapeHtml(transaction.transactionDate)}">${formatPaymentDate(transaction.transactionDate)}</time>
+              </div>
+              <p>${escapeHtml(transaction.method || 'Khác')} · ${escapeHtml(transaction.recordedBy || 'Chưa rõ người ghi nhận')}</p>
+              ${transaction.note ? `<small>${escapeHtml(transaction.note)}</small>` : ''}
+            </article>
+          `,
+        )
+        .join('')}
+    </div>
+  `
+}
+
+function renderTuitionPaymentEvidenceField(formState) {
+  const draft = formState.attachmentDraft || createEmptyTuitionPaymentAttachmentDraft()
+  const fieldError = formState.errors.attachment || draft.error
+  const hasStaged = draft.mode === 'staged-new' && draft.objectUrl
+
+  return `
+    <div class="tuition-payment-evidence-field ${fieldError ? 'has-error' : ''}" data-tuition-payment-evidence-field>
+      <span>Chứng từ</span>
+      <input
+        type="file"
+        accept="${escapeHtml(CASHFLOW_EVIDENCE_ACCEPT)}"
+        data-tuition-payment-evidence-input
+        tabindex="-1"
+        ${formState.isSaving ? 'disabled' : ''}
+      />
+      ${
+        hasStaged
+          ? `
+            <div class="cashflow-evidence-preview" data-tuition-payment-evidence-preview>
+              <img src="${escapeHtml(draft.objectUrl)}" alt="${escapeHtml(draft.fileName || 'Ảnh chứng từ')}" />
+              <div>
+                <strong title="${escapeHtml(draft.fileName)}">${escapeHtml(draft.fileName || 'Ảnh chứng từ')}</strong>
+                <small>${escapeHtml(draft.mimeType || 'image/*')} · ${formatFileSize(draft.sizeBytes)}</small>
+                <small>Ảnh mới, sẽ tải lên khi lưu</small>
+              </div>
+              <div class="cashflow-evidence-actions">
+                <button type="button" data-tuition-payment-evidence-action="preview">Xem trước</button>
+                <button type="button" data-tuition-payment-evidence-action="replace">Thay ảnh</button>
+                <button type="button" data-tuition-payment-evidence-action="remove">Gỡ</button>
+              </div>
+            </div>
+          `
+          : `
+            <div class="cashflow-evidence-empty" data-tuition-payment-evidence-preview>
+              <button type="button" data-tuition-payment-evidence-action="insert" ${formState.isSaving ? 'disabled' : ''}>Chèn ảnh</button>
+              <small>Không có chứng từ</small>
+            </div>
+          `
+      }
+      ${fieldError ? `<small>${escapeHtml(fieldError)}</small>` : ''}
     </div>
   `
 }

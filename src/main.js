@@ -413,7 +413,9 @@ import {
   createEmptyTuitionFormState,
   createPaymentFormState,
   createRenewTuitionFormState,
+  getCurrentTuitionPeriodId,
   getTuitionDebtAmount,
+  hasUnreconciledLegacyTuitionPaidAmount,
   initialTuitionFilters,
   normalizePaymentFormValues,
   normalizeTuitionFormValues,
@@ -868,6 +870,7 @@ function resetTransientStateForCenterSwitch() {
   sessionReportExtraState = null
   sessionReportGuestFormState = null
   tuitionFormState = null
+  revokeTuitionPaymentAttachmentDraftObjectUrl()
   tuitionPaymentFormState = null
   tuitionDetailState = null
   tuitionRollbackPreviewState = null
@@ -4401,6 +4404,7 @@ function renderWindowBody(windowItem) {
       }),
       tuitionCareNoteState,
       tuitionAdvisoryWindowState,
+      cashflowTransactions,
     )
   }
 
@@ -5549,6 +5553,14 @@ function openCashflowEditForm(transactionId) {
     return
   }
 
+  if (isSyncedTuitionPaymentTransaction(transaction)) {
+    setCloudUploadMessage(
+      'Giao dịch này được đồng bộ từ Học phí và không thể sửa như giao dịch thủ công.',
+      'error',
+    )
+    return
+  }
+
   cashflowTransactions = latestCashflowTransactions
   cashflowAttachmentHydrateToken += 1
   const hydrateToken = cashflowAttachmentHydrateToken
@@ -5563,12 +5575,66 @@ function openCashflowEditForm(transactionId) {
   })
 }
 
+function isSyncedTuitionPaymentTransaction(transaction) {
+  return (
+    String(transaction?.sourceModule || '') === 'hoc-phi' &&
+    String(transaction?.sourceType || '') === 'tuition-payment'
+  )
+}
+
 function getCashflowSampleFallbackForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
   return isProductionCenter(centerId) ? [] : sampleCashflowTransactions
 }
 
 function readLatestCashflowTransactionsForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
   return readStoredCashflow(getCashflowSampleFallbackForCurrentCenter(centerId))
+}
+
+function openTuitionPaymentForm(student, tuitionRecord) {
+  if (!student || !tuitionRecord) {
+    return
+  }
+
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter()
+  const debtAmount = getTuitionDebtAmount(tuitionRecord, latestCashflowTransactions)
+  const mode =
+    debtAmount > 0 &&
+    !hasUnreconciledLegacyTuitionPaidAmount(tuitionRecord, latestCashflowTransactions)
+      ? 'collect'
+      : 'history'
+  const nextState = createPaymentFormState(student, tuitionRecord, mode)
+
+  tuitionPaymentFormState = {
+    ...nextState,
+    centerId: getCurrentResolvedCenterId(),
+    periodId: getCurrentTuitionPeriodId(tuitionRecord),
+    values: {
+      ...nextState.values,
+      amount: mode === 'collect' ? formatMoneyInputForRuntime(debtAmount) : '',
+      payerName: student.parentName || nextState.values.payerName,
+      collectorName: getCurrentPaymentCollectorName(),
+    },
+  }
+  tuitionFormState = null
+  tuitionDetailState = null
+  tuitionRollbackPreviewState = null
+  tuitionCareNoteState = null
+  tuitionAdvisoryWindowState = null
+  render()
+}
+
+function getCurrentPaymentCollectorName() {
+  return (
+    cloudStatus.currentMemberProfile?.displayName ||
+    cloudStatus.currentMemberProfile?.fullName ||
+    cloudStatus.user?.user_metadata?.full_name ||
+    cloudStatus.user?.email ||
+    'Admin'
+  )
+}
+
+function formatMoneyInputForRuntime(amount) {
+  return Number(amount || 0).toLocaleString('vi-VN')
 }
 
 async function hydrateCashflowEditAttachment({ transactionId, centerId, hydrateToken }) {
@@ -5764,6 +5830,170 @@ function clearCashflowAttachmentDraft() {
   if (input) {
     input.value = ''
   }
+}
+
+function revokeTuitionPaymentAttachmentDraftObjectUrl(formState = tuitionPaymentFormState) {
+  const objectUrl = formState?.attachmentDraft?.objectUrl
+
+  if (objectUrl) {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+function clearTuitionPaymentFormState() {
+  revokeTuitionPaymentAttachmentDraftObjectUrl()
+  tuitionPaymentFormState = null
+}
+
+function updateTuitionPaymentAttachmentDraft(nextDraft) {
+  if (!tuitionPaymentFormState) {
+    return
+  }
+
+  tuitionPaymentFormState = {
+    ...tuitionPaymentFormState,
+    attachmentDraft: nextDraft,
+    errors: {
+      ...tuitionPaymentFormState.errors,
+      attachment: undefined,
+    },
+  }
+
+  syncTuitionPaymentEvidencePreview()
+}
+
+function stageTuitionPaymentEvidenceFile(file) {
+  if (!tuitionPaymentFormState) {
+    return
+  }
+
+  const validation = validateTransactionImageFile(file)
+
+  if (!validation.ok) {
+    updateTuitionPaymentAttachmentDraft({
+      ...(tuitionPaymentFormState.attachmentDraft || {}),
+      error: validation.error,
+    })
+    return
+  }
+
+  revokeTuitionPaymentAttachmentDraftObjectUrl()
+  updateTuitionPaymentAttachmentDraft({
+    mode: 'staged-new',
+    file,
+    fileName: validation.data.name,
+    mimeType: validation.data.mimeType,
+    sizeBytes: validation.data.sizeBytes,
+    objectUrl: URL.createObjectURL(file),
+    error: '',
+    isUploading: false,
+  })
+}
+
+function removeTuitionPaymentEvidenceDraft() {
+  if (!tuitionPaymentFormState) {
+    return
+  }
+
+  revokeTuitionPaymentAttachmentDraftObjectUrl()
+  updateTuitionPaymentAttachmentDraft({
+    mode: 'none',
+    fileName: '',
+    mimeType: '',
+    sizeBytes: 0,
+    objectUrl: '',
+    error: '',
+    isUploading: false,
+  })
+}
+
+function syncTuitionPaymentEvidencePreview() {
+  const field = document.querySelector('[data-tuition-payment-evidence-field]')
+
+  if (!field || !tuitionPaymentFormState) {
+    return
+  }
+
+  const draft = tuitionPaymentFormState.attachmentDraft || {}
+  const hasStaged = draft.mode === 'staged-new' && draft.objectUrl
+  const error = tuitionPaymentFormState.errors.attachment || draft.error || ''
+
+  field.classList.toggle('has-error', Boolean(error))
+  field.innerHTML = `
+    <span>Chứng từ</span>
+    <input
+      type="file"
+      accept="${escapeAttributeForRuntime(CASHFLOW_EVIDENCE_ACCEPT)}"
+      data-tuition-payment-evidence-input
+      tabindex="-1"
+      ${tuitionPaymentFormState.isSaving ? 'disabled' : ''}
+    />
+    ${
+      hasStaged
+        ? `
+          <div class="cashflow-evidence-preview" data-tuition-payment-evidence-preview>
+            <img src="${escapeAttributeForRuntime(draft.objectUrl)}" alt="${escapeAttributeForRuntime(draft.fileName || 'Ảnh chứng từ')}" />
+            <div>
+              <strong title="${escapeAttributeForRuntime(draft.fileName)}">${escapeHtmlForRuntime(draft.fileName || 'Ảnh chứng từ')}</strong>
+              <small>${escapeHtmlForRuntime(draft.mimeType || 'image/*')} · ${formatFileSize(draft.sizeBytes)}</small>
+              <small>Ảnh mới, sẽ tải lên khi lưu</small>
+            </div>
+            <div class="cashflow-evidence-actions">
+              <button type="button" data-tuition-payment-evidence-action="preview">Xem trước</button>
+              <button type="button" data-tuition-payment-evidence-action="replace">Thay ảnh</button>
+              <button type="button" data-tuition-payment-evidence-action="remove">Gỡ</button>
+            </div>
+          </div>
+        `
+        : `
+          <div class="cashflow-evidence-empty" data-tuition-payment-evidence-preview>
+            <button type="button" data-tuition-payment-evidence-action="insert" ${tuitionPaymentFormState.isSaving ? 'disabled' : ''}>Chèn ảnh</button>
+            <small>Không có chứng từ</small>
+          </div>
+        `
+    }
+    ${error ? `<small>${escapeHtmlForRuntime(error)}</small>` : ''}
+  `
+
+  bindTuitionPaymentEvidenceControls(field)
+}
+
+function bindTuitionPaymentEvidenceControls(root = document) {
+  const input = root.querySelector('[data-tuition-payment-evidence-input]')
+
+  root.querySelectorAll('[data-tuition-payment-evidence-action="insert"], [data-tuition-payment-evidence-action="replace"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      input?.click()
+    })
+  })
+
+  root.querySelector('[data-tuition-payment-evidence-action="remove"]')?.addEventListener('click', (event) => {
+    event.stopPropagation()
+    removeTuitionPaymentEvidenceDraft()
+  })
+
+  root.querySelector('[data-tuition-payment-evidence-action="preview"]')?.addEventListener('click', (event) => {
+    event.stopPropagation()
+    const objectUrl = tuitionPaymentFormState?.attachmentDraft?.objectUrl
+
+    if (objectUrl && isSafeImagePreviewUrl(objectUrl)) {
+      window.open(objectUrl, '_blank', 'noopener,noreferrer')
+    }
+  })
+
+  input?.addEventListener('click', (event) => {
+    event.stopPropagation()
+  })
+
+  input?.addEventListener('change', (event) => {
+    event.stopPropagation()
+    const file = event.target.files?.[0]
+
+    if (file) {
+      stageTuitionPaymentEvidenceFile(file)
+    }
+  })
 }
 
 function updateCashflowAttachmentDraft(nextDraft) {
@@ -6075,47 +6305,6 @@ function openInventoryMovementForm(itemId) {
   render()
 }
 
-function syncTuitionPaymentToCashflow(payment, tuitionRecord, student) {
-  if (!payment?.id || !tuitionRecord || !student) {
-    return
-  }
-
-  const hasSyncedTransaction = cashflowTransactions.some(
-    (transaction) =>
-      transaction.sourceModule === 'hoc-phi' && transaction.sourcePaymentId === payment.id,
-  )
-
-  if (hasSyncedTransaction) {
-    return
-  }
-
-  ensureTuitionCashflowCategory()
-
-  const transaction = {
-    id: `cashflow-from-tuition-${payment.id}`,
-    type: 'income',
-    category: 'Học phí',
-    amount: Number(payment.amount || 0),
-    transactionDate: payment.paidAt,
-    method: getCashflowMethodFromTuitionPayment(payment.method),
-    personName: getTuitionPaymentPersonName(student),
-    recordedBy: payment.collectorName || 'Admin DreamHome',
-    note: payment.note
-      ? `Thu học phí: ${payment.note}`
-      : `Thu học phí ${student.fullName}`,
-    sourceModule: 'hoc-phi',
-    sourceType: 'tuition-payment',
-    sourcePaymentId: payment.id,
-    sourceTuitionId: tuitionRecord.id,
-    sourceStudentId: student.id,
-    sourceTermId: tuitionRecord.currentTermId || '',
-    createdAt: payment.createdAt || new Date().toISOString(),
-  }
-
-  cashflowTransactions = [transaction, ...cashflowTransactions]
-  saveStoredCashflow(cashflowTransactions)
-}
-
 function syncInventoryMovementToCashflow(movement, item) {
   if (movement?.type !== 'in' || Number(movement.costAmount || 0) <= 0) {
     return
@@ -6244,10 +6433,12 @@ function getCashflowMethodFromTuitionPayment(method) {
   return methodLabels[method] ?? 'Khác'
 }
 
-function getTuitionPaymentPersonName(student) {
-  const parentName = String(student.parentName || '').trim()
+function buildTuitionPaymentTransactionNote(note, student, tuitionRecord) {
+  const baseNote = String(note || '').trim()
+  const periodLabel = `Kỳ ${tuitionRecord.currentTermNumber || 1}`
+  const defaultNote = `Đồng bộ từ Học phí: ${student.fullName} · ${periodLabel}`
 
-  return parentName ? `${student.fullName} / ${parentName}` : student.fullName
+  return baseNote ? `${defaultNote} · ${baseNote}` : defaultNote
 }
 
 function focusWindow(windowId) {
@@ -7805,7 +7996,7 @@ async function openTuitionRollbackPreview(tuitionRecord) {
     message: 'Đang tải lịch sử thay đổi...',
   }
   tuitionFormState = null
-  tuitionPaymentFormState = null
+  clearTuitionPaymentFormState()
   tuitionDetailState = null
   tuitionCareNoteState = null
   tuitionAdvisoryWindowState = null
@@ -11338,7 +11529,8 @@ function bindEvents() {
 
     if (oldCategoryName && oldCategoryName !== nextCategory.name) {
       cashflowTransactions = cashflowTransactions.map((transaction) =>
-        transaction.category === oldCategoryName
+        transaction.category === oldCategoryName &&
+        !isSyncedTuitionPaymentTransaction(transaction)
           ? {
               ...transaction,
               category: nextCategory.name,
@@ -11474,6 +11666,17 @@ function bindEvents() {
       cashflowFormState = createCashflowFormErrorState(
         cashflowFormState,
         'Giao dịch này không còn tồn tại. Danh sách đã được tải lại, vui lòng kiểm tra trước khi lưu.',
+        formValues,
+      )
+      render()
+      return
+    }
+
+    if (cashflowFormState.mode === 'edit' && isSyncedTuitionPaymentTransaction(existingTransaction)) {
+      cashflowTransactions = latestCashflowTransactions
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        'Giao dịch này được đồng bộ từ Học phí và không thể sửa như giao dịch thủ công.',
         formValues,
       )
       render()
@@ -11680,6 +11883,20 @@ function bindEvents() {
         return
       }
 
+      const transaction = cashflowTransactions.find(
+        (item) => item.id === cashflowFormState.transactionId,
+      )
+
+      if (isSyncedTuitionPaymentTransaction(transaction)) {
+        cashflowFormState = createCashflowFormErrorState(
+          cashflowFormState,
+          'Giao dịch này được đồng bộ từ Học phí và không thể xóa cứng trong F23.8C.',
+          cashflowFormState.values,
+        )
+        render()
+        return
+      }
+
       // Prototype 3B allows hard delete. A later audit phase can switch this to soft delete.
       cashflowTransactions = cashflowTransactions.filter(
         (transaction) => transaction.id !== cashflowFormState.transactionId,
@@ -11702,7 +11919,7 @@ function bindEvents() {
       tuitionFormState = tuitionRecord
         ? createEditTuitionFormState(student, tuitionRecord)
         : createEmptyTuitionFormState(student)
-      tuitionPaymentFormState = null
+      clearTuitionPaymentFormState()
       tuitionDetailState = null
       tuitionRollbackPreviewState = null
       render()
@@ -11751,12 +11968,7 @@ function bindEvents() {
         return
       }
 
-      tuitionPaymentFormState = createPaymentFormState(student, tuitionRecord)
-      tuitionFormState = null
-      tuitionRollbackPreviewState = null
-      tuitionCareNoteState = null
-      tuitionAdvisoryWindowState = null
-      render()
+      openTuitionPaymentForm(student, tuitionRecord)
     })
   })
 
@@ -11770,18 +11982,7 @@ function bindEvents() {
         return
       }
 
-      const debtAmount = getTuitionDebtAmount(tuitionRecord)
-      tuitionPaymentFormState = createPaymentFormState(
-        student,
-        tuitionRecord,
-        debtAmount > 0 ? 'collect' : 'history',
-      )
-      tuitionFormState = null
-      tuitionDetailState = null
-      tuitionRollbackPreviewState = null
-      tuitionCareNoteState = null
-      tuitionAdvisoryWindowState = null
-      render()
+      openTuitionPaymentForm(student, tuitionRecord)
     })
   })
 
@@ -11792,7 +11993,7 @@ function bindEvents() {
         studentId: button.dataset.tuitionStudentId,
       }
       tuitionFormState = null
-      tuitionPaymentFormState = null
+      clearTuitionPaymentFormState()
       tuitionRollbackPreviewState = null
       tuitionCareNoteState = null
       tuitionAdvisoryWindowState = null
@@ -11824,7 +12025,7 @@ function bindEvents() {
 
         tuitionCareNoteState = createTuitionCareNoteState(studentId)
         tuitionFormState = null
-        tuitionPaymentFormState = null
+        clearTuitionPaymentFormState()
         tuitionDetailState = null
         tuitionRollbackPreviewState = null
         tuitionAdvisoryWindowState = null
@@ -11838,7 +12039,7 @@ function bindEvents() {
       withTuitionViewportLock(() => {
         tuitionAdvisoryWindowState = { isOpen: true }
         tuitionFormState = null
-        tuitionPaymentFormState = null
+        clearTuitionPaymentFormState()
         tuitionDetailState = null
         tuitionRollbackPreviewState = null
         tuitionCareNoteState = null
@@ -11857,7 +12058,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-tuition-payment-action="cancel-payment"]').forEach((button) => {
     button.addEventListener('click', () => {
-      tuitionPaymentFormState = null
+      clearTuitionPaymentFormState()
       tuitionRollbackPreviewState = null
       render()
     })
@@ -11990,7 +12191,7 @@ function bindEvents() {
     }
 
     tuitionFormState = createRenewTuitionFormState(student, tuitionRecord)
-    tuitionPaymentFormState = null
+    clearTuitionPaymentFormState()
     tuitionDetailState = null
     render()
   })
@@ -12028,6 +12229,7 @@ function bindEvents() {
           id: tuitionFormState.tuitionId || `tuition-${tuitionFormState.studentId}-${Date.now()}`,
           studentId: tuitionFormState.studentId,
           ...normalizedValues,
+          paidAmount: currentRecord?.paidAmount ?? 0,
           payments: currentRecord?.payments ?? [],
           currentTermNumber: currentRecord?.currentTermNumber ?? 1,
           currentTermId:
@@ -12043,14 +12245,6 @@ function bindEvents() {
       ? tuitionRecords.map((record) => (record.id === nextRecord.id ? nextRecord : record))
       : [nextRecord, ...tuitionRecords]
     saveStoredTuition(tuitionRecords)
-    if (tuitionFormState.mode === 'renew') {
-      const student = students.find((item) => item.id === nextRecord.studentId)
-      const newPayments = nextRecord.payments ?? []
-
-      newPayments.forEach((payment) => {
-        syncTuitionPaymentToCashflow(payment, nextRecord, student)
-      })
-    }
     notifications = syncTuitionNotifications(notifications)
     tuitionFormState = null
     void writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save', {
@@ -12127,14 +12321,25 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-tuition-payment-form]')?.addEventListener('submit', (event) => {
+  bindTuitionPaymentEvidenceControls(document)
+
+  document.querySelector('[data-tuition-payment-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
-    if (!tuitionPaymentFormState) {
+    if (!tuitionPaymentFormState || tuitionPaymentFormState.isSaving) {
       return
     }
 
     const errors = validatePaymentForm(tuitionPaymentFormState.values)
+    const attachmentDraft = tuitionPaymentFormState.attachmentDraft || {}
+    const stagedFile = attachmentDraft.mode === 'staged-new' ? attachmentDraft.file : null
+
+    if (stagedFile) {
+      const fileValidation = validateTransactionImageFile(stagedFile)
+      if (!fileValidation.ok) {
+        errors.attachment = fileValidation.error
+      }
+    }
 
     if (Object.keys(errors).length) {
       tuitionPaymentFormState = {
@@ -12146,41 +12351,225 @@ function bindEvents() {
     }
 
     const normalizedPayment = normalizePaymentFormValues(tuitionPaymentFormState.values)
-    const savedAt = new Date().toISOString()
-    const paymentRecord = {
-      id: `payment-${tuitionPaymentFormState.tuitionId}-${Date.now()}`,
-      ...normalizedPayment,
-      createdAt: savedAt,
+    const currentCenterId = getCurrentResolvedCenterId()
+
+    if (String(tuitionPaymentFormState.centerId || currentCenterId) !== currentCenterId) {
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          form: 'Cơ sở đã thay đổi. Vui lòng mở lại form thanh toán.',
+        },
+      }
+      render()
+      return
     }
-    const beforePaymentTuitionRecord =
-      tuitionRecords.find((record) => record.id === tuitionPaymentFormState.tuitionId) || null
-    let updatedTuitionRecord = null
 
-    tuitionRecords = tuitionRecords.map((record) => {
-      if (record.id !== tuitionPaymentFormState.tuitionId) {
-        return record
-      }
-
-      updatedTuitionRecord = {
-        ...record,
-        paidAmount: record.paidAmount + normalizedPayment.amount,
-        payments: [paymentRecord, ...(record.payments ?? [])],
-        updatedAt: savedAt,
-      }
-
-      return updatedTuitionRecord
-    })
-    saveStoredTuition(tuitionRecords)
-    syncTuitionPaymentToCashflow(
-      paymentRecord,
-      updatedTuitionRecord,
-      students.find((student) => student.id === tuitionPaymentFormState.studentId),
+    const latestTuitionRecords = getStoredTuition(
+      isProductionCenter(currentCenterId) ? [] : createSampleTuitionRecords(students),
     )
+    const latestTuitionRecord = latestTuitionRecords.find(
+      (record) => record.id === tuitionPaymentFormState.tuitionId,
+    )
+    const student = students.find((item) => item.id === tuitionPaymentFormState.studentId)
+
+    if (!latestTuitionRecord || !student) {
+      tuitionRecords = latestTuitionRecords
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          form: 'Không tìm thấy hồ sơ học phí hiện tại.',
+        },
+      }
+      render()
+      return
+    }
+
+    const periodId = getCurrentTuitionPeriodId(latestTuitionRecord)
+
+    if (periodId !== tuitionPaymentFormState.periodId) {
+      tuitionRecords = latestTuitionRecords
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          form: 'Kỳ học phí đã thay đổi. Vui lòng mở lại form thanh toán.',
+        },
+      }
+      render()
+      return
+    }
+
+    const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
+    const outstandingAmount = getTuitionDebtAmount(latestTuitionRecord, latestCashflowTransactions)
+
+    if (hasUnreconciledLegacyTuitionPaidAmount(latestTuitionRecord, latestCashflowTransactions)) {
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          form: 'Kỳ này có số tiền đã thanh toán cũ chưa được đối soát với Thu chi.',
+        },
+      }
+      render()
+      return
+    }
+
+    if (normalizedPayment.amount > outstandingAmount) {
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          amount: 'Số tiền thanh toán không được vượt quá số còn nợ.',
+        },
+      }
+      render()
+      return
+    }
+
+    if (outstandingAmount <= 0) {
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          amount: 'Kỳ này đã thanh toán đủ.',
+        },
+      }
+      render()
+      return
+    }
+
+    const sourcePaymentId = tuitionPaymentFormState.sourcePaymentId
+    const existingPaymentTransaction = latestCashflowTransactions.find(
+      (transaction) =>
+        transaction.sourceModule === 'hoc-phi' &&
+        transaction.sourceType === 'tuition-payment' &&
+        transaction.sourcePaymentId === sourcePaymentId,
+    )
+
+    if (existingPaymentTransaction) {
+      cashflowTransactions = latestCashflowTransactions
+      tuitionRecords = latestTuitionRecords
+      clearTuitionPaymentFormState()
+      render()
+      return
+    }
+
+    if (
+      stagedFile &&
+      (
+        cloudStatus.configStatus !== 'configured' ||
+        cloudStatus.authStatus !== 'signed-in' ||
+        cloudStatus.membershipStatus !== 'loaded' ||
+        !isTransactionAttachmentRoleAllowed(cloudStatus.role)
+      )
+    ) {
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          attachment: 'Không thể tải ảnh lên. Vui lòng kiểm tra đăng nhập/quyền cloud trước khi lưu chứng từ.',
+        },
+      }
+      render()
+      return
+    }
+
+    const savedAt = new Date().toISOString()
+    ensureTuitionCashflowCategory()
+    const nextTransaction = {
+      id: `cashflow-from-tuition-${sourcePaymentId}`,
+      type: 'income',
+      category: 'Học phí',
+      amount: normalizedPayment.amount,
+      transactionDate: normalizedPayment.paidAt,
+      method: getCashflowMethodFromTuitionPayment(normalizedPayment.method),
+      personName: normalizedPayment.payerName,
+      recordedBy: normalizedPayment.collectorName,
+      note: buildTuitionPaymentTransactionNote(normalizedPayment.note, student, latestTuitionRecord),
+      sourceModule: 'hoc-phi',
+      sourceType: 'tuition-payment',
+      sourcePaymentId,
+      sourceTuitionId: latestTuitionRecord.id,
+      sourceStudentId: student.id,
+      sourceParentId: student.parentId || '',
+      sourceTermId: periodId,
+      sourcePeriodId: periodId,
+      createdAt: savedAt,
+      updatedAt: savedAt,
+    }
+    const projectedTransactions = [nextTransaction, ...latestCashflowTransactions]
+    const transactionCode = getCashflowTransactionCodesForTransactions(projectedTransactions)[nextTransaction.id]
+    let uploadedAttachment = null
+
+    tuitionPaymentFormState = {
+      ...tuitionPaymentFormState,
+      isSaving: true,
+      attachmentDraft: {
+        ...attachmentDraft,
+        error: '',
+        isUploading: Boolean(stagedFile),
+      },
+      errors: {},
+    }
+    render()
+
+    if (stagedFile) {
+      const uploadResult = await uploadStagedCashflowEvidence({
+        transaction: nextTransaction,
+        transactionCode,
+        file: stagedFile,
+        centerId: currentCenterId,
+      })
+
+      if (!uploadResult.ok) {
+        tuitionPaymentFormState = {
+          ...tuitionPaymentFormState,
+          isSaving: false,
+          attachmentDraft: {
+            ...attachmentDraft,
+            isUploading: false,
+            error: uploadResult.error,
+          },
+          errors: {
+            ...tuitionPaymentFormState.errors,
+            attachment: uploadResult.error,
+          },
+        }
+        render()
+        return
+      }
+
+      uploadedAttachment = uploadResult.attachment
+      nextTransaction.attachment = uploadedAttachment
+    }
+
+    try {
+      saveStoredCashflow([nextTransaction, ...latestCashflowTransactions])
+    } catch {
+      if (uploadedAttachment) {
+        await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
+      }
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        isSaving: false,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          form: 'Không lưu được giao dịch Thu chi cho thanh toán học phí.',
+        },
+      }
+      render()
+      return
+    }
+
+    cashflowTransactions = [nextTransaction, ...latestCashflowTransactions]
+    tuitionRecords = latestTuitionRecords
+    if (uploadedAttachment) {
+      await loadCurrentMonthCloudAttachments()
+    }
     notifications = syncTuitionNotifications(notifications)
-    tuitionPaymentFormState = null
-    void writeC52TuitionRecordPackageThroughCloud(updatedTuitionRecord, 'tuition-payment-save', {
-      beforePayload: beforePaymentTuitionRecord ? { ...beforePaymentTuitionRecord } : null,
-    })
+    clearTuitionPaymentFormState()
     render()
   })
 
@@ -16698,7 +17087,7 @@ function openTuitionPackageForm(studentId) {
   tuitionFormState = tuitionRecord
     ? createEditTuitionFormState(student, tuitionRecord)
     : createEmptyTuitionFormState(student)
-  tuitionPaymentFormState = null
+  clearTuitionPaymentFormState()
   tuitionDetailState = null
   tuitionRollbackPreviewState = null
   tuitionCareNoteState = null
@@ -16921,25 +17310,14 @@ function createRenewedTuitionRecord(currentRecord, normalizedValues) {
     payments: currentRecord.payments ?? [],
   }
   const nextTermId = `term-${currentRecord.id}-${nextTermNumber}-${Date.now()}`
-  const initialPayment = normalizedValues.paidAmount > 0
-    ? {
-        id: `payment-${nextTermId}-initial`,
-        amount: normalizedValues.paidAmount,
-        paidAt: renewedAt.slice(0, 10),
-        method: 'cash',
-        collectorName: 'Admin DreamHome',
-        note: 'Đóng ban đầu khi tạo kỳ mới.',
-        createdAt: renewedAt,
-      }
-    : null
-
   return {
     ...currentRecord,
     ...normalizedValues,
+    paidAmount: 0,
     currentTermNumber: nextTermNumber,
     currentTermId: nextTermId,
     startedAt: renewedAt,
-    payments: initialPayment ? [initialPayment] : [],
+    payments: [],
     termHistory: [...(currentRecord.termHistory ?? []), currentTermSnapshot],
   }
 }
