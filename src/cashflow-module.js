@@ -338,6 +338,8 @@ export function getFilteredCashflowTransactions(transactions, filters = initialC
           transaction.recordedBy,
           transaction.method,
           transaction.note,
+          transaction.id,
+          transaction.transactionCode,
           getSourceBadgeLabel(transaction.sourceModule),
           transaction.attachment?.name,
           formatMoney(transaction.amount),

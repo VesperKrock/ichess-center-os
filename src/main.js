@@ -4405,6 +4405,7 @@ function renderWindowBody(windowItem) {
       tuitionCareNoteState,
       tuitionAdvisoryWindowState,
       cashflowTransactions,
+      getCurrentResolvedCenterId(),
     )
   }
 
@@ -5621,6 +5622,31 @@ function openTuitionPaymentForm(student, tuitionRecord) {
   tuitionCareNoteState = null
   tuitionAdvisoryWindowState = null
   render()
+}
+
+function openTuitionPaymentSourceTransaction(transactionId) {
+  const currentCenterId = getCurrentResolvedCenterId()
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
+  const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
+
+  if (!transaction || !isSyncedTuitionPaymentTransaction(transaction)) {
+    setCloudUploadMessage('Không tìm thấy giao dịch Thu chi nguồn trong cơ sở hiện tại.', 'error')
+    cashflowTransactions = latestCashflowTransactions
+    render()
+    return
+  }
+
+  cashflowTransactions = latestCashflowTransactions
+  cashflowFilters = {
+    ...initialCashflowFilters,
+    query: transaction.id,
+  }
+  cashflowFormState = null
+  openModuleWindowFromChildInteraction('thu-chi')
+  setCloudUploadMessage(
+    'Đã mở giao dịch Thu chi nguồn. Giao dịch đồng bộ từ Học phí đang ở chế độ bảo vệ.',
+    'success',
+  )
 }
 
 function getCurrentPaymentCollectorName() {
@@ -11998,6 +12024,14 @@ function bindEvents() {
       tuitionCareNoteState = null
       tuitionAdvisoryWindowState = null
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-payment-open-transaction]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openTuitionPaymentSourceTransaction(button.dataset.tuitionPaymentOpenTransaction)
     })
   })
 

@@ -16757,6 +16757,122 @@ h3 {
   margin-top: 4px;
 }
 
+.tuition-payment-timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.tuition-payment-timeline-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tuition-payment-timeline-header p {
+  margin: 0;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+}
+
+.tuition-ledger-payment-item {
+  display: grid;
+  gap: 8px;
+}
+
+.tuition-ledger-payment-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tuition-ledger-payment-main > div {
+  display: grid;
+  gap: 3px;
+}
+
+.tuition-payment-source-badge {
+  border: 1px solid rgba(120, 198, 145, 0.34);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #b9f2c8;
+  background: rgba(46, 125, 79, 0.14);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.tuition-ledger-payment-meta,
+.tuition-legacy-unreconciled dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.tuition-ledger-payment-meta div,
+.tuition-legacy-unreconciled dl div {
+  display: grid;
+  gap: 2px;
+}
+
+.tuition-ledger-payment-meta dt,
+.tuition-legacy-unreconciled dt {
+  color: #8294aa;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.tuition-ledger-payment-meta dd,
+.tuition-legacy-unreconciled dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #d8e2ef;
+  font-size: 0.8rem;
+}
+
+.tuition-ledger-payment-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tuition-ledger-payment-actions button {
+  border: 1px solid rgba(118, 164, 231, 0.45);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: #dbeafe;
+  background: rgba(31, 93, 153, 0.24);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tuition-legacy-unreconciled {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(240, 180, 91, 0.34);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(154, 96, 18, 0.13);
+}
+
+.tuition-legacy-unreconciled strong {
+  color: #ffe4b8;
+}
+
+.tuition-legacy-unreconciled p {
+  margin: 0;
+  color: #c8d4e3;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 720px) {
+  .tuition-ledger-payment-meta,
+  .tuition-legacy-unreconciled dl {
+    grid-template-columns: 1fr;
+  }
+}
+
 .taskbar {
   position: fixed;
   inset-inline: 0;
