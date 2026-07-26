@@ -188,6 +188,7 @@ export function renderTuitionModule(
   advisoryWindowState = null,
   cashflowTransactions = [],
   centerId = '',
+  periodActionConfirmationState = null,
 ) {
   const rows = buildTuitionRows(students, tuitionRecords, attendanceRecords, cashflowTransactions)
   const visibleRows = filterTuitionRows(rows, filters)
@@ -213,7 +214,13 @@ export function renderTuitionModule(
     : null
   const hasAdvisoryWindow = Boolean(advisoryWindowState?.isOpen)
   const hasPanel = Boolean(
-    formState || paymentFormState || detailState || rollbackPreviewState || careNoteStudent || hasAdvisoryWindow,
+    formState ||
+      paymentFormState ||
+      detailState ||
+      rollbackPreviewState ||
+      careNoteStudent ||
+      hasAdvisoryWindow ||
+      periodActionConfirmationState,
   )
   const advisoryRows = buildAttendanceAdvisoryRows(
     students,
@@ -298,6 +305,73 @@ export function renderTuitionModule(
       ${rollbackPreviewState ? renderRollbackPreviewPanel(rollbackPreviewState) : ''}
       ${careNoteStudent ? renderTuitionCareNotePanel(careNoteStudent, careNoteState) : ''}
       ${hasAdvisoryWindow ? renderAttendanceAdvisoryWindow(advisoryRows, advisoryMonthKey) : ''}
+      ${periodActionConfirmationState ? renderTuitionPeriodActionConfirmation(periodActionConfirmationState) : ''}
+    </section>
+  `
+}
+
+function renderTuitionPeriodActionConfirmation(state) {
+  if (!state) {
+    return ''
+  }
+
+  const isUndo = state.action === 'undo-empty-period'
+  const title = isUndo
+    ? 'Hoàn tác kỳ mới?'
+    : 'Chốt kỳ hiện tại và tạo kỳ mới?'
+  const confirmLabel = isUndo
+    ? 'Hoàn tác kỳ mới'
+    : 'Chốt kỳ & tạo kỳ mới'
+  const reasons = Array.isArray(state.reasons) ? state.reasons : []
+  const disabled = Boolean(state.isSaving || reasons.length)
+
+  return `
+    <div class="tuition-form-backdrop" data-tuition-period-confirm-action="cancel"></div>
+    <section class="tuition-form-panel tuition-period-confirm-panel" role="dialog" aria-modal="true" aria-labelledby="tuition-period-confirm-title">
+      <div class="tuition-form-header">
+        <div>
+          <h4 id="tuition-period-confirm-title">${title}</h4>
+          <p>${escapeHtml(state.studentName || 'Học viên')} · ${escapeHtml(state.periodLabel || 'Kỳ hiện tại')}</p>
+        </div>
+        <button type="button" data-tuition-period-confirm-action="cancel" aria-label="Đóng confirmation">X</button>
+      </div>
+      ${
+        isUndo
+          ? `
+            <div class="tuition-period-confirm-copy">
+              <p>Kỳ hiện tại trống sẽ bị loại bỏ và kỳ trước sẽ được phục hồi thành kỳ hiện tại.</p>
+              <p>Chỉ dữ liệu kỳ trống mới bị bỏ; giao dịch, điểm danh và chứng từ không bị xóa.</p>
+              <p>Thao tác sẽ bị chặn nếu phát hiện dữ liệu phát sinh.</p>
+            </div>
+          `
+          : `
+            <div class="tuition-period-confirm-copy">
+              <p>Kỳ hiện tại sẽ được chuyển vào Lịch sử kỳ học.</p>
+              <p>Kỳ mới bắt đầu với 0 buổi đã học và 0 VNĐ đã thanh toán.</p>
+              <p>Các giao dịch thanh toán kỳ cũ vẫn thuộc kỳ cũ, không được mang sang kỳ mới.</p>
+              <p>Khoản cần thanh toán và còn nợ của kỳ mới được tính lại theo cấu hình gói.</p>
+              <p>Đây không phải action ghi nhận thanh toán; chỉ dùng khi kỳ hiện tại thực sự kết thúc.</p>
+            </div>
+          `
+      }
+      ${
+        reasons.length
+          ? `
+            <div class="tuition-period-blocking-reasons">
+              <strong>Chưa thể thực hiện:</strong>
+              <ul>
+                ${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join('')}
+              </ul>
+            </div>
+          `
+          : ''
+      }
+      <div class="tuition-form-actions">
+        <button type="button" data-tuition-period-confirm-action="cancel">Hủy</button>
+        <button type="button" data-tuition-period-confirm-action="confirm" ${disabled ? 'disabled' : ''}>
+          ${state.isSaving ? 'Đang xử lý...' : confirmLabel}
+        </button>
+      </div>
     </section>
   `
 }
@@ -1411,7 +1485,7 @@ function renderTuitionForm(student, formState, cashflowTransactions = [], center
     <form class="tuition-form-panel" data-tuition-form>
       <div class="tuition-form-header">
         <div>
-          <h4>${isRenew ? 'Gia hạn / Tạo kỳ mới' : isEdit ? 'Cập nhật gói học phí' : 'Gán gói học phí'}</h4>
+          <h4>${isRenew ? 'Chốt kỳ hiện tại & tạo kỳ mới' : isEdit ? 'Cập nhật gói học phí' : 'Gán gói học phí'}</h4>
           <p>${escapeHtml(student.fullName)} · ${escapeHtml(student.parentName || 'Chưa có phụ huynh')} · ${escapeHtml(student.parentPhone || 'Chưa có SĐT')}</p>
         </div>
         <button type="button" data-tuition-action="cancel-form" aria-label="Đóng form">X</button>
@@ -1460,10 +1534,17 @@ function renderTuitionForm(student, formState, cashflowTransactions = [], center
           isEdit
             ? '<button type="button" data-tuition-action="open-renew" data-tuition-id="' +
               formState.tuitionId +
-              '">Gia hạn / Tạo kỳ mới</button>'
+              '">Chốt kỳ hiện tại & tạo kỳ mới</button>'
             : ''
         }
-        <button type="button" data-tuition-action="save-form">${isRenew ? 'Tạo kỳ mới' : 'Lưu gói'}</button>
+        ${
+          isEdit
+            ? '<button type="button" data-tuition-action="open-undo-empty-period" data-tuition-id="' +
+              formState.tuitionId +
+              '">Hoàn tác kỳ mới</button>'
+            : ''
+        }
+        <button type="button" data-tuition-action="save-form">${isRenew ? 'Chốt kỳ & tạo kỳ mới' : 'Lưu gói'}</button>
       </div>
     </form>
   `

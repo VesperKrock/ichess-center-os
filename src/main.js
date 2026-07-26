@@ -422,7 +422,10 @@ import {
   createEmptyTuitionFormState,
   createPaymentFormState,
   createRenewTuitionFormState,
+  buildTuitionPaymentSummary,
+  getLinkedTuitionPaymentTransactions,
   getCurrentTuitionPeriodId,
+  getTuitionPeriodIdentity,
   getTuitionDebtAmount,
   hasUnreconciledLegacyTuitionPaidAmount,
   initialTuitionFilters,
@@ -567,6 +570,7 @@ let settingsActiveTab = 'class-sessions'
 let settingsClassSessionFormState = null
 let tuitionFilters = { ...initialTuitionFilters }
 let tuitionFormState = null
+let tuitionPeriodActionConfirmationState = null
 let tuitionPaymentFormState = null
 let tuitionDetailState = null
 let tuitionRollbackPreviewState = null
@@ -1074,6 +1078,7 @@ function resetTransientStateForCenterSwitch() {
   sessionReportExtraState = null
   sessionReportGuestFormState = null
   tuitionFormState = null
+  tuitionPeriodActionConfirmationState = null
   revokeTuitionPaymentAttachmentDraftObjectUrl()
   tuitionPaymentFormState = null
   tuitionDetailState = null
@@ -4623,6 +4628,7 @@ function renderWindowBody(windowItem) {
       tuitionAdvisoryWindowState,
       cashflowTransactions,
       getCurrentResolvedCenterId(),
+      tuitionPeriodActionConfirmationState,
     )
   }
 
@@ -12600,6 +12606,7 @@ function bindEvents() {
       tuitionFormState = tuitionRecord
         ? createEditTuitionFormState(student, tuitionRecord)
         : createEmptyTuitionFormState(student)
+      tuitionPeriodActionConfirmationState = null
       clearTuitionPaymentFormState()
       tuitionDetailState = null
       tuitionRollbackPreviewState = null
@@ -12649,6 +12656,7 @@ function bindEvents() {
         return
       }
 
+      tuitionPeriodActionConfirmationState = null
       openTuitionPaymentForm(student, tuitionRecord)
     })
   })
@@ -12674,6 +12682,7 @@ function bindEvents() {
         studentId: button.dataset.tuitionStudentId,
       }
       tuitionFormState = null
+      tuitionPeriodActionConfirmationState = null
       clearTuitionPaymentFormState()
       tuitionRollbackPreviewState = null
       tuitionCareNoteState = null
@@ -12740,6 +12749,7 @@ function bindEvents() {
   document.querySelectorAll('[data-tuition-action="cancel-form"]').forEach((button) => {
     button.addEventListener('click', () => {
       tuitionFormState = null
+      tuitionPeriodActionConfirmationState = null
       tuitionRollbackPreviewState = null
       render()
     })
@@ -12747,6 +12757,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-tuition-payment-action="cancel-payment"]').forEach((button) => {
     button.addEventListener('click', () => {
+      tuitionPeriodActionConfirmationState = null
       clearTuitionPaymentFormState()
       tuitionRollbackPreviewState = null
       render()
@@ -12756,6 +12767,7 @@ function bindEvents() {
   document.querySelectorAll('[data-tuition-detail-action="close-detail"]').forEach((button) => {
     button.addEventListener('click', () => {
       tuitionDetailState = null
+      tuitionPeriodActionConfirmationState = null
       render()
     })
   })
@@ -12880,12 +12892,52 @@ function bindEvents() {
     }
 
     tuitionFormState = createRenewTuitionFormState(student, tuitionRecord)
+    tuitionPeriodActionConfirmationState = null
     clearTuitionPaymentFormState()
     tuitionDetailState = null
     render()
   })
 
-  const handleTuitionFormSave = (event) => {
+  document.querySelectorAll('[data-tuition-action="open-undo-empty-period"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const tuitionRecord = getLatestTuitionRecordForCurrentCenter(button.dataset.tuitionId)
+      const student = tuitionRecord
+        ? students.find((item) => item.id === tuitionRecord.studentId)
+        : null
+      const centerId = getCurrentResolvedCenterId()
+      const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
+      const eligibility = getTuitionEmptyPeriodUndoEligibility({
+        tuitionRecord,
+        expectedPeriodId: tuitionRecord ? getCurrentTuitionPeriodId(tuitionRecord) : '',
+        cashflowLedger: latestCashflowTransactions,
+        attendanceRecords: getCurrentUnifiedAttendanceRecordsForTuitionGuard(centerId),
+        centerId,
+        fromCurrentCenterCollection: true,
+      })
+
+      cashflowTransactions = latestCashflowTransactions
+      tuitionPeriodActionConfirmationState = tuitionRecord && student
+        ? createTuitionPeriodConfirmationState('undo-empty-period', tuitionRecord, student, {
+            reasons: eligibility.reasons,
+          })
+        : {
+            action: 'undo-empty-period',
+            tuitionId: button.dataset.tuitionId || '',
+            studentName: '',
+            periodLabel: 'Kỳ hiện tại',
+            centerId,
+            periodId: '',
+            reasons: eligibility.reasons,
+            isSaving: false,
+          }
+      render()
+    })
+  })
+
+  const handleTuitionFormSave = (event, options = {}) => {
     event?.preventDefault?.()
     event?.stopPropagation?.()
 
@@ -12906,12 +12958,55 @@ function bindEvents() {
       return
     }
 
-    const normalizedValues = normalizeTuitionFormValues(tuitionFormState.values)
+    if (options.confirmedRenew) {
+      tuitionRecords = getStoredTuition([])
+      cashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(getCurrentResolvedCenterId())
+    }
+
     const currentRecord = tuitionRecords.find((record) => record.id === tuitionFormState.tuitionId)
+    const student = currentRecord
+      ? students.find((item) => item.id === currentRecord.studentId)
+      : students.find((item) => item.id === tuitionFormState.studentId)
+
+    if (
+      options.confirmedRenew &&
+      tuitionPeriodActionConfirmationState?.periodId &&
+      currentRecord &&
+      getCurrentTuitionPeriodId(currentRecord) !== tuitionPeriodActionConfirmationState.periodId
+    ) {
+      tuitionPeriodActionConfirmationState = {
+        ...tuitionPeriodActionConfirmationState,
+        isSaving: false,
+        reasons: ['Dữ liệu kỳ học đã thay đổi, vui lòng mở lại hồ sơ.'],
+      }
+      render()
+      return
+    }
+
+    if (tuitionFormState.mode === 'renew' && !options.confirmedRenew) {
+      if (!currentRecord || !student) {
+        return
+      }
+
+      tuitionPeriodActionConfirmationState = createTuitionPeriodConfirmationState(
+        'renew-create',
+        currentRecord,
+        student,
+      )
+      render()
+      return
+    }
+
+    const normalizedValues = normalizeTuitionFormValues(tuitionFormState.values)
     const savedAt = new Date().toISOString()
     const nextRecord = tuitionFormState.mode === 'renew' && currentRecord
       ? {
-          ...createRenewedTuitionRecord(currentRecord, normalizedValues),
+          ...createRenewedTuitionRecord(
+            currentRecord,
+            normalizedValues,
+            readLatestCashflowTransactionsForCurrentCenter(getCurrentResolvedCenterId()),
+            getCurrentResolvedCenterId(),
+          ),
           updatedAt: savedAt,
         }
       : {
@@ -12936,6 +13031,7 @@ function bindEvents() {
     saveStoredTuition(tuitionRecords)
     notifications = syncTuitionNotifications(notifications)
     tuitionFormState = null
+    tuitionPeriodActionConfirmationState = null
     void writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save', {
       beforePayload: currentRecord ? { ...currentRecord } : null,
     })
@@ -12983,6 +13079,48 @@ function bindEvents() {
 
   document.querySelector('[data-tuition-form]')?.addEventListener('submit', handleTuitionFormSave)
   document.querySelector('[data-tuition-action="save-form"]')?.addEventListener('click', handleTuitionFormSave)
+
+  document.querySelectorAll('[data-tuition-period-confirm-action]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (!tuitionPeriodActionConfirmationState) {
+        return
+      }
+
+      const action = button.dataset.tuitionPeriodConfirmAction
+      if (action === 'cancel') {
+        tuitionPeriodActionConfirmationState = null
+        render()
+        return
+      }
+
+      if (action !== 'confirm' || tuitionPeriodActionConfirmationState.isSaving) {
+        return
+      }
+
+      if (tuitionPeriodActionConfirmationState.reasons?.length) {
+        render()
+        return
+      }
+
+      tuitionPeriodActionConfirmationState = {
+        ...tuitionPeriodActionConfirmationState,
+        isSaving: true,
+      }
+      render()
+
+      if (tuitionPeriodActionConfirmationState?.action === 'renew-create') {
+        handleTuitionFormSave(null, { confirmedRenew: true })
+        return
+      }
+
+      if (tuitionPeriodActionConfirmationState?.action === 'undo-empty-period') {
+        await undoEmptyTuitionPeriodFromConfirmation()
+      }
+    })
+  })
 
   document.querySelectorAll('[data-tuition-payment-field]').forEach((control) => {
     control.addEventListener('input', () => {
@@ -17776,6 +17914,7 @@ function openTuitionPackageForm(studentId) {
   tuitionFormState = tuitionRecord
     ? createEditTuitionFormState(student, tuitionRecord)
     : createEmptyTuitionFormState(student)
+  tuitionPeriodActionConfirmationState = null
   clearTuitionPaymentFormState()
   tuitionDetailState = null
   tuitionRollbackPreviewState = null
@@ -17968,11 +18107,11 @@ function syncParentContactWizardStep4Draft(formState, options = {}) {
   }
 }
 
-function createRenewedTuitionRecord(currentRecord, normalizedValues) {
+function createRenewedTuitionRecord(currentRecord, normalizedValues, cashflowLedger = [], centerId = '') {
   const renewedAt = new Date().toISOString()
   const currentTermNumber = currentRecord.currentTermNumber || 1
   const nextTermNumber = currentTermNumber + 1
-  const currentDebtAmount = getTuitionDebtAmount(currentRecord)
+  const currentDebtAmount = getTuitionDebtAmount(currentRecord, cashflowLedger, centerId)
   const archivedStatus =
     currentRecord.usedSessions >= currentRecord.totalSessions && currentDebtAmount === 0
       ? 'completed'
@@ -18009,6 +18148,352 @@ function createRenewedTuitionRecord(currentRecord, normalizedValues) {
     payments: [],
     termHistory: [...(currentRecord.termHistory ?? []), currentTermSnapshot],
   }
+}
+
+function createTuitionPeriodConfirmationState(action, tuitionRecord, student, overrides = {}) {
+  const periodId = getCurrentTuitionPeriodId(tuitionRecord)
+  return {
+    action,
+    tuitionId: tuitionRecord.id,
+    studentId: tuitionRecord.studentId,
+    studentName: student?.fullName || '',
+    periodId,
+    periodLabel: `Kỳ ${tuitionRecord.currentTermNumber || 1}`,
+    centerId: getCurrentResolvedCenterId(),
+    isSaving: false,
+    reasons: [],
+    ...overrides,
+  }
+}
+
+function getLatestTuitionRecordForCurrentCenter(tuitionId) {
+  const latestTuitionRecords = getStoredTuition([])
+  const tuitionRecord = latestTuitionRecords.find((record) => record.id === tuitionId)
+
+  tuitionRecords = latestTuitionRecords
+  return tuitionRecord || null
+}
+
+function getTuitionRecordCenterOwnership(tuitionRecord, centerId = getCurrentResolvedCenterId(), options = {}) {
+  const normalizedCurrentCenterId = normalizeRuntimeCenterId(centerId)
+  const normalizedStorageCenterId = normalizeRuntimeCenterId(getCurrentStorageCenterId())
+  const fromCurrentCenterCollection = Boolean(options.fromCurrentCenterCollection)
+  const recordCenterIds = [
+    tuitionRecord?.centerId,
+    tuitionRecord?.sourceCenterId,
+    tuitionRecord?.storageCenterId,
+  ]
+    .map((value) => normalizeRuntimeCenterId(value))
+    .filter(Boolean)
+  const hasMatchingCenterId = recordCenterIds.some(
+    (recordCenterId) =>
+      recordCenterId === normalizedCurrentCenterId ||
+      recordCenterId === normalizedStorageCenterId,
+  )
+
+  if (!tuitionRecord) {
+    return {
+      ok: false,
+      reason: 'Không tìm thấy hồ sơ học phí mới nhất trong cơ sở hiện tại.',
+      provenance: 'missing-record',
+    }
+  }
+
+  if (!recordCenterIds.length) {
+    return fromCurrentCenterCollection
+      ? { ok: true, reason: '', provenance: 'current-center-collection-missing-center-id' }
+      : {
+          ok: false,
+          reason: 'Hồ sơ học phí thiếu thông tin cơ sở và chưa có provenance center-scoped.',
+          provenance: 'missing-center-without-provenance',
+        }
+  }
+
+  if (hasMatchingCenterId) {
+    return { ok: true, reason: '', provenance: 'matching-center-id' }
+  }
+
+  if (fromCurrentCenterCollection) {
+    return {
+      ok: true,
+      reason: '',
+      provenance: 'current-center-collection-legacy-center-id',
+    }
+  }
+
+  return {
+    ok: false,
+    reason: 'Hồ sơ học phí không thuộc cơ sở hiện tại.',
+    provenance: 'mismatched-center-id',
+  }
+}
+
+function normalizeRuntimeCenterId(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function getCurrentUnifiedAttendanceRecordsForTuitionGuard(centerId = getCurrentResolvedCenterId()) {
+  return buildUnifiedAttendanceRecords({
+    sessionReports,
+    storedRecords: loadStoredAttendanceRecords(centerId),
+  })
+}
+
+function getTuitionEmptyPeriodUndoEligibility({
+  tuitionRecord,
+  expectedPeriodId = '',
+  cashflowLedger = cashflowTransactions,
+  attendanceRecords = [],
+  centerId = getCurrentResolvedCenterId(),
+  fromCurrentCenterCollection = false,
+} = {}) {
+  const reasons = []
+  const periodId = tuitionRecord ? getCurrentTuitionPeriodId(tuitionRecord) : ''
+  const history = Array.isArray(tuitionRecord?.termHistory) ? tuitionRecord.termHistory : []
+  const previousTerm = history.length ? history[history.length - 1] : null
+  const previousPeriodId = previousTerm ? getTuitionPeriodIdentity(previousTerm, tuitionRecord) : ''
+
+  const centerOwnership = getTuitionRecordCenterOwnership(tuitionRecord, centerId, {
+    fromCurrentCenterCollection,
+  })
+  if (!centerOwnership.ok) {
+    reasons.push(centerOwnership.reason)
+  }
+
+  if (!periodId) {
+    reasons.push('Kỳ hiện tại thiếu mã kỳ ổn định.')
+  }
+
+  if (expectedPeriodId && periodId && String(expectedPeriodId) !== String(periodId)) {
+    reasons.push('Dữ liệu kỳ học đã thay đổi, vui lòng mở lại hồ sơ.')
+  }
+
+  if (!previousTerm || !previousPeriodId) {
+    reasons.push('Không tìm thấy kỳ trước hợp lệ để phục hồi.')
+  }
+
+  if (previousPeriodId && previousPeriodId === periodId) {
+    reasons.push('Kỳ hiện tại và kỳ trước bị trùng mã kỳ, cần review dữ liệu.')
+  }
+
+  if (previousTerm && !Number.isFinite(Number(previousTerm.termNumber))) {
+    reasons.push('Kỳ trước thiếu số kỳ hợp lệ để phục hồi.')
+  }
+
+  if (tuitionRecord && Number(tuitionRecord.usedSessions || 0) !== 0) {
+    reasons.push('Kỳ hiện tại đã có buổi học được sử dụng.')
+  }
+
+  const linkedPayments = tuitionRecord
+    ? getLinkedTuitionPaymentTransactions(cashflowLedger, tuitionRecord.id, periodId, centerId)
+    : []
+  if (linkedPayments.length) {
+    reasons.push('Kỳ hiện tại đã có giao dịch thanh toán.')
+  }
+
+  const paymentSummary = tuitionRecord
+    ? buildTuitionPaymentSummary({
+        tuitionRecord,
+        cashflowTransactions: cashflowLedger,
+        centerId,
+      })
+    : { paidAmount: 0, legacyPaidAmount: 0, paymentCount: 0 }
+  if (paymentSummary.paidAmount > 0) {
+    reasons.push('Kỳ hiện tại đã có số tiền thanh toán từ ledger.')
+  }
+
+  if (Number(tuitionRecord?.paidAmount || 0) > 0 || (Array.isArray(tuitionRecord?.payments) && tuitionRecord.payments.length)) {
+    reasons.push('Kỳ hiện tại có số tiền cũ chưa được đối soát.')
+  }
+
+  const dependentTransactions = getTuitionPeriodDependencyTransactions(
+    cashflowLedger,
+    tuitionRecord?.id,
+    periodId,
+    centerId,
+  )
+  if (dependentTransactions.length) {
+    reasons.push('Kỳ hiện tại có refund/void/reversal/correction dependency.')
+  }
+
+  const attendanceMatches = getTuitionCurrentPeriodAttendanceMatches({
+    tuitionRecord,
+    periodId,
+    attendanceRecords,
+  })
+  if (attendanceMatches.length) {
+    reasons.push('Kỳ hiện tại đã có dữ liệu điểm danh.')
+  }
+
+  if (previousTerm && tuitionRecord?.startedAt && previousTerm.startedAt) {
+    const currentStarted = new Date(tuitionRecord.startedAt).getTime()
+    const previousStarted = new Date(previousTerm.startedAt).getTime()
+    if (Number.isFinite(currentStarted) && Number.isFinite(previousStarted) && currentStarted < previousStarted) {
+      reasons.push('Kỳ hiện tại không được tạo sau kỳ trước, cần review dữ liệu.')
+    }
+  }
+
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    periodId,
+    previousTerm,
+    previousPeriodId,
+  }
+}
+
+function getTuitionPeriodDependencyTransactions(cashflowLedger, tuitionId, periodId, centerId) {
+  return (Array.isArray(cashflowLedger) ? cashflowLedger : []).filter((transaction) => {
+    if (centerId && transaction.centerId && String(transaction.centerId) !== String(centerId)) {
+      return false
+    }
+
+    if (String(transaction.sourceTuitionId || '') !== String(tuitionId || '')) {
+      return false
+    }
+
+    const transactionPeriodId = String(transaction.sourcePeriodId || transaction.sourceTermId || '')
+    if (transactionPeriodId !== String(periodId || '')) {
+      return false
+    }
+
+    const dependencyText = [
+      transaction.status,
+      transaction.sourceType,
+      transaction.type,
+      transaction.note,
+    ].join(' ').toLowerCase()
+
+    return /(refund|refunded|void|voided|reversal|reversed|correction|corrected)/.test(dependencyText)
+  })
+}
+
+function getTuitionCurrentPeriodAttendanceMatches({ tuitionRecord, periodId, attendanceRecords }) {
+  if (!tuitionRecord || !periodId) {
+    return []
+  }
+
+  const currentStartedDate = String(tuitionRecord.startedAt || '').slice(0, 10)
+
+  return (Array.isArray(attendanceRecords) ? attendanceRecords : []).filter((record) => {
+    if (String(record?.studentId || '') !== String(tuitionRecord.studentId || '')) {
+      return false
+    }
+
+    const creditValue = Number(record?.creditValue ?? 0)
+    const counted =
+      record?.counted ||
+      (record?.countsTowardTuition !== false && Number.isFinite(creditValue) && creditValue > 0)
+    if (!counted) {
+      return false
+    }
+
+    const recordPeriodId = String(record?.tuitionTermId || record?.termId || record?.packageId || '').trim()
+    if (recordPeriodId) {
+      return recordPeriodId === String(periodId)
+    }
+
+    const recordDate = String(record?.date || record?.occurrenceDate || '').slice(0, 10)
+    return Boolean(currentStartedDate && recordDate && recordDate >= currentStartedDate)
+  })
+}
+
+function restorePreviousTuitionPeriod(currentRecord, previousTerm, restoredAt = new Date().toISOString()) {
+  const previousPeriodId = getTuitionPeriodIdentity(previousTerm, currentRecord)
+  const remainingHistory = (currentRecord.termHistory || []).filter(
+    (term) => getTuitionPeriodIdentity(term, currentRecord) !== previousPeriodId,
+  )
+
+  return {
+    ...currentRecord,
+    packageName: previousTerm.packageName,
+    totalSessions: previousTerm.totalSessions,
+    usedSessions: previousTerm.usedSessions,
+    hasTotalSessionsData: previousTerm.hasTotalSessionsData ?? currentRecord.hasTotalSessionsData,
+    hasUsedSessionsData: previousTerm.hasUsedSessionsData ?? currentRecord.hasUsedSessionsData,
+    totalAmount: previousTerm.totalAmount,
+    discountType: previousTerm.discountType,
+    discountValue: previousTerm.discountValue,
+    discountAmount: previousTerm.discountAmount,
+    paidAmount: previousTerm.paidAmount ?? 0,
+    dueDate: previousTerm.dueDate || '',
+    note: previousTerm.note || '',
+    payments: previousTerm.payments ?? [],
+    currentTermNumber: previousTerm.termNumber || currentRecord.currentTermNumber,
+    currentTermId: previousPeriodId,
+    startedAt: previousTerm.startedAt || currentRecord.startedAt || '',
+    termHistory: remainingHistory,
+    updatedAt: restoredAt,
+  }
+}
+
+async function undoEmptyTuitionPeriodFromConfirmation() {
+  const confirmation = tuitionPeriodActionConfirmationState
+  if (!confirmation || confirmation.action !== 'undo-empty-period') {
+    return
+  }
+
+  const centerId = getCurrentResolvedCenterId()
+  if (confirmation.centerId && confirmation.centerId !== centerId) {
+    tuitionPeriodActionConfirmationState = {
+      ...confirmation,
+      isSaving: false,
+      reasons: ['Cơ sở hiện tại đã thay đổi, vui lòng mở lại hồ sơ.'],
+    }
+    render()
+    return
+  }
+
+  const latestTuitionRecords = getStoredTuition([])
+  const currentRecord = latestTuitionRecords.find((record) => record.id === confirmation.tuitionId)
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
+  const eligibility = getTuitionEmptyPeriodUndoEligibility({
+    tuitionRecord: currentRecord,
+    expectedPeriodId: confirmation.periodId,
+    cashflowLedger: latestCashflowTransactions,
+    attendanceRecords: getCurrentUnifiedAttendanceRecordsForTuitionGuard(centerId),
+    centerId,
+    fromCurrentCenterCollection: true,
+  })
+
+  tuitionRecords = latestTuitionRecords
+  cashflowTransactions = latestCashflowTransactions
+
+  if (!eligibility.ok) {
+    tuitionPeriodActionConfirmationState = {
+      ...confirmation,
+      isSaving: false,
+      reasons: eligibility.reasons,
+    }
+    render()
+    return
+  }
+
+  const restoredRecord = restorePreviousTuitionPeriod(
+    currentRecord,
+    eligibility.previousTerm,
+    new Date().toISOString(),
+  )
+
+  tuitionRecords = latestTuitionRecords.map((record) =>
+    record.id === restoredRecord.id ? restoredRecord : record,
+  )
+  saveStoredTuition(tuitionRecords)
+  notifications = syncTuitionNotifications(notifications)
+  tuitionFormState = null
+  clearTuitionPaymentFormState()
+  tuitionPeriodActionConfirmationState = null
+  tuitionDetailState = restoredRecord.studentId
+    ? { studentId: restoredRecord.studentId }
+    : tuitionDetailState
+  void writeC52TuitionRecordPackageThroughCloud(restoredRecord, 'tuition-package-save', {
+    beforePayload: currentRecord ? { ...currentRecord } : null,
+  })
+  render()
 }
 
 function bindNotificationOutsidePointer() {
