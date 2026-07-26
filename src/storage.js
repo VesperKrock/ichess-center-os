@@ -43,6 +43,8 @@ const NOTIFICATIONS_VERSION_KEY = createCenterScopedStorageKey('notifications.ve
 const DELETED_NOTIFICATION_IDS_KEY = createCenterScopedStorageKey('notifications.deletedIds')
 const TUITION_KEY = createCenterScopedStorageKey('tuition')
 const TEACHERS_KEY = createCenterScopedStorageKey('teachers')
+const CENTER_STAFF_MEMBERS_KEY = createCenterScopedStorageKey('centerStaffMembers')
+const CENTER_DEPARTMENTS_KEY = createCenterScopedStorageKey('centerDepartments')
 const SCHEDULE_KEY = createCenterScopedStorageKey('schedule')
 const SESSION_REPORTS_KEY = createCenterScopedStorageKey('sessionReports')
 const ATTENDANCE_ADVISORY_NOTES_KEY = createCenterScopedStorageKey('attendanceAdvisoryNotes')
@@ -74,6 +76,15 @@ const VALID_NOTIFICATION_TYPES = [
 const VALID_TEACHER_STATUSES = ['active', 'paused', 'inactive']
 const VALID_TEACHER_TYPES = ['fulltime', 'parttime', 'collaborator']
 const VALID_TEACHER_ACCOUNT_STATUSES = ['not_invited', 'invited', 'active', 'paused', 'revoked']
+const VALID_STAFF_EMPLOYMENT_TYPES = [
+  'full-time',
+  'part-time',
+  'collaborator',
+  'contract',
+  'unspecified',
+]
+const VALID_STAFF_EMPLOYMENT_STATUSES = ['active', 'on-leave', 'terminated', 'archived']
+const VALID_DEPARTMENT_STATUSES = ['active', 'archived']
 const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
 const VALID_SCHEDULE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const VALID_CLASS_SESSION_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
@@ -463,6 +474,56 @@ export function getStoredTeachers(defaultTeachers) {
 
 export function saveStoredTeachers(teachers) {
   localStorage.setItem(TEACHERS_KEY, JSON.stringify(normalizeTeachers(teachers)))
+}
+
+export function getStoredCenterStaffMembers(defaultStaffMembers = []) {
+  try {
+    const storedStaffMembers = JSON.parse(localStorage.getItem(CENTER_STAFF_MEMBERS_KEY))
+
+    if (Array.isArray(storedStaffMembers)) {
+      const normalizedStaffMembers = normalizeCenterStaffMembers(storedStaffMembers)
+      saveStoredCenterStaffMembers(normalizedStaffMembers)
+      return normalizedStaffMembers
+    }
+  } catch {
+    localStorage.removeItem(CENTER_STAFF_MEMBERS_KEY)
+  }
+
+  const normalizedDefaultStaffMembers = normalizeCenterStaffMembers(defaultStaffMembers)
+  saveStoredCenterStaffMembers(normalizedDefaultStaffMembers)
+  return normalizedDefaultStaffMembers
+}
+
+export function saveStoredCenterStaffMembers(staffMembers) {
+  localStorage.setItem(
+    CENTER_STAFF_MEMBERS_KEY,
+    JSON.stringify(normalizeCenterStaffMembers(staffMembers)),
+  )
+}
+
+export function getStoredCenterDepartments(defaultDepartments = []) {
+  try {
+    const storedDepartments = JSON.parse(localStorage.getItem(CENTER_DEPARTMENTS_KEY))
+
+    if (Array.isArray(storedDepartments)) {
+      const normalizedDepartments = normalizeCenterDepartments(storedDepartments)
+      saveStoredCenterDepartments(normalizedDepartments)
+      return normalizedDepartments
+    }
+  } catch {
+    localStorage.removeItem(CENTER_DEPARTMENTS_KEY)
+  }
+
+  const normalizedDefaultDepartments = normalizeCenterDepartments(defaultDepartments)
+  saveStoredCenterDepartments(normalizedDefaultDepartments)
+  return normalizedDefaultDepartments
+}
+
+export function saveStoredCenterDepartments(departments) {
+  localStorage.setItem(
+    CENTER_DEPARTMENTS_KEY,
+    JSON.stringify(normalizeCenterDepartments(departments)),
+  )
 }
 
 export function getStoredSchedule(defaultSessions) {
@@ -1258,6 +1319,98 @@ function normalizeTeachers(teachers) {
         updatedAt: teacher.updatedAt ? normalizeDateTime(teacher.updatedAt) : now,
       }
     })
+}
+
+export function normalizeCenterStaffMembers(staffMembers) {
+  return (staffMembers ?? [])
+    .filter((staffMember) => staffMember && typeof staffMember === 'object')
+    .map((staffMember, index) => {
+      const now = new Date().toISOString()
+      const createdAt = staffMember.createdAt ? normalizeDateTime(staffMember.createdAt) : now
+      const employmentStatus = VALID_STAFF_EMPLOYMENT_STATUSES.includes(staffMember.employmentStatus)
+        ? staffMember.employmentStatus
+        : staffMember.archivedAt
+          ? 'archived'
+          : 'active'
+      const archivedAt = employmentStatus === 'archived'
+        ? staffMember.archivedAt
+          ? normalizeDateTime(staffMember.archivedAt)
+          : now
+        : staffMember.archivedAt
+          ? normalizeDateTime(staffMember.archivedAt)
+          : ''
+
+      return {
+        ...staffMember,
+        id: String(staffMember.id || `staff-${Date.now()}-${String(index + 1).padStart(3, '0')}`),
+        centerId: normalizeStorageCenterId(staffMember.centerId || getCurrentStorageCenterId()),
+        employeeCode: normalizeStaffText(staffMember.employeeCode),
+        fullName: normalizeStaffText(staffMember.fullName || staffMember.name),
+        phone: normalizeStaffText(staffMember.phone),
+        email: normalizeStaffText(staffMember.email),
+        departmentId: normalizeStaffText(staffMember.departmentId),
+        positionTitle: normalizeStaffText(staffMember.positionTitle),
+        employmentType: VALID_STAFF_EMPLOYMENT_TYPES.includes(staffMember.employmentType)
+          ? staffMember.employmentType
+          : 'unspecified',
+        employmentStatus,
+        startDate: normalizeStaffDate(staffMember.startDate),
+        endDate: normalizeStaffDate(staffMember.endDate),
+        teacherId: normalizeStaffText(staffMember.teacherId),
+        accountUserId: normalizeStaffText(staffMember.accountUserId),
+        membershipId: normalizeStaffText(staffMember.membershipId),
+        note: normalizeStaffText(staffMember.note),
+        createdAt,
+        updatedAt: staffMember.updatedAt ? normalizeDateTime(staffMember.updatedAt) : createdAt,
+        archivedAt,
+      }
+    })
+}
+
+export function normalizeCenterDepartments(departments) {
+  return (departments ?? [])
+    .filter((department) => department && typeof department === 'object')
+    .map((department, index) => {
+      const now = new Date().toISOString()
+      const createdAt = department.createdAt ? normalizeDateTime(department.createdAt) : now
+      const status = VALID_DEPARTMENT_STATUSES.includes(department.status)
+        ? department.status
+        : department.archivedAt
+          ? 'archived'
+          : 'active'
+      const archivedAt = status === 'archived'
+        ? department.archivedAt
+          ? normalizeDateTime(department.archivedAt)
+          : now
+        : department.archivedAt
+          ? normalizeDateTime(department.archivedAt)
+          : ''
+
+      return {
+        ...department,
+        id: String(department.id || `department-${Date.now()}-${String(index + 1).padStart(3, '0')}`),
+        centerId: normalizeStorageCenterId(department.centerId || getCurrentStorageCenterId()),
+        name: normalizeStaffText(department.name),
+        code: normalizeStaffText(department.code),
+        description: normalizeStaffText(department.description),
+        status,
+        sortOrder: Number.isFinite(Number(department.sortOrder))
+          ? Number(department.sortOrder)
+          : index + 1,
+        createdAt,
+        updatedAt: department.updatedAt ? normalizeDateTime(department.updatedAt) : createdAt,
+        archivedAt,
+      }
+    })
+}
+
+function normalizeStaffText(value) {
+  return String(value ?? '').trim()
+}
+
+function normalizeStaffDate(value) {
+  const dateText = normalizeStaffText(value)
+  return isValidDateString(dateText) ? dateText : ''
 }
 
 function normalizeScheduleSessions(sessions) {

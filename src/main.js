@@ -48,6 +48,8 @@ import {
   readStoredCashflow,
   getStoredCashbookReconciliations,
   getStoredCashbookSettings,
+  getStoredCenterDepartments,
+  getStoredCenterStaffMembers,
   getStoredInventory,
   getStoredInventoryMovements,
   getStoredInventoryRequests,
@@ -70,6 +72,8 @@ import {
   saveStoredCashflowCategories,
   saveStoredCashbookReconciliations,
   saveStoredCashbookSettings,
+  saveStoredCenterDepartments,
+  saveStoredCenterStaffMembers,
   saveStoredInventory,
   saveStoredInventoryMovements,
   saveStoredInventoryRequests,
@@ -292,8 +296,21 @@ import {
   renderReportModule,
 } from './report-module.js'
 import {
+  archiveDepartment,
+  archiveStaffMember,
+  buildDepartmentFromForm,
+  buildStaffMemberFromForm,
+  createEditDepartmentFormState,
+  createEditStaffFormState,
+  createEmptyDepartmentFormState,
+  createEmptyStaffFormState,
+  findStaffMemberByTeacherId,
   initialStaffFilters,
   renderStaffModule,
+  restoreDepartment,
+  restoreStaffMember,
+  validateDepartmentForm,
+  validateStaffForm,
 } from './staff-module.js'
 import {
   ANGEL_WINGS_DATASET_ID,
@@ -528,6 +545,16 @@ let parentNoteHistoryContactId = null
 let parentContactDetailId = null
 let parentConvertPreviewState = null
 let staffFilters = { ...initialStaffFilters }
+let staffMembers = getStoredCenterStaffMembers([])
+let staffDepartments = getStoredCenterDepartments([])
+let staffFormState = null
+let isStaffDepartmentPanelOpen = false
+let staffDepartmentFormState = null
+let staffNotice = ''
+let isStaffSaving = false
+let isStaffDepartmentSaving = false
+let teacherStaffLinkState = null
+let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'initial-load' })
 let sessionReports = getStoredSessionReports()
@@ -1066,6 +1093,14 @@ function resetTransientStateForCenterSwitch() {
   parentNoteHistoryContactId = null
   parentContactDetailId = null
   parentConvertPreviewState = null
+  staffFormState = null
+  isStaffDepartmentPanelOpen = false
+  staffDepartmentFormState = null
+  staffNotice = ''
+  isStaffSaving = false
+  isStaffDepartmentSaving = false
+  teacherStaffLinkState = null
+  isTeacherStaffLinkSaving = false
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -1137,6 +1172,8 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   parentConsultations = getStoredParentConsultations(
     useSampleFallback ? sampleParentConsultations : [],
   )
+  staffMembers = getStoredCenterStaffMembers([])
+  staffDepartments = getStoredCenterDepartments([])
   scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
   scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
   sessionReports = getStoredSessionReports([])
@@ -1158,6 +1195,803 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   activeLocalDataCenterId = getCurrentStorageCenterId()
   activeNotificationDataCenterId = getCurrentStorageCenterId()
   resetTransientStateForCenterSwitch()
+}
+
+function refreshStaffDataFromStorage() {
+  staffMembers = getStoredCenterStaffMembers([])
+  staffDepartments = getStoredCenterDepartments([])
+}
+
+function getStaffCurrentCenterId() {
+  return getCurrentStorageCenterId()
+}
+
+function openCreateStaffForm() {
+  const nextState = createEmptyStaffFormState()
+  nextState.centerId = getStaffCurrentCenterId()
+  staffFormState = nextState
+  staffNotice = ''
+  render()
+}
+
+function openEditStaffForm(staffId) {
+  refreshStaffDataFromStorage()
+  const staffMember = staffMembers.find((item) => item.id === staffId)
+
+  if (!staffMember) {
+    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+
+  staffFormState = createEditStaffFormState(staffMember)
+  staffNotice = ''
+  render()
+}
+
+function closeStaffForm() {
+  staffFormState = null
+  isStaffSaving = false
+  render()
+}
+
+function updateStaffFormField(fieldName, value) {
+  if (!staffFormState) {
+    return
+  }
+
+  const nextValues = {
+    ...staffFormState.values,
+    [fieldName]: value,
+  }
+
+  if (fieldName === 'employmentStatus' && ['active', 'on-leave'].includes(value)) {
+    nextValues.endDate = ''
+  }
+
+  staffFormState = {
+    ...staffFormState,
+    values: nextValues,
+  }
+}
+
+function collectStaffFormValues(formElement) {
+  const values = { ...(staffFormState?.values || {}) }
+
+  formElement.querySelectorAll('[data-staff-form-field]').forEach((control) => {
+    values[control.dataset.staffFormField] = control.value
+  })
+
+  return values
+}
+
+function handleStaffFormSubmit(formElement) {
+  if (!staffFormState || isStaffSaving) {
+    return
+  }
+
+  const currentCenterId = getStaffCurrentCenterId()
+
+  if (staffFormState.centerId && staffFormState.centerId !== currentCenterId) {
+    staffFormState = {
+      ...staffFormState,
+      message: 'Cơ sở đã thay đổi. Vui lòng mở lại form trước khi lưu.',
+    }
+    render()
+    return
+  }
+
+  isStaffSaving = true
+  staffFormState = { ...staffFormState, isSaving: true, message: '' }
+
+  refreshStaffDataFromStorage()
+  const values = collectStaffFormValues(formElement)
+  const existingStaffMember = staffFormState.mode === 'edit'
+    ? staffMembers.find((item) => item.id === staffFormState.staffId)
+    : null
+  const matchingStaffCount = staffFormState.mode === 'edit'
+    ? staffMembers.filter((item) => item.id === staffFormState.staffId).length
+    : 0
+
+  if (staffFormState.mode === 'edit' && !existingStaffMember) {
+    isStaffSaving = false
+    staffFormState = {
+      ...staffFormState,
+      values,
+      isSaving: false,
+      message: 'Hồ sơ nhân viên đã thay đổi hoặc không còn tồn tại. Vui lòng mở lại.',
+    }
+    render()
+    return
+  }
+
+  if (staffFormState.mode === 'edit' && matchingStaffCount !== 1) {
+    isStaffSaving = false
+    staffFormState = {
+      ...staffFormState,
+      values,
+      isSaving: false,
+      message: 'Có nhiều hồ sơ nhân viên trùng ID. Cần kiểm tra dữ liệu trước khi lưu.',
+    }
+    render()
+    return
+  }
+
+  if (existingStaffMember?.centerId && existingStaffMember.centerId !== currentCenterId) {
+    isStaffSaving = false
+    staffFormState = {
+      ...staffFormState,
+      values,
+      isSaving: false,
+      message: 'Hồ sơ nhân viên thuộc cơ sở khác. Không thể lưu chéo cơ sở.',
+    }
+    render()
+    return
+  }
+
+  const errors = validateStaffForm(values, {
+    staffMembers,
+    departments: staffDepartments,
+    currentStaffId: existingStaffMember?.id || null,
+    allowedArchivedDepartmentId: existingStaffMember?.departmentId || '',
+  })
+
+  if (Object.keys(errors).length) {
+    isStaffSaving = false
+    staffFormState = {
+      ...staffFormState,
+      values,
+      errors,
+      isSaving: false,
+      message: 'Vui lòng kiểm tra các trường chưa hợp lệ.',
+    }
+    render()
+    focusFirstStaffFormError()
+    return
+  }
+
+  const savedStaffMember = buildStaffMemberFromForm(values, existingStaffMember, currentCenterId)
+  staffMembers = existingStaffMember
+    ? staffMembers.map((item) => (item.id === savedStaffMember.id ? savedStaffMember : item))
+    : [savedStaffMember, ...staffMembers]
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  staffFormState = null
+  staffNotice = existingStaffMember ? 'Đã cập nhật hồ sơ nhân viên.' : 'Đã thêm hồ sơ nhân viên.'
+  isStaffSaving = false
+  render()
+}
+
+function focusFirstStaffFormError() {
+  const firstError = document.querySelector('.staff-form .staff-field-error')
+  const field = firstError?.closest('label')?.querySelector('[data-staff-form-field]')
+
+  if (field && typeof field.focus === 'function') {
+    field.focus()
+  }
+}
+
+function handleArchiveStaff(staffId) {
+  if (isStaffSaving) {
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const staffMember = staffMembers.find((item) => item.id === staffId)
+
+  if (!staffMember) {
+    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+
+  const confirmed = window.confirm(
+    'Lưu trữ hồ sơ nhân viên này? Hồ sơ sẽ ẩn khỏi danh sách mặc định, dữ liệu lịch sử không bị xóa, giáo viên/tài khoản không bị xóa hoặc khóa.',
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  isStaffSaving = true
+  staffMembers = staffMembers.map((item) => (item.id === staffId ? archiveStaffMember(item) : item))
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  staffNotice = 'Đã lưu trữ hồ sơ nhân viên.'
+  isStaffSaving = false
+  render()
+}
+
+function handleRestoreStaff(staffId) {
+  if (isStaffSaving) {
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const staffMember = staffMembers.find((item) => item.id === staffId)
+
+  if (!staffMember) {
+    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+
+  const errors = validateStaffForm(staffMember, {
+    staffMembers,
+    departments: staffDepartments,
+    currentStaffId: staffMember.id,
+    allowedArchivedDepartmentId: staffMember.departmentId || '',
+  })
+
+  if (errors.employeeCode) {
+    staffNotice = errors.employeeCode
+    render()
+    return
+  }
+
+  isStaffSaving = true
+  staffMembers = staffMembers.map((item) => (item.id === staffId ? restoreStaffMember(item) : item))
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  staffNotice = 'Đã khôi phục hồ sơ nhân viên.'
+  isStaffSaving = false
+  render()
+}
+
+function openStaffDepartmentPanel() {
+  isStaffDepartmentPanelOpen = true
+  staffDepartmentFormState = null
+  staffNotice = ''
+  render()
+}
+
+function closeStaffDepartmentPanel() {
+  isStaffDepartmentPanelOpen = false
+  staffDepartmentFormState = null
+  isStaffDepartmentSaving = false
+  render()
+}
+
+function openCreateDepartmentForm() {
+  const nextState = createEmptyDepartmentFormState()
+  nextState.centerId = getStaffCurrentCenterId()
+  staffDepartmentFormState = nextState
+  render()
+}
+
+function openEditDepartmentForm(departmentId) {
+  refreshStaffDataFromStorage()
+  const department = staffDepartments.find((item) => item.id === departmentId)
+
+  if (!department) {
+    staffNotice = 'Không tìm thấy phòng ban mới nhất.'
+    render()
+    return
+  }
+
+  staffDepartmentFormState = createEditDepartmentFormState(department)
+  render()
+}
+
+function updateStaffDepartmentField(fieldName, value) {
+  if (!staffDepartmentFormState) {
+    return
+  }
+
+  staffDepartmentFormState = {
+    ...staffDepartmentFormState,
+    values: {
+      ...staffDepartmentFormState.values,
+      [fieldName]: value,
+    },
+  }
+}
+
+function collectDepartmentFormValues(formElement) {
+  const values = { ...(staffDepartmentFormState?.values || {}) }
+
+  formElement.querySelectorAll('[data-staff-department-field]').forEach((control) => {
+    values[control.dataset.staffDepartmentField] = control.value
+  })
+
+  return values
+}
+
+function handleDepartmentFormSubmit(formElement) {
+  if (!staffDepartmentFormState || isStaffDepartmentSaving) {
+    return
+  }
+
+  const currentCenterId = getStaffCurrentCenterId()
+
+  if (staffDepartmentFormState.centerId && staffDepartmentFormState.centerId !== currentCenterId) {
+    staffDepartmentFormState = {
+      ...staffDepartmentFormState,
+      message: 'Cơ sở đã thay đổi. Vui lòng mở lại form phòng ban trước khi lưu.',
+    }
+    render()
+    return
+  }
+
+  isStaffDepartmentSaving = true
+  staffDepartmentFormState = { ...staffDepartmentFormState, isSaving: true, message: '' }
+  refreshStaffDataFromStorage()
+
+  const values = collectDepartmentFormValues(formElement)
+  const existingDepartment = staffDepartmentFormState.mode === 'edit'
+    ? staffDepartments.find((item) => item.id === staffDepartmentFormState.departmentId)
+    : null
+
+  if (staffDepartmentFormState.mode === 'edit' && !existingDepartment) {
+    isStaffDepartmentSaving = false
+    staffDepartmentFormState = {
+      ...staffDepartmentFormState,
+      values,
+      isSaving: false,
+      message: 'Phòng ban đã thay đổi hoặc không còn tồn tại. Vui lòng mở lại.',
+    }
+    render()
+    return
+  }
+
+  const errors = validateDepartmentForm(values, {
+    departments: staffDepartments,
+    currentDepartmentId: existingDepartment?.id || null,
+  })
+
+  if (Object.keys(errors).length) {
+    isStaffDepartmentSaving = false
+    staffDepartmentFormState = {
+      ...staffDepartmentFormState,
+      values,
+      errors,
+      isSaving: false,
+      message: 'Vui lòng kiểm tra thông tin phòng ban.',
+    }
+    render()
+    return
+  }
+
+  const savedDepartment = buildDepartmentFromForm(values, existingDepartment, currentCenterId)
+  staffDepartments = existingDepartment
+    ? staffDepartments.map((item) => (item.id === savedDepartment.id ? savedDepartment : item))
+    : [savedDepartment, ...staffDepartments]
+  saveStoredCenterDepartments(staffDepartments)
+  refreshStaffDataFromStorage()
+  staffDepartmentFormState = null
+  staffNotice = existingDepartment ? 'Đã cập nhật phòng ban.' : 'Đã thêm phòng ban.'
+  isStaffDepartmentSaving = false
+  render()
+}
+
+function handleArchiveDepartment(departmentId) {
+  if (isStaffDepartmentSaving) {
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const department = staffDepartments.find((item) => item.id === departmentId)
+
+  if (!department) {
+    staffNotice = 'Không tìm thấy phòng ban mới nhất.'
+    render()
+    return
+  }
+
+  const referencedCount = staffMembers.filter((staffMember) => staffMember.departmentId === departmentId).length
+  const confirmed = window.confirm(
+    `Lưu trữ phòng ban này? ${referencedCount.toLocaleString('vi-VN')} hồ sơ nhân viên đang tham chiếu vẫn giữ departmentId và không bị xóa.`,
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  isStaffDepartmentSaving = true
+  staffDepartments = staffDepartments.map((item) => (item.id === departmentId ? archiveDepartment(item) : item))
+  saveStoredCenterDepartments(staffDepartments)
+  refreshStaffDataFromStorage()
+  staffNotice = 'Đã lưu trữ phòng ban.'
+  isStaffDepartmentSaving = false
+  render()
+}
+
+function handleRestoreDepartment(departmentId) {
+  if (isStaffDepartmentSaving) {
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const department = staffDepartments.find((item) => item.id === departmentId)
+
+  if (!department) {
+    staffNotice = 'Không tìm thấy phòng ban mới nhất.'
+    render()
+    return
+  }
+
+  const restoredDepartment = restoreDepartment(department)
+  const errors = validateDepartmentForm(restoredDepartment, {
+    departments: staffDepartments,
+    currentDepartmentId: department.id,
+  })
+
+  if (Object.keys(errors).length) {
+    staffNotice = errors.name || errors.code || 'Không thể khôi phục phòng ban do dữ liệu trùng mới nhất.'
+    render()
+    return
+  }
+
+  isStaffDepartmentSaving = true
+  staffDepartments = staffDepartments.map((item) => (item.id === departmentId ? restoredDepartment : item))
+  saveStoredCenterDepartments(staffDepartments)
+  refreshStaffDataFromStorage()
+  staffNotice = 'Đã khôi phục phòng ban.'
+  isStaffDepartmentSaving = false
+  render()
+}
+
+function createTeacherStaffLinkFormValues(teacher) {
+  return {
+    employeeCode: '',
+    fullName: String(teacher?.fullName || teacher?.displayName || '').trim(),
+    phone: String(teacher?.phone || '').trim(),
+    email: String(teacher?.email || teacher?.loginEmail || '').trim(),
+    departmentId: '',
+    positionTitle: 'Giáo viên',
+    employmentType: mapTeacherTypeToStaffEmploymentType(teacher?.teacherType),
+    employmentStatus: teacher?.status === 'active' ? 'active' : 'terminated',
+    startDate: '',
+    endDate: '',
+    note: '',
+  }
+}
+
+function mapTeacherTypeToStaffEmploymentType(teacherType) {
+  const map = {
+    fulltime: 'full-time',
+    parttime: 'part-time',
+    collaborator: 'collaborator',
+  }
+
+  return map[teacherType] || 'unspecified'
+}
+
+function openTeacherStaffLinkModal(teacherId) {
+  refreshStaffDataFromStorage()
+  const teacher = teachers.find((item) => item.id === teacherId)
+
+  if (!teacher) {
+    return
+  }
+
+  teacherStaffLinkState = {
+    teacherId,
+    centerId: getStaffCurrentCenterId(),
+    mode: 'existing',
+    query: '',
+    values: createTeacherStaffLinkFormValues(teacher),
+    errors: {},
+    message: teacher.status === 'active'
+      ? ''
+      : 'Giáo viên không còn active nên không thể tạo liên kết nhân sự mới.',
+    isSaving: false,
+  }
+  render()
+}
+
+function closeTeacherStaffLinkModal() {
+  teacherStaffLinkState = null
+  isTeacherStaffLinkSaving = false
+  render()
+}
+
+function setTeacherStaffLinkMode(mode) {
+  if (!teacherStaffLinkState || !['existing', 'create'].includes(mode)) {
+    return
+  }
+
+  teacherStaffLinkState = {
+    ...teacherStaffLinkState,
+    mode,
+    errors: {},
+    message: '',
+  }
+  render()
+}
+
+function updateTeacherStaffLinkQuery(value) {
+  if (!teacherStaffLinkState) {
+    return
+  }
+
+  teacherStaffLinkState = {
+    ...teacherStaffLinkState,
+    query: value,
+  }
+}
+
+function updateTeacherStaffCreateField(fieldName, value) {
+  if (!teacherStaffLinkState) {
+    return
+  }
+
+  const nextValues = {
+    ...teacherStaffLinkState.values,
+    [fieldName]: value,
+  }
+
+  if (fieldName === 'employmentStatus' && ['active', 'on-leave'].includes(value)) {
+    nextValues.endDate = ''
+  }
+
+  teacherStaffLinkState = {
+    ...teacherStaffLinkState,
+    values: nextValues,
+  }
+}
+
+function collectTeacherStaffCreateValues(formElement) {
+  const values = { ...(teacherStaffLinkState?.values || {}) }
+
+  formElement.querySelectorAll('[data-teacher-staff-create-field]').forEach((control) => {
+    values[control.dataset.teacherStaffCreateField] = control.value
+  })
+
+  return values
+}
+
+function getLatestTeacherForStaffLink(teacherId) {
+  teachers = getStoredTeachers([])
+  return teachers.find((teacher) => teacher.id === teacherId)
+}
+
+function canLinkTeacherToStaff(teacher, staffList, existingStaffId = '') {
+  if (!teacher) {
+    return 'Không tìm thấy giáo viên mới nhất.'
+  }
+
+  if (teacher.status !== 'active') {
+    return 'Giáo viên không còn active nên không thể tạo liên kết nhân sự mới.'
+  }
+
+  const linkLookup = findStaffMemberByTeacherId(staffList, teacher.id)
+
+  if (linkLookup.status === 'duplicate') {
+    return 'Cần review: có nhiều hồ sơ nhân viên đang trỏ tới giáo viên này.'
+  }
+
+  if (linkLookup.staffMember && linkLookup.staffMember.id !== existingStaffId) {
+    return 'Giáo viên đã được liên kết với một hồ sơ nhân viên khác.'
+  }
+
+  return ''
+}
+
+function handleLinkExistingStaffToTeacher(staffId) {
+  if (!teacherStaffLinkState || isTeacherStaffLinkSaving) {
+    return
+  }
+
+  const currentCenterId = getStaffCurrentCenterId()
+  if (teacherStaffLinkState.centerId !== currentCenterId) {
+    teacherStaffLinkState = {
+      ...teacherStaffLinkState,
+      message: 'Cơ sở đã thay đổi. Vui lòng mở lại modal liên kết.',
+    }
+    render()
+    return
+  }
+
+  isTeacherStaffLinkSaving = true
+  teacherStaffLinkState = { ...teacherStaffLinkState, isSaving: true, message: '' }
+  refreshStaffDataFromStorage()
+
+  const teacher = getLatestTeacherForStaffLink(teacherStaffLinkState.teacherId)
+  const targetStaff = staffMembers.find((staffMember) => staffMember.id === staffId)
+  const teacherError = canLinkTeacherToStaff(teacher, staffMembers, staffId)
+
+  if (teacherError) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = { ...teacherStaffLinkState, isSaving: false, message: teacherError }
+    render()
+    return
+  }
+
+  if (!targetStaff) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = { ...teacherStaffLinkState, isSaving: false, message: 'Không tìm thấy hồ sơ nhân viên mới nhất.' }
+    render()
+    return
+  }
+
+  if (targetStaff.centerId && targetStaff.centerId !== currentCenterId) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = { ...teacherStaffLinkState, isSaving: false, message: 'Không thể liên kết hồ sơ khác cơ sở.' }
+    render()
+    return
+  }
+
+  if (targetStaff.employmentStatus === 'archived') {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = { ...teacherStaffLinkState, isSaving: false, message: 'Không thể liên kết hồ sơ nhân viên đã lưu trữ.' }
+    render()
+    return
+  }
+
+  if (targetStaff.teacherId && targetStaff.teacherId !== teacher.id) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = {
+      ...teacherStaffLinkState,
+      isSaving: false,
+      message: 'Hồ sơ nhân viên đã được liên kết với một giáo viên khác.',
+    }
+    render()
+    return
+  }
+
+  const now = new Date().toISOString()
+  staffMembers = staffMembers.map((staffMember) =>
+    staffMember.id === staffId
+      ? {
+          ...staffMember,
+          teacherId: teacher.id,
+          teacherLinkedAt: staffMember.teacherLinkedAt || now,
+          updatedAt: now,
+        }
+      : staffMember,
+  )
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  teacherStaffLinkState = null
+  staffNotice = 'Đã liên kết hồ sơ Giáo viên với Nhân viên.'
+  isTeacherStaffLinkSaving = false
+  render()
+}
+
+function handleCreateStaffFromTeacher(formElement) {
+  if (!teacherStaffLinkState || isTeacherStaffLinkSaving) {
+    return
+  }
+
+  const currentCenterId = getStaffCurrentCenterId()
+  const values = collectTeacherStaffCreateValues(formElement)
+
+  if (teacherStaffLinkState.centerId !== currentCenterId) {
+    teacherStaffLinkState = {
+      ...teacherStaffLinkState,
+      values,
+      message: 'Cơ sở đã thay đổi. Vui lòng mở lại modal liên kết.',
+    }
+    render()
+    return
+  }
+
+  isTeacherStaffLinkSaving = true
+  teacherStaffLinkState = { ...teacherStaffLinkState, values, isSaving: true, message: '' }
+  refreshStaffDataFromStorage()
+
+  const teacher = getLatestTeacherForStaffLink(teacherStaffLinkState.teacherId)
+  const teacherError = canLinkTeacherToStaff(teacher, staffMembers)
+
+  if (teacherError) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = { ...teacherStaffLinkState, values, isSaving: false, message: teacherError }
+    render()
+    return
+  }
+
+  const errors = validateStaffForm(values, {
+    staffMembers,
+    departments: staffDepartments,
+  })
+
+  if (Object.keys(errors).length) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = {
+      ...teacherStaffLinkState,
+      values,
+      errors,
+      isSaving: false,
+      message: 'Vui lòng kiểm tra thông tin nhân viên.',
+    }
+    render()
+    return
+  }
+
+  const now = new Date().toISOString()
+  const staffMember = {
+    ...buildStaffMemberFromForm(values, null, currentCenterId),
+    teacherId: teacher.id,
+    teacherLinkedAt: now,
+    updatedAt: now,
+  }
+
+  staffMembers = [staffMember, ...staffMembers]
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  teacherStaffLinkState = null
+  staffNotice = 'Đã tạo hồ sơ nhân viên và liên kết giáo viên.'
+  isTeacherStaffLinkSaving = false
+  render()
+}
+
+function unlinkTeacherFromStaff(staffId, teacherId) {
+  if (isTeacherStaffLinkSaving) {
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const staffMember = staffMembers.find((item) => item.id === staffId)
+
+  if (!staffMember) {
+    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+
+  if (staffMember.teacherId !== teacherId) {
+    staffNotice = 'Liên kết đã thay đổi. Vui lòng tải lại hồ sơ trước khi gỡ.'
+    render()
+    return
+  }
+
+  const confirmed = window.confirm(
+    'Gỡ liên kết hồ sơ? Hồ sơ Nhân viên vẫn còn, hồ sơ Giáo viên vẫn còn, TKB/điểm danh không bị xóa, tài khoản không bị thay đổi. Chỉ mối liên kết nhân sự bị gỡ.',
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  const now = new Date().toISOString()
+  staffMembers = staffMembers.map((item) =>
+    item.id === staffId
+      ? {
+          ...item,
+          teacherId: '',
+          teacherLinkedAt: '',
+          updatedAt: now,
+        }
+      : item,
+  )
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  staffNotice = 'Đã gỡ liên kết hồ sơ Giáo viên và Nhân viên.'
+  render()
+}
+
+function openLinkedStaffFromTeacher(staffId) {
+  refreshStaffDataFromStorage()
+  const staffMember = staffMembers.find((item) => item.id === staffId)
+
+  if (!staffMember) {
+    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+    openModuleWindowFromChildInteraction('nhan-vien')
+    return
+  }
+
+  staffFormState = createEditStaffFormState(staffMember)
+  staffFilters = {
+    ...staffFilters,
+    employmentStatus: 'all',
+    query: staffMember.employeeCode || staffMember.fullName || '',
+  }
+  openModuleWindowFromChildInteraction('nhan-vien')
+}
+
+function openLinkedTeacherFromStaff(teacherId) {
+  const teacher = teachers.find((item) => item.id === teacherId)
+
+  if (!teacher) {
+    staffNotice = 'Không tìm thấy hồ sơ Giáo viên tương ứng.'
+    render()
+    return
+  }
+
+  selectedTeacherId = teacher.id
+  teacherFormState = null
+  openModuleWindowFromChildInteraction('giao-vien')
 }
 
 function render() {
@@ -1418,6 +2252,10 @@ function getStableElementSelector(element) {
     'data-attendance-baseline-cell-input',
     'data-report-filter',
     'data-staff-filter',
+    'data-staff-form-field',
+    'data-staff-department-field',
+    'data-teacher-staff-create-field',
+    'data-teacher-staff-link-query',
     'name',
   ]
   const attributeName = stableAttributeNames.find((name) => element.hasAttribute?.(name))
@@ -4568,15 +5406,26 @@ function renderWindowBody(windowItem) {
       scheduleSessions,
       classSessions,
       sessionReports,
+      {
+        staffMembers,
+        departments: staffDepartments,
+        staffLinkState: teacherStaffLinkState,
+      },
     )
   }
 
   if (moduleItem.id === 'nhan-vien') {
     return renderStaffModule({
+      staffMembers,
+      departments: staffDepartments,
       teachers,
       scheduleSessions,
       sessionReports,
       filters: staffFilters,
+      formState: staffFormState,
+      isDepartmentPanelOpen: isStaffDepartmentPanelOpen,
+      departmentFormState: staffDepartmentFormState,
+      notice: staffNotice,
     })
   }
 
@@ -11047,6 +11896,123 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-staff-form-field]').forEach((control) => {
+    const eventName = control.tagName === 'SELECT' ? 'change' : 'input'
+    control.addEventListener(eventName, () => {
+      updateStaffFormField(control.dataset.staffFormField, control.value)
+      if (control.dataset.staffFormField === 'employmentStatus') {
+        render()
+      }
+    })
+  })
+
+  document.querySelector('[data-staff-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    handleStaffFormSubmit(event.currentTarget)
+  })
+
+  document.querySelectorAll('[data-staff-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const action = button.dataset.staffAction
+
+      if (action === 'save') {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (action === 'open-create') {
+        openCreateStaffForm()
+        return
+      }
+
+      if (action === 'open-edit') {
+        openEditStaffForm(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'close-form') {
+        closeStaffForm()
+        return
+      }
+
+      if (action === 'archive') {
+        handleArchiveStaff(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'restore') {
+        handleRestoreStaff(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'open-linked-teacher') {
+        openLinkedTeacherFromStaff(button.dataset.teacherId)
+        return
+      }
+
+      if (action === 'unlink-teacher') {
+        unlinkTeacherFromStaff(button.dataset.staffId, button.dataset.teacherId)
+        return
+      }
+
+      if (action === 'open-departments') {
+        openStaffDepartmentPanel()
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-staff-department-field]').forEach((control) => {
+    const eventName = control.tagName === 'SELECT' ? 'change' : 'input'
+    control.addEventListener(eventName, () => {
+      updateStaffDepartmentField(control.dataset.staffDepartmentField, control.value)
+    })
+  })
+
+  document.querySelector('[data-staff-department-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    handleDepartmentFormSubmit(event.currentTarget)
+  })
+
+  document.querySelectorAll('[data-staff-department-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const action = button.dataset.staffDepartmentAction
+
+      if (action === 'close') {
+        closeStaffDepartmentPanel()
+        return
+      }
+
+      if (action === 'open-create') {
+        openCreateDepartmentForm()
+        return
+      }
+
+      if (action === 'open-edit') {
+        openEditDepartmentForm(button.dataset.departmentId)
+        return
+      }
+
+      if (action === 'cancel-form') {
+        staffDepartmentFormState = null
+        render()
+        return
+      }
+
+      if (action === 'archive') {
+        handleArchiveDepartment(button.dataset.departmentId)
+        return
+      }
+
+      if (action === 'restore') {
+        handleRestoreDepartment(button.dataset.departmentId)
+      }
+    })
+  })
+
   document.querySelectorAll('[data-report-draft-field]').forEach((control) => {
     control.addEventListener('input', () => {
       reportState = {
@@ -15048,6 +16014,72 @@ function bindEvents() {
       summary.setAttribute('aria-expanded', 'true')
       shell.querySelector('.teacher-portal-preview')?.scrollIntoView({ block: 'nearest' })
     })
+  })
+
+  document.querySelectorAll('[data-teacher-action="open-staff-link"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openTeacherStaffLinkModal(button.dataset.teacherId)
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-action="open-linked-staff"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      openLinkedStaffFromTeacher(button.dataset.staffId)
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-action="unlink-staff"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      unlinkTeacherFromStaff(button.dataset.staffId, button.dataset.teacherId)
+    })
+  })
+
+  document.querySelectorAll('[data-teacher-staff-link-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const action = button.dataset.teacherStaffLinkAction
+
+      if (action === 'close') {
+        closeTeacherStaffLinkModal()
+        return
+      }
+
+      if (action === 'set-mode') {
+        setTeacherStaffLinkMode(button.dataset.linkMode)
+        return
+      }
+
+      if (action === 'link-existing') {
+        handleLinkExistingStaffToTeacher(button.dataset.staffId)
+      }
+    })
+  })
+
+  document.querySelector('[data-teacher-staff-link-query]')?.addEventListener('input', (event) => {
+    updateTeacherStaffLinkQuery(event.target.value)
+    render()
+  })
+
+  document.querySelectorAll('[data-teacher-staff-create-field]').forEach((control) => {
+    const eventName = control.tagName === 'SELECT' ? 'change' : 'input'
+    control.addEventListener(eventName, () => {
+      updateTeacherStaffCreateField(control.dataset.teacherStaffCreateField, control.value)
+      if (control.dataset.teacherStaffCreateField === 'employmentStatus') {
+        render()
+      }
+    })
+  })
+
+  document.querySelector('[data-teacher-staff-create-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    handleCreateStaffFromTeacher(event.currentTarget)
   })
 
   document.querySelectorAll('[data-teacher-action="open-edit"]').forEach((button) => {

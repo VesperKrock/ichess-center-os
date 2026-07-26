@@ -286,12 +286,16 @@ export function renderTeacherModule(
   schedules = [],
   classSessions = [],
   sessionReports = [],
+  staffContext = {},
 ) {
   const activeFilters = { ...initialTeacherFilters, ...filters }
   const filteredTeachers = getFilteredTeachers(teachers, activeFilters)
   const stats = getTeacherStats(teachers)
   const selectedTeacher = teachers.find((teacher) => teacher.id === selectedTeacherId)
   const teacherStudentLinkMap = buildTeacherStudentLinkMap(teachers, students, schedules)
+  const staffMembers = Array.isArray(staffContext.staffMembers) ? staffContext.staffMembers : []
+  const departments = Array.isArray(staffContext.departments) ? staffContext.departments : []
+  const staffLinkState = staffContext.staffLinkState || null
 
   return `
     <section class="teacher-module ${formState || selectedTeacher ? 'panel-open' : ''}" aria-label="Giáo viên">
@@ -374,8 +378,10 @@ export function renderTeacherModule(
             schedules,
             students,
             sessionReports,
+            staffMembers,
           )
         : ''}
+      ${staffLinkState ? renderTeacherStaffLinkModal(staffLinkState, teachers, staffMembers, departments) : ''}
       ${formState ? renderTeacherForm(formState, classSessions) : ''}
     </section>
   `
@@ -508,7 +514,9 @@ function renderTeacherProfile(
   schedules = [],
   students = [],
   sessionReports = [],
+  staffMembers = [],
 ) {
+  const staffLink = findStaffMemberByTeacherId(staffMembers, teacher.id)
   return `
     <div class="teacher-profile-backdrop" role="presentation">
       <section class="teacher-profile-panel" aria-label="Hồ sơ giáo viên">
@@ -532,7 +540,7 @@ function renderTeacherProfile(
           </div>
         </div>
         <div class="teacher-profile-grid teacher-profile-two-pane">
-          ${renderTeacherInfoPane(teacher, classSessions)}
+          ${renderTeacherInfoPane(teacher, classSessions, staffLink)}
           ${renderTeacherTeachingUpdatePane(teacher, studentLinks, schedules, students, sessionReports, classSessions)}
         </div>
       </section>
@@ -540,7 +548,7 @@ function renderTeacherProfile(
   `
 }
 
-function renderTeacherInfoPane(teacher, classSessions = []) {
+function renderTeacherInfoPane(teacher, classSessions = [], staffLink = createTeacherStaffLinkLookupResult()) {
   return `
     <section class="teacher-profile-pane teacher-profile-info-pane" aria-label="Thông tin giáo viên">
       <div class="teacher-profile-pane-heading">
@@ -564,6 +572,7 @@ function renderTeacherInfoPane(teacher, classSessions = []) {
         ['Khu vực hiện tại', teacher.currentArea],
       ])}
       ${renderTeacherAccountReadinessProfile(teacher)}
+      ${renderTeacherStaffLinkProfile(teacher, staffLink)}
       <section class="teacher-profile-section">
         <h5>Giảng dạy</h5>
         ${renderProfileTagGroup('Lớp dạy phù hợp', (teacher.levels ?? []).map(getTeacherLevelLabel), 'Chưa cập nhật')}
@@ -1384,6 +1393,238 @@ function renderTeacherAccountReadinessProfile(teacher) {
       <p>Tài khoản đăng nhập giáo viên sẽ được bật ở phase sau. Hiện chưa tạo tài khoản đăng nhập, chưa gửi lời mời và chưa mở Teacher Portal login.</p>
     </section>
   `
+}
+
+function renderTeacherStaffLinkProfile(teacher, staffLink) {
+  if (staffLink.status === 'duplicate') {
+    return `
+      <section class="teacher-profile-section teacher-staff-link-card">
+        <h5>Hồ sơ nhân viên</h5>
+        <p class="teacher-staff-link-warning">Cần review: có nhiều hồ sơ nhân viên đang trỏ tới giáo viên này.</p>
+      </section>
+    `
+  }
+
+  if (staffLink.staffMember) {
+    const staffMember = staffLink.staffMember
+    const label = [staffMember.employeeCode, staffMember.fullName].filter(Boolean).join(' · ')
+    const isArchived = staffMember.employmentStatus === 'archived'
+
+    return `
+      <section class="teacher-profile-section teacher-staff-link-card">
+        <h5>Hồ sơ nhân viên</h5>
+        <p>${escapeHtml(isArchived ? 'Hồ sơ nhân viên đã lưu trữ' : label || 'Đã liên kết')}</p>
+        <div class="teacher-staff-link-actions">
+          <button type="button" data-teacher-action="open-linked-staff" data-staff-id="${escapeAttribute(staffMember.id)}">Mở hồ sơ nhân viên</button>
+          <button type="button" data-teacher-action="unlink-staff" data-teacher-id="${escapeAttribute(teacher.id)}" data-staff-id="${escapeAttribute(staffMember.id)}">Gỡ liên kết</button>
+        </div>
+      </section>
+    `
+  }
+
+  const canLink = teacher.status === 'active'
+
+  return `
+    <section class="teacher-profile-section teacher-staff-link-card">
+      <h5>Hồ sơ nhân viên</h5>
+      <p>Hồ sơ nhân viên: Chưa liên kết</p>
+      ${
+        canLink
+          ? `<button type="button" data-teacher-action="open-staff-link" data-teacher-id="${escapeAttribute(teacher.id)}">Liên kết hồ sơ nhân viên</button>`
+          : '<p class="teacher-staff-link-warning">Giáo viên không còn active nên không thể tạo liên kết nhân sự mới.</p>'
+      }
+    </section>
+  `
+}
+
+function renderTeacherStaffLinkModal(state, teachers = [], staffMembers = [], departments = []) {
+  const teacher = teachers.find((item) => item.id === state.teacherId)
+  const values = {
+    employeeCode: '',
+    fullName: '',
+    phone: '',
+    email: '',
+    departmentId: '',
+    positionTitle: 'Giáo viên',
+    employmentType: 'unspecified',
+    employmentStatus: 'active',
+    startDate: '',
+    endDate: '',
+    note: '',
+    ...(state.values || {}),
+  }
+  const availableStaff = getAvailableStaffForTeacherLink(staffMembers, state.query)
+
+  return `
+    <div class="teacher-staff-link-modal" role="presentation">
+      <section class="teacher-staff-link-window" aria-labelledby="teacher-staff-link-title">
+        <div class="teacher-staff-link-heading">
+          <div>
+            <h4 id="teacher-staff-link-title">Liên kết hồ sơ nhân viên</h4>
+            <p>Giáo viên: ${escapeHtml(getTeacherDisplayName(teacher) || 'Không tìm thấy giáo viên')}</p>
+          </div>
+          <button type="button" data-teacher-staff-link-action="close" aria-label="Đóng">×</button>
+        </div>
+        ${state.message ? `<p class="teacher-staff-link-message" role="alert">${escapeHtml(state.message)}</p>` : ''}
+        <div class="teacher-staff-link-mode" role="tablist" aria-label="Cách liên kết">
+          <button type="button" class="${state.mode === 'existing' ? 'active' : ''}" data-teacher-staff-link-action="set-mode" data-link-mode="existing">Chọn hồ sơ có sẵn</button>
+          <button type="button" class="${state.mode === 'create' ? 'active' : ''}" data-teacher-staff-link-action="set-mode" data-link-mode="create">Tạo hồ sơ nhân viên từ giáo viên</button>
+        </div>
+        ${
+          state.mode === 'create'
+            ? renderCreateStaffFromTeacherForm(values, state, departments)
+            : renderExistingStaffLinkPicker(availableStaff, departments, state)
+        }
+      </section>
+    </div>
+  `
+}
+
+function renderExistingStaffLinkPicker(staffMembers, departments, state) {
+  return `
+    <section class="teacher-staff-link-section" aria-label="Chọn hồ sơ nhân viên có sẵn">
+      <label class="teacher-staff-link-search">
+        <span>Tìm nhân viên</span>
+        <input type="search" value="${escapeAttribute(state.query || '')}" data-teacher-staff-link-query />
+      </label>
+      ${
+        staffMembers.length
+          ? `<div class="teacher-staff-link-list">
+              ${staffMembers.map((staffMember) => renderExistingStaffLinkOption(staffMember, departments)).join('')}
+            </div>`
+          : '<p class="teacher-staff-link-empty">Không có hồ sơ nhân viên active chưa liên kết.</p>'
+      }
+    </section>
+  `
+}
+
+function renderExistingStaffLinkOption(staffMember, departments) {
+  const department = departments.find((item) => item.id === staffMember.departmentId)
+  return `
+    <article class="teacher-staff-link-option">
+      <div>
+        <strong>${escapeHtml(staffMember.fullName || 'Nhân viên')}</strong>
+        <span>${escapeHtml([staffMember.employeeCode, department?.name, staffMember.positionTitle].filter(Boolean).join(' · ') || 'Chưa có phòng ban')}</span>
+      </div>
+      <button type="button" data-teacher-staff-link-action="link-existing" data-staff-id="${escapeAttribute(staffMember.id)}">Liên kết</button>
+    </article>
+  `
+}
+
+function renderCreateStaffFromTeacherForm(values, state, departments) {
+  const errors = state.errors || {}
+  const activeDepartments = departments.filter((department) => department.status !== 'archived')
+  const endDateDisabled = !isTeacherStaffEndDateEnabled(values.employmentStatus)
+  const endDateValue = endDateDisabled ? '' : values.endDate
+  const endDateHint = endDateDisabled ? 'Đến nay' : ''
+
+  return `
+    <form class="teacher-staff-create-form" data-teacher-staff-create-form>
+      <h5>Tạo hồ sơ nhân viên từ giáo viên</h5>
+      <div class="teacher-staff-create-grid">
+        ${renderTeacherStaffInput('employeeCode', 'Mã nhân viên', values.employeeCode, errors)}
+        ${renderTeacherStaffInput('fullName', 'Họ và tên', values.fullName, errors)}
+        ${renderTeacherStaffInput('phone', 'Điện thoại', values.phone, errors, 'tel')}
+        ${renderTeacherStaffInput('email', 'Email', values.email, errors, 'email')}
+        <label>
+          <span>Phòng ban</span>
+          <select data-teacher-staff-create-field="departmentId">
+            ${renderOption('', 'Chưa có phòng ban', values.departmentId)}
+            ${activeDepartments.map((department) => renderOption(department.id, department.name, values.departmentId)).join('')}
+          </select>
+          ${renderTeacherStaffError(errors.departmentId)}
+        </label>
+        ${renderTeacherStaffInput('positionTitle', 'Chức danh', values.positionTitle, errors)}
+        <label>
+          <span>Loại hình làm việc</span>
+          <select data-teacher-staff-create-field="employmentType">
+            ${renderOption('unspecified', 'Chưa xác định', values.employmentType)}
+            ${renderOption('full-time', 'Toàn thời gian', values.employmentType)}
+            ${renderOption('part-time', 'Bán thời gian', values.employmentType)}
+            ${renderOption('collaborator', 'Cộng tác viên', values.employmentType)}
+            ${renderOption('contract', 'Hợp đồng', values.employmentType)}
+          </select>
+          ${renderTeacherStaffError(errors.employmentType)}
+        </label>
+        <label>
+          <span>Trạng thái làm việc</span>
+          <select data-teacher-staff-create-field="employmentStatus">
+            ${renderOption('active', 'Đang làm việc', values.employmentStatus)}
+            ${renderOption('on-leave', 'Tạm nghỉ', values.employmentStatus)}
+            ${renderOption('terminated', 'Đã nghỉ việc', values.employmentStatus)}
+          </select>
+          ${renderTeacherStaffError(errors.employmentStatus)}
+        </label>
+        ${renderTeacherStaffInput('startDate', 'Ngày bắt đầu', values.startDate, errors, 'date')}
+        ${renderTeacherStaffInput('endDate', 'Ngày kết thúc', endDateValue, errors, 'date', {
+          disabled: endDateDisabled,
+          placeholder: endDateHint,
+          hint: endDateHint,
+        })}
+        <label class="teacher-staff-create-wide">
+          <span>Ghi chú</span>
+          <textarea data-teacher-staff-create-field="note" rows="3">${escapeHtml(values.note)}</textarea>
+        </label>
+      </div>
+      <div class="teacher-staff-link-actions">
+        <button type="button" data-teacher-staff-link-action="close">Hủy</button>
+        <button type="submit" ${state.isSaving ? 'disabled' : ''}>Tạo hồ sơ & liên kết</button>
+      </div>
+    </form>
+  `
+}
+
+function renderTeacherStaffInput(name, label, value, errors, type = 'text', options = {}) {
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+      <input type="${escapeAttribute(type)}" value="${escapeAttribute(value)}" data-teacher-staff-create-field="${escapeAttribute(name)}"${options.disabled ? ' disabled' : ''}${options.placeholder ? ` placeholder="${escapeAttribute(options.placeholder)}"` : ''} />
+      ${options.hint ? `<small class="teacher-staff-link-hint">${escapeHtml(options.hint)}</small>` : ''}
+      ${renderTeacherStaffError(errors[name])}
+    </label>
+  `
+}
+
+function isTeacherStaffEndDateEnabled(employmentStatus) {
+  return employmentStatus === 'terminated'
+}
+
+function renderTeacherStaffError(error) {
+  return error ? `<small class="teacher-staff-link-error">${escapeHtml(error)}</small>` : ''
+}
+
+function getAvailableStaffForTeacherLink(staffMembers, query = '') {
+  const normalizedQuery = normalizeText(query)
+  return (staffMembers || [])
+    .filter((staffMember) => staffMember && staffMember.employmentStatus !== 'archived' && !staffMember.teacherId)
+    .filter((staffMember) => {
+      if (!normalizedQuery) {
+        return true
+      }
+
+      return [
+        staffMember.employeeCode,
+        staffMember.fullName,
+        staffMember.phone,
+        staffMember.email,
+        staffMember.positionTitle,
+      ].some((value) => normalizeText(value).includes(normalizedQuery))
+    })
+}
+
+function findStaffMemberByTeacherId(staffMembers = [], teacherId = '') {
+  const normalizedTeacherId = normalizeId(teacherId)
+  const matches = staffMembers.filter((staffMember) => normalizeId(staffMember?.teacherId) === normalizedTeacherId)
+
+  return {
+    status: matches.length > 1 ? 'duplicate' : matches.length === 1 ? 'linked' : 'unlinked',
+    staffMember: matches.length === 1 ? matches[0] : null,
+    matches,
+  }
+}
+
+function createTeacherStaffLinkLookupResult() {
+  return { status: 'unlinked', staffMember: null, matches: [] }
 }
 
 function renderProfileTagGroup(label, values = [], emptyLabel = '-') {
