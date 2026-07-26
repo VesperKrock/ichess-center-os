@@ -191,6 +191,13 @@ import {
   renderSchedulePrintDocument,
 } from './schedule-print-module.js'
 import {
+  CASHFLOW_TRANSACTION_PRINT_ROOT_CLASS,
+  CASHFLOW_TRANSACTION_PRINT_ROOT_SELECTOR,
+  createCashflowTransactionPrintSnapshot,
+  renderCashflowTransactionPrintDocument,
+  waitForCashflowPrintImages,
+} from './cashflow-transaction-print-module.js'
+import {
   buildSessionReportFromAttendance,
   buildSessionReportFromLearningGroups,
   buildLearningGroupFromForm,
@@ -567,7 +574,13 @@ let cashflowTransactions = getStoredCashflow(sampleCashflowTransactions)
 let cashflowCategories = getStoredCashflowCategories(sampleCashflowCategories)
 let cashflowFilters = { ...initialCashflowFilters }
 let cashflowFormState = null
+let cashflowTransactionDetailState = null
+let cashflowTransactionDetailHydrateToken = 0
 let cashflowAttachmentHydrateToken = 0
+let cashflowTransactionPrintState = {
+  transactionId: '',
+  requestToken: 0,
+}
 let isCashflowCategoryPanelOpen = false
 let cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
 let cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
@@ -809,6 +822,193 @@ function printCurrentScheduleWeek() {
   window.setTimeout(cleanup, 2000)
 }
 
+async function printCashflowTransaction(transactionId) {
+  const printTransactionId = String(transactionId || '').trim()
+
+  if (!printTransactionId || cashflowTransactionPrintState.transactionId) {
+    return
+  }
+
+  const centerId = getCurrentResolvedCenterId()
+  const requestToken = cashflowTransactionPrintState.requestToken + 1
+  const previousTitle = document.title
+
+  cleanupCashflowTransactionPrintRuntime()
+  cashflowTransactionPrintState = {
+    transactionId: printTransactionId,
+    requestToken,
+  }
+  render()
+
+  try {
+    const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
+    const transaction = latestCashflowTransactions.find((item) => item.id === printTransactionId)
+
+    if (!transaction) {
+      cashflowTransactions = latestCashflowTransactions
+      setCloudUploadMessage('Không tìm thấy giao dịch để in', 'error')
+      finishCashflowTransactionPrint(requestToken)
+      return
+    }
+
+    if (!isCashflowTransactionPrintRequestCurrent(requestToken, centerId, printTransactionId)) {
+      finishCashflowTransactionPrint(requestToken)
+      return
+    }
+
+    cashflowTransactions = latestCashflowTransactions
+    const transactionCode = getCashflowTransactionCodesForTransactions(latestCashflowTransactions)[transaction.id]
+    const cloudAttachments = await resolveCashflowTransactionPrintCloudAttachments({
+      centerId,
+      transactionCode,
+    })
+
+    if (!isCashflowTransactionPrintRequestCurrent(requestToken, centerId, printTransactionId)) {
+      finishCashflowTransactionPrint(requestToken)
+      return
+    }
+
+    const centerProfile = getTaskbarCenterProfileState()
+    const snapshot = createCashflowTransactionPrintSnapshot({
+      centerId,
+      centerName: centerProfile.centerName || centerId,
+      transaction: { ...transaction },
+      transactionCode,
+      exportedAt: new Date().toISOString(),
+      cloudAttachments,
+      legacyAttachment: transaction.attachment || null,
+      students,
+      tuitionRecords,
+    })
+
+    if (!snapshot) {
+      setCloudUploadMessage('Không thể dựng bản in giao dịch.', 'error')
+      finishCashflowTransactionPrint(requestToken)
+      return
+    }
+
+    const printRoot = document.createElement('div')
+
+    printRoot.className = CASHFLOW_TRANSACTION_PRINT_ROOT_CLASS
+    printRoot.dataset.cashflowTransactionPrintRuntimeRoot = 'true'
+    printRoot.innerHTML = renderCashflowTransactionPrintDocument(snapshot)
+    document.body.appendChild(printRoot)
+    document.title = `Sao kê giao dịch ${transactionCode || transaction.id}`
+
+    await waitForCashflowPrintImages(printRoot)
+
+    if (!isCashflowTransactionPrintRequestCurrent(requestToken, centerId, printTransactionId)) {
+      cleanupCashflowTransactionPrintRuntime()
+      document.title = previousTitle
+      finishCashflowTransactionPrint(requestToken)
+      return
+    }
+
+    let didCleanup = false
+    const cleanup = () => {
+      if (didCleanup) {
+        return
+      }
+
+      didCleanup = true
+      cleanupCashflowTransactionPrintRuntime()
+      document.title = previousTitle
+      window.removeEventListener('afterprint', cleanup)
+      finishCashflowTransactionPrint(requestToken)
+    }
+
+    window.addEventListener('afterprint', cleanup, { once: true })
+    window.print()
+    window.setTimeout(cleanup, 8000)
+  } catch (error) {
+    cleanupCashflowTransactionPrintRuntime()
+    document.title = previousTitle
+    setCloudUploadMessage(
+      getCloudErrorMessage(error, 'Không thể chuẩn bị bản in giao dịch.'),
+      'error',
+    )
+    finishCashflowTransactionPrint(requestToken)
+  }
+}
+
+async function resolveCashflowTransactionPrintCloudAttachments({ centerId, transactionCode }) {
+  const normalizedCode = String(transactionCode || '').trim()
+
+  if (!normalizedCode) {
+    return []
+  }
+
+  const result = await listTransactionAttachmentsByTransactionCode({
+    centerId,
+    transactionCode: normalizedCode,
+  })
+  const metadata = result.ok
+    ? result.data
+    : cloudStatus.attachments.filter(
+        (attachment) =>
+          attachment.transactionCode === normalizedCode &&
+          String(attachment.centerId || centerId) === centerId,
+      )
+
+  if (!result.ok && !metadata.length) {
+    setCloudUploadMessage(
+      `Không thể tải metadata chứng từ để in: ${result.error}`,
+      'error',
+    )
+  }
+
+  const normalizedAttachments = metadata
+    .map((attachment) => createCashflowCloudAttachmentReference(attachment, normalizedCode))
+    .filter(Boolean)
+    .sort((first, second) =>
+      String(first.createdAt || '').localeCompare(String(second.createdAt || '')),
+    )
+
+  return Promise.all(
+    normalizedAttachments.map(async (attachment) => {
+      const signedUrlResult = await createTransactionImageSignedUrl(
+        attachment.storagePath,
+        60 * 10,
+        centerId,
+      )
+
+      return {
+        ...attachment,
+        signedUrl: signedUrlResult.ok ? signedUrlResult.data.signedUrl : '',
+        signedUrlError: signedUrlResult.ok
+          ? ''
+          : signedUrlResult.error || 'Không thể tải hình ảnh chứng từ',
+      }
+    }),
+  )
+}
+
+function isCashflowTransactionPrintRequestCurrent(requestToken, centerId, transactionId) {
+  return (
+    cashflowTransactionPrintState.requestToken === requestToken &&
+    cashflowTransactionPrintState.transactionId === transactionId &&
+    String(getCurrentResolvedCenterId() || '').trim() === String(centerId || '').trim()
+  )
+}
+
+function finishCashflowTransactionPrint(requestToken) {
+  if (cashflowTransactionPrintState.requestToken !== requestToken) {
+    return
+  }
+
+  cashflowTransactionPrintState = {
+    transactionId: '',
+    requestToken,
+  }
+  render()
+}
+
+function cleanupCashflowTransactionPrintRuntime() {
+  document
+    .querySelectorAll(CASHFLOW_TRANSACTION_PRINT_ROOT_SELECTOR)
+    .forEach((root) => root.remove())
+}
+
 function isProductionCenter(centerId = getCurrentResolvedCenterId()) {
   const normalizedCenterId = String(centerId || '').trim()
   const knownCenter = internalCentersListState.centers.find((center) => center.id === normalizedCenterId)
@@ -878,7 +1078,14 @@ function resetTransientStateForCenterSwitch() {
   tuitionAdvisoryWindowState = null
   revokeCashflowAttachmentDraftObjectUrl()
   cashflowFormState = null
+  cashflowTransactionDetailState = null
+  cashflowTransactionDetailHydrateToken += 1
   cashflowAttachmentHydrateToken += 1
+  cleanupCashflowTransactionPrintRuntime()
+  cashflowTransactionPrintState = {
+    transactionId: '',
+    requestToken: cashflowTransactionPrintState.requestToken + 1,
+  }
   cashbookSettingsFormState = null
   cashbookReconciliationFormState = null
   inventoryFormState = null
@@ -2724,6 +2931,8 @@ function resetCloudRuntimeStateForOwnerCenterSwitch() {
   cloudBootstrapLastFailureSignature = ''
   transactionImageManagerState = null
   cloudGalleryState = null
+  cashflowTransactionDetailState = null
+  cashflowTransactionDetailHydrateToken += 1
   isCenterProfilePopoverOpen = false
 }
 
@@ -4433,9 +4642,11 @@ function renderWindowBody(windowItem) {
         transactionCodes,
         attachmentCounts: getCloudAttachmentCounts(),
         uploadingTransactionId: cloudUploadingTransactionId,
+        printingTransactionId: cashflowTransactionPrintState.transactionId,
       },
       transactionImageManagerState,
       cloudGalleryState,
+      cashflowTransactionDetailState,
     )
   }
 
@@ -5551,18 +5762,19 @@ function openCashflowEditForm(transactionId) {
   const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
 
   if (!transaction) {
+    setCloudUploadMessage('Không tìm thấy giao dịch', 'error')
+    cashflowTransactions = latestCashflowTransactions
+    render()
     return
   }
 
   if (isSyncedTuitionPaymentTransaction(transaction)) {
-    setCloudUploadMessage(
-      'Giao dịch này được đồng bộ từ Học phí và không thể sửa như giao dịch thủ công.',
-      'error',
-    )
+    openCashflowSyncedTransactionDetail(transactionId)
     return
   }
 
   cashflowTransactions = latestCashflowTransactions
+  cashflowTransactionDetailState = null
   cashflowAttachmentHydrateToken += 1
   const hydrateToken = cashflowAttachmentHydrateToken
   cashflowFormState = createEditCashflowFormState(transaction, currentCenterId, {
@@ -5574,6 +5786,129 @@ function openCashflowEditForm(transactionId) {
     centerId: currentCenterId,
     hydrateToken,
   })
+}
+
+function openCashflowTransactionFromRow(transactionId) {
+  const currentCenterId = getCurrentResolvedCenterId()
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
+  const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
+
+  if (!transaction) {
+    cashflowTransactions = latestCashflowTransactions
+    setCloudUploadMessage('Không tìm thấy giao dịch', 'error')
+    render()
+    return
+  }
+
+  if (isSyncedTuitionPaymentTransaction(transaction)) {
+    openCashflowSyncedTransactionDetail(transactionId, latestCashflowTransactions)
+    return
+  }
+
+  openCashflowEditForm(transactionId)
+}
+
+async function openCashflowSyncedTransactionDetail(transactionId, latestTransactions = null) {
+  const currentCenterId = getCurrentResolvedCenterId()
+  const latestCashflowTransactions =
+    latestTransactions || readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
+  const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
+
+  if (!transaction) {
+    cashflowTransactions = latestCashflowTransactions
+    setCloudUploadMessage('Không tìm thấy giao dịch', 'error')
+    render()
+    return
+  }
+
+  if (!isCashflowTransactionInCurrentCenter(transaction, currentCenterId)) {
+    cashflowTransactions = latestCashflowTransactions
+    setCloudUploadMessage('Giao dịch không thuộc cơ sở hiện tại', 'error')
+    render()
+    return
+  }
+
+  if (!isSyncedTuitionPaymentTransaction(transaction)) {
+    openCashflowEditForm(transactionId)
+    return
+  }
+
+  const transactionCode = getCashflowTransactionCodesForTransactions(latestCashflowTransactions)[transaction.id] || ''
+  const hydrateToken = cashflowTransactionDetailHydrateToken + 1
+
+  cashflowTransactionDetailHydrateToken = hydrateToken
+  cashflowTransactions = latestCashflowTransactions
+  revokeCashflowAttachmentDraftObjectUrl()
+  cashflowFormState = null
+  cashflowTransactionDetailState = {
+    transaction: { ...transaction },
+    transactionCode,
+    centerId: currentCenterId,
+    status: transactionCode ? 'loading' : 'loaded',
+    error: transactionCode ? '' : 'Không tìm thấy mã giao dịch để tải chứng từ.',
+    attachments: [],
+    students,
+    tuitionRecords,
+  }
+  render()
+
+  if (!transactionCode) {
+    return
+  }
+
+  try {
+    const result = await listTransactionAttachmentsByTransactionCode({
+      centerId: currentCenterId,
+      transactionCode,
+    })
+
+    if (!isCashflowTransactionDetailRequestCurrent(hydrateToken, currentCenterId, transactionId)) {
+      return
+    }
+
+    const attachments = result.ok ? await addSignedUrlsToAttachments(result.data, currentCenterId) : []
+
+    if (!isCashflowTransactionDetailRequestCurrent(hydrateToken, currentCenterId, transactionId)) {
+      return
+    }
+
+    cashflowTransactionDetailState = {
+      ...cashflowTransactionDetailState,
+      status: result.ok ? 'loaded' : 'error',
+      error: result.ok ? '' : result.error || 'Không thể tải chứng từ giao dịch.',
+      attachments,
+    }
+    render()
+  } catch (error) {
+    if (!isCashflowTransactionDetailRequestCurrent(hydrateToken, currentCenterId, transactionId)) {
+      return
+    }
+
+    cashflowTransactionDetailState = {
+      ...cashflowTransactionDetailState,
+      status: 'error',
+      error: getCloudErrorMessage(error, 'Không thể tải chứng từ giao dịch.'),
+      attachments: [],
+    }
+    render()
+  }
+}
+
+function isCashflowTransactionDetailRequestCurrent(hydrateToken, centerId, transactionId) {
+  return (
+    cashflowTransactionDetailHydrateToken === hydrateToken &&
+    cashflowTransactionDetailState?.transaction?.id === transactionId &&
+    String(cashflowTransactionDetailState?.centerId || '').trim() === String(centerId || '').trim() &&
+    String(getCurrentResolvedCenterId() || '').trim() === String(centerId || '').trim()
+  )
+}
+
+function isCashflowTransactionInCurrentCenter(transaction, currentCenterId) {
+  const transactionCenterId = String(
+    transaction?.centerId || transaction?.sourceCenterId || transaction?.storageCenterId || '',
+  ).trim()
+
+  return !transactionCenterId || transactionCenterId === String(currentCenterId || '').trim()
 }
 
 function isSyncedTuitionPaymentTransaction(transaction) {
@@ -6735,6 +7070,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     stopC52TuitionRealtimeSubscription()
     transactionImageManagerState = null
     cloudGalleryState = null
+    cashflowTransactionDetailState = null
+    cashflowTransactionDetailHydrateToken += 1
     cloudDbState = createInitialCloudDbState()
     cloudBootstrapState = createInitialCloudBootstrapState()
     cloudDbAutoPullUserId = ''
@@ -6834,6 +7171,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       stopC52TuitionRealtimeSubscription()
       transactionImageManagerState = null
       cloudGalleryState = null
+      cashflowTransactionDetailState = null
+      cashflowTransactionDetailHydrateToken += 1
       cloudDbState = createInitialCloudDbState()
       cloudBootstrapState = createInitialCloudBootstrapState()
       cloudDbAutoPullUserId = ''
@@ -11198,6 +11537,8 @@ function bindEvents() {
   )
 
   document.querySelector('[data-cashflow-action="open-create"]')?.addEventListener('click', () => {
+    cashflowTransactionDetailState = null
+    cashflowTransactionDetailHydrateToken += 1
     cashflowFormState = createEmptyCashflowFormStateWithCategories(
       cashflowCategories,
       getCurrentResolvedCenterId(),
@@ -11206,6 +11547,8 @@ function bindEvents() {
   })
 
   document.querySelector('[data-cashflow-action="open-categories"]')?.addEventListener('click', () => {
+    cashflowTransactionDetailState = null
+    cashflowTransactionDetailHydrateToken += 1
     isCashflowCategoryPanelOpen = true
     cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
     render()
@@ -11238,19 +11581,19 @@ function bindEvents() {
       row.addEventListener('click', (event) => {
         if (
           event.target.closest(
-            '[data-cashflow-cloud-action], [data-cashflow-cloud-image-input]',
+            '[data-cashflow-cloud-action], [data-cashflow-cloud-image-input], [data-cashflow-action="print-transaction"]',
           )
         ) {
           return
         }
 
-        openCashflowEditForm(row.dataset.cashflowTransactionId)
+        openCashflowTransactionFromRow(row.dataset.cashflowTransactionId)
       })
 
       row.addEventListener('keydown', (event) => {
         if (
           event.target.closest(
-            '[data-cashflow-cloud-action], [data-cashflow-cloud-image-input]',
+            '[data-cashflow-cloud-action], [data-cashflow-cloud-image-input], [data-cashflow-action="print-transaction"]',
           )
         ) {
           return
@@ -11261,9 +11604,40 @@ function bindEvents() {
         }
 
         event.preventDefault()
-        openCashflowEditForm(row.dataset.cashflowTransactionId)
+        openCashflowTransactionFromRow(row.dataset.cashflowTransactionId)
       })
     })
+
+  document.querySelectorAll('[data-cashflow-action="print-transaction"]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      await printCashflowTransaction(button.dataset.cashflowTransactionId)
+    })
+  })
+
+  document.querySelectorAll('[data-cashflow-detail-action="close"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      cashflowTransactionDetailState = null
+      cashflowTransactionDetailHydrateToken += 1
+      render()
+    })
+  })
+
+  document.querySelector('[data-cashflow-detail-action="view-attachments"]')?.addEventListener('click', async (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (!cashflowTransactionDetailState?.transaction?.id) {
+      setCloudUploadMessage('Không tìm thấy giao dịch', 'error')
+      render()
+      return
+    }
+
+    await openTransactionImageManager(cashflowTransactionDetailState.transaction.id)
+  })
 
   document.querySelectorAll('[data-cashflow-cloud-action="select-image"]').forEach((button) => {
     button.addEventListener('click', (event) => {

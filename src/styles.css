@@ -12814,19 +12814,19 @@ h3 {
 }
 
 .cashflow-table th:nth-child(1) {
-  width: 88px;
+  width: 96px;
 }
 
 .cashflow-table th:nth-child(2) {
-  width: 68px;
+  width: 58px;
 }
 
 .cashflow-table th:nth-child(3) {
-  width: 128px;
+  width: 104px;
 }
 
 .cashflow-table th:nth-child(4) {
-  width: 20%;
+  width: 15%;
 }
 
 .cashflow-table th:nth-child(5) {
@@ -12834,15 +12834,19 @@ h3 {
 }
 
 .cashflow-table th:nth-child(6) {
-  width: 122px;
+  width: 124px;
 }
 
 .cashflow-table th:nth-child(7) {
-  width: 112px;
+  width: 84px;
 }
 
 .cashflow-table th:nth-child(9) {
-  width: 94px;
+  width: 88px;
+}
+
+.cashflow-table th:nth-child(10) {
+  width: 92px;
 }
 
 .cashflow-cloud-auth-note {
@@ -12852,35 +12856,50 @@ h3 {
   gap: 10px;
   margin: 12px 0;
   padding: 10px 12px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid rgba(118, 164, 231, 0.26);
   border-radius: 8px;
-  background: #eff6ff;
-  color: #1e3a8a;
-  font-size: 0.9rem;
-  font-weight: 600;
+  background: rgba(19, 35, 52, 0.72);
+  color: #c8d4e3;
+  font-size: 0.82rem;
+  font-weight: 850;
 }
 
 .cashflow-cloud-auth-note.is-ready {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-  color: #166534;
+  border-color: rgba(111, 210, 138, 0.34);
+  background: rgba(37, 130, 69, 0.14);
+  color: #c8f6d4;
 }
 
 .cashflow-cloud-auth-note button {
   flex: 0 0 auto;
-  border: 0;
+  border: 1px solid rgba(118, 164, 231, 0.38);
   border-radius: 6px;
   padding: 8px 10px;
-  background: #166534;
-  color: #fff;
-  font-weight: 700;
+  background: rgba(31, 93, 153, 0.35);
+  color: #dcecff;
+  font-weight: 850;
   cursor: pointer;
+  white-space: nowrap;
 }
 
+.cashflow-cloud-auth-note button:hover,
+.cashflow-cloud-auth-note button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.8);
+  outline: none;
+}
+
+.cashflow-table th:nth-child(1),
+.cashflow-table td:nth-child(1),
 .cashflow-table th:nth-child(5),
 .cashflow-table td:nth-child(5),
+.cashflow-table th:nth-child(6),
+.cashflow-table td:nth-child(6),
 .cashflow-table th:nth-child(7),
-.cashflow-table td:nth-child(7) {
+.cashflow-table td:nth-child(7),
+.cashflow-table th:nth-child(9),
+.cashflow-table td:nth-child(9),
+.cashflow-table th:nth-child(10),
+.cashflow-table td:nth-child(10) {
   white-space: nowrap;
 }
 
@@ -13017,6 +13036,148 @@ h3 {
 
 .cashflow-cloud-attachment-cell input {
   display: none;
+}
+
+.cashflow-row-action-cell {
+  overflow: visible;
+  text-align: center;
+}
+
+.cashflow-row-action-cell .cashflow-transaction-print-button {
+  width: 100%;
+  min-width: 76px;
+  min-height: 30px;
+  margin: 0;
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+.cashflow-transaction-detail-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  padding: 12px 18px 20px;
+  background: rgba(3, 7, 18, 0.62);
+}
+
+.cashflow-transaction-detail {
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100vh - 150px));
+  overflow: auto;
+  border: 1px solid rgba(118, 164, 231, 0.28);
+  border-radius: 8px;
+  background: #101923;
+  color: #d8e2ef;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
+}
+
+.cashflow-transaction-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  background: #111821;
+}
+
+.cashflow-transaction-detail-header h4 {
+  margin: 0 0 8px;
+  color: #f8fbff;
+  font-size: 1.05rem;
+}
+
+.cashflow-transaction-detail-header > button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5eefb;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.cashflow-transaction-detail-header > button:hover,
+.cashflow-transaction-detail-header > button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+  background: rgba(118, 164, 231, 0.12);
+}
+
+.cashflow-transaction-detail-message {
+  margin: 14px 18px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.cashflow-transaction-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 14px 18px 6px;
+}
+
+.cashflow-transaction-detail-grid > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.cashflow-transaction-detail-grid dt {
+  margin: 0 0 5px;
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.cashflow-transaction-detail-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #f8fbff;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.cashflow-transaction-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+}
+
+.cashflow-transaction-detail-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(118, 164, 231, 0.38);
+  border-radius: 6px;
+  padding: 7px 12px;
+  background: rgba(31, 93, 153, 0.35);
+  color: #dcecff;
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.cashflow-transaction-detail-actions button:hover,
+.cashflow-transaction-detail-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.8);
+  outline: none;
+}
+
+.cashflow-transaction-detail-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .transaction-image-manager-backdrop {
@@ -13423,6 +13584,15 @@ h3 {
   font-size: 0.72rem;
   font-weight: 900;
   vertical-align: middle;
+}
+
+.cashflow-source-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #c8d4e3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cashflow-empty {
@@ -18982,8 +19152,239 @@ h3 {
   transform: none;
 }
 
+.cashflow-transaction-print-button {
+  margin-top: 6px;
+  border: 1px solid rgba(118, 164, 231, 0.38);
+  border-radius: 5px;
+  background: rgba(31, 93, 153, 0.35);
+  color: #dcecff;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 850;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.12s ease;
+}
+
+.cashflow-transaction-print-button:hover {
+  border-color: rgba(118, 164, 231, 0.8);
+  background: rgba(31, 93, 153, 0.48);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.cashflow-transaction-print-button:active {
+  background: rgba(31, 93, 153, 0.62);
+  transform: translateY(1px);
+}
+
+.cashflow-transaction-print-button:focus-visible {
+  outline: 2px solid rgba(118, 164, 231, 0.72);
+  outline-offset: 2px;
+}
+
+.cashflow-transaction-print-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  box-shadow: none;
+  transform: none;
+}
+
 .schedule-print-runtime-root {
   display: none;
+}
+
+.cashflow-transaction-print-runtime-root {
+  display: none;
+}
+
+.cashflow-transaction-print-document {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.cashflow-transaction-print-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid #0f172a;
+  break-inside: avoid;
+}
+
+.cashflow-transaction-print-kicker {
+  margin: 0 0 4px;
+  color: #334155;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.cashflow-transaction-print-header h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+.cashflow-transaction-print-header p {
+  margin: 4px 0 0;
+  color: #475569;
+}
+
+.cashflow-transaction-print-meta,
+.cashflow-transaction-print-details dl {
+  margin: 0;
+}
+
+.cashflow-transaction-print-meta {
+  display: grid;
+  gap: 8px;
+  min-width: 210px;
+  text-align: right;
+}
+
+.cashflow-transaction-print-meta dt,
+.cashflow-transaction-print-details dt {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cashflow-transaction-print-meta dd,
+.cashflow-transaction-print-details dd {
+  margin: 2px 0 0;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.cashflow-transaction-print-amount {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid #94a3b8;
+  border-left: 6px solid #2563eb;
+  border-radius: 6px;
+  background: #f8fafc;
+  break-inside: avoid;
+}
+
+.cashflow-transaction-print-amount.is-expense {
+  border-left-color: #dc2626;
+}
+
+.cashflow-transaction-print-amount span {
+  color: #334155;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cashflow-transaction-print-amount strong {
+  color: #0f172a;
+  font-size: 24px;
+}
+
+.cashflow-transaction-print-section {
+  margin-top: 16px;
+}
+
+.cashflow-transaction-print-section h2 {
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.cashflow-transaction-print-details {
+  break-inside: avoid;
+}
+
+.cashflow-transaction-print-details dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #cbd5e1;
+  border-left: 1px solid #cbd5e1;
+}
+
+.cashflow-transaction-print-details dl > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+  break-inside: avoid;
+}
+
+.cashflow-transaction-print-details dd {
+  overflow-wrap: anywhere;
+}
+
+.cashflow-transaction-print-evidence {
+  break-before: auto;
+}
+
+.cashflow-transaction-print-empty,
+.cashflow-transaction-print-image-placeholder {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed #94a3b8;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #334155;
+  text-align: center;
+  font-weight: 700;
+}
+
+.cashflow-transaction-print-evidence-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.cashflow-transaction-print-evidence-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.cashflow-transaction-print-evidence-item header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  color: #0f172a;
+}
+
+.cashflow-transaction-print-evidence-item img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.cashflow-transaction-print-evidence-item p {
+  margin: 0;
+  color: #b91c1c;
+  font-weight: 700;
 }
 
 .schedule-print-document {
@@ -19227,6 +19628,10 @@ h3 {
   .cashflow-evidence-actions {
     grid-column: 1 / -1;
   }
+
+  .cashflow-transaction-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media print {
@@ -19241,6 +19646,8 @@ h3 {
 
   body:has(.schedule-print-runtime-root) .app-shell,
   body:has(.schedule-print-runtime-root) > :not(.schedule-print-runtime-root),
+  body:has(.cashflow-transaction-print-runtime-root) .app-shell,
+  body:has(.cashflow-transaction-print-runtime-root) > :not(.cashflow-transaction-print-runtime-root),
   .desktop-area,
   .taskbar,
   .desktop-shortcuts,
@@ -19257,6 +19664,10 @@ h3 {
     display: block !important;
   }
 
+  .cashflow-transaction-print-runtime-root {
+    display: block !important;
+  }
+
   .schedule-print-runtime-root .schedule-print-document {
     display: block !important;
     max-width: none;
@@ -19265,6 +19676,34 @@ h3 {
     padding: 0;
     border: 0;
     border-radius: 0;
+  }
+
+  .cashflow-transaction-print-runtime-root .cashflow-transaction-print-document {
+    display: block !important;
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #ffffff;
+    color: #0f172a;
+  }
+
+  .cashflow-transaction-print-document {
+    font-size: 12px;
+  }
+
+  .cashflow-transaction-print-header,
+  .cashflow-transaction-print-amount,
+  .cashflow-transaction-print-details,
+  .cashflow-transaction-print-evidence-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .cashflow-transaction-print-evidence-item img {
+    max-height: 235mm;
   }
 
   .schedule-print-document {

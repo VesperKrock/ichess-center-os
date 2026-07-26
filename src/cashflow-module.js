@@ -169,6 +169,7 @@ export function renderCashflowModule(
   cloudAttachmentOptions = {},
   imageManagerState = null,
   cloudGalleryState = null,
+  transactionDetailState = null,
 ) {
   const activeFilters = { ...initialCashflowFilters, ...filters }
   const filteredTransactions = getFilteredCashflowTransactions(transactions, activeFilters)
@@ -255,6 +256,7 @@ export function renderCashflowModule(
               <th title="Người ghi nhận">Ghi nhận</th>
               <th>Ghi chú</th>
               <th title="Ảnh giao dịch cloud">Ảnh cloud</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -278,6 +280,7 @@ export function renderCashflowModule(
       }
       ${imageManagerState ? renderTransactionImageManager(imageManagerState) : ''}
       ${cloudGalleryState ? renderCloudGallery(cloudGalleryState) : ''}
+      ${transactionDetailState ? renderCashflowTransactionDetail(transactionDetailState) : ''}
     </section>
   `
 }
@@ -1026,7 +1029,11 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
     cloudAttachmentOptions.attachmentCounts?.[transactionCode] ?? 0
   const isUploading =
     cloudAttachmentOptions.uploadingTransactionId === transaction.id
+  const isPrinting =
+    cloudAttachmentOptions.printingTransactionId === transaction.id
   const canUpload = Boolean(cloudAttachmentOptions.canUpload) && !isUploading
+  const printLabel = isPrinting ? 'Đang chuẩn bị bản in...' : 'In / PDF'
+  const noteTitle = getTransactionNoteTitle(transaction)
 
   return `
     <tr class="cashflow-row" data-cashflow-transaction-id="${transaction.id}" tabindex="0">
@@ -1037,7 +1044,7 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
       <td>${escapeHtml(getTransactionMethodDisplay(transaction.method))}</td>
       <td class="cashflow-amount is-${transaction.type}">${formatMoney(transaction.amount)}</td>
       <td title="${escapeAttribute(transaction.recordedBy)}">${escapeHtml(getRecordedByDisplayName(transaction.recordedBy))}</td>
-      <td title="${escapeAttribute(transaction.note)}">${renderTransactionNote(transaction)}</td>
+      <td title="${escapeAttribute(noteTitle)}">${renderTransactionNote(transaction)}</td>
       <td class="cashflow-cloud-attachment-cell">
         <button
           type="button"
@@ -1056,8 +1063,153 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
           tabindex="-1"
         />
       </td>
+      <td class="cashflow-row-action-cell">
+        <button
+          class="cashflow-transaction-print-button"
+          type="button"
+          data-cashflow-action="print-transaction"
+          data-cashflow-transaction-id="${escapeAttribute(transaction.id)}"
+          aria-label="In / PDF giao dịch ${escapeAttribute(transactionCode || transaction.id)}"
+          title="In / PDF giao dịch"
+          ${isPrinting ? 'disabled' : ''}
+        >
+          ${printLabel}
+        </button>
+      </td>
     </tr>
   `
+}
+
+function renderCashflowTransactionDetail(state) {
+  const transaction = state.transaction || {}
+  const transactionCode = state.transactionCode || transaction.transactionCode || transaction.id || '—'
+  const sourceContext = getCashflowSyncedTransactionDetailContext(
+    transaction,
+    state.students,
+    state.tuitionRecords,
+  )
+  const evidenceStatus = getCashflowTransactionDetailEvidenceStatus(state)
+  const rows = [
+    ['Mã giao dịch', transactionCode],
+    ['Loại', getTypeLabel(transaction.type)],
+    ['Danh mục', transaction.category],
+    ['Số tiền', formatMoney(transaction.amount)],
+    ['Ngày giao dịch', formatDate(transaction.transactionDate)],
+    ['Phương thức', getTransactionMethodDisplay(transaction.method)],
+    ['Người nộp / liên quan', transaction.personName],
+    ['Người ghi nhận', getRecordedByDisplayName(transaction.recordedBy)],
+    ['Ghi chú', transaction.note],
+    ['Học viên', sourceContext.studentName],
+    ['Phụ huynh', sourceContext.parentName],
+    ['Kỳ học phí', sourceContext.periodLabel],
+    ['Thời điểm tạo', formatDateTime(transaction.createdAt)],
+    ['Thời điểm cập nhật', formatDateTime(transaction.updatedAt)],
+    ['Trạng thái chứng từ', evidenceStatus],
+  ]
+
+  return `
+    <div class="cashflow-transaction-detail-backdrop" role="presentation">
+      <section
+        class="cashflow-transaction-detail"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cashflow-transaction-detail-title"
+      >
+        <header class="cashflow-transaction-detail-header">
+          <div>
+            <h4 id="cashflow-transaction-detail-title">Chi tiết giao dịch</h4>
+            <span class="cashflow-source-badge">Đồng bộ từ Học phí</span>
+          </div>
+          <button type="button" data-cashflow-detail-action="close" aria-label="Đóng">×</button>
+        </header>
+
+        ${state.error ? `<p class="cashflow-transaction-detail-message is-error" role="status">${escapeHtml(state.error)}</p>` : ''}
+
+        <dl class="cashflow-transaction-detail-grid">
+          ${rows.map(([label, value]) => renderCashflowTransactionDetailRow(label, value)).join('')}
+        </dl>
+
+        <div class="cashflow-transaction-detail-actions">
+          <button
+            type="button"
+            data-cashflow-detail-action="view-attachments"
+            ${state.attachments?.length ? '' : 'disabled'}
+          >
+            Xem chứng từ
+          </button>
+          <button
+            type="button"
+            class="cashflow-transaction-print-button"
+            data-cashflow-action="print-transaction"
+            data-cashflow-transaction-id="${escapeAttribute(transaction.id)}"
+            aria-label="In / PDF giao dịch ${escapeAttribute(transactionCode)}"
+          >
+            In / PDF
+          </button>
+          <button type="button" data-cashflow-detail-action="close">Đóng</button>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderCashflowTransactionDetailRow(label, value) {
+  return `
+    <div>
+      <dt>${escapeHtml(label)}</dt>
+      <dd>${escapeHtml(displayDetailValue(value))}</dd>
+    </div>
+  `
+}
+
+function getCashflowSyncedTransactionDetailContext(transaction, students = [], tuitionRecords = []) {
+  const student = (students || []).find((item) => item.id === transaction.sourceStudentId)
+  const tuitionRecord = (tuitionRecords || []).find((record) => record.id === transaction.sourceTuitionId)
+  const periodId = String(transaction.sourcePeriodId || transaction.sourceTermId || '')
+
+  return {
+    studentName: student?.name || student?.fullName || '',
+    parentName: transaction.personName || student?.parentName || '',
+    periodLabel: getCashflowTuitionPeriodLabel(tuitionRecord, periodId),
+  }
+}
+
+function getCashflowTuitionPeriodLabel(tuitionRecord, periodId) {
+  if (!tuitionRecord || !periodId) {
+    return ''
+  }
+
+  if (String(tuitionRecord.currentTermId || '') === periodId) {
+    return `Kỳ hiện tại ${tuitionRecord.currentTermNumber ? `#${tuitionRecord.currentTermNumber}` : ''}`.trim()
+  }
+
+  const historicalTerm = (tuitionRecord.termHistory || []).find((term) => term.id === periodId)
+  if (historicalTerm) {
+    return `Kỳ #${historicalTerm.termNumber || historicalTerm.id}`
+  }
+
+  return periodId.startsWith('term-') ? 'Kỳ học phí hiện có' : ''
+}
+
+function getCashflowTransactionDetailEvidenceStatus(state) {
+  if (state.status === 'loading') {
+    return 'Đang tải chứng từ...'
+  }
+
+  if (state.attachments?.length) {
+    return `${state.attachments.length} chứng từ`
+  }
+
+  if (state.transaction?.attachment) {
+    return 'Có chứng từ legacy'
+  }
+
+  return 'Không có chứng từ'
+}
+
+function displayDetailValue(value) {
+  const text = String(value ?? '').trim()
+  return text && text !== 'undefined' && text !== 'null' && text !== '[object Object]' ? text : '—'
 }
 
 function renderTransactionImageManager(state) {
@@ -1285,6 +1437,10 @@ function formatDateTime(value) {
 }
 
 function renderTransactionNote(transaction) {
+  if (String(transaction?.sourceModule || '') === 'hoc-phi') {
+    return `<span class="cashflow-source-text">${escapeHtml(getSyncedTuitionRowSourceText(transaction))}</span>`
+  }
+
   const noteText = transaction.note ? escapeHtml(transaction.note) : '—'
 
   const sourceLabel = getSourceBadgeLabel(transaction.sourceModule)
@@ -1301,6 +1457,38 @@ function renderTransactionNote(transaction) {
     ${attachmentBadge}
     <span>${noteText}</span>
   `
+}
+
+function getTransactionNoteTitle(transaction) {
+  if (String(transaction?.sourceModule || '') === 'hoc-phi') {
+    return getSyncedTuitionRowSourceText(transaction)
+  }
+
+  return transaction.note || ''
+}
+
+function getSyncedTuitionRowSourceText(transaction) {
+  const sourceLabel = getSourceBadgeLabel(transaction?.sourceModule) || 'Đồng bộ từ Học phí'
+  const note = String(transaction?.note || '').trim()
+
+  if (!note) {
+    return sourceLabel
+  }
+
+  if (note === sourceLabel) {
+    return sourceLabel
+  }
+
+  const prefixedText = `${sourceLabel}:`
+  const contextText = note.startsWith(prefixedText)
+    ? note.slice(prefixedText.length).trim()
+    : note
+  const cleanParts = contextText
+    .split('·')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '—' && part !== 'undefined' && part !== 'null')
+
+  return cleanParts.length ? `${sourceLabel}: ${cleanParts.join(' · ')}` : sourceLabel
 }
 
 function getTransactionMethodDisplay(method) {
@@ -1659,7 +1847,7 @@ function getCategoryTypeLabel(type) {
 function renderEmptyState() {
   return `
     <tr>
-      <td class="cashflow-empty" colspan="9">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
+      <td class="cashflow-empty" colspan="10">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
     </tr>
   `
 }
