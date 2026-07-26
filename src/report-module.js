@@ -45,6 +45,7 @@ export function renderReportModule({
   cashflowTransactions = [],
   attendanceRecords = [],
   selectedBarDetail = null,
+  sourceTransactionsState = null,
 } = {}) {
   const activeFilters = normalizeReportFilters(filters)
   const activeDraft = { ...initialReportDraft, ...draft }
@@ -81,6 +82,7 @@ export function renderReportModule({
         ${renderDailyReport(reportData, activeDraft)}
         ${renderWeeklyReport(reportData, selectedBarDetail)}
       </div>
+      ${renderReportSourceTransactionsModal(sourceTransactionsState)}
     </section>
   `
 }
@@ -93,12 +95,14 @@ export function buildReportData({
 } = {}) {
   const activeFilters = normalizeReportFilters(filters)
   const weekDays = buildWeekDays(activeFilters.weekStartDate)
-  const dailyTransactions = filterTransactionsByDate(cashflowTransactions, activeFilters.reportDate)
-  const weekTransactions = filterTransactionsByRange(
-    cashflowTransactions,
-    weekDays[0],
-    weekDays[weekDays.length - 1],
-  )
+  const dailyTransactions = getReportTransactionsForScope(cashflowTransactions, activeFilters, {
+    mode: 'day',
+    type: 'all',
+  })
+  const weekTransactions = getReportTransactionsForScope(cashflowTransactions, activeFilters, {
+    mode: 'week',
+    type: 'all',
+  })
   const activeStudents = normalizeActiveStudents(students)
   const attendanceSummary = buildAttendanceSummary({
     students: activeStudents,
@@ -127,6 +131,43 @@ export function buildReportData({
     attendanceSummary,
     weeklyBars,
   }
+}
+
+export function getReportTransactionScope(filters = initialReportFilters, scope = {}) {
+  const activeFilters = normalizeReportFilters(filters)
+  const mode = scope.mode === 'week' ? 'week' : 'day'
+  const type = ['income', 'expense'].includes(scope.type) ? scope.type : 'all'
+  const category = String(scope.category || '').trim()
+  const weekDays = buildWeekDays(activeFilters.weekStartDate)
+  const startDate = mode === 'week' ? weekDays[0] : activeFilters.reportDate
+  const endDate = mode === 'week' ? weekDays[weekDays.length - 1] : activeFilters.reportDate
+  const typeLabel = type === 'income' ? 'Thu' : type === 'expense' ? 'Chi' : 'Tất cả thu/chi'
+  const rangeLabel = mode === 'week' ? `Tuần ${formatDate(startDate)} - ${formatDate(endDate)}` : `Ngày ${formatDate(startDate)}`
+
+  return {
+    mode,
+    type,
+    category,
+    startDate,
+    endDate,
+    dateLabel: mode === 'week' ? `${formatDate(startDate)} - ${formatDate(endDate)}` : formatDate(startDate),
+    title: mode === 'week' ? 'Giao dịch nguồn báo cáo tuần' : 'Giao dịch nguồn báo cáo ngày',
+    subtitle: category ? `${typeLabel} · ${category} · ${rangeLabel}` : `${typeLabel} · ${rangeLabel}`,
+  }
+}
+
+export function getReportTransactionsForScope(transactions = [], filters = initialReportFilters, scope = {}) {
+  const activeScope = getReportTransactionScope(filters, scope)
+
+  return filterTransactionsByRange(transactions, activeScope.startDate, activeScope.endDate)
+    .filter((transaction) => activeScope.type === 'all' || transaction.type === activeScope.type)
+    .filter((transaction) => {
+      if (!activeScope.category) {
+        return true
+      }
+
+      return String(transaction.category || '').trim() === activeScope.category
+    })
 }
 
 export function buildReportDownloadText({
@@ -277,6 +318,7 @@ function renderDailyReport(data, draft) {
         ${renderReportStat('Chi phí trong ngày', formatMoney(data.dailyExpense), 'expense')}
         ${renderReportStat('Còn lại', formatMoney(data.dailyIncome - data.dailyExpense), 'balance')}
       </div>
+      ${renderReportSourceActions('day')}
       ${
         data.dailyTransactions.length
           ? renderDailyTransactionList(data.dailyTransactions)
@@ -317,6 +359,7 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
         ${renderReportStat('Còn lại', formatMoney(data.weeklyBalance), 'balance')}
         ${renderReportStat('Tổng học viên', data.studentCount.toLocaleString('vi-VN'), 'neutral')}
       </div>
+      ${renderReportSourceActions('week')}
       <div class="report-chart-grid">
         <section class="report-chart-card" aria-label="Biểu đồ cột thu chi theo tuần">
           <div class="report-chart-heading">
@@ -385,6 +428,31 @@ function renderPendingTaskBox(draft) {
   `
 }
 
+function renderReportSourceActions(mode) {
+  return `
+    <div class="report-source-actions" aria-label="Xem giao dịch nguồn">
+      <button
+        type="button"
+        data-report-drilldown-action="open"
+        data-report-drilldown-mode="${escapeAttribute(mode)}"
+        data-report-drilldown-type="all"
+      >Xem giao dịch nguồn</button>
+      <button
+        type="button"
+        data-report-drilldown-action="open"
+        data-report-drilldown-mode="${escapeAttribute(mode)}"
+        data-report-drilldown-type="income"
+      >Xem nguồn Thu</button>
+      <button
+        type="button"
+        data-report-drilldown-action="open"
+        data-report-drilldown-mode="${escapeAttribute(mode)}"
+        data-report-drilldown-type="expense"
+      >Xem nguồn Chi</button>
+    </div>
+  `
+}
+
 function renderReportTextarea(label, field, value, placeholder) {
   return `
     <label>
@@ -423,6 +491,124 @@ function renderDailyTransactionList(transactions) {
         .join('')}
     </div>
   `
+}
+
+function renderReportSourceTransactionsModal(state) {
+  if (!state) {
+    return ''
+  }
+
+  const transactions = Array.isArray(state.transactions) ? state.transactions : []
+  const total = transactions.reduce((sum, transaction) => {
+    const amount = Number(transaction.amount)
+    return Number.isFinite(amount) ? sum + Math.max(0, amount) : sum
+  }, 0)
+
+  return `
+    <div class="report-source-modal-backdrop" data-report-source-action="close" role="presentation">
+      <section
+        class="report-source-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="report-source-modal-title"
+        data-report-source-modal
+      >
+        <div class="report-source-modal-heading">
+          <div>
+            <h4 id="report-source-modal-title">${escapeHtml(state.title || 'Giao dịch nguồn')}</h4>
+            <p>${escapeHtml(state.subtitle || '')}</p>
+          </div>
+          <button type="button" data-report-source-action="close" aria-label="Đóng">Đóng</button>
+        </div>
+        ${state.message ? `<p class="report-source-message is-${escapeAttribute(state.messageTone || 'info')}">${escapeHtml(state.message)}</p>` : ''}
+        ${state.error ? `<p class="report-source-message is-error">${escapeHtml(state.error)}</p>` : ''}
+        <div class="report-source-summary">
+          <span>${transactions.length.toLocaleString('vi-VN')} giao dịch</span>
+          <strong>${escapeHtml(formatMoney(total))}</strong>
+        </div>
+        ${state.status === 'loading' ? '<p class="report-empty">Đang kiểm tra trạng thái chứng từ...</p>' : ''}
+        ${
+          transactions.length
+            ? renderReportSourceTransactionTable(transactions, state)
+            : '<p class="report-empty">Không có giao dịch nguồn trong phạm vi này.</p>'
+        }
+      </section>
+    </div>
+  `
+}
+
+function renderReportSourceTransactionTable(transactions, state) {
+  const transactionCodes = state.transactionCodes || {}
+  const attachmentCounts = state.attachmentCounts || {}
+
+  return `
+    <div class="report-source-table-wrap">
+      <table class="report-source-table">
+        <thead>
+          <tr>
+            <th>Mã</th>
+            <th>Ngày</th>
+            <th>Thu/Chi</th>
+            <th>Danh mục</th>
+            <th>Số tiền</th>
+            <th>Người liên quan</th>
+            <th>Nguồn</th>
+            <th>Chứng từ</th>
+            <th>Thao tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${transactions
+            .map((transaction) => renderReportSourceTransactionRow(transaction, transactionCodes, attachmentCounts))
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `
+}
+
+function renderReportSourceTransactionRow(transaction, transactionCodes, attachmentCounts) {
+  const transactionId = String(transaction.id || '').trim()
+  const transactionCode = String(transactionCodes[transactionId] || transaction.transactionCode || transactionId || '').trim()
+  const count = attachmentCounts[transactionCode] || 0
+  const hasLegacyAttachment = Boolean(transaction.attachment)
+  const hasEvidence = count > 0 || hasLegacyAttachment
+  const sourceLabel = getReportTransactionSourceLabel(transaction)
+
+  return `
+    <tr class="report-source-row is-${escapeAttribute(transaction.type || 'unknown')}">
+      <td><strong>${escapeHtml(transactionCode || 'Chưa có mã')}</strong></td>
+      <td>${escapeHtml(formatDate(String(transaction.transactionDate || transaction.date || '').slice(0, 10)))}</td>
+      <td>${escapeHtml(transaction.type === 'expense' ? 'Chi' : 'Thu')}</td>
+      <td><span class="report-source-ellipsis">${escapeHtml(transaction.category || 'Khác')}</span></td>
+      <td><strong>${escapeHtml(formatMoney(transaction.amount))}</strong></td>
+      <td><span class="report-source-ellipsis">${escapeHtml(transaction.personName || transaction.recordedBy || 'Chưa rõ')}</span></td>
+      <td><span class="report-source-ellipsis">${escapeHtml(sourceLabel)}</span></td>
+      <td>${escapeHtml(hasEvidence ? `${count || 1} chứng từ` : 'Chưa có')}</td>
+      <td>
+        <div class="report-source-row-actions">
+          <button type="button" data-report-source-action="open-transaction" data-report-source-transaction-id="${escapeAttribute(transactionId)}">Mở giao dịch</button>
+          <button
+            type="button"
+            data-report-source-action="view-evidence"
+            data-report-source-transaction-id="${escapeAttribute(transactionId)}"
+            ${hasEvidence ? '' : 'disabled'}
+          >Xem chứng từ</button>
+          <button type="button" data-report-source-action="print-transaction" data-report-source-transaction-id="${escapeAttribute(transactionId)}">In / PDF</button>
+        </div>
+      </td>
+    </tr>
+  `
+}
+
+function getReportTransactionSourceLabel(transaction) {
+  if (transaction.sourceModule === 'hoc-phi' || transaction.sourceType === 'tuition-payment') {
+    const note = String(transaction.note || '')
+    const syncedText = note.split('\n').find((line) => line.includes('Đồng bộ từ Học phí'))
+    return syncedText ? syncedText.replace(/^[-\s]*/, '').trim() : 'Đồng bộ từ Học phí'
+  }
+
+  return 'Manual'
 }
 
 function renderCashflowBarChart(chartData) {
