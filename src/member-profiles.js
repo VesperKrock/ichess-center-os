@@ -2,6 +2,11 @@ import { CURRENT_CENTER_ID, getCurrentSupabaseUser } from './supabase-auth.js'
 import { getSupabaseClient } from './supabase-client.js'
 
 const CENTER_MEMBER_PROFILE_SELECT_FIELDS = 'user_id, center_id, role, status'
+const CENTER_ACCOUNT_MEMBERSHIP_SELECT_FIELDS = [
+  'id, user_id, center_id, role, status, created_at, updated_at, display_name, member_label, email_snapshot',
+  'id, user_id, center_id, role, status, created_at, updated_at',
+  'id, user_id, center_id, role, status',
+]
 
 export function mapCenterMemberProfile(row = {}) {
   return {
@@ -23,6 +28,33 @@ export function buildMemberProfileMap(profiles = []) {
 
     return profileMap
   }, {})
+}
+
+export function mapCenterAccountMembership(row = {}, currentUser = null) {
+  const accountUserId = String(row.user_id ?? '').trim()
+  const isCurrentUser = Boolean(currentUser?.id && currentUser.id === accountUserId)
+  const currentUserDisplayName = isCurrentUser
+    ? String(
+        currentUser.user_metadata?.display_name ||
+        currentUser.user_metadata?.full_name ||
+        currentUser.user_metadata?.name ||
+        '',
+      ).trim()
+    : ''
+
+  return {
+    id: String(row.id ?? '').trim(),
+    accountUserId,
+    centerId: String(row.center_id ?? '').trim(),
+    role: String(row.role ?? '').trim().toLowerCase(),
+    status: String(row.status ?? '').trim().toLowerCase(),
+    email: String(row.email_snapshot || (isCurrentUser ? currentUser.email : '') || '').trim(),
+    displayName: String(row.display_name || row.member_label || currentUserDisplayName || '').trim(),
+    accountStatus: isCurrentUser ? 'active' : 'unknown',
+    createdAt: String(row.created_at ?? '').trim(),
+    updatedAt: String(row.updated_at ?? '').trim(),
+    source: 'center-members-readonly',
+  }
 }
 
 export function buildMyCenterMemberProfileUpdate({
@@ -67,6 +99,44 @@ export async function getMemberProfileMap(options = {}) {
   }
 
   return success(buildMemberProfileMap(result.data))
+}
+
+export async function listCenterAccountMemberships({
+  centerId = CURRENT_CENTER_ID,
+} = {}) {
+  const authResult = await getAuthorizedProfileContext()
+
+  if (!authResult.ok) {
+    return authResult
+  }
+
+  const normalizedCenterId = String(centerId ?? '').trim()
+  if (!normalizedCenterId) {
+    return failure('Thiếu cơ sở hiện tại để đọc danh sách membership.')
+  }
+
+  let latestError = null
+
+  for (const selectFields of CENTER_ACCOUNT_MEMBERSHIP_SELECT_FIELDS) {
+    const { data, error } = await authResult.data.client
+      .from('center_members')
+      .select(selectFields)
+      .eq('center_id', normalizedCenterId)
+      .order('role', { ascending: true, nullsFirst: false })
+
+    if (!error) {
+      return success((data ?? []).map((row) =>
+        mapCenterAccountMembership(row, authResult.data.user),
+      ))
+    }
+
+    latestError = error
+    if (!isOptionalAccountDirectorySchemaError(error)) {
+      break
+    }
+  }
+
+  return failure(latestError?.message || 'Không đọc được danh sách membership của cơ sở.')
 }
 
 export async function updateMyCenterMemberProfile({
@@ -127,6 +197,12 @@ async function getAuthorizedProfileContext() {
 
 function isMissingProfileSchemaError(error) {
   return /display_name|member_label|email_snapshot|updated_at|schema cache|column/i.test(
+    String(error?.message ?? ''),
+  )
+}
+
+function isOptionalAccountDirectorySchemaError(error) {
+  return /display_name|member_label|email_snapshot|created_at|updated_at|schema cache|column/i.test(
     String(error?.message ?? ''),
   )
 }

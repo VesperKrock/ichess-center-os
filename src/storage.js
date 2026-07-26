@@ -1359,6 +1359,9 @@ export function normalizeCenterStaffMembers(staffMembers) {
         teacherId: normalizeStaffText(staffMember.teacherId),
         accountUserId: normalizeStaffText(staffMember.accountUserId),
         membershipId: normalizeStaffText(staffMember.membershipId),
+        accountLinkedAt: staffMember.accountLinkedAt
+          ? normalizeDateTime(staffMember.accountLinkedAt)
+          : '',
         note: normalizeStaffText(staffMember.note),
         createdAt,
         updatedAt: staffMember.updatedAt ? normalizeDateTime(staffMember.updatedAt) : createdAt,

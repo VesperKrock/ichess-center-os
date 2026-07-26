@@ -31,6 +31,7 @@ import {
 } from './image-compression.js'
 import {
   getMemberProfileMap,
+  listCenterAccountMemberships,
   updateMyCenterMemberProfile,
 } from './member-profiles.js'
 import {
@@ -304,11 +305,18 @@ import {
   createEditStaffFormState,
   createEmptyDepartmentFormState,
   createEmptyStaffFormState,
+  findStaffMemberByAccountUserId,
+  findStaffMemberByMembershipId,
   findStaffMemberByTeacherId,
+  getAvailableStaffAccountMemberships,
+  isAccountMembershipActive,
   initialStaffFilters,
+  linkStaffMemberToAccount,
   renderStaffModule,
   restoreDepartment,
   restoreStaffMember,
+  resolveStaffAccountLink,
+  unlinkStaffMemberFromAccount,
   validateDepartmentForm,
   validateStaffForm,
 } from './staff-module.js'
@@ -553,6 +561,10 @@ let staffDepartmentFormState = null
 let staffNotice = ''
 let isStaffSaving = false
 let isStaffDepartmentSaving = false
+let staffAccountDirectoryState = createStaffAccountDirectoryState()
+let staffAccountLinkState = null
+let isStaffAccountLinkSaving = false
+let staffAccountDirectoryRunId = 0
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
@@ -684,6 +696,32 @@ let internalCenterAdminAccountsState = createInternalCenterAdminAccountsState()
 let internalCenterAdminAccountsRunId = 0
 let internalAddCenterFormState = createInternalAddCenterFormState()
 let internalCenterSwitchState = createInternalCenterSwitchState()
+let pendingInternalAccountUserId = ''
+
+function createStaffAccountDirectoryState(overrides = {}) {
+  return {
+    status: 'idle',
+    centerId: '',
+    centerName: '',
+    memberships: [],
+    error: '',
+    ...overrides,
+  }
+}
+
+function createStaffAccountLinkState(staffId, centerId) {
+  return {
+    staffId,
+    centerId,
+    query: '',
+    selectedMembershipId: '',
+    selectedAccountUserId: '',
+    selectedRole: '',
+    selectedStatus: '',
+    message: '',
+    isSaving: false,
+  }
+}
 
 function createInternalCenterAdminAccountsState(overrides = {}) {
   return {
@@ -1099,6 +1137,10 @@ function resetTransientStateForCenterSwitch() {
   staffNotice = ''
   isStaffSaving = false
   isStaffDepartmentSaving = false
+  staffAccountDirectoryRunId += 1
+  staffAccountDirectoryState = createStaffAccountDirectoryState()
+  staffAccountLinkState = null
+  isStaffAccountLinkSaving = false
   teacherStaffLinkState = null
   isTeacherStaffLinkSaving = false
   scheduleFormState = null
@@ -1206,6 +1248,113 @@ function getStaffCurrentCenterId() {
   return getCurrentStorageCenterId()
 }
 
+function getStaffAccountCenterContext() {
+  const binding = resolveAppCenterBinding(cloudStatus)
+  const storageCenterId = String(getCurrentStorageCenterId() || '').trim()
+  const centerId = String(binding.currentCenterId || '').trim()
+
+  if (cloudStatus.authStatus !== 'signed-in' || !cloudStatus.user) {
+    return { ok: false, error: 'Cần đăng nhập để đọc account và membership hiện hữu.' }
+  }
+
+  if (binding.status !== 'bound' || !centerId) {
+    return { ok: false, error: 'Chưa resolve được membership của cơ sở hiện tại.' }
+  }
+
+  if (!storageCenterId || storageCenterId !== centerId) {
+    return { ok: false, error: 'Dữ liệu local và membership đang ở hai cơ sở khác nhau. Vui lòng mở lại module.' }
+  }
+
+  return {
+    ok: true,
+    centerId,
+    centerName: binding.centerName || centerId,
+  }
+}
+
+function ensureStaffAccountDirectoryLoading() {
+  const context = getStaffAccountCenterContext()
+
+  if (!context.ok) {
+    if (staffAccountDirectoryState.status !== 'error' || staffAccountDirectoryState.error !== context.error) {
+      staffAccountDirectoryState = createStaffAccountDirectoryState({
+        status: 'error',
+        error: context.error,
+      })
+    }
+    return
+  }
+
+  if (
+    staffAccountDirectoryState.centerId === context.centerId &&
+    ['loading', 'loaded'].includes(staffAccountDirectoryState.status)
+  ) {
+    return
+  }
+
+  void refreshStaffAccountDirectory({ showLoading: false })
+}
+
+async function refreshStaffAccountDirectory({ showLoading = true } = {}) {
+  const context = getStaffAccountCenterContext()
+
+  if (!context.ok) {
+    staffAccountDirectoryState = createStaffAccountDirectoryState({
+      status: 'error',
+      error: context.error,
+    })
+    if (showLoading) {
+      render()
+    }
+    return { ok: false, data: [], error: context.error }
+  }
+
+  const runId = ++staffAccountDirectoryRunId
+  staffAccountDirectoryState = createStaffAccountDirectoryState({
+    status: 'loading',
+    centerId: context.centerId,
+    centerName: context.centerName,
+    memberships: staffAccountDirectoryState.centerId === context.centerId
+      ? staffAccountDirectoryState.memberships
+      : [],
+  })
+
+  if (showLoading) {
+    render()
+  }
+
+  const result = await listCenterAccountMemberships({ centerId: context.centerId })
+  const latestContext = getStaffAccountCenterContext()
+
+  if (
+    runId !== staffAccountDirectoryRunId ||
+    !latestContext.ok ||
+    latestContext.centerId !== context.centerId
+  ) {
+    return { ok: false, data: [], error: 'Cơ sở đã thay đổi khi đang tải membership.' }
+  }
+
+  if (!result.ok) {
+    staffAccountDirectoryState = createStaffAccountDirectoryState({
+      status: 'error',
+      centerId: context.centerId,
+      centerName: context.centerName,
+      error: result.error || 'Không đọc được account/membership của cơ sở hiện tại.',
+    })
+    render()
+    return { ok: false, data: [], error: staffAccountDirectoryState.error }
+  }
+
+  staffAccountDirectoryState = createStaffAccountDirectoryState({
+    status: 'loaded',
+    centerId: context.centerId,
+    centerName: context.centerName,
+    memberships: result.data,
+  })
+  render()
+  return { ok: true, data: result.data, error: '' }
+}
+
 function openCreateStaffForm() {
   const nextState = createEmptyStaffFormState()
   nextState.centerId = getStaffCurrentCenterId()
@@ -1233,6 +1382,595 @@ function closeStaffForm() {
   staffFormState = null
   isStaffSaving = false
   render()
+}
+
+async function openStaffAccountLinkModal(staffId) {
+  if (isStaffAccountLinkSaving) {
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const matchingStaff = staffMembers.filter((item) => item.id === staffId)
+  const staffMember = matchingStaff.length === 1 ? matchingStaff[0] : null
+  const context = getStaffAccountCenterContext()
+
+  if (!staffMember || matchingStaff.length !== 1) {
+    staffNotice = 'Không tìm thấy duy nhất một hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+
+  if (!context.ok) {
+    staffNotice = context.error
+    render()
+    return
+  }
+
+  if (staffMember.centerId && staffMember.centerId !== context.centerId) {
+    staffNotice = 'Hồ sơ nhân viên thuộc cơ sở khác. Không thể liên kết tài khoản.'
+    render()
+    return
+  }
+
+  if (staffMember.employmentStatus === 'archived') {
+    staffNotice = 'Hồ sơ đã lưu trữ không nhận liên kết tài khoản mới.'
+    render()
+    return
+  }
+
+  if (staffMember.accountUserId || staffMember.membershipId) {
+    staffNotice = 'Hồ sơ nhân viên đã có reference tài khoản. Vui lòng kiểm tra liên kết hiện tại.'
+    render()
+    return
+  }
+
+  staffAccountLinkState = createStaffAccountLinkState(staffMember.id, context.centerId)
+  staffNotice = ''
+  render()
+  await refreshStaffAccountDirectory()
+}
+
+function closeStaffAccountLinkModal() {
+  if (isStaffAccountLinkSaving) {
+    return
+  }
+
+  staffAccountLinkState = null
+  render()
+}
+
+function updateStaffAccountLinkSearch(value) {
+  if (!staffAccountLinkState) {
+    return
+  }
+
+  staffAccountLinkState = {
+    ...staffAccountLinkState,
+    query: value,
+  }
+
+  const normalizedQuery = normalizeStaffAccountSearchText(value)
+  document.querySelectorAll('[data-staff-account-option]').forEach((option) => {
+    option.hidden = Boolean(
+      normalizedQuery &&
+      !String(option.dataset.accountSearchText || '').includes(normalizedQuery),
+    )
+  })
+}
+
+async function prepareStaffAccountLinkConfirmation(membershipId) {
+  if (!staffAccountLinkState || isStaffAccountLinkSaving) {
+    return
+  }
+
+  const expectedStaffId = staffAccountLinkState.staffId
+  const expectedCenterId = staffAccountLinkState.centerId
+  staffAccountLinkState = {
+    ...staffAccountLinkState,
+    message: '',
+    isSaving: true,
+  }
+  isStaffAccountLinkSaving = true
+  render()
+
+  const directoryResult = await refreshStaffAccountDirectory()
+  isStaffAccountLinkSaving = false
+
+  if (
+    !staffAccountLinkState ||
+    staffAccountLinkState.staffId !== expectedStaffId ||
+    staffAccountLinkState.centerId !== expectedCenterId
+  ) {
+    return
+  }
+
+  if (!directoryResult.ok) {
+    staffAccountLinkState = {
+      ...staffAccountLinkState,
+      isSaving: false,
+      message: directoryResult.error,
+    }
+    render()
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const availability = getAvailableStaffAccountMemberships({
+    memberships: directoryResult.data,
+    staffMembers,
+    currentStaffId: expectedStaffId,
+    currentCenterId: expectedCenterId,
+  })
+  const membership = availability.active.find((item) => item.id === membershipId)
+
+  if (!membership || availability.hasMalformedDuplicate) {
+    staffAccountLinkState = {
+      ...staffAccountLinkState,
+      isSaving: false,
+      message: availability.hasMalformedDuplicate
+        ? 'Liên kết tài khoản cần kiểm tra: dữ liệu hiện có đang trùng one-to-one.'
+        : 'Membership không còn khả dụng để liên kết. Danh sách đã được cập nhật.',
+    }
+    render()
+    return
+  }
+
+  staffAccountLinkState = {
+    ...staffAccountLinkState,
+    selectedMembershipId: membership.id,
+    selectedAccountUserId: membership.accountUserId,
+    selectedRole: membership.role,
+    selectedStatus: membership.status,
+    isSaving: false,
+    message: '',
+  }
+  render()
+}
+
+function cancelStaffAccountLinkConfirmation() {
+  if (!staffAccountLinkState || isStaffAccountLinkSaving) {
+    return
+  }
+
+  staffAccountLinkState = {
+    ...staffAccountLinkState,
+    selectedMembershipId: '',
+    selectedAccountUserId: '',
+    selectedRole: '',
+    selectedStatus: '',
+    message: '',
+  }
+  render()
+}
+
+async function handleConfirmStaffAccountLink() {
+  if (
+    !staffAccountLinkState ||
+    !staffAccountLinkState.selectedMembershipId ||
+    isStaffAccountLinkSaving
+  ) {
+    return
+  }
+
+  const expectedStaffId = staffAccountLinkState.staffId
+  const expectedCenterId = staffAccountLinkState.centerId
+  const expectedMembershipId = staffAccountLinkState.selectedMembershipId
+  const expectedAccountUserId = staffAccountLinkState.selectedAccountUserId
+  const expectedRole = staffAccountLinkState.selectedRole
+  const expectedStatus = staffAccountLinkState.selectedStatus
+  const context = getStaffAccountCenterContext()
+
+  if (!context.ok || context.centerId !== expectedCenterId) {
+    staffAccountLinkState = {
+      ...staffAccountLinkState,
+      message: context.error || 'Cơ sở đã thay đổi. Vui lòng mở lại modal liên kết.',
+    }
+    render()
+    return
+  }
+
+  isStaffAccountLinkSaving = true
+  staffAccountLinkState = {
+    ...staffAccountLinkState,
+    isSaving: true,
+    message: '',
+  }
+  render()
+
+  const directoryResult = await listCenterAccountMemberships({ centerId: expectedCenterId })
+  const latestContext = getStaffAccountCenterContext()
+
+  if (
+    !latestContext.ok ||
+    latestContext.centerId !== expectedCenterId ||
+    !staffAccountLinkState ||
+    staffAccountLinkState.staffId !== expectedStaffId
+  ) {
+    finishStaffAccountLinkError('Cơ sở đã thay đổi. Không có dữ liệu nào được lưu.')
+    return
+  }
+
+  if (!directoryResult.ok) {
+    finishStaffAccountLinkError(directoryResult.error || 'Không đọc được membership mới nhất.')
+    return
+  }
+
+  staffAccountDirectoryState = createStaffAccountDirectoryState({
+    status: 'loaded',
+    centerId: expectedCenterId,
+    centerName: latestContext.centerName,
+    memberships: directoryResult.data,
+  })
+
+  refreshStaffDataFromStorage()
+  const staffMatches = staffMembers.filter((item) => item.id === expectedStaffId)
+  const staffMember = staffMatches.length === 1 ? staffMatches[0] : null
+
+  if (!staffMember || staffMatches.length !== 1) {
+    finishStaffAccountLinkError('Hồ sơ nhân viên đã thay đổi hoặc không còn duy nhất. Vui lòng mở lại.')
+    return
+  }
+
+  if (staffMember.centerId && staffMember.centerId !== expectedCenterId) {
+    finishStaffAccountLinkError('Hồ sơ nhân viên thuộc cơ sở khác. Không thể lưu chéo cơ sở.')
+    return
+  }
+
+  if (staffMember.employmentStatus === 'archived') {
+    finishStaffAccountLinkError('Hồ sơ đã được lưu trữ nên không thể nhận liên kết tài khoản mới.')
+    return
+  }
+
+  if (staffMember.accountUserId || staffMember.membershipId) {
+    const existingLink = resolveStaffAccountLink({
+      staffMember,
+      staffMembers,
+      memberships: directoryResult.data,
+      currentCenterId: expectedCenterId,
+    })
+    if (existingLink.membership?.id === expectedMembershipId && existingLink.status !== 'malformed') {
+      staffAccountDirectoryState = createStaffAccountDirectoryState({
+        status: 'loaded',
+        centerId: expectedCenterId,
+        centerName: latestContext.centerName,
+        memberships: directoryResult.data,
+      })
+      staffAccountLinkState = null
+      isStaffAccountLinkSaving = false
+      staffNotice = 'Tài khoản đã được liên kết với hồ sơ nhân viên này.'
+      syncStaffFormAccountLinkState(staffMember)
+      render()
+      return
+    }
+
+    finishStaffAccountLinkError('Hồ sơ nhân viên đã được liên kết với một tài khoản khác.')
+    return
+  }
+
+  const membershipMatches = directoryResult.data.filter(
+    (membership) => membership.id === expectedMembershipId,
+  )
+  const membership = membershipMatches.length === 1 ? membershipMatches[0] : null
+
+  if (!membership || membershipMatches.length !== 1) {
+    finishStaffAccountLinkError('Membership đã thay đổi hoặc không còn duy nhất.')
+    return
+  }
+
+  if (
+    membership.accountUserId !== expectedAccountUserId ||
+    membership.role !== expectedRole ||
+    membership.status !== expectedStatus
+  ) {
+    isStaffAccountLinkSaving = false
+    staffAccountLinkState = {
+      ...staffAccountLinkState,
+      selectedAccountUserId: membership.accountUserId,
+      selectedRole: membership.role,
+      selectedStatus: membership.status,
+      isSaving: false,
+      message: 'Membership đã đổi account, quyền hoặc trạng thái. Dữ liệu mới nhất đã được hiển thị; vui lòng xác nhận lại.',
+    }
+    render()
+    return
+  }
+
+  if (
+    !membership.accountUserId ||
+    membership.centerId !== expectedCenterId ||
+    !isAccountMembershipActive(membership)
+  ) {
+    finishStaffAccountLinkError(
+      isAccountMembershipActive(membership)
+        ? 'Membership không hợp lệ hoặc thuộc cơ sở khác.'
+        : 'Membership hiện không hoạt động.',
+    )
+    return
+  }
+
+  const availability = getAvailableStaffAccountMemberships({
+    memberships: directoryResult.data,
+    staffMembers,
+    currentStaffId: expectedStaffId,
+    currentCenterId: expectedCenterId,
+  })
+  const latestAvailableMembership = availability.active.find(
+    (item) => item.id === expectedMembershipId,
+  )
+
+  if (availability.hasMalformedDuplicate) {
+    finishStaffAccountLinkError('Liên kết tài khoản cần kiểm tra: dữ liệu one-to-one hiện có đang bị trùng.')
+    return
+  }
+
+  if (!latestAvailableMembership) {
+    const membershipLookup = findStaffMemberByMembershipId(
+      staffMembers,
+      membership.id,
+      expectedCenterId,
+    )
+    const accountLookup = findStaffMemberByAccountUserId(
+      staffMembers,
+      membership.accountUserId,
+      expectedCenterId,
+    )
+    const linkedElsewhere = [...membershipLookup.matches, ...accountLookup.matches].some(
+      (item) => item.id !== expectedStaffId,
+    )
+    finishStaffAccountLinkError(
+      linkedElsewhere
+        ? 'Tài khoản đã được liên kết với một hồ sơ nhân viên khác.'
+        : 'Membership không còn khả dụng để liên kết.',
+    )
+    return
+  }
+
+  const linkedAt = new Date().toISOString()
+  const savedStaffMember = linkStaffMemberToAccount(
+    staffMember,
+    latestAvailableMembership,
+    linkedAt,
+  )
+  staffMembers = staffMembers.map((item) =>
+    item.id === savedStaffMember.id ? savedStaffMember : item,
+  )
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  staffAccountDirectoryState = createStaffAccountDirectoryState({
+    status: 'loaded',
+    centerId: expectedCenterId,
+    centerName: latestContext.centerName,
+    memberships: directoryResult.data,
+  })
+  staffAccountLinkState = null
+  isStaffAccountLinkSaving = false
+  staffNotice = 'Đã liên kết tài khoản với hồ sơ nhân viên.'
+  syncStaffFormAccountLinkState(savedStaffMember)
+  render()
+}
+
+function finishStaffAccountLinkError(message) {
+  isStaffAccountLinkSaving = false
+  if (staffAccountLinkState) {
+    staffAccountLinkState = {
+      ...staffAccountLinkState,
+      isSaving: false,
+      message,
+    }
+  } else {
+    staffNotice = message
+  }
+  render()
+}
+
+function syncStaffFormAccountLinkState(staffMember) {
+  if (!staffFormState || staffFormState.staffId !== staffMember?.id) {
+    return
+  }
+
+  staffFormState = {
+    ...staffFormState,
+    links: {
+      ...staffFormState.links,
+      hasAccountLink: Boolean(staffMember.accountUserId && staffMember.membershipId),
+    },
+  }
+}
+
+async function handleUnlinkStaffAccount(staffId) {
+  if (isStaffAccountLinkSaving) {
+    return
+  }
+
+  const context = getStaffAccountCenterContext()
+  refreshStaffDataFromStorage()
+  const initialMatches = staffMembers.filter((item) => item.id === staffId)
+  const initialStaffMember = initialMatches.length === 1 ? initialMatches[0] : null
+
+  if (!context.ok || !initialStaffMember || initialMatches.length !== 1) {
+    staffNotice = context.error || 'Không tìm thấy duy nhất một hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+
+  const expectedAccountUserId = String(initialStaffMember.accountUserId || '').trim()
+  const expectedMembershipId = String(initialStaffMember.membershipId || '').trim()
+  if (!expectedAccountUserId || !expectedMembershipId) {
+    staffNotice = 'Liên kết tài khoản cần kiểm tra trước khi gỡ.'
+    render()
+    return
+  }
+
+  const confirmed = window.confirm(
+    'Gỡ liên kết tài khoản khỏi hồ sơ nhân viên này? Hồ sơ Nhân viên, tài khoản và membership vẫn còn; role không thay đổi; đăng nhập không bị khóa. Chỉ accountUserId, membershipId và thời điểm liên kết trên hồ sơ Nhân viên bị xóa.',
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  isStaffAccountLinkSaving = true
+  syncStaffFormAccountSavingState(true)
+  render()
+
+  const directoryResult = await listCenterAccountMemberships({ centerId: context.centerId })
+  const latestContext = getStaffAccountCenterContext()
+  refreshStaffDataFromStorage()
+  const latestMatches = staffMembers.filter((item) => item.id === staffId)
+  const latestStaffMember = latestMatches.length === 1 ? latestMatches[0] : null
+
+  if (!latestContext.ok || latestContext.centerId !== context.centerId) {
+    finishStaffAccountUnlink('Cơ sở đã thay đổi. Không có dữ liệu nào được lưu.')
+    return
+  }
+
+  if (!directoryResult.ok) {
+    finishStaffAccountUnlink(directoryResult.error || 'Không đọc được membership mới nhất.')
+    return
+  }
+
+  staffAccountDirectoryState = createStaffAccountDirectoryState({
+    status: 'loaded',
+    centerId: context.centerId,
+    centerName: latestContext.centerName,
+    memberships: directoryResult.data,
+  })
+
+  if (!latestStaffMember || latestMatches.length !== 1) {
+    finishStaffAccountUnlink('Hồ sơ nhân viên đã thay đổi hoặc không còn duy nhất.')
+    return
+  }
+
+  if (latestStaffMember.centerId && latestStaffMember.centerId !== context.centerId) {
+    finishStaffAccountUnlink('Hồ sơ nhân viên thuộc cơ sở khác. Không thể lưu chéo cơ sở.')
+    return
+  }
+
+  if (
+    latestStaffMember.accountUserId !== expectedAccountUserId ||
+    latestStaffMember.membershipId !== expectedMembershipId
+  ) {
+    finishStaffAccountUnlink('Liên kết tài khoản đã thay đổi. Vui lòng kiểm tra lại trước khi gỡ.')
+    return
+  }
+
+  const latestLink = resolveStaffAccountLink({
+    staffMember: latestStaffMember,
+    staffMembers,
+    memberships: directoryResult.data,
+    currentCenterId: context.centerId,
+  })
+  if (!['linked', 'linked-inactive'].includes(latestLink.status)) {
+    finishStaffAccountUnlink('Liên kết tài khoản cần kiểm tra; hệ thống không tự gỡ dữ liệu malformed.')
+    return
+  }
+
+  const updatedAt = new Date().toISOString()
+  const savedStaffMember = unlinkStaffMemberFromAccount(latestStaffMember, updatedAt)
+  staffMembers = staffMembers.map((item) =>
+    item.id === savedStaffMember.id ? savedStaffMember : item,
+  )
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  staffAccountDirectoryState = createStaffAccountDirectoryState({
+    status: 'loaded',
+    centerId: context.centerId,
+    centerName: latestContext.centerName,
+    memberships: directoryResult.data,
+  })
+  isStaffAccountLinkSaving = false
+  staffNotice = 'Đã gỡ liên kết tài khoản. Account, membership và role không thay đổi.'
+  syncStaffFormAccountLinkState(savedStaffMember)
+  syncStaffFormAccountSavingState(false)
+  render()
+}
+
+function finishStaffAccountUnlink(message) {
+  isStaffAccountLinkSaving = false
+  staffNotice = message
+  syncStaffFormAccountSavingState(false)
+  render()
+}
+
+function syncStaffFormAccountSavingState(isSaving) {
+  if (!staffFormState) {
+    return
+  }
+
+  staffFormState = {
+    ...staffFormState,
+    isSaving,
+  }
+}
+
+async function openStaffAccountManagement(staffId) {
+  if (isStaffAccountLinkSaving) {
+    return
+  }
+
+  const context = getStaffAccountCenterContext()
+  if (!context.ok) {
+    staffNotice = context.error
+    render()
+    return
+  }
+
+  const directoryResult = await listCenterAccountMemberships({ centerId: context.centerId })
+  const latestContext = getStaffAccountCenterContext()
+  refreshStaffDataFromStorage()
+  const staffMember = staffMembers.find((item) => item.id === staffId)
+
+  if (!directoryResult.ok || !latestContext.ok || latestContext.centerId !== context.centerId) {
+    staffNotice = directoryResult.error || 'Cơ sở đã thay đổi khi mở quản lý tài khoản.'
+    render()
+    return
+  }
+
+  const link = resolveStaffAccountLink({
+    staffMember,
+    staffMembers,
+    memberships: directoryResult.data,
+    currentCenterId: context.centerId,
+  })
+
+  if (!['linked', 'linked-inactive'].includes(link.status)) {
+    staffNotice = 'Liên kết tài khoản cần kiểm tra trước khi mở quản lý tài khoản.'
+    render()
+    return
+  }
+
+  const currentRole = normalizeOnlineRole(cloudStatus.role || cloudStatus.membership?.role)
+  if (currentRole !== ONLINE_ACCESS_ROLES.OWNER) {
+    staffNotice = 'Quản lý tài khoản hiện chỉ mở cho Chủ hệ thống.'
+    render()
+    return
+  }
+
+  if (link.membership.role !== 'center_admin') {
+    staffNotice = 'Màn hình quản lý tài khoản hiện có chỉ hỗ trợ account Quản lý cơ sở; chưa có deep-open an toàn cho role này.'
+    render()
+    return
+  }
+
+  if (!['active', 'revoked'].includes(link.membership.status)) {
+    staffNotice = 'Màn hình quản lý tài khoản hiện có chưa hỗ trợ deep-open trạng thái membership này.'
+    render()
+    return
+  }
+
+  pendingInternalAccountUserId = link.membership.accountUserId
+  staffAccountLinkState = null
+  staffFormState = null
+  window.location.hash = INTERNAL_CENTERS_ROUTE_HASH
+  render()
+}
+
+function normalizeStaffAccountSearchText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
 }
 
 function updateStaffFormField(fieldName, value) {
@@ -2041,9 +2779,28 @@ function render() {
   restorePreservedScrollPositions(preservedScrollState)
   restoreActiveElementRenderSnapshot(activeElementSnapshot)
   restorePendingWindowFocusAfterRender()
+  focusPendingInternalAccountCard()
   focusPendingAttendanceBaselineCell()
   skipNextParentContactScrollCapture = false
   updateClock()
+}
+
+function focusPendingInternalAccountCard() {
+  if (!pendingInternalAccountUserId || !isInternalCenterConsoleRoute()) {
+    return
+  }
+
+  const target = document.querySelector('[data-internal-account-focused]')
+  if (target) {
+    target.focus({ preventScroll: true })
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    pendingInternalAccountUserId = ''
+    return
+  }
+
+  if (internalCenterAdminAccountsState.status === 'loaded') {
+    pendingInternalAccountUserId = ''
+  }
 }
 
 function refreshTuitionFormPreview() {
@@ -3921,6 +4678,10 @@ function renderInternalCenterAccountStatusNote() {
 
 function renderInternalCenterAccountCard(center) {
   const adminAccount = getInternalAccountRecord(center.id)
+  const isFocusedAccount = Boolean(
+    pendingInternalAccountUserId &&
+    adminAccount?.userId === pendingInternalAccountUserId,
+  )
   const hasAdmin = adminAccount?.exists === true
   const isRevokedAdmin = Boolean(adminAccount?.isRevoked || adminAccount?.state === 'revoked' || adminAccount?.status === 'revoked')
   const adminEmail = adminAccount?.email || ''
@@ -3954,7 +4715,7 @@ function renderInternalCenterAccountCard(center) {
     : revokeEnabled ? 'Thu hồi quyền' : 'Không có admin'
 
   return `
-    <article class="internal-account-card">
+    <article class="internal-account-card ${isFocusedAccount ? 'is-focused-account' : ''}" ${isFocusedAccount ? 'data-internal-account-focused tabindex="-1"' : ''}>
       <div class="internal-account-card-title">
         <h3>${escapeHtml(center.name || center.id)}</h3>
         <span class="${hasAdmin ? 'is-ready' : 'is-pending'}">${escapeHtml(accountStatus)}</span>
@@ -5415,6 +6176,7 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'nhan-vien') {
+    ensureStaffAccountDirectoryLoading()
     return renderStaffModule({
       staffMembers,
       departments: staffDepartments,
@@ -5425,6 +6187,9 @@ function renderWindowBody(windowItem) {
       formState: staffFormState,
       isDepartmentPanelOpen: isStaffDepartmentPanelOpen,
       departmentFormState: staffDepartmentFormState,
+      accountMemberships: staffAccountDirectoryState.memberships,
+      accountDirectoryState: staffAccountDirectoryState,
+      accountLinkState: staffAccountLinkState,
       notice: staffNotice,
     })
   }
@@ -11959,6 +12724,57 @@ function bindEvents() {
 
       if (action === 'open-departments') {
         openStaffDepartmentPanel()
+      }
+    })
+  })
+
+  document.querySelector('[data-staff-account-query]')?.addEventListener('input', (event) => {
+    updateStaffAccountLinkSearch(event.currentTarget.value)
+  })
+
+  document.querySelectorAll('[data-staff-account-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const action = button.dataset.staffAccountAction
+
+      if (action === 'open-link') {
+        void openStaffAccountLinkModal(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'close-link') {
+        closeStaffAccountLinkModal()
+        return
+      }
+
+      if (action === 'reload-directory') {
+        void refreshStaffAccountDirectory()
+        return
+      }
+
+      if (action === 'select-membership') {
+        void prepareStaffAccountLinkConfirmation(button.dataset.membershipId)
+        return
+      }
+
+      if (action === 'cancel-confirm') {
+        cancelStaffAccountLinkConfirmation()
+        return
+      }
+
+      if (action === 'confirm-link') {
+        void handleConfirmStaffAccountLink()
+        return
+      }
+
+      if (action === 'unlink') {
+        void handleUnlinkStaffAccount(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'open-management') {
+        void openStaffAccountManagement(button.dataset.staffId)
       }
     })
   })
