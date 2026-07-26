@@ -285,6 +285,8 @@ import {
   buildReportDownloadText,
   buildReportPrintHtml,
   createInitialReportState,
+  getReportTransactionScope,
+  getReportTransactionsForScope,
   getReportDownloadFilename,
   getWeekStartDate,
   renderReportModule,
@@ -605,6 +607,8 @@ let selectedInventoryRequestId = null
 let isInventoryHistoryPanelOpen = false
 let isInventoryRequestsPanelOpen = false
 let reportState = createInitialReportState()
+let reportTransactionDrilldownState = null
+let reportTransactionDrilldownToken = 0
 let careNoteDrafts = {}
 let cloudStatus = createInitialCloudStatus(getSupabaseConfigStatus().status)
 let cloudDbState = createInitialCloudDbState()
@@ -1086,6 +1090,8 @@ function resetTransientStateForCenterSwitch() {
     transactionId: '',
     requestToken: cashflowTransactionPrintState.requestToken + 1,
   }
+  reportTransactionDrilldownState = null
+  reportTransactionDrilldownToken += 1
   cashbookSettingsFormState = null
   cashbookReconciliationFormState = null
   inventoryFormState = null
@@ -2931,6 +2937,8 @@ function resetCloudRuntimeStateForOwnerCenterSwitch() {
   cloudBootstrapLastFailureSignature = ''
   transactionImageManagerState = null
   cloudGalleryState = null
+  reportTransactionDrilldownState = null
+  reportTransactionDrilldownToken += 1
   cashflowTransactionDetailState = null
   cashflowTransactionDetailHydrateToken += 1
   isCenterProfilePopoverOpen = false
@@ -4692,6 +4700,7 @@ function renderWindowBody(windowItem) {
         sessionReports,
         storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
       }),
+      sourceTransactionsState: reportTransactionDrilldownState,
     })
   }
 
@@ -9380,6 +9389,217 @@ function getCloudAttachmentCounts() {
   }, {})
 }
 
+async function openReportTransactionDrilldown({ mode, type, category = '' } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const requestToken = reportTransactionDrilldownToken + 1
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
+  const scope = getReportTransactionScope(reportState.filters, { mode, type, category })
+  const scopedTransactions = sortReportSourceTransactions(
+    getReportTransactionsForScope(latestCashflowTransactions, reportState.filters, scope),
+  )
+  const transactionCodes = getCashflowTransactionCodesForTransactions(latestCashflowTransactions)
+
+  reportTransactionDrilldownToken = requestToken
+  cashflowTransactions = latestCashflowTransactions
+  reportTransactionDrilldownState = {
+    centerId,
+    requestToken,
+    scope,
+    title: scope.title,
+    subtitle: scope.subtitle,
+    transactions: scopedTransactions,
+    transactionCodes,
+    attachmentCounts: buildReportDrilldownAttachmentCounts(scopedTransactions, transactionCodes),
+    status: 'loading',
+    error: '',
+    message: '',
+    messageTone: '',
+  }
+  render()
+
+  await hydrateReportTransactionDrilldownAttachments({
+    centerId,
+    requestToken,
+    transactions: scopedTransactions,
+    transactionCodes,
+  })
+}
+
+async function hydrateReportTransactionDrilldownAttachments({
+  centerId,
+  requestToken,
+  transactions,
+  transactionCodes,
+}) {
+  if (!reportTransactionDrilldownState || reportTransactionDrilldownToken !== requestToken) {
+    return
+  }
+
+  const monthKeys = getReportDrilldownMonthKeys(transactions)
+  if (!monthKeys.length) {
+    reportTransactionDrilldownState = {
+      ...reportTransactionDrilldownState,
+      status: 'loaded',
+      error: '',
+    }
+    render()
+    return
+  }
+
+  const access = getCloudAttachmentAccessContext()
+
+  if (!access.ok || access.centerId !== centerId) {
+    reportTransactionDrilldownState = {
+      ...reportTransactionDrilldownState,
+      status: 'loaded',
+      error: access.error || 'Cơ sở hiện tại đã thay đổi. Vui lòng mở lại danh sách giao dịch nguồn.',
+    }
+    render()
+    return
+  }
+
+  const results = await Promise.all(
+    monthKeys.map((monthKey) => listTransactionAttachmentsByMonth({ centerId, monthKey })),
+  )
+
+  if (!reportTransactionDrilldownState || reportTransactionDrilldownToken !== requestToken) {
+    return
+  }
+
+  const failedResult = results.find((result) => !result.ok)
+  const monthAttachments = results.flatMap((result) => (result.ok ? result.data : []))
+
+  reportTransactionDrilldownState = {
+    ...reportTransactionDrilldownState,
+    status: 'loaded',
+    error: failedResult
+      ? failedResult.error || 'Không thể kiểm tra trạng thái chứng từ giao dịch nguồn.'
+      : '',
+    attachmentCounts: buildReportDrilldownAttachmentCounts(
+      transactions,
+      transactionCodes,
+      monthAttachments,
+    ),
+  }
+  render()
+}
+
+function buildReportDrilldownAttachmentCounts(transactions, transactionCodes, monthAttachments = []) {
+  const sourceCodes = new Set(
+    transactions
+      .map((transaction) => String(transactionCodes[transaction.id] || transaction.transactionCode || '').trim())
+      .filter(Boolean),
+  )
+  const counts = {}
+  const seenAttachments = new Set()
+
+  ;[...cloudStatus.attachments, ...monthAttachments].forEach((attachment) => {
+    const transactionCode = String(attachment.transactionCode || '').trim()
+    if (!sourceCodes.has(transactionCode)) {
+      return
+    }
+
+    const attachmentKey = String(
+      attachment.metadataId || attachment.id || attachment.storagePath || attachment.filePath || '',
+    ).trim()
+    const uniqueKey = attachmentKey ? `${transactionCode}:${attachmentKey}` : ''
+    if (uniqueKey && seenAttachments.has(uniqueKey)) {
+      return
+    }
+
+    if (uniqueKey) {
+      seenAttachments.add(uniqueKey)
+    }
+    counts[transactionCode] = (counts[transactionCode] || 0) + 1
+  })
+
+  return counts
+}
+
+function getReportDrilldownMonthKeys(transactions) {
+  return [
+    ...new Set(
+      transactions
+        .map((transaction) => String(transaction.transactionDate || transaction.date || '').slice(0, 7))
+        .filter((monthKey) => /^\d{4}-\d{2}$/.test(monthKey)),
+    ),
+  ]
+}
+
+function sortReportSourceTransactions(transactions) {
+  return [...transactions].sort((first, second) => {
+    const dateCompare = String(second.transactionDate || second.date || '').localeCompare(
+      String(first.transactionDate || first.date || ''),
+    )
+
+    return dateCompare || String(second.id || '').localeCompare(String(first.id || ''))
+  })
+}
+
+function closeReportTransactionDrilldown() {
+  reportTransactionDrilldownState = null
+  reportTransactionDrilldownToken += 1
+  render()
+}
+
+function setReportTransactionDrilldownMessage(message, tone = 'error') {
+  if (!reportTransactionDrilldownState) {
+    setCloudUploadMessage(message, tone)
+    return
+  }
+
+  reportTransactionDrilldownState = {
+    ...reportTransactionDrilldownState,
+    message,
+    messageTone: tone,
+  }
+  render()
+}
+
+function getCurrentReportSourceTransaction(transactionId) {
+  const centerId = getCurrentResolvedCenterId()
+  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
+  const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
+
+  cashflowTransactions = latestCashflowTransactions
+
+  if (!transaction) {
+    setReportTransactionDrilldownMessage('Không tìm thấy giao dịch nguồn trong cơ sở hiện tại.', 'error')
+    render()
+    return null
+  }
+
+  if (!isCashflowTransactionInCurrentCenter(transaction, centerId)) {
+    setReportTransactionDrilldownMessage('Giao dịch nguồn không thuộc cơ sở hiện tại.', 'error')
+    render()
+    return null
+  }
+
+  return transaction
+}
+
+function openReportSourceTransaction(transactionId) {
+  const transaction = getCurrentReportSourceTransaction(transactionId)
+
+  if (!transaction) {
+    return
+  }
+
+  openModuleWindowFromChildInteraction('thu-chi')
+  openCashflowTransactionFromRow(transaction.id)
+}
+
+async function openReportSourceEvidence(transactionId) {
+  const transaction = getCurrentReportSourceTransaction(transactionId)
+
+  if (!transaction) {
+    return
+  }
+
+  openModuleWindowFromChildInteraction('thu-chi')
+  await openTransactionImageManager(transaction.id)
+}
+
 function getTransactionIdsByCode() {
   const transactionCodes = getCashflowTransactionCodes()
 
@@ -10718,11 +10938,70 @@ function bindEvents() {
         },
         selectedBarDetail: null,
       }
+      reportTransactionDrilldownState = null
+      reportTransactionDrilldownToken += 1
       render()
     })
   })
 
   document.querySelector('.report-module')?.addEventListener('click', (event) => {
+    const sourceModal = event.target.closest('[data-report-source-modal]')
+    let sourceActionButton = event.target.closest('[data-report-source-action]')
+
+    if (sourceActionButton?.classList.contains('report-source-modal-backdrop') && sourceModal) {
+      sourceActionButton = null
+    }
+
+    if (sourceActionButton) {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const action = sourceActionButton.dataset.reportSourceAction
+      if (action === 'close') {
+        closeReportTransactionDrilldown()
+        return
+      }
+
+      const transactionId = sourceActionButton.dataset.reportSourceTransactionId
+      if (action === 'open-transaction') {
+        openReportSourceTransaction(transactionId)
+        return
+      }
+
+      if (action === 'view-evidence') {
+        openReportSourceEvidence(transactionId)
+        return
+      }
+
+      if (action === 'print-transaction') {
+        const transaction = getCurrentReportSourceTransaction(transactionId)
+        if (transaction) {
+          printCashflowTransaction(transaction.id)
+        }
+        return
+      }
+    }
+
+    if (event.target.closest('.report-source-modal-backdrop') && !sourceModal) {
+      event.preventDefault()
+      event.stopPropagation()
+      closeReportTransactionDrilldown()
+      return
+    }
+
+    const drilldownButton = event.target.closest('[data-report-drilldown-action="open"]')
+
+    if (drilldownButton) {
+      event.preventDefault()
+      event.stopPropagation()
+      openReportTransactionDrilldown({
+        mode: drilldownButton.dataset.reportDrilldownMode,
+        type: drilldownButton.dataset.reportDrilldownType,
+        category: drilldownButton.dataset.reportDrilldownCategory,
+      })
+      return
+    }
+
     const button = event.target.closest('[data-report-week-action]')
 
     if (!button) {
@@ -10745,6 +11024,8 @@ function bindEvents() {
       },
       selectedBarDetail: null,
     }
+    reportTransactionDrilldownState = null
+    reportTransactionDrilldownToken += 1
     render()
   })
 
