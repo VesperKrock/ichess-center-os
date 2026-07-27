@@ -2105,6 +2105,248 @@ h3 {
   color: #edf5ff;
 }
 
+.staff-governance-section,
+.staff-governance-panel,
+.staff-governance-form,
+.staff-governance-audit-list,
+.staff-governance-request-list {
+  display: grid;
+  gap: 12px;
+}
+
+.staff-governance-heading,
+.staff-governance-panel-heading,
+.staff-governance-request-heading,
+.staff-governance-request-card > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.staff-governance-heading h4,
+.staff-governance-heading p,
+.staff-governance-panel h5,
+.staff-governance-panel h6,
+.staff-governance-request-card p,
+.staff-governance-request-card small,
+.staff-governance-empty strong,
+.staff-governance-legal-note {
+  margin: 0;
+}
+
+.staff-governance-heading p,
+.staff-governance-request-card p,
+.staff-governance-request-card small,
+.staff-governance-legal-note {
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.staff-governance-panel {
+  border: 1px solid rgba(160, 184, 214, 0.14);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(8, 13, 20, 0.38);
+}
+
+.staff-governance-panel h5,
+.staff-governance-panel h6 {
+  color: #f1f6fc;
+  font-size: 0.9rem;
+}
+
+.staff-governance-access-summary,
+.staff-governance-retention-summary,
+.staff-governance-policy-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.staff-governance-access-summary > div,
+.staff-governance-retention-summary > div,
+.staff-governance-policy-summary > span {
+  min-width: 0;
+  border: 1px solid rgba(160, 184, 214, 0.12);
+  border-radius: 7px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.staff-governance-access-summary span,
+.staff-governance-access-summary strong,
+.staff-governance-retention-summary span,
+.staff-governance-retention-summary strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.staff-governance-access-summary span,
+.staff-governance-retention-summary span {
+  margin-bottom: 4px;
+  color: #91a5bc;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.staff-governance-access-summary strong,
+.staff-governance-retention-summary strong,
+.staff-governance-policy-summary span {
+  color: #edf5ff;
+  font-size: 0.8rem;
+}
+
+.staff-governance-permission-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  gap: 6px;
+  list-style: none;
+}
+
+.staff-governance-permission-list li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #aebed1;
+  font-size: 0.78rem;
+}
+
+.staff-governance-permission-list li.is-allowed {
+  color: #9be8bd;
+}
+
+.staff-governance-audit-filters,
+.staff-governance-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.staff-governance-audit-filters label,
+.staff-governance-form label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.staff-governance-audit-filters label > span,
+.staff-governance-form label > span {
+  color: #91a5bc;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.staff-governance-audit-filters select,
+.staff-governance-form input,
+.staff-governance-form select,
+.staff-governance-form textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.25);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0d151f;
+  font: inherit;
+}
+
+.staff-governance-form textarea {
+  resize: vertical;
+}
+
+.staff-governance-form label.is-wide,
+.staff-governance-checkbox.is-wide {
+  grid-column: 1 / -1;
+}
+
+.staff-governance-form .staff-governance-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.staff-governance-form .staff-governance-checkbox input {
+  width: auto;
+  min-height: auto;
+  margin-top: 2px;
+}
+
+.staff-governance-form small {
+  color: #ffb4b4;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.staff-governance-form-actions,
+.staff-governance-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.staff-governance-audit-list article,
+.staff-governance-request-card,
+.staff-governance-empty,
+.staff-governance-notice {
+  border: 1px solid rgba(112, 158, 224, 0.2);
+  border-radius: 7px;
+  padding: 10px;
+  background: rgba(52, 98, 166, 0.07);
+}
+
+.staff-governance-audit-list article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.staff-governance-audit-list article strong,
+.staff-governance-request-card strong {
+  color: #edf5ff;
+  font-size: 0.82rem;
+}
+
+.staff-governance-audit-list article span,
+.staff-governance-audit-list article small {
+  color: #91a5bc;
+  font-size: 0.72rem;
+}
+
+.staff-governance-audit-list article p {
+  margin: 5px 0;
+  color: #c9d8ea;
+  font-size: 0.78rem;
+}
+
+.staff-governance-notice {
+  margin: 0;
+  color: #c9d8ea;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.staff-governance-notice.is-warning,
+.staff-governance-separation {
+  border-color: rgba(244, 183, 73, 0.34);
+  color: #ffe0a3;
+  background: rgba(120, 74, 17, 0.18);
+}
+
+.staff-governance-separation {
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .staff-documents-empty {
   display: grid;
   margin-top: 12px;
@@ -2232,7 +2474,13 @@ h3 {
 
   .staff-documents-summary,
   .staff-documents-filters,
-  .staff-document-card {
+  .staff-document-card,
+  .staff-governance-access-summary,
+  .staff-governance-retention-summary,
+  .staff-governance-policy-summary,
+  .staff-governance-permission-list,
+  .staff-governance-audit-filters,
+  .staff-governance-form-grid {
     grid-template-columns: 1fr;
   }
 

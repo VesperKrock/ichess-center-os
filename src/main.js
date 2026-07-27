@@ -54,6 +54,12 @@ import {
   getStoredCenterStaffAdministrativeProfilesReadStatus,
   getStoredCenterStaffDocuments,
   getStoredCenterStaffDocumentsReadStatus,
+  getStoredCenterStaffAdministrativeAuditEvents,
+  getStoredCenterStaffAdministrativeAuditEventsReadStatus,
+  getStoredCenterStaffAdministrativeRetentionPolicy,
+  getStoredCenterStaffAdministrativeRetentionPolicyReadStatus,
+  getStoredCenterStaffAdministrativeDeletionRequests,
+  getStoredCenterStaffAdministrativeDeletionRequestsReadStatus,
   getStoredCenterStaffMembers,
   getStoredInventory,
   getStoredInventoryMovements,
@@ -80,6 +86,9 @@ import {
   saveStoredCenterDepartments,
   saveStoredCenterStaffAdministrativeProfiles,
   saveStoredCenterStaffDocuments,
+  appendStoredCenterStaffAdministrativeAuditEvent,
+  saveStoredCenterStaffAdministrativeRetentionPolicy,
+  saveStoredCenterStaffAdministrativeDeletionRequests,
   saveStoredCenterStaffMembers,
   saveStoredInventory,
   saveStoredInventoryMovements,
@@ -368,6 +377,30 @@ import {
   validateStaffDocument,
 } from './staff-documents-module.js'
 import {
+  STAFF_ADMINISTRATIVE_POLICY_STALE_MESSAGE,
+  STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE,
+  buildStaffAdministrativeAuditEvent,
+  buildStaffAdministrativeDeletionRequest,
+  buildStaffAdministrativeRetentionPolicy,
+  cancelStaffAdministrativeDeletionRequest,
+  createStaffAdministrativeDeletionRequestDraft,
+  createStaffAdministrativeDeletionRequestId,
+  createStaffAdministrativeRetentionPolicyDraft,
+  createStaffAdministrativeRetentionPolicyId,
+  getStaffAdministrativeDeletionRequestCollectionIssues,
+  getStaffAdministrativeRetentionPolicyIssues,
+  hasStaffAdministrativeAction,
+  initialStaffAdministrativeAuditFilters,
+  renderStaffAdministrativeAuditResults,
+  renderStaffAdministrativeGovernanceSection,
+  resolveStaffAdministrativeActionAccess,
+  reviewStaffAdministrativeDeletionRequest,
+  setStaffAdministrativeDeletionRequestDraftValue,
+  setStaffAdministrativeRetentionPolicyDraftValue,
+  validateStaffAdministrativeDeletionRequest,
+  validateStaffAdministrativeRetentionPolicy,
+} from './staff-administrative-governance-module.js'
+import {
   ANGEL_WINGS_DATASET_ID,
   ANGEL_WINGS_IMPORT_BATCH_ID,
   ANGEL_WINGS_SOURCE_TAG,
@@ -606,6 +639,9 @@ let staffFilters = { ...initialStaffFilters }
 let staffMembers = getStoredCenterStaffMembers([])
 let staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
 let staffDocuments = getStoredCenterStaffDocuments([])
+let staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
+let staffAdministrativeRetentionPolicy = getStoredCenterStaffAdministrativeRetentionPolicy(null)
+let staffAdministrativeDeletionRequests = getStoredCenterStaffAdministrativeDeletionRequests([])
 let staffDepartments = getStoredCenterDepartments([])
 let staffFormState = null
 let isStaffDepartmentPanelOpen = false
@@ -621,9 +657,11 @@ let staffLifecycleState = null
 let isStaffLifecycleSaving = false
 let staffAdministrativeProfileWindowStates = new Map()
 let staffDocumentWindowStates = new Map()
+let staffAdministrativeGovernanceWindowStates = new Map()
 const boundStaffAdministrativeActionWindows = new WeakSet()
 let isStaffAdministrativeProfileSaving = false
 const savingStaffDocumentWindowIds = new Set()
+const savingStaffAdministrativeGovernanceWindowIds = new Set()
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
@@ -1207,8 +1245,10 @@ function resetTransientStateForCenterSwitch() {
   )
   staffAdministrativeProfileWindowStates = new Map()
   staffDocumentWindowStates = new Map()
+  staffAdministrativeGovernanceWindowStates = new Map()
   isStaffAdministrativeProfileSaving = false
   savingStaffDocumentWindowIds.clear()
+  savingStaffAdministrativeGovernanceWindowIds.clear()
   teacherStaffLinkState = null
   isTeacherStaffLinkSaving = false
   scheduleFormState = null
@@ -1285,6 +1325,9 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   staffMembers = getStoredCenterStaffMembers([])
   staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
   staffDocuments = getStoredCenterStaffDocuments([])
+  staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
+  staffAdministrativeRetentionPolicy = getStoredCenterStaffAdministrativeRetentionPolicy(null)
+  staffAdministrativeDeletionRequests = getStoredCenterStaffAdministrativeDeletionRequests([])
   staffDepartments = getStoredCenterDepartments([])
   scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
   scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
@@ -1313,6 +1356,9 @@ function refreshStaffDataFromStorage() {
   staffMembers = getStoredCenterStaffMembers([])
   staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
   staffDocuments = getStoredCenterStaffDocuments([])
+  staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
+  staffAdministrativeRetentionPolicy = getStoredCenterStaffAdministrativeRetentionPolicy(null)
+  staffAdministrativeDeletionRequests = getStoredCenterStaffAdministrativeDeletionRequests([])
   staffDepartments = getStoredCenterDepartments([])
 }
 
@@ -1344,15 +1390,29 @@ function getStaffAccountCenterContext() {
   }
 }
 
-function getStaffAdministrativeProfileAccessContext() {
-  return resolveStaffAdministrativeProfileAccess({
+function getStaffAdministrativeProfileAccessContext(action = 'administrative-profile.view') {
+  const binding = resolveAppCenterBinding(cloudStatus)
+  const storageCenterId = getCurrentStorageCenterId()
+  const profileAccess = resolveStaffAdministrativeProfileAccess({
     user: cloudStatus.user,
-    binding: resolveAppCenterBinding(cloudStatus),
-    storageCenterId: getCurrentStorageCenterId(),
+    binding,
+    storageCenterId,
   })
+  const actionAccess = resolveStaffAdministrativeActionAccess({
+    user: cloudStatus.user,
+    binding,
+    storageCenterId,
+    action,
+  })
+  return profileAccess.ok
+    ? actionAccess
+    : { ...actionAccess, ok: false, allowed: false, error: profileAccess.error }
 }
 
-async function getLatestStaffAdministrativeProfileAccessContext(expectedCenterId) {
+async function getLatestStaffAdministrativeProfileAccessContext(
+  expectedCenterId,
+  action = 'administrative-profile.edit',
+) {
   const user = cloudStatus.user
 
   if (cloudStatus.authStatus !== 'signed-in' || !user?.id) {
@@ -1369,16 +1429,26 @@ async function getLatestStaffAdministrativeProfileAccessContext(expectedCenterId
       (item) => String(item?.center_id || '').trim() === String(expectedCenterId || '').trim(),
     )
 
-    return resolveStaffAdministrativeProfileAccess({
+    const binding = {
+      status: membership ? 'bound' : 'denied',
+      currentCenterId: membership?.center_id || '',
+      role: membership?.role || '',
+      membership: membership || null,
+    }
+    const profileAccess = resolveStaffAdministrativeProfileAccess({
       user,
-      binding: {
-        status: membership ? 'bound' : 'denied',
-        currentCenterId: membership?.center_id || '',
-        role: membership?.role || '',
-        membership: membership || null,
-      },
+      binding,
       storageCenterId: getCurrentStorageCenterId(),
     })
+    const actionAccess = resolveStaffAdministrativeActionAccess({
+      user,
+      binding,
+      storageCenterId: getCurrentStorageCenterId(),
+      action,
+    })
+    return profileAccess.ok
+      ? actionAccess
+      : { ...actionAccess, ok: false, allowed: false, error: profileAccess.error }
   } catch {
     return {
       ok: false,
@@ -1438,6 +1508,107 @@ function setStaffDocumentWindowState(windowId, nextState) {
   return nextState
 }
 
+function createStaffAdministrativeGovernanceWindowState(
+  centerId,
+  staffMemberId,
+  administrativeProfileId = '',
+) {
+  return {
+    mode: 'view',
+    centerId,
+    staffMemberId,
+    administrativeProfileId,
+    selectedRequestId: '',
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    values: null,
+    errors: {},
+    message: '',
+    isSaving: false,
+    auditFilters: { ...initialStaffAdministrativeAuditFilters },
+    auditLimit: 25,
+  }
+}
+
+function getStaffAdministrativeGovernanceWindowState(windowId) {
+  return staffAdministrativeGovernanceWindowStates.get(windowId) || null
+}
+
+function setStaffAdministrativeGovernanceWindowState(windowId, nextState) {
+  staffAdministrativeGovernanceWindowStates.set(windowId, nextState)
+  return nextState
+}
+
+function getStaffAdministrativeGovernanceStorageContext(centerId = getCurrentStorageCenterId()) {
+  const readStatuses = [
+    getStoredCenterStaffAdministrativeAuditEventsReadStatus(),
+    getStoredCenterStaffAdministrativeRetentionPolicyReadStatus(),
+    getStoredCenterStaffAdministrativeDeletionRequestsReadStatus(),
+  ]
+  if (readStatuses.some((status) => !status.ok)) {
+    return { ok: false, reason: 'governance-storage-unhealthy' }
+  }
+  if (
+    staffAdministrativeRetentionPolicy &&
+    getStaffAdministrativeRetentionPolicyIssues(
+      staffAdministrativeRetentionPolicy,
+      centerId,
+    ).length
+  ) return { ok: false, reason: 'malformed-retention-policy' }
+  if (
+    getStaffAdministrativeDeletionRequestCollectionIssues(
+      staffAdministrativeDeletionRequests,
+      centerId,
+    ).length
+  ) return { ok: false, reason: 'malformed-deletion-request' }
+  const hasBrokenRequestRelationship = staffAdministrativeDeletionRequests.some((request) => {
+    const staffMatches = staffMembers.filter(
+      (staffMember) => staffMember.id === request.staffMemberId && staffMember.centerId === centerId,
+    )
+    const profileMatches = staffAdministrativeProfiles.filter(
+      (profile) =>
+        profile.id === request.administrativeProfileId &&
+        profile.staffMemberId === request.staffMemberId &&
+        profile.centerId === centerId,
+    )
+    return request.centerId !== centerId || staffMatches.length !== 1 || profileMatches.length !== 1
+  })
+  if (hasBrokenRequestRelationship) {
+    return { ok: false, reason: 'malformed-deletion-request-relationship' }
+  }
+  return { ok: true, reason: '' }
+}
+
+function recordStaffAdministrativeAuditEvent(access, payload = {}) {
+  if (
+    !access?.centerId ||
+    access.centerId !== getCurrentStorageCenterId() ||
+    !access.actorUserId ||
+    !access.actorMembershipId
+  ) return false
+  const event = buildStaffAdministrativeAuditEvent({
+    centerId: access.centerId,
+    actorUserId: access.actorUserId,
+    actorMembershipId: access.actorMembershipId,
+    actorRole: access.role,
+    action: payload.action,
+    targetType: payload.targetType,
+    targetId: payload.targetId,
+    ['staffMemberId']: payload.staffMemberId,
+    administrativeProfileId: payload.administrativeProfileId,
+    documentId: payload.documentId,
+    outcome: payload.outcome || 'success',
+    reasonCode: payload.reasonCode,
+    noteSummary: payload.noteSummary,
+    requestId: payload.requestId,
+  })
+  const saved = appendStoredCenterStaffAdministrativeAuditEvent(event)
+  if (saved) {
+    staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
+  }
+  return saved
+}
+
 function getStaffDocumentStorageContext(centerId = getCurrentStorageCenterId()) {
   const readStatus = getStoredCenterStaffDocumentsReadStatus()
   if (!readStatus.ok) return { ok: false, reason: readStatus.reason }
@@ -1462,7 +1633,7 @@ function getStaffDocumentsForProfile(profile, staffMember, centerId) {
 }
 
 function openStaffAdministrativeProfileWindow(staffMemberId) {
-  const access = getStaffAdministrativeProfileAccessContext()
+  const access = getStaffAdministrativeProfileAccessContext('administrative-profile.view')
 
   if (!access.ok) {
     staffNotice = STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE
@@ -1484,6 +1655,11 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
     staffMember.id,
     access.centerId,
   )
+  if (!getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok) {
+    staffNotice = 'Nhật ký quyền riêng tư cần được kiểm tra. Không mở dữ liệu hành chính.'
+    render()
+    return
+  }
   staffAdministrativeProfileWindowStates.forEach((state, windowId) => {
     if (
       state.centerId !== access.centerId ||
@@ -1520,7 +1696,30 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
         ),
       )
     }
+    if (!getStaffAdministrativeGovernanceWindowState(existingWindow.id)) {
+      setStaffAdministrativeGovernanceWindowState(
+        existingWindow.id,
+        createStaffAdministrativeGovernanceWindowState(
+          access.centerId,
+          staffMember.id,
+          profileLookup.profile?.id || '',
+        ),
+      )
+    }
     focusWindow(existingWindow.id)
+    render()
+    return
+  }
+
+  if (!recordStaffAdministrativeAuditEvent(access, {
+    action: 'administrative-profile.open',
+    targetType: profileLookup.profile ? 'administrative-profile' : 'staff-member',
+    targetId: profileLookup.profile?.id || staffMember.id,
+    ['staffMemberId']: staffMember.id,
+    administrativeProfileId: profileLookup.profile?.id || '',
+    reasonCode: 'explicit-open',
+  })) {
+    staffNotice = 'Không thể ghi nhật ký quyền riêng tư. Không mở dữ liệu hành chính.'
     render()
     return
   }
@@ -1566,13 +1765,21 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
       profileLookup.profile?.id || '',
     ),
   )
+  setStaffAdministrativeGovernanceWindowState(
+    nextWindowId,
+    createStaffAdministrativeGovernanceWindowState(
+      access.centerId,
+      staffMember.id,
+      profileLookup.profile?.id || '',
+    ),
+  )
   focusWindow(nextWindowId)
   render()
 }
 
 function startStaffAdministrativeProfileCreate(windowId) {
   const windowItem = openWindows.find((item) => item.id === windowId)
-  const access = getStaffAdministrativeProfileAccessContext()
+  const access = getStaffAdministrativeProfileAccessContext('administrative-profile.edit')
 
   if (!windowItem || !access.ok || windowItem.centerId !== access.centerId) {
     denyStaffAdministrativeProfileWindow(windowId)
@@ -1580,7 +1787,10 @@ function startStaffAdministrativeProfileCreate(windowId) {
   }
 
   refreshStaffDataFromStorage()
-  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+  if (
+    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
+    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+  ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
       'Dữ liệu hồ sơ hành chính cần được kiểm tra. Hệ thống đã khóa chỉnh sửa.',
@@ -1620,7 +1830,7 @@ function startStaffAdministrativeProfileCreate(windowId) {
 
 function startStaffAdministrativeProfileEdit(windowId) {
   const windowItem = openWindows.find((item) => item.id === windowId)
-  const access = getStaffAdministrativeProfileAccessContext()
+  const access = getStaffAdministrativeProfileAccessContext('administrative-profile.edit')
 
   if (!windowItem || !access.ok || windowItem.centerId !== access.centerId) {
     denyStaffAdministrativeProfileWindow(windowId)
@@ -1628,7 +1838,10 @@ function startStaffAdministrativeProfileEdit(windowId) {
   }
 
   refreshStaffDataFromStorage()
-  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+  if (
+    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
+    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+  ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
       'Dữ liệu hồ sơ hành chính cần được kiểm tra. Hệ thống đã khóa chỉnh sửa.',
@@ -1700,7 +1913,9 @@ function denyStaffAdministrativeProfileWindow(windowId) {
   const windowItem = openWindows.find((item) => item.id === windowId)
   staffAdministrativeProfileWindowStates.delete(windowId)
   staffDocumentWindowStates.delete(windowId)
+  staffAdministrativeGovernanceWindowStates.delete(windowId)
   savingStaffDocumentWindowIds.delete(windowId)
+  savingStaffAdministrativeGovernanceWindowIds.delete(windowId)
   if (windowItem) {
     setStaffAdministrativeProfileWindowState(windowId, {
       mode: 'denied',
@@ -1795,13 +2010,18 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
   ) {
     staffAdministrativeProfileWindowStates.delete(windowId)
     staffDocumentWindowStates.delete(windowId)
+    staffAdministrativeGovernanceWindowStates.delete(windowId)
     savingStaffDocumentWindowIds.delete(windowId)
+    savingStaffAdministrativeGovernanceWindowIds.delete(windowId)
     isStaffAdministrativeProfileSaving = false
     return
   }
 
   refreshStaffDataFromStorage()
-  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+  if (
+    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
+    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+  ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
       'Dữ liệu hồ sơ hành chính cần được kiểm tra. Không ghi đè storage hiện tại.',
@@ -1899,6 +2119,17 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
     )
     return
   }
+  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
+    action: state.mode === 'create'
+      ? 'administrative-profile.create'
+      : 'administrative-profile.edit',
+    targetType: 'administrative-profile',
+    targetId: savedProfile.id,
+    ['staffMemberId']: state.staffMemberId,
+    administrativeProfileId: savedProfile.id,
+    reasonCode: 'explicit-save',
+    noteSummary: state.mode === 'create' ? 'profile-created' : 'profile-updated',
+  })
   refreshStaffDataFromStorage()
   setStaffAdministrativeProfileWindowState(windowId, {
     mode: 'view',
@@ -1907,7 +2138,9 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
     profileId: savedProfile.id,
     values: null,
     errors: {},
-    message: 'Đã lưu hồ sơ hành chính.',
+    message: auditSaved
+      ? 'Đã lưu hồ sơ hành chính.'
+      : 'Hồ sơ đã lưu nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
     isSaving: false,
     revealedFields: new Set(),
   })
@@ -1956,13 +2189,18 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
   ) {
     staffAdministrativeProfileWindowStates.delete(windowId)
     staffDocumentWindowStates.delete(windowId)
+    staffAdministrativeGovernanceWindowStates.delete(windowId)
     savingStaffDocumentWindowIds.delete(windowId)
+    savingStaffAdministrativeGovernanceWindowIds.delete(windowId)
     isStaffAdministrativeProfileSaving = false
     return
   }
 
   refreshStaffDataFromStorage()
-  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+  if (
+    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
+    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+  ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
       'Dữ liệu hồ sơ hành chính cần được kiểm tra. Không ghi đè storage hiện tại.',
@@ -2022,6 +2260,15 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
     )
     return
   }
+  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
+    action: 'administrative-profile.edit',
+    targetType: 'administrative-profile',
+    targetId: reviewedProfile.id,
+    ['staffMemberId']: state.staffMemberId,
+    administrativeProfileId: reviewedProfile.id,
+    reasonCode: 'explicit-save',
+    noteSummary: 'completion-reviewed',
+  })
   refreshStaffDataFromStorage()
   setStaffAdministrativeProfileWindowState(windowId, {
     mode: 'view',
@@ -2030,7 +2277,9 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
     profileId: reviewedProfile.id,
     values: null,
     errors: {},
-    message: 'Đã đánh dấu hồ sơ được kiểm tra.',
+    message: auditSaved
+      ? 'Đã đánh dấu hồ sơ được kiểm tra.'
+      : 'Hồ sơ đã cập nhật nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
     isSaving: false,
     revealedFields: new Set(),
   })
@@ -2048,7 +2297,9 @@ async function toggleStaffAdministrativeSensitiveField(
   const windowItem = openWindows.find(
     (item) => item.id === windowId && item.type === 'staff-administrative-profile',
   )
-  const access = getStaffAdministrativeProfileAccessContext()
+  const access = getStaffAdministrativeProfileAccessContext(
+    'administrative-profile.reveal-sensitive',
+  )
 
   if (
     !windowItem ||
@@ -2064,6 +2315,7 @@ async function toggleStaffAdministrativeSensitiveField(
   }
 
   const wasRevealed = state.revealedFields instanceof Set && state.revealedFields.has(fieldPath)
+  let auditAccess = access
 
   if (!wasRevealed) {
     const latestAccess = await getLatestStaffAdministrativeProfileAccessContext(state.centerId)
@@ -2074,6 +2326,7 @@ async function toggleStaffAdministrativeSensitiveField(
 
     if (
       !latestAccess.ok ||
+      !hasStaffAdministrativeAction(latestAccess, 'administrative-profile.reveal-sensitive') ||
       !latestWindow ||
       !latestState ||
       latestAccess.centerId !== latestState.centerId ||
@@ -2084,6 +2337,7 @@ async function toggleStaffAdministrativeSensitiveField(
     }
 
     state = latestState
+    auditAccess = latestAccess
     windowElement = document.querySelector(
       `.desktop-window.is-staff-administrative-profile[data-window-id="${CSS.escape(windowId)}"]`,
     )
@@ -2091,6 +2345,17 @@ async function toggleStaffAdministrativeSensitiveField(
       `[data-staff-administrative-action="toggle-sensitive"][data-sensitive-field="${CSS.escape(fieldPath)}"]`,
     )
     if (!windowElement || !button) return
+    const auditSaved = recordStaffAdministrativeAuditEvent(auditAccess, {
+      action: 'administrative-profile.reveal-sensitive',
+      targetType: state.profileId ? 'administrative-profile' : 'staff-member',
+      targetId: state.profileId || state.staffMemberId,
+      ['staffMemberId']: state.staffMemberId,
+      administrativeProfileId: state.profileId,
+      reasonCode: 'field-reveal',
+      noteSummary: fieldPath,
+    })
+    if (!auditSaved) return
+    refreshStaffAdministrativeAuditResultsRegion(windowId)
   }
 
   const revealedFields = toggleStaffAdministrativeRevealedField(
@@ -2173,11 +2438,14 @@ function navigateStaffAdministrativeProfileSection(button) {
   })
 }
 
-function getStaffDocumentWindowContext(windowId, { refresh = false } = {}) {
+function getStaffDocumentWindowContext(
+  windowId,
+  { refresh = false, action = 'staff-document.view' } = {},
+) {
   const windowItem = openWindows.find(
     (item) => item.id === windowId && item.type === 'staff-administrative-profile',
   )
-  const access = getStaffAdministrativeProfileAccessContext()
+  const access = getStaffAdministrativeProfileAccessContext(action)
   if (!windowItem || !access.ok || windowItem.centerId !== access.centerId) return null
   if (refresh) refreshStaffDataFromStorage()
 
@@ -2282,7 +2550,10 @@ function clearStaffDocumentFilters(windowId) {
 }
 
 function startStaffDocumentCreate(windowId) {
-  const context = getStaffDocumentWindowContext(windowId, { refresh: true })
+  const context = getStaffDocumentWindowContext(windowId, {
+    refresh: true,
+    action: 'staff-document.create',
+  })
   if (!context) {
     denyStaffAdministrativeProfileWindow(windowId)
     return
@@ -2306,7 +2577,10 @@ function startStaffDocumentCreate(windowId) {
 }
 
 function startStaffDocumentEdit(windowId, documentId) {
-  const context = getStaffDocumentWindowContext(windowId, { refresh: true })
+  const context = getStaffDocumentWindowContext(windowId, {
+    refresh: true,
+    action: 'staff-document.edit',
+  })
   if (!context) {
     denyStaffAdministrativeProfileWindow(windowId)
     return
@@ -2410,9 +2684,13 @@ function collectStaffDocumentDraftValues(formElement, state) {
   return values
 }
 
-async function getLatestStaffDocumentMutationContext(windowId, capturedState) {
+async function getLatestStaffDocumentMutationContext(
+  windowId,
+  capturedState,
+  action = capturedState.mode === 'create' ? 'staff-document.create' : 'staff-document.edit',
+) {
   const access = await getLatestStaffAdministrativeProfileAccessContext(capturedState.centerId)
-  if (!access.ok) {
+  if (!access.ok || !hasStaffAdministrativeAction(access, action)) {
     denyStaffAdministrativeProfileWindow(windowId)
     return null
   }
@@ -2434,11 +2712,12 @@ async function getLatestStaffDocumentMutationContext(windowId, capturedState) {
   if (
     !context?.storageContext.ok ||
     !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
+    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok ||
     !context.lookup.profile ||
     context.lookup.profile.id !== capturedState.administrativeProfileId ||
     context.staffMember?.archivedAt
   ) return null
-  return { ...context, state }
+  return { ...context, access, state }
 }
 
 async function handleStaffDocumentSubmit(windowId, formElement) {
@@ -2539,6 +2818,17 @@ async function handleStaffDocumentSubmit(windowId, formElement) {
     return
   }
 
+  const auditSaved = recordStaffAdministrativeAuditEvent(latest.access, {
+    action: capturedState.mode === 'create' ? 'staff-document.create' : 'staff-document.edit',
+    targetType: 'staff-document',
+    targetId: savedDocument.id,
+    ['staffMemberId']: capturedState.staffMemberId,
+    administrativeProfileId: capturedState.administrativeProfileId,
+    documentId: savedDocument.id,
+    reasonCode: 'explicit-save',
+    noteSummary: capturedState.mode === 'create' ? 'document-created' : 'document-updated',
+  })
+
   refreshStaffDataFromStorage()
   setStaffDocumentWindowState(windowId, {
     ...capturedState,
@@ -2549,7 +2839,9 @@ async function handleStaffDocumentSubmit(windowId, formElement) {
     expectedArchivedAt: '',
     values: null,
     errors: {},
-    message: 'Đã lưu metadata tài liệu.',
+    message: auditSaved
+      ? 'Đã lưu metadata tài liệu.'
+      : 'Tài liệu đã lưu nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
     isSaving: false,
   })
   savingStaffDocumentWindowIds.delete(windowId)
@@ -2557,7 +2849,13 @@ async function handleStaffDocumentSubmit(windowId, formElement) {
 }
 
 async function changeStaffDocumentArchiveState(windowId, documentId, action) {
-  const context = getStaffDocumentWindowContext(windowId, { refresh: true })
+  const permissionAction = action === 'archive'
+    ? 'staff-document.archive'
+    : 'staff-document.restore'
+  const context = getStaffDocumentWindowContext(windowId, {
+    refresh: true,
+    action: permissionAction,
+  })
   if (!context) {
     denyStaffAdministrativeProfileWindow(windowId)
     return
@@ -2586,7 +2884,7 @@ async function changeStaffDocumentArchiveState(windowId, documentId, action) {
   savingStaffDocumentWindowIds.add(windowId)
   setStaffDocumentWindowState(windowId, { ...state, isSaving: true, message: '' })
   refreshStaffDocumentsSection(windowId)
-  const latest = await getLatestStaffDocumentMutationContext(windowId, state)
+  const latest = await getLatestStaffDocumentMutationContext(windowId, state, permissionAction)
   const latestMatches = latest?.documents.filter((item) => item.id === documentId) || []
   const latestDocument = latestMatches.length === 1 ? latestMatches[0] : null
   if (
@@ -2616,13 +2914,25 @@ async function changeStaffDocumentArchiveState(windowId, documentId, action) {
     )
     return
   }
+  const auditSaved = recordStaffAdministrativeAuditEvent(latest.access, {
+    action: action === 'archive' ? 'staff-document.archive' : 'staff-document.restore',
+    targetType: 'staff-document',
+    targetId: changedDocument.id,
+    ['staffMemberId']: state.staffMemberId,
+    administrativeProfileId: state.administrativeProfileId,
+    documentId: changedDocument.id,
+    reasonCode: action === 'archive' ? 'explicit-archive' : 'explicit-restore',
+    noteSummary: action === 'archive' ? 'document-archived' : 'document-restored',
+  })
   refreshStaffDataFromStorage()
   setStaffDocumentWindowState(windowId, {
     ...state,
     mode: 'list',
     selectedDocumentId: '',
     isSaving: false,
-    message: action === 'archive' ? 'Đã lưu trữ tài liệu.' : 'Đã khôi phục tài liệu.',
+    message: auditSaved
+      ? (action === 'archive' ? 'Đã lưu trữ tài liệu.' : 'Đã khôi phục tài liệu.')
+      : 'Trạng thái tài liệu đã đổi nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
   })
   savingStaffDocumentWindowIds.delete(windowId)
   refreshStaffDocumentsSection(windowId)
@@ -2638,6 +2948,709 @@ function setStaffDocumentSafeMessage(windowId, message) {
 
 function finishStaffDocumentMutationWithMessage(windowId, message) {
   setStaffDocumentSafeMessage(windowId, message)
+}
+
+function getStaffAdministrativeGovernanceWindowContext(
+  windowId,
+  { refresh = false, action = 'privacy-audit.view' } = {},
+) {
+  const windowItem = openWindows.find(
+    (item) => item.id === windowId && item.type === 'staff-administrative-profile',
+  )
+  const access = getStaffAdministrativeProfileAccessContext(action)
+  if (!windowItem || !access.ok || windowItem.centerId !== access.centerId) return null
+  if (refresh) refreshStaffDataFromStorage()
+
+  const staffMember = getUniqueCurrentCenterStaffMember(windowItem.staffMemberId, access.centerId)
+  const profileReadStatus = getStoredCenterStaffAdministrativeProfilesReadStatus()
+  const lookup = profileReadStatus.ok
+    ? resolveStaffAdministrativeProfileForStaff(
+        staffAdministrativeProfiles,
+        windowItem.staffMemberId,
+        access.centerId,
+      )
+    : { status: 'malformed', profile: null }
+  const storageContext = getStaffAdministrativeGovernanceStorageContext(access.centerId)
+  const state = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (
+    !staffMember ||
+    !lookup.profile ||
+    !state ||
+    state.centerId !== access.centerId ||
+    state.staffMemberId !== staffMember.id ||
+    state.administrativeProfileId !== lookup.profile.id
+  ) return null
+  return { windowItem, access, staffMember, lookup, storageContext, state }
+}
+
+function getScopedStaffAdministrativeAuditEvents(context) {
+  return staffAdministrativeAuditEvents.filter(
+    (event) =>
+      event.staffMemberId === context.staffMember.id ||
+      (event.targetType === 'retention-policy' && event.centerId === context.access.centerId),
+  )
+}
+
+function refreshStaffAdministrativeGovernanceSection(windowId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    action: 'privacy-audit.view',
+  })
+  const windowElement = document.querySelector(
+    `.desktop-window.is-staff-administrative-profile[data-window-id="${CSS.escape(windowId)}"]`,
+  )
+  const currentSection = windowElement?.querySelector('[data-staff-governance-section]')
+  if (!context || !currentSection) return
+
+  const template = document.createElement('template')
+  template.innerHTML = renderStaffAdministrativeGovernanceSection({
+    windowId,
+    access: context.access,
+    staffMember: context.staffMember,
+    profile: context.lookup.profile,
+    auditEvents: staffAdministrativeAuditEvents,
+    policy: staffAdministrativeRetentionPolicy,
+    deletionRequests: staffAdministrativeDeletionRequests,
+    state: context.state,
+    storageHealthy: context.storageContext.ok,
+  }).trim()
+  currentSection.replaceWith(template.content.firstElementChild)
+}
+
+function refreshStaffAdministrativeAuditResultsRegion(windowId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    action: 'privacy-audit.view',
+  })
+  const windowElement = document.querySelector(
+    `.desktop-window.is-staff-administrative-profile[data-window-id="${CSS.escape(windowId)}"]`,
+  )
+  const currentResults = windowElement?.querySelector('[data-staff-governance-audit-results]')
+  if (!context || !currentResults) return
+  currentResults.innerHTML = renderStaffAdministrativeAuditResults(
+    getScopedStaffAdministrativeAuditEvents(context),
+    context.state.auditFilters,
+    context.state.auditLimit,
+  )
+}
+
+function setStaffAdministrativeGovernanceMessage(windowId, message) {
+  const state = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (!state) return
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...state,
+    mode: 'view',
+    selectedRequestId: '',
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    values: null,
+    errors: {},
+    message,
+    isSaving: false,
+  })
+  savingStaffAdministrativeGovernanceWindowIds.delete(windowId)
+  refreshStaffAdministrativeGovernanceSection(windowId)
+}
+
+function updateStaffAdministrativeAuditFilter(windowId, filterName, value) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    action: 'privacy-audit.view',
+  })
+  if (!context || !Object.hasOwn(initialStaffAdministrativeAuditFilters, filterName)) return
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    auditFilters: { ...context.state.auditFilters, [filterName]: value },
+    auditLimit: 25,
+  })
+  refreshStaffAdministrativeAuditResultsRegion(windowId)
+}
+
+function loadMoreStaffAdministrativeAudit(windowId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    action: 'privacy-audit.view',
+  })
+  if (!context) return
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    auditLimit: Math.min(100, (Number(context.state.auditLimit) || 25) + 25),
+  })
+  refreshStaffAdministrativeAuditResultsRegion(windowId)
+}
+
+function openStaffAdministrativeRetentionPolicyForm(windowId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    refresh: true,
+    action: 'retention-policy.manage',
+  })
+  if (!context || !context.storageContext.ok) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      'Không thể mở chính sách từ dữ liệu hoặc quyền hiện tại.',
+    )
+    return
+  }
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    mode: 'policy-form',
+    selectedRequestId: '',
+    expectedRevision: staffAdministrativeRetentionPolicy?.revision ?? null,
+    expectedUpdatedAt: staffAdministrativeRetentionPolicy?.updatedAt || '',
+    values: createStaffAdministrativeRetentionPolicyDraft(
+      staffAdministrativeRetentionPolicy,
+    ),
+    errors: {},
+    message: '',
+    isSaving: false,
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+}
+
+function openStaffAdministrativeDeletionRequestForm(windowId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    refresh: true,
+    action: 'deletion-request.create',
+  })
+  if (!context || !context.storageContext.ok) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      'Không thể tạo yêu cầu từ dữ liệu hoặc quyền hiện tại.',
+    )
+    return
+  }
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    mode: 'request-form',
+    selectedRequestId: '',
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    values: createStaffAdministrativeDeletionRequestDraft(),
+    errors: {},
+    message: '',
+    isSaving: false,
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+}
+
+function cancelStaffAdministrativeGovernanceForm(windowId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    action: 'privacy-audit.view',
+  })
+  if (!context || context.state.isSaving) return
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    mode: 'view',
+    selectedRequestId: '',
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    values: null,
+    errors: {},
+    message: '',
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+}
+
+function updateStaffAdministrativeGovernanceDraftField(windowId, field, value) {
+  const state = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (!state || state.isSaving) return
+  if (state.mode === 'policy-form') {
+    setStaffAdministrativeGovernanceWindowState(windowId, {
+      ...state,
+      values: setStaffAdministrativeRetentionPolicyDraftValue(state.values, field, value),
+    })
+    return
+  }
+  if (state.mode === 'request-form') {
+    setStaffAdministrativeGovernanceWindowState(windowId, {
+      ...state,
+      values: setStaffAdministrativeDeletionRequestDraftValue(state.values, field, value),
+    })
+    return
+  }
+  if (state.mode === 'deny-form' && field === 'reviewNote') {
+    setStaffAdministrativeGovernanceWindowState(windowId, {
+      ...state,
+      values: { ...state.values, reviewNote: String(value ?? '') },
+    })
+  }
+}
+
+function collectStaffAdministrativeGovernanceForbiddenValues(profile, documents) {
+  const values = []
+  const seen = new Set()
+  const visit = (value) => {
+    if (value === null || value === undefined) return
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = String(value).trim()
+      if (text) values.push(text)
+      return
+    }
+    if (typeof value !== 'object' || seen.has(value)) return
+    seen.add(value)
+    Object.entries(value).forEach(([key, child]) => {
+      if (!['__normalizationIssues'].includes(key)) visit(child)
+    })
+  }
+  visit(profile)
+  visit(documents)
+  return values
+}
+
+async function handleStaffAdministrativeRetentionPolicySubmit(windowId) {
+  const capturedState = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (
+    !capturedState ||
+    capturedState.mode !== 'policy-form' ||
+    capturedState.isSaving ||
+    savingStaffAdministrativeGovernanceWindowIds.has(windowId)
+  ) return
+  const errors = validateStaffAdministrativeRetentionPolicy(capturedState.values)
+  if (Object.keys(errors).length) {
+    setStaffAdministrativeGovernanceWindowState(windowId, {
+      ...capturedState,
+      errors,
+      message: 'Vui lòng kiểm tra chính sách lưu trữ.',
+    })
+    refreshStaffAdministrativeGovernanceSection(windowId)
+    return
+  }
+
+  savingStaffAdministrativeGovernanceWindowIds.add(windowId)
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...capturedState,
+    errors: {},
+    message: '',
+    isSaving: true,
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+  const access = await getLatestStaffAdministrativeProfileAccessContext(
+    capturedState.centerId,
+    'retention-policy.manage',
+  )
+  const latestState = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (
+    !access.ok ||
+    !latestState ||
+    latestState.mode !== 'policy-form' ||
+    latestState.centerId !== capturedState.centerId ||
+    getCurrentStorageCenterId() !== capturedState.centerId
+  ) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  refreshStaffDataFromStorage()
+  if (!getStaffAdministrativeGovernanceStorageContext(capturedState.centerId).ok) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Dữ liệu quản trị cần kiểm tra. Không ghi đè storage hiện tại.')
+    return
+  }
+  const latestPolicy = staffAdministrativeRetentionPolicy
+  const stale = capturedState.expectedRevision === null
+    ? Boolean(latestPolicy)
+    : !latestPolicy ||
+      latestPolicy.revision !== capturedState.expectedRevision ||
+      latestPolicy.updatedAt !== capturedState.expectedUpdatedAt
+  if (stale) {
+    setStaffAdministrativeGovernanceMessage(windowId, STAFF_ADMINISTRATIVE_POLICY_STALE_MESSAGE)
+    return
+  }
+  const policyId = latestPolicy?.id || createStaffAdministrativeRetentionPolicyId()
+  const savedPolicy = buildStaffAdministrativeRetentionPolicy(
+    capturedState.values,
+    latestPolicy,
+    { centerId: capturedState.centerId, policyId },
+  )
+  if (!saveStoredCenterStaffAdministrativeRetentionPolicy(savedPolicy)) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu chính sách từ collection hiện tại.')
+    return
+  }
+  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
+    action: 'retention-policy.update',
+    targetType: 'retention-policy',
+    targetId: savedPolicy.id,
+    ['staffMemberId']: capturedState.staffMemberId,
+    administrativeProfileId: capturedState.administrativeProfileId,
+    reasonCode: 'explicit-save',
+    noteSummary: latestPolicy ? 'policy-updated' : 'policy-created',
+  })
+  refreshStaffDataFromStorage()
+  setStaffAdministrativeGovernanceMessage(
+    windowId,
+    auditSaved
+      ? 'Đã cập nhật chính sách lưu trữ.'
+      : 'Chính sách đã lưu nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+  )
+}
+
+async function handleStaffAdministrativeDeletionRequestSubmit(windowId) {
+  const capturedState = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (
+    !capturedState ||
+    capturedState.mode !== 'request-form' ||
+    capturedState.isSaving ||
+    savingStaffAdministrativeGovernanceWindowIds.has(windowId)
+  ) return
+  const initialContext = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    action: 'deletion-request.create',
+  })
+  if (!initialContext) return
+  const profileDocuments = getStaffDocumentsForProfile(
+    initialContext.lookup.profile,
+    initialContext.staffMember,
+    capturedState.centerId,
+  )
+  const forbiddenValues = collectStaffAdministrativeGovernanceForbiddenValues(
+    initialContext.lookup.profile,
+    profileDocuments,
+  )
+  const errors = validateStaffAdministrativeDeletionRequest(capturedState.values, {
+    forbiddenValues,
+  })
+  if (Object.keys(errors).length) {
+    setStaffAdministrativeGovernanceWindowState(windowId, {
+      ...capturedState,
+      errors,
+      message: 'Vui lòng kiểm tra yêu cầu xóa dữ liệu.',
+    })
+    refreshStaffAdministrativeGovernanceSection(windowId)
+    return
+  }
+
+  savingStaffAdministrativeGovernanceWindowIds.add(windowId)
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...capturedState,
+    errors: {},
+    message: '',
+    isSaving: true,
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+  const access = await getLatestStaffAdministrativeProfileAccessContext(
+    capturedState.centerId,
+    'deletion-request.create',
+  )
+  const latestState = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (
+    !access.ok ||
+    !latestState ||
+    latestState.mode !== 'request-form' ||
+    latestState.staffMemberId !== capturedState.staffMemberId ||
+    getCurrentStorageCenterId() !== capturedState.centerId
+  ) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  refreshStaffDataFromStorage()
+  const latestContext = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    action: 'deletion-request.create',
+  })
+  if (!latestContext?.storageContext.ok) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Dữ liệu quản trị cần kiểm tra. Không ghi đè storage hiện tại.')
+    return
+  }
+  const activeRequestExists = staffAdministrativeDeletionRequests.some(
+    (request) =>
+      request.centerId === capturedState.centerId &&
+      request.staffMemberId === capturedState.staffMemberId &&
+      request.administrativeProfileId === capturedState.administrativeProfileId &&
+      ['pending-review', 'execution-pending'].includes(request.status),
+  )
+  if (activeRequestExists) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      'Đã có yêu cầu đang chờ xử lý cho hồ sơ này.',
+    )
+    return
+  }
+  const requestId = createStaffAdministrativeDeletionRequestId()
+  if (staffAdministrativeDeletionRequests.some((request) => request.id === requestId)) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể tạo stable request ID duy nhất.')
+    return
+  }
+  const request = buildStaffAdministrativeDeletionRequest(capturedState.values, {
+    id: requestId,
+    centerId: capturedState.centerId,
+    ['staffMemberId']: capturedState.staffMemberId,
+    administrativeProfileId: capturedState.administrativeProfileId,
+    actor: access,
+  })
+  const nextRequests = [request, ...staffAdministrativeDeletionRequests]
+  if (
+    getStaffAdministrativeDeletionRequestCollectionIssues(
+      nextRequests,
+      capturedState.centerId,
+    ).length ||
+    !saveStoredCenterStaffAdministrativeDeletionRequests(nextRequests)
+  ) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu yêu cầu từ collection hiện tại.')
+    return
+  }
+  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
+    action: 'deletion-request.create',
+    targetType: 'deletion-request',
+    targetId: request.id,
+    ['staffMemberId']: request.staffMemberId,
+    administrativeProfileId: request.administrativeProfileId,
+    requestId: request.id,
+    reasonCode: 'explicit-request',
+    noteSummary: request.scope,
+  })
+  refreshStaffDataFromStorage()
+  setStaffAdministrativeGovernanceMessage(
+    windowId,
+    auditSaved
+      ? 'Đã tạo yêu cầu xóa dữ liệu để Owner xem xét.'
+      : 'Yêu cầu đã tạo nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+  )
+}
+
+async function cancelStaffAdministrativeDeletionRequestById(windowId, requestId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    refresh: true,
+    action: 'deletion-request.cancel',
+  })
+  const matches = staffAdministrativeDeletionRequests.filter((request) => request.id === requestId)
+  const capturedRequest = matches.length === 1 ? matches[0] : null
+  if (
+    !context?.storageContext.ok ||
+    !capturedRequest ||
+    capturedRequest.staffMemberId !== context.staffMember.id ||
+    savingStaffAdministrativeGovernanceWindowIds.has(windowId)
+  ) return
+  if (!window.confirm('Hủy yêu cầu xóa dữ liệu này? Dữ liệu hồ sơ và tài liệu vẫn được giữ nguyên.')) return
+
+  savingStaffAdministrativeGovernanceWindowIds.add(windowId)
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    isSaving: true,
+    message: '',
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+  const access = await getLatestStaffAdministrativeProfileAccessContext(
+    context.state.centerId,
+    'deletion-request.cancel',
+  )
+  if (!access.ok || getCurrentStorageCenterId() !== context.state.centerId) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  refreshStaffDataFromStorage()
+  if (!getStaffAdministrativeGovernanceStorageContext(context.state.centerId).ok) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Dữ liệu quản trị cần kiểm tra. Không ghi đè storage hiện tại.')
+    return
+  }
+  const latestMatches = staffAdministrativeDeletionRequests.filter(
+    (request) => request.id === requestId,
+  )
+  const latestRequest = latestMatches.length === 1 ? latestMatches[0] : null
+  if (
+    !latestRequest ||
+    latestRequest.revision !== capturedRequest.revision ||
+    latestRequest.updatedAt !== capturedRequest.updatedAt
+  ) {
+    setStaffAdministrativeGovernanceMessage(windowId, STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE)
+    return
+  }
+  const cancelledRequest = cancelStaffAdministrativeDeletionRequest(latestRequest, access)
+  if (!cancelledRequest) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể hủy yêu cầu từ quyền hoặc trạng thái hiện tại.')
+    return
+  }
+  const nextRequests = staffAdministrativeDeletionRequests.map((request) =>
+    request.id === cancelledRequest.id ? cancelledRequest : request,
+  )
+  if (!saveStoredCenterStaffAdministrativeDeletionRequests(nextRequests)) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu trạng thái yêu cầu hiện tại.')
+    return
+  }
+  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
+    action: 'deletion-request.cancel',
+    targetType: 'deletion-request',
+    targetId: cancelledRequest.id,
+    ['staffMemberId']: cancelledRequest.staffMemberId,
+    administrativeProfileId: cancelledRequest.administrativeProfileId,
+    requestId: cancelledRequest.id,
+    reasonCode: 'explicit-cancel',
+    noteSummary: 'request-cancelled',
+  })
+  refreshStaffDataFromStorage()
+  setStaffAdministrativeGovernanceMessage(
+    windowId,
+    auditSaved
+      ? 'Đã hủy yêu cầu xóa dữ liệu.'
+      : 'Yêu cầu đã hủy nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+  )
+}
+
+function openStaffAdministrativeDenyRequestForm(windowId, requestId) {
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    refresh: true,
+    action: 'deletion-request.deny',
+  })
+  const matches = staffAdministrativeDeletionRequests.filter((request) => request.id === requestId)
+  const request = matches.length === 1 ? matches[0] : null
+  if (
+    !context?.storageContext.ok ||
+    !request ||
+    request.status !== 'pending-review' ||
+    request.staffMemberId !== context.staffMember.id
+  ) return
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    mode: 'deny-form',
+    selectedRequestId: request.id,
+    expectedRevision: request.revision,
+    expectedUpdatedAt: request.updatedAt,
+    values: { reviewNote: '' },
+    errors: {},
+    message: '',
+    isSaving: false,
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+}
+
+async function reviewStaffAdministrativeDeletionRequestById(
+  windowId,
+  requestId,
+  decision,
+  reviewNote = '',
+) {
+  const action = decision === 'approve' ? 'deletion-request.approve' : 'deletion-request.deny'
+  const context = getStaffAdministrativeGovernanceWindowContext(windowId, {
+    refresh: true,
+    action,
+  })
+  const matches = staffAdministrativeDeletionRequests.filter((request) => request.id === requestId)
+  const capturedRequest = matches.length === 1 ? matches[0] : null
+  if (
+    !context?.storageContext.ok ||
+    !capturedRequest ||
+    capturedRequest.status !== 'pending-review' ||
+    capturedRequest.staffMemberId !== context.staffMember.id ||
+    savingStaffAdministrativeGovernanceWindowIds.has(windowId)
+  ) return
+  if (
+    context.state.mode === 'deny-form' &&
+    (
+      capturedRequest.revision !== context.state.expectedRevision ||
+      capturedRequest.updatedAt !== context.state.expectedUpdatedAt ||
+      capturedRequest.id !== context.state.selectedRequestId
+    )
+  ) {
+    setStaffAdministrativeGovernanceMessage(windowId, STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE)
+    return
+  }
+  const profileDocuments = getStaffDocumentsForProfile(
+    context.lookup.profile,
+    context.staffMember,
+    context.state.centerId,
+  )
+  const forbiddenValues = collectStaffAdministrativeGovernanceForbiddenValues(
+    context.lookup.profile,
+    profileDocuments,
+  )
+  const normalizedReviewNote = String(reviewNote ?? '').trim()
+  if (
+    normalizedReviewNote.length > 500 ||
+    forbiddenValues
+      .filter((value) => value.length >= 4)
+      .some((value) => normalizedReviewNote.toLocaleLowerCase('vi').includes(value.toLocaleLowerCase('vi')))
+  ) {
+    setStaffAdministrativeGovernanceWindowState(windowId, {
+      ...context.state,
+      errors: { reviewNote: 'Ghi chú không hợp lệ hoặc chứa dữ liệu hồ sơ/tài liệu thô.' },
+      message: 'Vui lòng kiểm tra ghi chú xem xét.',
+    })
+    refreshStaffAdministrativeGovernanceSection(windowId)
+    return
+  }
+  if (
+    decision === 'approve' &&
+    !window.confirm('Phê duyệt yêu cầu? Trạng thái sẽ chuyển sang “Chờ thực thi backend”; không xóa dữ liệu ngay.')
+  ) return
+
+  savingStaffAdministrativeGovernanceWindowIds.add(windowId)
+  setStaffAdministrativeGovernanceWindowState(windowId, {
+    ...context.state,
+    isSaving: true,
+    message: '',
+  })
+  refreshStaffAdministrativeGovernanceSection(windowId)
+  const access = await getLatestStaffAdministrativeProfileAccessContext(
+    context.state.centerId,
+    action,
+  )
+  if (!access.ok || getCurrentStorageCenterId() !== context.state.centerId) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  refreshStaffDataFromStorage()
+  if (!getStaffAdministrativeGovernanceStorageContext(context.state.centerId).ok) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Dữ liệu quản trị cần kiểm tra. Không ghi đè storage hiện tại.')
+    return
+  }
+  const latestMatches = staffAdministrativeDeletionRequests.filter(
+    (request) => request.id === requestId,
+  )
+  const latestRequest = latestMatches.length === 1 ? latestMatches[0] : null
+  if (
+    !latestRequest ||
+    latestRequest.revision !== capturedRequest.revision ||
+    latestRequest.updatedAt !== capturedRequest.updatedAt
+  ) {
+    setStaffAdministrativeGovernanceMessage(windowId, STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE)
+    return
+  }
+  if (
+    decision === 'approve' &&
+    (!staffAdministrativeRetentionPolicy || !staffAdministrativeRetentionPolicy.enabled)
+  ) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      'Chưa thiết lập chính sách lưu trữ. Không thể phê duyệt yêu cầu.',
+    )
+    return
+  }
+  const result = reviewStaffAdministrativeDeletionRequest(latestRequest, access, decision, {
+    reviewNote: normalizedReviewNote,
+    deletionReviewGraceDays: staffAdministrativeRetentionPolicy?.deletionReviewGraceDays || 0,
+  })
+  if (!result.ok) {
+    setStaffAdministrativeGovernanceMessage(windowId, result.error)
+    return
+  }
+  const nextRequests = staffAdministrativeDeletionRequests.map((request) =>
+    request.id === result.request.id ? result.request : request,
+  )
+  if (!saveStoredCenterStaffAdministrativeDeletionRequests(nextRequests)) {
+    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu trạng thái yêu cầu hiện tại.')
+    return
+  }
+  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
+    action: decision === 'approve' ? 'deletion-request.approve' : 'deletion-request.deny',
+    targetType: 'deletion-request',
+    targetId: result.request.id,
+    ['staffMemberId']: result.request.staffMemberId,
+    administrativeProfileId: result.request.administrativeProfileId,
+    requestId: result.request.id,
+    reasonCode: decision === 'approve' ? 'owner-approval' : 'owner-denial',
+    noteSummary: decision === 'approve' ? 'backend-execution-pending' : 'request-denied',
+  })
+  refreshStaffDataFromStorage()
+  setStaffAdministrativeGovernanceMessage(
+    windowId,
+    auditSaved
+      ? decision === 'approve'
+        ? 'Đã phê duyệt yêu cầu. Chờ thực thi backend.'
+        : 'Đã từ chối yêu cầu xóa dữ liệu.'
+      : 'Yêu cầu đã chuyển trạng thái nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+  )
+}
+
+async function handleStaffAdministrativeDenyRequestSubmit(windowId) {
+  const state = getStaffAdministrativeGovernanceWindowState(windowId)
+  if (!state || state.mode !== 'deny-form' || state.isSaving || !state.selectedRequestId) return
+  await reviewStaffAdministrativeDeletionRequestById(
+    windowId,
+    state.selectedRequestId,
+    'deny',
+    state.values?.reviewNote || '',
+  )
 }
 
 function focusFirstStaffAdministrativeProfileError(windowId) {
@@ -7867,7 +8880,9 @@ function renderWindowBody(windowItem) {
     if (!access.ok || windowItem.centerId !== access.centerId) {
       staffAdministrativeProfileWindowStates.delete(windowItem.id)
       staffDocumentWindowStates.delete(windowItem.id)
+      staffAdministrativeGovernanceWindowStates.delete(windowItem.id)
       savingStaffDocumentWindowIds.delete(windowItem.id)
+      savingStaffAdministrativeGovernanceWindowIds.delete(windowItem.id)
       return renderStaffAdministrativeProfileWindow({ accessAllowed: false })
     }
 
@@ -7879,13 +8894,19 @@ function renderWindowBody(windowItem) {
       (item) => item.id === staffMember?.departmentId,
     )
     const storageStatus = getStoredCenterStaffAdministrativeProfilesReadStatus()
-    const lookup = storageStatus.ok
+    const auditStorageStatus = getStoredCenterStaffAdministrativeAuditEventsReadStatus()
+    const lookup = storageStatus.ok && auditStorageStatus.ok
       ? resolveStaffAdministrativeProfileForStaff(
           staffAdministrativeProfiles,
           windowItem.staffMemberId,
           windowItem.centerId,
         )
-      : { status: 'malformed', profile: null, candidates: [], issues: [storageStatus.reason] }
+      : {
+          status: 'malformed',
+          profile: null,
+          candidates: [],
+          issues: [storageStatus.reason || auditStorageStatus.reason],
+        }
     let state = getStaffAdministrativeProfileWindowState(windowItem.id) || {
       mode: 'view',
       centerId: windowItem.centerId,
@@ -7954,6 +8975,25 @@ function renderWindowBody(windowItem) {
       savingStaffDocumentWindowIds.delete(windowItem.id)
     }
 
+    const governanceStorageContext = getStaffAdministrativeGovernanceStorageContext(
+      windowItem.centerId,
+    )
+    let governanceState = getStaffAdministrativeGovernanceWindowState(windowItem.id)
+    if (
+      !governanceState ||
+      governanceState.centerId !== windowItem.centerId ||
+      governanceState.staffMemberId !== windowItem.staffMemberId ||
+      governanceState.administrativeProfileId !== (lookup.profile?.id || '')
+    ) {
+      governanceState = createStaffAdministrativeGovernanceWindowState(
+        windowItem.centerId,
+        windowItem.staffMemberId,
+        lookup.profile?.id || '',
+      )
+      setStaffAdministrativeGovernanceWindowState(windowItem.id, governanceState)
+      savingStaffAdministrativeGovernanceWindowIds.delete(windowItem.id)
+    }
+
     return renderStaffAdministrativeProfileWindow({
       windowId: windowItem.id,
       staffMember,
@@ -7964,6 +9004,12 @@ function renderWindowBody(windowItem) {
       documents: profileDocuments,
       documentState,
       documentStorageHealthy: documentStorageContext.ok,
+      governanceAccess: access,
+      auditEvents: staffAdministrativeAuditEvents,
+      retentionPolicy: staffAdministrativeRetentionPolicy,
+      deletionRequests: staffAdministrativeDeletionRequests,
+      governanceState,
+      governanceStorageHealthy: governanceStorageContext.ok,
     })
   }
 
@@ -10412,7 +11458,9 @@ function closeWindow(windowId) {
     const closingState = getStaffAdministrativeProfileWindowState(windowId)
     staffAdministrativeProfileWindowStates.delete(windowId)
     staffDocumentWindowStates.delete(windowId)
+    staffAdministrativeGovernanceWindowStates.delete(windowId)
     savingStaffDocumentWindowIds.delete(windowId)
+    savingStaffAdministrativeGovernanceWindowIds.delete(windowId)
     if (closingState?.isSaving) {
       isStaffAdministrativeProfileSaving = false
     }
@@ -14040,6 +15088,96 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
         event.stopPropagation()
         const windowId = windowElement.dataset.windowId
         if (windowId) void handleStaffDocumentSubmit(windowId, form)
+      })
+
+      windowElement.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-staff-governance-action]')
+        if (!button || !windowElement.contains(button)) return
+        event.preventDefault()
+        event.stopPropagation()
+        const windowId = windowElement.dataset.windowId
+        const action = button.dataset.staffGovernanceAction
+        const requestId = button.dataset.requestId || ''
+        if (!windowId) return
+        if (action === 'load-more-audit') return loadMoreStaffAdministrativeAudit(windowId)
+        if (action === 'open-policy-form') {
+          return openStaffAdministrativeRetentionPolicyForm(windowId)
+        }
+        if (action === 'open-request-form') {
+          return openStaffAdministrativeDeletionRequestForm(windowId)
+        }
+        if (action === 'cancel-form') return cancelStaffAdministrativeGovernanceForm(windowId)
+        if (action === 'cancel-request') {
+          void cancelStaffAdministrativeDeletionRequestById(windowId, requestId)
+          return
+        }
+        if (action === 'approve-request') {
+          void reviewStaffAdministrativeDeletionRequestById(
+            windowId,
+            requestId,
+            'approve',
+          )
+          return
+        }
+        if (action === 'open-deny-form') {
+          openStaffAdministrativeDenyRequestForm(windowId, requestId)
+        }
+      })
+
+      windowElement.addEventListener('input', (event) => {
+        const control = event.target
+        const windowId = windowElement.dataset.windowId
+        if (
+          !windowId ||
+          !(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) ||
+          !control.dataset.staffGovernanceField
+        ) return
+        updateStaffAdministrativeGovernanceDraftField(
+          windowId,
+          control.dataset.staffGovernanceField,
+          control.type === 'checkbox' ? control.checked : control.value,
+        )
+      })
+
+      windowElement.addEventListener('change', (event) => {
+        const control = event.target
+        const windowId = windowElement.dataset.windowId
+        if (
+          !windowId ||
+          !(control instanceof HTMLInputElement || control instanceof HTMLSelectElement)
+        ) return
+        if (control.dataset.staffGovernanceAuditFilter) {
+          updateStaffAdministrativeAuditFilter(
+            windowId,
+            control.dataset.staffGovernanceAuditFilter,
+            control.value,
+          )
+        }
+        if (control.dataset.staffGovernanceField) {
+          updateStaffAdministrativeGovernanceDraftField(
+            windowId,
+            control.dataset.staffGovernanceField,
+            control.type === 'checkbox' ? control.checked : control.value,
+          )
+        }
+      })
+
+      windowElement.addEventListener('submit', (event) => {
+        const form = event.target.closest?.('[data-staff-governance-form]')
+        if (!form || !windowElement.contains(form)) return
+        event.preventDefault()
+        event.stopPropagation()
+        const windowId = windowElement.dataset.windowId
+        if (!windowId) return
+        if (form.dataset.staffGovernanceForm === 'policy') {
+          void handleStaffAdministrativeRetentionPolicySubmit(windowId)
+        }
+        if (form.dataset.staffGovernanceForm === 'request') {
+          void handleStaffAdministrativeDeletionRequestSubmit(windowId)
+        }
+        if (form.dataset.staffGovernanceForm === 'deny') {
+          void handleStaffAdministrativeDenyRequestSubmit(windowId)
+        }
       })
 
       windowElement.addEventListener('click', (event) => {

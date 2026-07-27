@@ -1,4 +1,5 @@
 import { renderStaffDocumentsSection } from './staff-documents-module.js'
+import { renderStaffAdministrativeGovernanceSection } from './staff-administrative-governance-module.js'
 
 export const STAFF_ADMINISTRATIVE_PROFILE_SCHEMA_VERSION = 1
 export const STAFF_ADMINISTRATIVE_PROFILE_CHECKLIST_VERSION = 'f23.11b-v1'
@@ -723,6 +724,12 @@ export function renderStaffAdministrativeProfileWindow({
   documents = [],
   documentState = {},
   documentStorageHealthy = true,
+  governanceAccess = null,
+  auditEvents = [],
+  retentionPolicy = null,
+  deletionRequests = [],
+  governanceState = {},
+  governanceStorageHealthy = true,
 } = {}) {
   if (!accessAllowed) {
     return renderAdministrativeSafeState(STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE)
@@ -751,6 +758,12 @@ export function renderStaffAdministrativeProfileWindow({
         documents,
         documentState,
         documentStorageHealthy,
+        governanceAccess,
+        auditEvents,
+        retentionPolicy,
+        deletionRequests,
+        governanceState,
+        governanceStorageHealthy,
       })
   const completionLabel = getAdministrativeStatusLabel(lookup.status)
   const employmentLabel = getEmploymentStatusLabel(staffMember.employmentStatus)
@@ -843,6 +856,7 @@ function renderAdministrativeNavigation(windowId) {
     ['contract', 'Hợp đồng'],
     ['notes', 'Ghi chú & kiểm tra'],
     ['documents', 'Tài liệu'],
+    ['governance', 'Quyền & lưu trữ'],
   ]
   return `
     <nav class="staff-administrative-navigation" aria-label="Mục hồ sơ hành chính">
@@ -867,6 +881,12 @@ function renderAdministrativeOverview({
   documents,
   documentState,
   documentStorageHealthy,
+  governanceAccess,
+  auditEvents,
+  retentionPolicy,
+  deletionRequests,
+  governanceState,
+  governanceStorageHealthy,
 }) {
   if (!profile) {
     return `
@@ -941,6 +961,17 @@ function renderAdministrativeOverview({
       accessAllowed: true,
       storageHealthy: documentStorageHealthy,
       readOnly: isArchivedStaff,
+    })}
+    ${renderStaffAdministrativeGovernanceSection({
+      windowId,
+      access: governanceAccess,
+      staffMember,
+      profile,
+      auditEvents,
+      policy: retentionPolicy,
+      deletionRequests,
+      state: governanceState,
+      storageHealthy: governanceStorageHealthy,
     })}
   `
 }

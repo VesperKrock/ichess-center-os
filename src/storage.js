@@ -6,6 +6,15 @@ import {
   getStaffDocumentCollectionIssues,
   normalizeStaffDocuments,
 } from './staff-documents-module.js'
+import {
+  appendStaffAdministrativeAuditEvent,
+  getStaffAdministrativeAuditCollectionIssues,
+  getStaffAdministrativeDeletionRequestCollectionIssues,
+  getStaffAdministrativeRetentionPolicyIssues,
+  normalizeStaffAdministrativeAuditEvents,
+  normalizeStaffAdministrativeDeletionRequests,
+  normalizeStaffAdministrativeRetentionPolicy,
+} from './staff-administrative-governance-module.js'
 
 const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
@@ -13,6 +22,9 @@ const DEFAULT_STORAGE_CENTER_ID = 'dreamhome'
 let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
 const staffAdministrativeProfileReadStatuses = new Map()
 const staffDocumentReadStatuses = new Map()
+const staffAdministrativeAuditReadStatuses = new Map()
+const staffAdministrativeRetentionPolicyReadStatuses = new Map()
+const staffAdministrativeDeletionRequestReadStatuses = new Map()
 
 export function normalizeStorageCenterId(centerId) {
   const normalized = String(centerId ?? '')
@@ -59,6 +71,15 @@ const CENTER_STAFF_ADMINISTRATIVE_PROFILES_KEY = createCenterScopedStorageKey(
   'centerStaffAdministrativeProfiles',
 )
 const CENTER_STAFF_DOCUMENTS_KEY = createCenterScopedStorageKey('centerStaffDocuments')
+const CENTER_STAFF_ADMINISTRATIVE_AUDIT_EVENTS_KEY = createCenterScopedStorageKey(
+  'centerStaffAdministrativeAuditEvents',
+)
+const CENTER_STAFF_ADMINISTRATIVE_RETENTION_POLICIES_KEY = createCenterScopedStorageKey(
+  'centerStaffAdministrativeRetentionPolicies',
+)
+const CENTER_STAFF_ADMINISTRATIVE_DELETION_REQUESTS_KEY = createCenterScopedStorageKey(
+  'centerStaffAdministrativeDeletionRequests',
+)
 const CENTER_DEPARTMENTS_KEY = createCenterScopedStorageKey('centerDepartments')
 const SCHEDULE_KEY = createCenterScopedStorageKey('schedule')
 const SESSION_REPORTS_KEY = createCenterScopedStorageKey('sessionReports')
@@ -697,6 +718,278 @@ export function saveStoredCenterStaffDocuments(documents) {
     return false
   }
   staffDocumentReadStatuses.set(centerId, { ok: true, reason: '' })
+  return true
+}
+
+export function getStoredCenterStaffAdministrativeAuditEvents(defaultEvents = []) {
+  const centerId = getCurrentStorageCenterId()
+  let storedValue = null
+
+  try {
+    storedValue = localStorage.getItem(CENTER_STAFF_ADMINISTRATIVE_AUDIT_EVENTS_KEY)
+  } catch {
+    staffAdministrativeAuditReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'storage-read-failed',
+    })
+    return normalizeStaffAdministrativeAuditEvents(defaultEvents, { currentCenterId: centerId })
+  }
+
+  if (storedValue === null) {
+    staffAdministrativeAuditReadStatuses.set(centerId, { ok: true, reason: 'not-created' })
+    return normalizeStaffAdministrativeAuditEvents(defaultEvents, { currentCenterId: centerId })
+  }
+
+  try {
+    const storedEvents = JSON.parse(storedValue)
+    if (Array.isArray(storedEvents)) {
+      const hasMalformedItem = storedEvents.some(
+        (event) => !event || typeof event !== 'object' || Array.isArray(event),
+      )
+      const normalizedEvents = normalizeStaffAdministrativeAuditEvents(storedEvents, {
+        currentCenterId: centerId,
+      })
+      const collectionIssues = getStaffAdministrativeAuditCollectionIssues(
+        normalizedEvents,
+        centerId,
+      )
+      staffAdministrativeAuditReadStatuses.set(centerId, {
+        ok: !hasMalformedItem && !collectionIssues.length,
+        reason: hasMalformedItem
+          ? 'malformed-collection-item'
+          : collectionIssues.length
+            ? 'malformed-audit-record'
+            : '',
+      })
+      return normalizedEvents
+    }
+    staffAdministrativeAuditReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-collection',
+    })
+  } catch {
+    // Append-only audit is never deleted or rewritten after a failed read.
+    staffAdministrativeAuditReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-json',
+    })
+  }
+
+  return normalizeStaffAdministrativeAuditEvents(defaultEvents, { currentCenterId: centerId })
+}
+
+export function getStoredCenterStaffAdministrativeAuditEventsReadStatus() {
+  return staffAdministrativeAuditReadStatuses.get(getCurrentStorageCenterId()) || {
+    ok: true,
+    reason: 'not-read',
+  }
+}
+
+export function appendStoredCenterStaffAdministrativeAuditEvent(event) {
+  const centerId = getCurrentStorageCenterId()
+  const currentEvents = getStoredCenterStaffAdministrativeAuditEvents([])
+  if (!getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok) return false
+  const normalizedEvent = normalizeStaffAdministrativeAuditEvents([event], {
+    currentCenterId: centerId,
+  })[0]
+  if (!normalizedEvent) return false
+  const nextEvents = appendStaffAdministrativeAuditEvent(
+    currentEvents,
+    normalizedEvent,
+    centerId,
+  )
+  if (!nextEvents) return false
+
+  try {
+    localStorage.setItem(
+      CENTER_STAFF_ADMINISTRATIVE_AUDIT_EVENTS_KEY,
+      JSON.stringify(nextEvents),
+    )
+  } catch {
+    return false
+  }
+  staffAdministrativeAuditReadStatuses.set(centerId, { ok: true, reason: '' })
+  return true
+}
+
+export function getStoredCenterStaffAdministrativeRetentionPolicy(defaultPolicy = null) {
+  const centerId = getCurrentStorageCenterId()
+  let storedValue = null
+
+  try {
+    storedValue = localStorage.getItem(CENTER_STAFF_ADMINISTRATIVE_RETENTION_POLICIES_KEY)
+  } catch {
+    staffAdministrativeRetentionPolicyReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'storage-read-failed',
+    })
+    return normalizeStaffAdministrativeRetentionPolicy(defaultPolicy, { currentCenterId: centerId })
+  }
+
+  if (storedValue === null) {
+    staffAdministrativeRetentionPolicyReadStatuses.set(centerId, {
+      ok: true,
+      reason: 'not-created',
+    })
+    return normalizeStaffAdministrativeRetentionPolicy(defaultPolicy, { currentCenterId: centerId })
+  }
+
+  try {
+    const storedPolicy = JSON.parse(storedValue)
+    if (storedPolicy && typeof storedPolicy === 'object' && !Array.isArray(storedPolicy)) {
+      const normalizedPolicy = normalizeStaffAdministrativeRetentionPolicy(storedPolicy, {
+        currentCenterId: centerId,
+      })
+      const policyIssues = getStaffAdministrativeRetentionPolicyIssues(
+        normalizedPolicy,
+        centerId,
+      )
+      staffAdministrativeRetentionPolicyReadStatuses.set(centerId, {
+        ok: !policyIssues.length,
+        reason: policyIssues.length ? 'malformed-retention-policy' : '',
+      })
+      return normalizedPolicy
+    }
+    staffAdministrativeRetentionPolicyReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-policy',
+    })
+  } catch {
+    // Retention settings are never deleted or rewritten after a failed read.
+    staffAdministrativeRetentionPolicyReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-json',
+    })
+  }
+
+  return normalizeStaffAdministrativeRetentionPolicy(defaultPolicy, { currentCenterId: centerId })
+}
+
+export function getStoredCenterStaffAdministrativeRetentionPolicyReadStatus() {
+  return staffAdministrativeRetentionPolicyReadStatuses.get(getCurrentStorageCenterId()) || {
+    ok: true,
+    reason: 'not-read',
+  }
+}
+
+export function saveStoredCenterStaffAdministrativeRetentionPolicy(policy) {
+  const centerId = getCurrentStorageCenterId()
+  const normalizedPolicy = normalizeStaffAdministrativeRetentionPolicy(policy, {
+    currentCenterId: centerId,
+  })
+  if (
+    !normalizedPolicy ||
+    getStaffAdministrativeRetentionPolicyIssues(normalizedPolicy, centerId).length
+  ) return false
+
+  try {
+    localStorage.setItem(
+      CENTER_STAFF_ADMINISTRATIVE_RETENTION_POLICIES_KEY,
+      JSON.stringify(normalizedPolicy),
+    )
+  } catch {
+    return false
+  }
+  staffAdministrativeRetentionPolicyReadStatuses.set(centerId, { ok: true, reason: '' })
+  return true
+}
+
+export function getStoredCenterStaffAdministrativeDeletionRequests(defaultRequests = []) {
+  const centerId = getCurrentStorageCenterId()
+  let storedValue = null
+
+  try {
+    storedValue = localStorage.getItem(CENTER_STAFF_ADMINISTRATIVE_DELETION_REQUESTS_KEY)
+  } catch {
+    staffAdministrativeDeletionRequestReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'storage-read-failed',
+    })
+    return normalizeStaffAdministrativeDeletionRequests(defaultRequests, {
+      currentCenterId: centerId,
+    })
+  }
+
+  if (storedValue === null) {
+    staffAdministrativeDeletionRequestReadStatuses.set(centerId, {
+      ok: true,
+      reason: 'not-created',
+    })
+    return normalizeStaffAdministrativeDeletionRequests(defaultRequests, {
+      currentCenterId: centerId,
+    })
+  }
+
+  try {
+    const storedRequests = JSON.parse(storedValue)
+    if (Array.isArray(storedRequests)) {
+      const hasMalformedItem = storedRequests.some(
+        (request) => !request || typeof request !== 'object' || Array.isArray(request),
+      )
+      const normalizedRequests = normalizeStaffAdministrativeDeletionRequests(storedRequests, {
+        currentCenterId: centerId,
+      })
+      const collectionIssues = getStaffAdministrativeDeletionRequestCollectionIssues(
+        normalizedRequests,
+        centerId,
+      )
+      staffAdministrativeDeletionRequestReadStatuses.set(centerId, {
+        ok: !hasMalformedItem && !collectionIssues.length,
+        reason: hasMalformedItem
+          ? 'malformed-collection-item'
+          : collectionIssues.length
+            ? 'malformed-deletion-request'
+            : '',
+      })
+      return normalizedRequests
+    }
+    staffAdministrativeDeletionRequestReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-collection',
+    })
+  } catch {
+    // Deletion workflow history is preserved after malformed reads; nothing is deleted here.
+    staffAdministrativeDeletionRequestReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-json',
+    })
+  }
+
+  return normalizeStaffAdministrativeDeletionRequests(defaultRequests, {
+    currentCenterId: centerId,
+  })
+}
+
+export function getStoredCenterStaffAdministrativeDeletionRequestsReadStatus() {
+  return staffAdministrativeDeletionRequestReadStatuses.get(getCurrentStorageCenterId()) || {
+    ok: true,
+    reason: 'not-read',
+  }
+}
+
+export function saveStoredCenterStaffAdministrativeDeletionRequests(requests) {
+  const centerId = getCurrentStorageCenterId()
+  const hasMalformedItem =
+    !Array.isArray(requests) ||
+    requests.some((request) => !request || typeof request !== 'object' || Array.isArray(request))
+  if (hasMalformedItem) return false
+
+  const normalizedRequests = normalizeStaffAdministrativeDeletionRequests(requests, {
+    currentCenterId: centerId,
+  })
+  if (getStaffAdministrativeDeletionRequestCollectionIssues(normalizedRequests, centerId).length) {
+    return false
+  }
+
+  try {
+    localStorage.setItem(
+      CENTER_STAFF_ADMINISTRATIVE_DELETION_REQUESTS_KEY,
+      JSON.stringify(normalizedRequests),
+    )
+  } catch {
+    return false
+  }
+  staffAdministrativeDeletionRequestReadStatuses.set(centerId, { ok: true, reason: '' })
   return true
 }
 
