@@ -1910,6 +1910,208 @@ h3 {
   color: #9be8bd;
 }
 
+.staff-documents-section {
+  display: grid;
+  gap: 14px;
+}
+
+.staff-documents-heading,
+.staff-document-detail-actions,
+.staff-document-card-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.staff-documents-heading {
+  justify-content: space-between;
+}
+
+.staff-documents-heading h4,
+.staff-documents-heading p,
+.staff-documents-notice,
+.staff-document-card p,
+.staff-document-attachment-state p {
+  margin: 0;
+}
+
+.staff-documents-heading p,
+.staff-document-card p,
+.staff-document-attachment-state p {
+  margin-top: 4px;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.staff-documents-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.staff-documents-summary > div {
+  min-width: 0;
+  border: 1px solid rgba(160, 184, 214, 0.13);
+  border-radius: 7px;
+  padding: 9px;
+  background: rgba(8, 13, 20, 0.45);
+}
+
+.staff-documents-summary span,
+.staff-documents-summary strong {
+  display: block;
+}
+
+.staff-documents-summary span {
+  min-height: 2.4em;
+  color: #91a5bc;
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.staff-documents-summary strong {
+  margin-top: 5px;
+  color: #ffffff;
+  font-size: 1.1rem;
+}
+
+.staff-documents-notice,
+.staff-document-attachment-state,
+.staff-documents-empty {
+  border: 1px solid rgba(112, 158, 224, 0.22);
+  border-radius: 7px;
+  padding: 10px 11px;
+  color: #c9d8ea;
+  background: rgba(52, 98, 166, 0.08);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.staff-documents-notice.is-warning {
+  border-color: rgba(244, 183, 73, 0.34);
+  color: #ffe0a3;
+  background: rgba(120, 74, 17, 0.18);
+}
+
+.staff-documents-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(130px, 0.8fr)) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.staff-documents-filters label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.staff-documents-filters label > span {
+  color: #91a5bc;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.staff-documents-filters input,
+.staff-documents-filters select,
+.staff-document-form select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.25);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0d151f;
+  font: inherit;
+}
+
+.staff-documents-list {
+  display: grid;
+  margin-top: 12px;
+  gap: 8px;
+}
+
+.staff-document-card {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.4fr) minmax(145px, 0.8fr) auto auto;
+  border: 1px solid rgba(160, 184, 214, 0.13);
+  border-radius: 8px;
+  padding: 11px;
+  background: rgba(8, 13, 20, 0.45);
+}
+
+.staff-document-card-main,
+.staff-document-card-dates {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.staff-document-card-main > span,
+.staff-document-card-dates span {
+  color: #91a5bc;
+  font-size: 0.72rem;
+}
+
+.staff-document-card-main strong {
+  overflow-wrap: anywhere;
+  color: #ffffff;
+}
+
+.staff-document-validity {
+  display: inline-flex;
+  width: max-content;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #c8d4e3;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.staff-document-validity.is-valid {
+  border-color: rgba(82, 209, 139, 0.36);
+  color: #9be8bd;
+}
+
+.staff-document-validity.is-expiring-soon,
+.staff-document-validity.is-needs-review {
+  border-color: rgba(244, 183, 73, 0.34);
+  color: #ffe0a3;
+}
+
+.staff-document-validity.is-expired {
+  border-color: rgba(238, 105, 105, 0.4);
+  color: #ffc1c1;
+}
+
+.staff-document-card-actions,
+.staff-document-detail-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.staff-document-detail,
+.staff-document-form {
+  display: grid;
+  gap: 12px;
+}
+
+.staff-document-attachment-state strong {
+  color: #edf5ff;
+}
+
+.staff-documents-empty {
+  display: grid;
+  margin-top: 12px;
+  justify-items: start;
+  gap: 7px;
+}
+
 .staff-administrative-empty,
 .staff-administrative-safe-state {
   display: grid;
@@ -2026,6 +2228,17 @@ h3 {
   .staff-administrative-view-grid,
   .staff-administrative-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .staff-documents-summary,
+  .staff-documents-filters,
+  .staff-document-card {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-document-card-actions,
+  .staff-document-detail-actions {
+    justify-content: flex-start;
   }
 }
 

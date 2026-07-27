@@ -2,12 +2,17 @@
   getStaffAdministrativeProfileCollectionIssues,
   normalizeStaffAdministrativeProfiles,
 } from './staff-administrative-profile-module.js'
+import {
+  getStaffDocumentCollectionIssues,
+  normalizeStaffDocuments,
+} from './staff-documents-module.js'
 
 const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
 const DEFAULT_STORAGE_CENTER_ID = 'dreamhome'
 let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
 const staffAdministrativeProfileReadStatuses = new Map()
+const staffDocumentReadStatuses = new Map()
 
 export function normalizeStorageCenterId(centerId) {
   const normalized = String(centerId ?? '')
@@ -53,6 +58,7 @@ const CENTER_STAFF_MEMBERS_KEY = createCenterScopedStorageKey('centerStaffMember
 const CENTER_STAFF_ADMINISTRATIVE_PROFILES_KEY = createCenterScopedStorageKey(
   'centerStaffAdministrativeProfiles',
 )
+const CENTER_STAFF_DOCUMENTS_KEY = createCenterScopedStorageKey('centerStaffDocuments')
 const CENTER_DEPARTMENTS_KEY = createCenterScopedStorageKey('centerDepartments')
 const SCHEDULE_KEY = createCenterScopedStorageKey('schedule')
 const SESSION_REPORTS_KEY = createCenterScopedStorageKey('sessionReports')
@@ -615,6 +621,82 @@ export function saveStoredCenterStaffAdministrativeProfiles(profiles) {
     ok: true,
     reason: '',
   })
+  return true
+}
+
+export function getStoredCenterStaffDocuments(defaultDocuments = []) {
+  const centerId = getCurrentStorageCenterId()
+  let storedValue = null
+
+  try {
+    storedValue = localStorage.getItem(CENTER_STAFF_DOCUMENTS_KEY)
+  } catch {
+    staffDocumentReadStatuses.set(centerId, { ok: false, reason: 'storage-read-failed' })
+    return normalizeStaffDocuments(defaultDocuments, { currentCenterId: centerId })
+  }
+
+  if (storedValue === null) {
+    staffDocumentReadStatuses.set(centerId, { ok: true, reason: 'not-created' })
+    return normalizeStaffDocuments(defaultDocuments, { currentCenterId: centerId })
+  }
+
+  try {
+    const storedDocuments = JSON.parse(storedValue)
+    if (Array.isArray(storedDocuments)) {
+      const hasMalformedItem = storedDocuments.some(
+        (documentRecord) =>
+          !documentRecord || typeof documentRecord !== 'object' || Array.isArray(documentRecord),
+      )
+      const normalizedDocuments = normalizeStaffDocuments(storedDocuments, {
+        currentCenterId: centerId,
+      })
+      const collectionIssues = getStaffDocumentCollectionIssues(normalizedDocuments, centerId)
+      staffDocumentReadStatuses.set(centerId, {
+        ok: !hasMalformedItem && !collectionIssues.length,
+        reason: hasMalformedItem
+          ? 'malformed-collection-item'
+          : collectionIssues.length
+            ? 'malformed-document-record'
+            : '',
+      })
+      return normalizedDocuments
+    }
+    staffDocumentReadStatuses.set(centerId, { ok: false, reason: 'malformed-collection' })
+  } catch {
+    // Administrative document metadata is never removed or rewritten after a failed read.
+    staffDocumentReadStatuses.set(centerId, { ok: false, reason: 'malformed-json' })
+  }
+
+  return normalizeStaffDocuments(defaultDocuments, { currentCenterId: centerId })
+}
+
+export function getStoredCenterStaffDocumentsReadStatus() {
+  return staffDocumentReadStatuses.get(getCurrentStorageCenterId()) || {
+    ok: true,
+    reason: 'not-read',
+  }
+}
+
+export function saveStoredCenterStaffDocuments(documents) {
+  const centerId = getCurrentStorageCenterId()
+  const hasMalformedItem =
+    !Array.isArray(documents) ||
+    documents.some(
+      (documentRecord) =>
+        !documentRecord || typeof documentRecord !== 'object' || Array.isArray(documentRecord),
+    )
+
+  if (hasMalformedItem) return false
+
+  const normalizedDocuments = normalizeStaffDocuments(documents, { currentCenterId: centerId })
+  if (getStaffDocumentCollectionIssues(normalizedDocuments, centerId).length) return false
+
+  try {
+    localStorage.setItem(CENTER_STAFF_DOCUMENTS_KEY, JSON.stringify(normalizedDocuments))
+  } catch {
+    return false
+  }
+  staffDocumentReadStatuses.set(centerId, { ok: true, reason: '' })
   return true
 }
 

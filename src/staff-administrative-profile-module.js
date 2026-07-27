@@ -1,3 +1,5 @@
+import { renderStaffDocumentsSection } from './staff-documents-module.js'
+
 export const STAFF_ADMINISTRATIVE_PROFILE_SCHEMA_VERSION = 1
 export const STAFF_ADMINISTRATIVE_PROFILE_CHECKLIST_VERSION = 'f23.11b-v1'
 export const STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE =
@@ -718,6 +720,9 @@ export function renderStaffAdministrativeProfileWindow({
   lookup,
   state = {},
   accessAllowed = false,
+  documents = [],
+  documentState = {},
+  documentStorageHealthy = true,
 } = {}) {
   if (!accessAllowed) {
     return renderAdministrativeSafeState(STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE)
@@ -736,7 +741,17 @@ export function renderStaffAdministrativeProfileWindow({
   const isFormMode = ['create', 'edit'].includes(state.mode)
   const content = isFormMode
     ? renderAdministrativeForm({ windowId, state, staffMember, isArchivedStaff })
-    : renderAdministrativeOverview({ windowId, profile, lookup, state, staffMember, isArchivedStaff })
+    : renderAdministrativeOverview({
+        windowId,
+        profile,
+        lookup,
+        state,
+        staffMember,
+        isArchivedStaff,
+        documents,
+        documentState,
+        documentStorageHealthy,
+      })
   const completionLabel = getAdministrativeStatusLabel(lookup.status)
   const employmentLabel = getEmploymentStatusLabel(staffMember.employmentStatus)
 
@@ -827,6 +842,7 @@ function renderAdministrativeNavigation(windowId) {
     ['bank', 'Ngân hàng'],
     ['contract', 'Hợp đồng'],
     ['notes', 'Ghi chú & kiểm tra'],
+    ['documents', 'Tài liệu'],
   ]
   return `
     <nav class="staff-administrative-navigation" aria-label="Mục hồ sơ hành chính">
@@ -841,7 +857,17 @@ function renderAdministrativeNavigation(windowId) {
   `
 }
 
-function renderAdministrativeOverview({ windowId, profile, lookup, state, staffMember, isArchivedStaff }) {
+function renderAdministrativeOverview({
+  windowId,
+  profile,
+  lookup,
+  state,
+  staffMember,
+  isArchivedStaff,
+  documents,
+  documentState,
+  documentStorageHealthy,
+}) {
   if (!profile) {
     return `
       <div class="staff-administrative-empty">
@@ -908,6 +934,14 @@ function renderAdministrativeOverview({ windowId, profile, lookup, state, staffM
     ${renderViewSection(windowId, 'notes', 'Ghi chú và mức độ hoàn thiện', [
       renderViewField('Ghi chú hành chính', profile.note, true),
     ])}
+    ${renderStaffDocumentsSection({
+      windowId,
+      documents,
+      state: documentState,
+      accessAllowed: true,
+      storageHealthy: documentStorageHealthy,
+      readOnly: isArchivedStaff,
+    })}
   `
 }
 

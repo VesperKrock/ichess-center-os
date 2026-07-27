@@ -52,6 +52,8 @@ import {
   getStoredCenterDepartments,
   getStoredCenterStaffAdministrativeProfiles,
   getStoredCenterStaffAdministrativeProfilesReadStatus,
+  getStoredCenterStaffDocuments,
+  getStoredCenterStaffDocumentsReadStatus,
   getStoredCenterStaffMembers,
   getStoredInventory,
   getStoredInventoryMovements,
@@ -77,6 +79,7 @@ import {
   saveStoredCashbookSettings,
   saveStoredCenterDepartments,
   saveStoredCenterStaffAdministrativeProfiles,
+  saveStoredCenterStaffDocuments,
   saveStoredCenterStaffMembers,
   saveStoredInventory,
   saveStoredInventoryMovements,
@@ -349,6 +352,22 @@ import {
   validateStaffAdministrativeProfile,
 } from './staff-administrative-profile-module.js'
 import {
+  STAFF_DOCUMENT_STALE_MESSAGE,
+  archiveStaffDocument,
+  buildStaffDocumentFromDraft,
+  createEditStaffDocumentDraft,
+  createStaffDocumentDraft,
+  createStaffDocumentId,
+  getFilteredStaffDocuments,
+  getStaffDocumentRelationshipIssues,
+  initialStaffDocumentFilters,
+  renderStaffDocumentResults,
+  renderStaffDocumentsSection,
+  restoreStaffDocument,
+  setStaffDocumentDraftValue,
+  validateStaffDocument,
+} from './staff-documents-module.js'
+import {
   ANGEL_WINGS_DATASET_ID,
   ANGEL_WINGS_IMPORT_BATCH_ID,
   ANGEL_WINGS_SOURCE_TAG,
@@ -586,6 +605,7 @@ let parentConvertPreviewState = null
 let staffFilters = { ...initialStaffFilters }
 let staffMembers = getStoredCenterStaffMembers([])
 let staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
+let staffDocuments = getStoredCenterStaffDocuments([])
 let staffDepartments = getStoredCenterDepartments([])
 let staffFormState = null
 let isStaffDepartmentPanelOpen = false
@@ -600,8 +620,10 @@ let staffAccountDirectoryRunId = 0
 let staffLifecycleState = null
 let isStaffLifecycleSaving = false
 let staffAdministrativeProfileWindowStates = new Map()
+let staffDocumentWindowStates = new Map()
 const boundStaffAdministrativeActionWindows = new WeakSet()
 let isStaffAdministrativeProfileSaving = false
+const savingStaffDocumentWindowIds = new Set()
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
@@ -1184,7 +1206,9 @@ function resetTransientStateForCenterSwitch() {
     (windowItem) => windowItem.type !== 'staff-administrative-profile',
   )
   staffAdministrativeProfileWindowStates = new Map()
+  staffDocumentWindowStates = new Map()
   isStaffAdministrativeProfileSaving = false
+  savingStaffDocumentWindowIds.clear()
   teacherStaffLinkState = null
   isTeacherStaffLinkSaving = false
   scheduleFormState = null
@@ -1260,6 +1284,7 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   )
   staffMembers = getStoredCenterStaffMembers([])
   staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
+  staffDocuments = getStoredCenterStaffDocuments([])
   staffDepartments = getStoredCenterDepartments([])
   scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
   scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
@@ -1287,6 +1312,7 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
 function refreshStaffDataFromStorage() {
   staffMembers = getStoredCenterStaffMembers([])
   staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
+  staffDocuments = getStoredCenterStaffDocuments([])
   staffDepartments = getStoredCenterDepartments([])
 }
 
@@ -1385,6 +1411,56 @@ function setStaffAdministrativeProfileWindowState(windowId, nextState) {
   return nextState
 }
 
+function createStaffDocumentWindowState(centerId, staffMemberId, administrativeProfileId = '') {
+  return {
+    mode: 'list',
+    centerId,
+    staffMemberId,
+    administrativeProfileId,
+    selectedDocumentId: '',
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    expectedArchivedAt: '',
+    values: null,
+    errors: {},
+    message: '',
+    isSaving: false,
+    filters: { ...initialStaffDocumentFilters },
+  }
+}
+
+function getStaffDocumentWindowState(windowId) {
+  return staffDocumentWindowStates.get(windowId) || null
+}
+
+function setStaffDocumentWindowState(windowId, nextState) {
+  staffDocumentWindowStates.set(windowId, nextState)
+  return nextState
+}
+
+function getStaffDocumentStorageContext(centerId = getCurrentStorageCenterId()) {
+  const readStatus = getStoredCenterStaffDocumentsReadStatus()
+  if (!readStatus.ok) return { ok: false, reason: readStatus.reason }
+  const relationshipIssues = getStaffDocumentRelationshipIssues(staffDocuments, {
+    centerId,
+    staffMembers,
+    administrativeProfiles: staffAdministrativeProfiles,
+  })
+  return relationshipIssues.length
+    ? { ok: false, reason: 'malformed-document-relationship' }
+    : { ok: true, reason: '' }
+}
+
+function getStaffDocumentsForProfile(profile, staffMember, centerId) {
+  if (!profile || !staffMember || profile.centerId !== centerId) return []
+  return staffDocuments.filter(
+    (documentRecord) =>
+      documentRecord.centerId === centerId &&
+      documentRecord.staffMemberId === staffMember.id &&
+      documentRecord.administrativeProfileId === profile.id,
+  )
+}
+
 function openStaffAdministrativeProfileWindow(staffMemberId) {
   const access = getStaffAdministrativeProfileAccessContext()
 
@@ -1434,6 +1510,16 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
   isNotificationCenterOpen = false
 
   if (existingWindow) {
+    if (!getStaffDocumentWindowState(existingWindow.id)) {
+      setStaffDocumentWindowState(
+        existingWindow.id,
+        createStaffDocumentWindowState(
+          access.centerId,
+          staffMember.id,
+          profileLookup.profile?.id || '',
+        ),
+      )
+    }
     focusWindow(existingWindow.id)
     render()
     return
@@ -1472,6 +1558,14 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
     isSaving: false,
     revealedFields: new Set(),
   })
+  setStaffDocumentWindowState(
+    nextWindowId,
+    createStaffDocumentWindowState(
+      access.centerId,
+      staffMember.id,
+      profileLookup.profile?.id || '',
+    ),
+  )
   focusWindow(nextWindowId)
   render()
 }
@@ -1605,6 +1699,8 @@ function setStaffAdministrativeProfileWindowMessage(windowId, message) {
 function denyStaffAdministrativeProfileWindow(windowId) {
   const windowItem = openWindows.find((item) => item.id === windowId)
   staffAdministrativeProfileWindowStates.delete(windowId)
+  staffDocumentWindowStates.delete(windowId)
+  savingStaffDocumentWindowIds.delete(windowId)
   if (windowItem) {
     setStaffAdministrativeProfileWindowState(windowId, {
       mode: 'denied',
@@ -1698,6 +1794,8 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
     getCurrentStorageCenterId() !== state.centerId
   ) {
     staffAdministrativeProfileWindowStates.delete(windowId)
+    staffDocumentWindowStates.delete(windowId)
+    savingStaffDocumentWindowIds.delete(windowId)
     isStaffAdministrativeProfileSaving = false
     return
   }
@@ -1857,6 +1955,8 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
     getCurrentStorageCenterId() !== state.centerId
   ) {
     staffAdministrativeProfileWindowStates.delete(windowId)
+    staffDocumentWindowStates.delete(windowId)
+    savingStaffDocumentWindowIds.delete(windowId)
     isStaffAdministrativeProfileSaving = false
     return
   }
@@ -2071,6 +2171,473 @@ function navigateStaffAdministrativeProfileSection(button) {
     top: Math.max(0, section.offsetTop - scrollElement.offsetTop - 12),
     behavior: 'smooth',
   })
+}
+
+function getStaffDocumentWindowContext(windowId, { refresh = false } = {}) {
+  const windowItem = openWindows.find(
+    (item) => item.id === windowId && item.type === 'staff-administrative-profile',
+  )
+  const access = getStaffAdministrativeProfileAccessContext()
+  if (!windowItem || !access.ok || windowItem.centerId !== access.centerId) return null
+  if (refresh) refreshStaffDataFromStorage()
+
+  const staffMember = getUniqueCurrentCenterStaffMember(windowItem.staffMemberId, access.centerId)
+  const profileReadStatus = getStoredCenterStaffAdministrativeProfilesReadStatus()
+  const lookup = profileReadStatus.ok
+    ? resolveStaffAdministrativeProfileForStaff(
+        staffAdministrativeProfiles,
+        windowItem.staffMemberId,
+        access.centerId,
+      )
+    : { status: 'malformed', profile: null }
+  const storageContext = getStaffDocumentStorageContext(access.centerId)
+  if (!staffMember || !lookup.profile) {
+    return { windowItem, access, staffMember, lookup, storageContext, documents: [] }
+  }
+  return {
+    windowItem,
+    access,
+    staffMember,
+    lookup,
+    storageContext,
+    documents: storageContext.ok
+      ? getStaffDocumentsForProfile(lookup.profile, staffMember, access.centerId)
+      : [],
+  }
+}
+
+function refreshStaffDocumentsSection(windowId) {
+  const context = getStaffDocumentWindowContext(windowId)
+  const windowElement = document.querySelector(
+    `.desktop-window.is-staff-administrative-profile[data-window-id="${CSS.escape(windowId)}"]`,
+  )
+  const currentSection = windowElement?.querySelector('[data-staff-documents-section]')
+  const state = getStaffDocumentWindowState(windowId)
+  if (!context || !currentSection || !state || !context.lookup.profile) return
+
+  const template = document.createElement('template')
+  template.innerHTML = renderStaffDocumentsSection({
+    windowId,
+    documents: context.documents,
+    state,
+    accessAllowed: context.access.ok,
+    storageHealthy: context.storageContext.ok,
+    readOnly: Boolean(context.staffMember?.archivedAt),
+  }).trim()
+  currentSection.replaceWith(template.content.firstElementChild)
+}
+
+function refreshStaffDocumentResultsRegion(windowId) {
+  const context = getStaffDocumentWindowContext(windowId)
+  const state = getStaffDocumentWindowState(windowId)
+  const windowElement = document.querySelector(
+    `.desktop-window.is-staff-administrative-profile[data-window-id="${CSS.escape(windowId)}"]`,
+  )
+  const currentResults = windowElement?.querySelector('[data-staff-document-results]')
+  if (!context || !state || !currentResults || state.mode !== 'list') return
+
+  const nextResults = document.createElement('div')
+  nextResults.dataset.staffDocumentResults = ''
+  nextResults.innerHTML = renderStaffDocumentResults({
+    documents: context.documents,
+    filteredDocuments: getFilteredStaffDocuments(context.documents, state.filters),
+    readOnly: Boolean(context.staffMember?.archivedAt),
+  })
+  currentResults.replaceWith(nextResults)
+}
+
+function updateStaffDocumentFilter(windowId, filterName, value) {
+  if (!getStaffDocumentWindowContext(windowId)) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  if (!state || state.mode !== 'list' || !Object.hasOwn(initialStaffDocumentFilters, filterName)) {
+    return
+  }
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    filters: { ...state.filters, [filterName]: value },
+    message: '',
+  })
+  refreshStaffDocumentResultsRegion(windowId)
+}
+
+function clearStaffDocumentFilters(windowId) {
+  if (!getStaffDocumentWindowContext(windowId)) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  if (!state || state.mode !== 'list') return
+  const filters = { ...initialStaffDocumentFilters }
+  setStaffDocumentWindowState(windowId, { ...state, filters, message: '' })
+  const windowElement = document.querySelector(
+    `.desktop-window.is-staff-administrative-profile[data-window-id="${CSS.escape(windowId)}"]`,
+  )
+  windowElement?.querySelectorAll('[data-staff-document-filter]').forEach((control) => {
+    control.value = filters[control.dataset.staffDocumentFilter]
+  })
+  refreshStaffDocumentResultsRegion(windowId)
+}
+
+function startStaffDocumentCreate(windowId) {
+  const context = getStaffDocumentWindowContext(windowId, { refresh: true })
+  if (!context) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  if (!context?.storageContext.ok || !state || context.staffMember?.archivedAt) {
+    setStaffDocumentSafeMessage(windowId, 'Không thể tạo tài liệu từ trạng thái hiện tại.')
+    return
+  }
+  setStaffDocumentWindowState(windowId, {
+    ...createStaffDocumentWindowState(
+      context.access.centerId,
+      context.staffMember.id,
+      context.lookup.profile.id,
+    ),
+    mode: 'create',
+    filters: state.filters,
+    values: createStaffDocumentDraft(),
+  })
+  refreshStaffDocumentsSection(windowId)
+}
+
+function startStaffDocumentEdit(windowId, documentId) {
+  const context = getStaffDocumentWindowContext(windowId, { refresh: true })
+  if (!context) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  const matches = context?.documents.filter((item) => item.id === documentId) || []
+  const documentRecord = matches.length === 1 ? matches[0] : null
+  if (
+    !context?.storageContext.ok ||
+    !state ||
+    context.staffMember?.archivedAt ||
+    !documentRecord ||
+    documentRecord.archivedAt
+  ) {
+    setStaffDocumentSafeMessage(windowId, 'Không thể sửa tài liệu từ trạng thái hiện tại.')
+    return
+  }
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    mode: 'edit',
+    selectedDocumentId: documentRecord.id,
+    expectedRevision: documentRecord.revision,
+    expectedUpdatedAt: documentRecord.updatedAt,
+    expectedArchivedAt: documentRecord.archivedAt || '',
+    values: createEditStaffDocumentDraft(documentRecord),
+    errors: {},
+    message: '',
+    isSaving: false,
+  })
+  refreshStaffDocumentsSection(windowId)
+}
+
+function openStaffDocumentDetail(windowId, documentId) {
+  const context = getStaffDocumentWindowContext(windowId, { refresh: true })
+  if (!context) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  const matches = context?.documents.filter((item) => item.id === documentId) || []
+  if (!context?.storageContext.ok || !state || matches.length !== 1) {
+    setStaffDocumentSafeMessage(windowId, 'Không thể mở chi tiết tài liệu từ dữ liệu hiện tại.')
+    return
+  }
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    mode: 'detail',
+    selectedDocumentId: documentId,
+    values: null,
+    errors: {},
+    message: '',
+    isSaving: false,
+  })
+  refreshStaffDocumentsSection(windowId)
+}
+
+function closeStaffDocumentFormOrDetail(windowId) {
+  if (!getStaffDocumentWindowContext(windowId)) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  if (!state || state.isSaving) return
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    mode: 'list',
+    selectedDocumentId: '',
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    expectedArchivedAt: '',
+    values: null,
+    errors: {},
+    message: '',
+    isSaving: false,
+  })
+  refreshStaffDocumentsSection(windowId)
+}
+
+function updateStaffDocumentDraftField(windowId, field, value) {
+  if (!getStaffDocumentWindowContext(windowId)) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  if (!state || !['create', 'edit'].includes(state.mode) || state.isSaving) return
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    values: setStaffDocumentDraftValue(state.values, field, value),
+  })
+}
+
+function collectStaffDocumentDraftValues(formElement, state) {
+  let values = state.values
+  formElement.querySelectorAll('[data-staff-document-field]').forEach((control) => {
+    values = setStaffDocumentDraftValue(
+      values,
+      control.dataset.staffDocumentField,
+      control.value,
+    )
+  })
+  return values
+}
+
+async function getLatestStaffDocumentMutationContext(windowId, capturedState) {
+  const access = await getLatestStaffAdministrativeProfileAccessContext(capturedState.centerId)
+  if (!access.ok) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return null
+  }
+  const windowItem = openWindows.find(
+    (item) => item.id === windowId && item.type === 'staff-administrative-profile',
+  )
+  const state = getStaffDocumentWindowState(windowId)
+  if (
+    !windowItem ||
+    !state ||
+    windowItem.centerId !== capturedState.centerId ||
+    state.centerId !== capturedState.centerId ||
+    state.staffMemberId !== capturedState.staffMemberId ||
+    getCurrentStorageCenterId() !== capturedState.centerId
+  ) return null
+
+  refreshStaffDataFromStorage()
+  const context = getStaffDocumentWindowContext(windowId)
+  if (
+    !context?.storageContext.ok ||
+    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
+    !context.lookup.profile ||
+    context.lookup.profile.id !== capturedState.administrativeProfileId ||
+    context.staffMember?.archivedAt
+  ) return null
+  return { ...context, state }
+}
+
+async function handleStaffDocumentSubmit(windowId, formElement) {
+  const capturedState = getStaffDocumentWindowState(windowId)
+  if (
+    !capturedState ||
+    !['create', 'edit'].includes(capturedState.mode) ||
+    capturedState.isSaving ||
+    savingStaffDocumentWindowIds.has(windowId)
+  ) return
+
+  const values = collectStaffDocumentDraftValues(formElement, capturedState)
+  const errors = validateStaffDocument(values)
+  if (Object.keys(errors).length) {
+    setStaffDocumentWindowState(windowId, {
+      ...capturedState,
+      values,
+      errors,
+      message: 'Vui lòng kiểm tra các trường chưa hợp lệ.',
+    })
+    refreshStaffDocumentsSection(windowId)
+    return
+  }
+
+  savingStaffDocumentWindowIds.add(windowId)
+  setStaffDocumentWindowState(windowId, {
+    ...capturedState,
+    values,
+    errors: {},
+    message: '',
+    isSaving: true,
+  })
+  refreshStaffDocumentsSection(windowId)
+
+  const latest = await getLatestStaffDocumentMutationContext(windowId, capturedState)
+  if (!latest) {
+    finishStaffDocumentMutationWithMessage(
+      windowId,
+      'Quyền truy cập hoặc liên kết hồ sơ đã thay đổi. Không ghi dữ liệu.',
+    )
+    return
+  }
+
+  const latestMatches = capturedState.mode === 'edit'
+    ? latest.documents.filter((item) => item.id === capturedState.selectedDocumentId)
+    : []
+  const existingDocument = latestMatches.length === 1 ? latestMatches[0] : null
+  if (
+    capturedState.mode === 'edit' &&
+    (
+      !existingDocument ||
+      existingDocument.revision !== capturedState.expectedRevision ||
+      existingDocument.updatedAt !== capturedState.expectedUpdatedAt ||
+      (existingDocument.archivedAt || '') !== capturedState.expectedArchivedAt
+    )
+  ) {
+    finishStaffDocumentMutationWithMessage(windowId, STAFF_DOCUMENT_STALE_MESSAGE)
+    return
+  }
+
+  const documentId = capturedState.mode === 'create'
+    ? createStaffDocumentId()
+    : capturedState.selectedDocumentId
+  if (
+    capturedState.mode === 'create' &&
+    staffDocuments.some((documentRecord) => documentRecord.id === documentId)
+  ) {
+    finishStaffDocumentMutationWithMessage(
+      windowId,
+      'Không thể tạo stable document ID duy nhất. Vui lòng thử lại.',
+    )
+    return
+  }
+
+  const savedDocument = buildStaffDocumentFromDraft(values, existingDocument, {
+    centerId: capturedState.centerId,
+    ['staffMemberId']: capturedState.staffMemberId,
+    administrativeProfileId: capturedState.administrativeProfileId,
+    documentId,
+  })
+  const nextDocuments = capturedState.mode === 'create'
+    ? [savedDocument, ...staffDocuments]
+    : staffDocuments.map((documentRecord) =>
+        documentRecord.id === savedDocument.id ? savedDocument : documentRecord,
+      )
+  if (
+    getStaffDocumentRelationshipIssues(nextDocuments, {
+      centerId: capturedState.centerId,
+      staffMembers,
+      administrativeProfiles: staffAdministrativeProfiles,
+    }).length ||
+    !saveStoredCenterStaffDocuments(nextDocuments)
+  ) {
+    finishStaffDocumentMutationWithMessage(
+      windowId,
+      'Hệ thống đã dừng lưu vì collection tài liệu cần được kiểm tra.',
+    )
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  setStaffDocumentWindowState(windowId, {
+    ...capturedState,
+    mode: 'detail',
+    selectedDocumentId: savedDocument.id,
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    expectedArchivedAt: '',
+    values: null,
+    errors: {},
+    message: 'Đã lưu metadata tài liệu.',
+    isSaving: false,
+  })
+  savingStaffDocumentWindowIds.delete(windowId)
+  refreshStaffDocumentsSection(windowId)
+}
+
+async function changeStaffDocumentArchiveState(windowId, documentId, action) {
+  const context = getStaffDocumentWindowContext(windowId, { refresh: true })
+  if (!context) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const state = getStaffDocumentWindowState(windowId)
+  const matches = context?.documents.filter((item) => item.id === documentId) || []
+  const capturedDocument = matches.length === 1 ? matches[0] : null
+  if (
+    !context?.storageContext.ok ||
+    !state ||
+    !capturedDocument ||
+    context.staffMember?.archivedAt ||
+    savingStaffDocumentWindowIds.has(windowId)
+  ) {
+    setStaffDocumentSafeMessage(windowId, 'Không thể thay đổi lưu trữ từ trạng thái hiện tại.')
+    return
+  }
+  if (action === 'archive' && capturedDocument.archivedAt) return
+  if (action === 'restore' && !capturedDocument.archivedAt) return
+
+  const confirmation = action === 'archive'
+    ? 'Lưu trữ tài liệu này? Bạn có thể khôi phục sau.'
+    : 'Khôi phục tài liệu này vào danh mục đang quản lý?'
+  if (!window.confirm(confirmation)) return
+
+  savingStaffDocumentWindowIds.add(windowId)
+  setStaffDocumentWindowState(windowId, { ...state, isSaving: true, message: '' })
+  refreshStaffDocumentsSection(windowId)
+  const latest = await getLatestStaffDocumentMutationContext(windowId, state)
+  const latestMatches = latest?.documents.filter((item) => item.id === documentId) || []
+  const latestDocument = latestMatches.length === 1 ? latestMatches[0] : null
+  if (
+    !latestDocument ||
+    latestDocument.revision !== capturedDocument.revision ||
+    latestDocument.updatedAt !== capturedDocument.updatedAt ||
+    (latestDocument.archivedAt || '') !== (capturedDocument.archivedAt || '')
+  ) {
+    finishStaffDocumentMutationWithMessage(windowId, STAFF_DOCUMENT_STALE_MESSAGE)
+    return
+  }
+
+  const changedDocument = action === 'archive'
+    ? archiveStaffDocument(latestDocument)
+    : restoreStaffDocument(latestDocument)
+  if (!changedDocument) {
+    finishStaffDocumentMutationWithMessage(windowId, 'Không thể thay đổi trạng thái lưu trữ.')
+    return
+  }
+  const nextDocuments = staffDocuments.map((documentRecord) =>
+    documentRecord.id === changedDocument.id ? changedDocument : documentRecord,
+  )
+  if (!saveStoredCenterStaffDocuments(nextDocuments)) {
+    finishStaffDocumentMutationWithMessage(
+      windowId,
+      'Hệ thống đã dừng lưu vì collection tài liệu cần được kiểm tra.',
+    )
+    return
+  }
+  refreshStaffDataFromStorage()
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    mode: 'list',
+    selectedDocumentId: '',
+    isSaving: false,
+    message: action === 'archive' ? 'Đã lưu trữ tài liệu.' : 'Đã khôi phục tài liệu.',
+  })
+  savingStaffDocumentWindowIds.delete(windowId)
+  refreshStaffDocumentsSection(windowId)
+}
+
+function setStaffDocumentSafeMessage(windowId, message) {
+  const state = getStaffDocumentWindowState(windowId)
+  if (!state) return
+  setStaffDocumentWindowState(windowId, { ...state, isSaving: false, message })
+  savingStaffDocumentWindowIds.delete(windowId)
+  refreshStaffDocumentsSection(windowId)
+}
+
+function finishStaffDocumentMutationWithMessage(windowId, message) {
+  setStaffDocumentSafeMessage(windowId, message)
 }
 
 function focusFirstStaffAdministrativeProfileError(windowId) {
@@ -7299,6 +7866,8 @@ function renderWindowBody(windowItem) {
 
     if (!access.ok || windowItem.centerId !== access.centerId) {
       staffAdministrativeProfileWindowStates.delete(windowItem.id)
+      staffDocumentWindowStates.delete(windowItem.id)
+      savingStaffDocumentWindowIds.delete(windowItem.id)
       return renderStaffAdministrativeProfileWindow({ accessAllowed: false })
     }
 
@@ -7364,6 +7933,27 @@ function renderWindowBody(windowItem) {
       setStaffAdministrativeProfileWindowState(windowItem.id, state)
     }
 
+    const documentStorageContext = getStaffDocumentStorageContext(windowItem.centerId)
+    const profileDocuments = documentStorageContext.ok
+      ? getStaffDocumentsForProfile(lookup.profile, staffMember, windowItem.centerId)
+      : []
+    let documentState = getStaffDocumentWindowState(windowItem.id)
+    if (
+      !documentState ||
+      documentState.centerId !== windowItem.centerId ||
+      documentState.staffMemberId !== windowItem.staffMemberId ||
+      documentState.administrativeProfileId !== (lookup.profile?.id || '') ||
+      (staffMember?.archivedAt && ['create', 'edit'].includes(documentState.mode))
+    ) {
+      documentState = createStaffDocumentWindowState(
+        windowItem.centerId,
+        windowItem.staffMemberId,
+        lookup.profile?.id || '',
+      )
+      setStaffDocumentWindowState(windowItem.id, documentState)
+      savingStaffDocumentWindowIds.delete(windowItem.id)
+    }
+
     return renderStaffAdministrativeProfileWindow({
       windowId: windowItem.id,
       staffMember,
@@ -7371,6 +7961,9 @@ function renderWindowBody(windowItem) {
       lookup,
       state,
       accessAllowed: true,
+      documents: profileDocuments,
+      documentState,
+      documentStorageHealthy: documentStorageContext.ok,
     })
   }
 
@@ -9818,6 +10411,8 @@ function closeWindow(windowId) {
   if (closingWindow?.type === 'staff-administrative-profile') {
     const closingState = getStaffAdministrativeProfileWindowState(windowId)
     staffAdministrativeProfileWindowStates.delete(windowId)
+    staffDocumentWindowStates.delete(windowId)
+    savingStaffDocumentWindowIds.delete(windowId)
     if (closingState?.isSaving) {
       isStaffAdministrativeProfileSaving = false
     }
@@ -13387,6 +13982,65 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
     .forEach((windowElement) => {
       if (boundStaffAdministrativeActionWindows.has(windowElement)) return
       boundStaffAdministrativeActionWindows.add(windowElement)
+
+      windowElement.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-staff-document-action]')
+        if (!button || !windowElement.contains(button)) return
+        event.preventDefault()
+        event.stopPropagation()
+
+        const windowId = windowElement.dataset.windowId
+        const action = button.dataset.staffDocumentAction
+        const documentId = button.dataset.documentId || ''
+        if (!windowId) return
+        if (action === 'start-create') return startStaffDocumentCreate(windowId)
+        if (action === 'start-edit') return startStaffDocumentEdit(windowId, documentId)
+        if (action === 'open-detail') return openStaffDocumentDetail(windowId, documentId)
+        if (action === 'cancel-form' || action === 'back-to-list') {
+          return closeStaffDocumentFormOrDetail(windowId)
+        }
+        if (action === 'clear-filters') return clearStaffDocumentFilters(windowId)
+        if (action === 'archive' || action === 'restore') {
+          void changeStaffDocumentArchiveState(windowId, documentId, action)
+        }
+      })
+
+      windowElement.addEventListener('input', (event) => {
+        const control = event.target
+        const windowId = windowElement.dataset.windowId
+        if (!windowId || !(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement)) {
+          return
+        }
+        if (control.dataset.staffDocumentFilter) {
+          updateStaffDocumentFilter(windowId, control.dataset.staffDocumentFilter, control.value)
+        }
+        if (control.dataset.staffDocumentField) {
+          updateStaffDocumentDraftField(windowId, control.dataset.staffDocumentField, control.value)
+        }
+      })
+
+      windowElement.addEventListener('change', (event) => {
+        const control = event.target
+        const windowId = windowElement.dataset.windowId
+        if (!windowId || !(control instanceof HTMLSelectElement || control instanceof HTMLInputElement)) {
+          return
+        }
+        if (control.dataset.staffDocumentFilter) {
+          updateStaffDocumentFilter(windowId, control.dataset.staffDocumentFilter, control.value)
+        }
+        if (control.dataset.staffDocumentField) {
+          updateStaffDocumentDraftField(windowId, control.dataset.staffDocumentField, control.value)
+        }
+      })
+
+      windowElement.addEventListener('submit', (event) => {
+        const form = event.target.closest?.('[data-staff-document-form]')
+        if (!form || !windowElement.contains(form)) return
+        event.preventDefault()
+        event.stopPropagation()
+        const windowId = windowElement.dataset.windowId
+        if (windowId) void handleStaffDocumentSubmit(windowId, form)
+      })
 
       windowElement.addEventListener('click', (event) => {
         const button = event.target.closest?.('[data-staff-administrative-action]')
