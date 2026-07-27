@@ -1632,6 +1632,403 @@ h3 {
   align-items: center;
 }
 
+.desktop-window.is-staff-administrative-profile > .window-body {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.staff-administrative-profile-window {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  color: #d8e2ef;
+  background: #0b1119;
+}
+
+.staff-administrative-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(160, 184, 214, 0.17);
+  background: #101923;
+}
+
+.staff-administrative-header h3,
+.staff-administrative-header p {
+  margin: 0;
+}
+
+.staff-administrative-header h3 {
+  margin-top: 4px;
+  color: #ffffff;
+  font-size: 1.12rem;
+}
+
+.staff-administrative-header p {
+  margin-top: 5px;
+  color: #9fb1c7;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.staff-administrative-eyebrow {
+  color: #8fbaff;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.staff-administrative-header-actions,
+.staff-administrative-form-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.staff-administrative-header button,
+.staff-administrative-navigation button,
+.staff-administrative-profile-window button,
+.staff-administrative-launch-card button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.25);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #edf5ff;
+  background: rgba(68, 116, 185, 0.25);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.staff-administrative-profile-window button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.staff-administrative-banner,
+.staff-administrative-message {
+  flex: 0 0 auto;
+  margin: 10px 20px 0;
+  border: 1px solid rgba(244, 183, 73, 0.34);
+  border-radius: 7px;
+  padding: 9px 11px;
+  color: #ffe0a3;
+  background: rgba(120, 74, 17, 0.22);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.staff-administrative-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 210px minmax(0, 1fr);
+}
+
+.staff-administrative-navigation {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-right: 1px solid rgba(160, 184, 214, 0.14);
+  background: rgba(8, 13, 20, 0.82);
+}
+
+.staff-administrative-navigation button {
+  width: 100%;
+  justify-content: flex-start;
+  color: #b9c9db;
+  background: rgba(255, 255, 255, 0.035);
+  text-align: left;
+}
+
+.staff-administrative-content-scroll {
+  min-width: 0;
+  min-height: 0;
+  padding: 18px 20px 32px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+.staff-administrative-content-scroll > .staff-administrative-message {
+  margin: 0 0 12px;
+}
+
+.staff-administrative-section {
+  margin: 0 0 14px;
+  scroll-margin-top: 12px;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 9px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.staff-administrative-section h4 {
+  margin: 0 0 12px;
+  color: #ffffff;
+  font-size: 0.96rem;
+}
+
+.staff-administrative-view-grid,
+.staff-administrative-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.staff-administrative-view-field,
+.staff-administrative-reserved-field,
+.staff-administrative-completion-card {
+  min-width: 0;
+  border: 1px solid rgba(160, 184, 214, 0.13);
+  border-radius: 7px;
+  padding: 10px;
+  background: rgba(8, 13, 20, 0.45);
+}
+
+.staff-administrative-view-field.is-wide,
+.staff-administrative-completion-card.is-wide,
+.staff-administrative-form-field.is-wide {
+  grid-column: 1 / -1;
+}
+
+.staff-administrative-view-field > span,
+.staff-administrative-reserved-field > span,
+.staff-administrative-form-field > span,
+.staff-administrative-completion-card span {
+  display: block;
+  margin-bottom: 5px;
+  color: #91a5bc;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.staff-administrative-view-field strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #edf5ff;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.staff-administrative-sensitive-control,
+.staff-administrative-input-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.staff-administrative-sensitive-control strong,
+.staff-administrative-input-row input,
+.staff-administrative-input-row textarea {
+  min-width: 0;
+  flex: 1;
+}
+
+.staff-administrative-form-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.staff-administrative-form-field input,
+.staff-administrative-form-field textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.25);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0d151f;
+  font: inherit;
+}
+
+.staff-administrative-form-field textarea {
+  resize: vertical;
+}
+
+.staff-administrative-form-field input:focus,
+.staff-administrative-form-field textarea:focus {
+  border-color: rgba(118, 164, 231, 0.78);
+  outline: 2px solid rgba(84, 139, 220, 0.16);
+}
+
+.staff-administrative-field-error {
+  color: #ffb4b4;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.staff-administrative-reserved-field p {
+  margin: 0;
+  color: #9fb1c7;
+  font-size: 0.8rem;
+}
+
+.staff-administrative-form-actions {
+  position: sticky;
+  bottom: -32px;
+  z-index: 2;
+  margin-top: 12px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(160, 184, 214, 0.14);
+  background: #0b1119;
+}
+
+.staff-administrative-completion-card ul {
+  display: grid;
+  margin: 10px 0 0;
+  padding: 0;
+  gap: 5px;
+  list-style: none;
+}
+
+.staff-administrative-completion-card li {
+  color: #aebed1;
+  font-size: 0.8rem;
+}
+
+.staff-administrative-completion-card li.is-done {
+  color: #9be8bd;
+}
+
+.staff-administrative-empty,
+.staff-administrative-safe-state {
+  display: grid;
+  min-height: 240px;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.staff-administrative-empty h4,
+.staff-administrative-empty p,
+.staff-administrative-safe-state h3,
+.staff-administrative-safe-state p {
+  max-width: 620px;
+  margin: 0;
+}
+
+.staff-administrative-safe-state {
+  min-height: 100%;
+  padding: 24px;
+}
+
+.staff-administrative-safe-state p,
+.staff-administrative-empty p {
+  color: #9fb1c7;
+  line-height: 1.5;
+}
+
+.staff-administrative-launch-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid rgba(112, 158, 224, 0.22);
+  border-radius: 8px;
+  padding: 11px;
+  background: rgba(52, 98, 166, 0.08);
+}
+
+.staff-administrative-launch-card span,
+.staff-administrative-launch-card strong,
+.staff-administrative-launch-card p {
+  display: block;
+  margin: 0;
+}
+
+.staff-administrative-launch-card span {
+  color: #91a5bc;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.staff-administrative-launch-card strong {
+  margin-top: 3px;
+  color: #ffffff;
+}
+
+.staff-administrative-launch-card p {
+  margin-top: 3px;
+  color: #9fb1c7;
+  font-size: 0.78rem;
+}
+
+.staff-administrative-list-status {
+  display: inline-flex;
+  width: max-content;
+  border: 1px solid rgba(160, 184, 214, 0.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #c8d4e3;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.staff-administrative-list-status.is-complete {
+  border-color: rgba(82, 209, 139, 0.36);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.staff-administrative-list-status.is-needs-review,
+.staff-administrative-list-status.is-incomplete {
+  border-color: rgba(244, 183, 73, 0.34);
+  color: #ffe0a3;
+  background: rgba(120, 74, 17, 0.18);
+}
+
+@media (max-width: 780px) {
+  .staff-administrative-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .staff-administrative-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .staff-administrative-navigation {
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid rgba(160, 184, 214, 0.14);
+    overflow-x: auto;
+  }
+
+  .staff-administrative-navigation button {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .staff-administrative-view-grid,
+  .staff-administrative-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .internal-account-card.is-focused-account {
   border-color: rgba(118, 164, 231, 0.82);
   box-shadow: 0 0 0 2px rgba(118, 164, 231, 0.2);

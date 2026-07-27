@@ -50,6 +50,8 @@ import {
   getStoredCashbookReconciliations,
   getStoredCashbookSettings,
   getStoredCenterDepartments,
+  getStoredCenterStaffAdministrativeProfiles,
+  getStoredCenterStaffAdministrativeProfilesReadStatus,
   getStoredCenterStaffMembers,
   getStoredInventory,
   getStoredInventoryMovements,
@@ -74,6 +76,7 @@ import {
   saveStoredCashbookReconciliations,
   saveStoredCashbookSettings,
   saveStoredCenterDepartments,
+  saveStoredCenterStaffAdministrativeProfiles,
   saveStoredCenterStaffMembers,
   saveStoredInventory,
   saveStoredInventoryMovements,
@@ -303,6 +306,7 @@ import {
   buildStaffEmploymentTransition,
   buildDepartmentFromForm,
   buildStaffMemberFromForm,
+  clearStaffListFilters,
   createEditDepartmentFormState,
   createEditStaffFormState,
   createEmptyDepartmentFormState,
@@ -325,6 +329,25 @@ import {
   validateDepartmentForm,
   validateStaffForm,
 } from './staff-module.js'
+import {
+  STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE,
+  buildStaffAdministrativeProfileFromDraft,
+  createEditStaffAdministrativeProfileDraft,
+  createStaffAdministrativeProfileDraft,
+  createStaffAdministrativeProfileId,
+  getStaffAdministrativeCompletionChecklist,
+  getStaffAdministrativeSensitiveValue,
+  getStaffAdministrativeWindowTitle,
+  isStaffAdministrativeSensitiveField,
+  markStaffAdministrativeProfileReviewed,
+  maskStaffAdministrativeValue,
+  renderStaffAdministrativeProfileWindow,
+  resolveStaffAdministrativeProfileAccess,
+  resolveStaffAdministrativeProfileForStaff,
+  setStaffAdministrativeProfileDraftValue,
+  toggleStaffAdministrativeRevealedField,
+  validateStaffAdministrativeProfile,
+} from './staff-administrative-profile-module.js'
 import {
   ANGEL_WINGS_DATASET_ID,
   ANGEL_WINGS_IMPORT_BATCH_ID,
@@ -495,6 +518,7 @@ const preservedScrollTargets = [
   ['.teacher-update-table-wrap', 'teacher-update-table'],
   ['.staff-form', 'staff-form'],
   ['.staff-lifecycle-window', 'staff-lifecycle-window'],
+  ['.staff-administrative-content-scroll', 'staff-administrative-content'],
   ['.schedule-week-scroll', 'schedule-week'],
   ['.tuition-table-wrap', 'tuition-table'],
   ['.tuition-advisory-table-wrap', 'tuition-advisory'],
@@ -561,6 +585,7 @@ let parentContactDetailId = null
 let parentConvertPreviewState = null
 let staffFilters = { ...initialStaffFilters }
 let staffMembers = getStoredCenterStaffMembers([])
+let staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
 let staffDepartments = getStoredCenterDepartments([])
 let staffFormState = null
 let isStaffDepartmentPanelOpen = false
@@ -574,6 +599,9 @@ let isStaffAccountLinkSaving = false
 let staffAccountDirectoryRunId = 0
 let staffLifecycleState = null
 let isStaffLifecycleSaving = false
+let staffAdministrativeProfileWindowStates = new Map()
+const boundStaffAdministrativeActionWindows = new WeakSet()
+let isStaffAdministrativeProfileSaving = false
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
@@ -1152,6 +1180,11 @@ function resetTransientStateForCenterSwitch() {
   isStaffAccountLinkSaving = false
   staffLifecycleState = null
   isStaffLifecycleSaving = false
+  openWindows = openWindows.filter(
+    (windowItem) => windowItem.type !== 'staff-administrative-profile',
+  )
+  staffAdministrativeProfileWindowStates = new Map()
+  isStaffAdministrativeProfileSaving = false
   teacherStaffLinkState = null
   isTeacherStaffLinkSaving = false
   scheduleFormState = null
@@ -1226,6 +1259,7 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
     useSampleFallback ? sampleParentConsultations : [],
   )
   staffMembers = getStoredCenterStaffMembers([])
+  staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
   staffDepartments = getStoredCenterDepartments([])
   scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
   scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
@@ -1252,6 +1286,7 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
 
 function refreshStaffDataFromStorage() {
   staffMembers = getStoredCenterStaffMembers([])
+  staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
   staffDepartments = getStoredCenterDepartments([])
 }
 
@@ -1281,6 +1316,774 @@ function getStaffAccountCenterContext() {
     centerId,
     centerName: binding.centerName || centerId,
   }
+}
+
+function getStaffAdministrativeProfileAccessContext() {
+  return resolveStaffAdministrativeProfileAccess({
+    user: cloudStatus.user,
+    binding: resolveAppCenterBinding(cloudStatus),
+    storageCenterId: getCurrentStorageCenterId(),
+  })
+}
+
+async function getLatestStaffAdministrativeProfileAccessContext(expectedCenterId) {
+  const user = cloudStatus.user
+
+  if (cloudStatus.authStatus !== 'signed-in' || !user?.id) {
+    return {
+      ok: false,
+      error: STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE,
+      reason: 'signed-out',
+    }
+  }
+
+  try {
+    const resolvedMembership = await resolveActiveCenterMembership(user.id)
+    const membership = (resolvedMembership.memberships || []).find(
+      (item) => String(item?.center_id || '').trim() === String(expectedCenterId || '').trim(),
+    )
+
+    return resolveStaffAdministrativeProfileAccess({
+      user,
+      binding: {
+        status: membership ? 'bound' : 'denied',
+        currentCenterId: membership?.center_id || '',
+        role: membership?.role || '',
+        membership: membership || null,
+      },
+      storageCenterId: getCurrentStorageCenterId(),
+    })
+  } catch {
+    return {
+      ok: false,
+      error: STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE,
+      reason: 'membership-read-failed',
+    }
+  }
+}
+
+function getUniqueCurrentCenterStaffMember(staffMemberId, centerId = getStaffCurrentCenterId()) {
+  const matches = staffMembers.filter((item) => item.id === staffMemberId)
+  const staffMember = matches.length === 1 ? matches[0] : null
+
+  if (!staffMember || matches.length !== 1) {
+    return null
+  }
+  if (staffMember.centerId && staffMember.centerId !== centerId) {
+    return null
+  }
+
+  return staffMember
+}
+
+function getStaffAdministrativeProfileWindowState(windowId) {
+  return staffAdministrativeProfileWindowStates.get(windowId) || null
+}
+
+function setStaffAdministrativeProfileWindowState(windowId, nextState) {
+  staffAdministrativeProfileWindowStates.set(windowId, nextState)
+  return nextState
+}
+
+function openStaffAdministrativeProfileWindow(staffMemberId) {
+  const access = getStaffAdministrativeProfileAccessContext()
+
+  if (!access.ok) {
+    staffNotice = STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE
+    render()
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const staffMember = getUniqueCurrentCenterStaffMember(staffMemberId, access.centerId)
+
+  if (!staffMember) {
+    staffNotice = 'Không tìm thấy duy nhất một hồ sơ Nhân viên trong cơ sở hiện tại.'
+    render()
+    return
+  }
+
+  const profileLookup = resolveStaffAdministrativeProfileForStaff(
+    staffAdministrativeProfiles,
+    staffMember.id,
+    access.centerId,
+  )
+  staffAdministrativeProfileWindowStates.forEach((state, windowId) => {
+    if (
+      state.centerId !== access.centerId ||
+      state.staffMemberId !== staffMember.id
+    ) {
+      setStaffAdministrativeProfileWindowState(windowId, {
+        ...state,
+        revealedFields: new Set(),
+      })
+    }
+  })
+
+  const existingWindow = openWindows.find(
+    (windowItem) =>
+      windowItem.type === 'staff-administrative-profile' &&
+      windowItem.centerId === access.centerId &&
+      windowItem.staffMemberId === staffMember.id,
+  )
+
+  staffFormState = null
+  staffNotice = ''
+  isStartMenuOpen = false
+  isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
+
+  if (existingWindow) {
+    focusWindow(existingWindow.id)
+    render()
+    return
+  }
+
+  const offset = (openWindows.length % 5) * 22
+  const nextWindowId = `window-${nextWindowNumber}`
+  openWindows.push({
+    id: nextWindowId,
+    type: 'staff-administrative-profile',
+    centerId: access.centerId,
+    ['staffMemberId']: staffMember.id,
+    x: 42 + offset,
+    y: 30 + offset,
+    width: 1120,
+    height: 700,
+    zIndex: ++topZIndex,
+    minimized: false,
+    maximized: true,
+    restoreBounds: {
+      x: 42 + offset,
+      y: 30 + offset,
+      width: 1120,
+      height: 700,
+    },
+  })
+  nextWindowNumber += 1
+  setStaffAdministrativeProfileWindowState(nextWindowId, {
+    mode: 'view',
+    centerId: access.centerId,
+    ['staffMemberId']: staffMember.id,
+    profileId: profileLookup.profile?.id || '',
+    values: null,
+    errors: {},
+    message: '',
+    isSaving: false,
+    revealedFields: new Set(),
+  })
+  focusWindow(nextWindowId)
+  render()
+}
+
+function startStaffAdministrativeProfileCreate(windowId) {
+  const windowItem = openWindows.find((item) => item.id === windowId)
+  const access = getStaffAdministrativeProfileAccessContext()
+
+  if (!windowItem || !access.ok || windowItem.centerId !== access.centerId) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Dữ liệu hồ sơ hành chính cần được kiểm tra. Hệ thống đã khóa chỉnh sửa.',
+    )
+    return
+  }
+  const staffMember = getUniqueCurrentCenterStaffMember(windowItem.staffMemberId, access.centerId)
+  const lookup = resolveStaffAdministrativeProfileForStaff(
+    staffAdministrativeProfiles,
+    windowItem.staffMemberId,
+    access.centerId,
+  )
+
+  if (!staffMember || staffMember.archivedAt || lookup.status !== 'not-created') {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Không thể tạo hồ sơ từ trạng thái hiện tại. Vui lòng tải lại và kiểm tra dữ liệu.',
+    )
+    return
+  }
+
+  setStaffAdministrativeProfileWindowState(windowId, {
+    mode: 'create',
+    centerId: access.centerId,
+    ['staffMemberId']: staffMember.id,
+    profileId: '',
+    expectedRevision: null,
+    expectedUpdatedAt: '',
+    values: createStaffAdministrativeProfileDraft(staffMember),
+    errors: {},
+    message: '',
+    isSaving: false,
+    revealedFields: new Set(),
+  })
+  render()
+}
+
+function startStaffAdministrativeProfileEdit(windowId) {
+  const windowItem = openWindows.find((item) => item.id === windowId)
+  const access = getStaffAdministrativeProfileAccessContext()
+
+  if (!windowItem || !access.ok || windowItem.centerId !== access.centerId) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Dữ liệu hồ sơ hành chính cần được kiểm tra. Hệ thống đã khóa chỉnh sửa.',
+    )
+    return
+  }
+  const staffMember = getUniqueCurrentCenterStaffMember(windowItem.staffMemberId, access.centerId)
+  const lookup = resolveStaffAdministrativeProfileForStaff(
+    staffAdministrativeProfiles,
+    windowItem.staffMemberId,
+    access.centerId,
+  )
+
+  if (!staffMember || staffMember.archivedAt || !lookup.profile) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Không thể sửa hồ sơ từ trạng thái hiện tại. Vui lòng tải lại và kiểm tra dữ liệu.',
+    )
+    return
+  }
+
+  setStaffAdministrativeProfileWindowState(windowId, {
+    mode: 'edit',
+    centerId: access.centerId,
+    ['staffMemberId']: staffMember.id,
+    profileId: lookup.profile.id,
+    expectedRevision: lookup.profile.revision,
+    expectedUpdatedAt: lookup.profile.updatedAt,
+    values: createEditStaffAdministrativeProfileDraft(lookup.profile),
+    errors: {},
+    message: '',
+    isSaving: false,
+    revealedFields: new Set(),
+  })
+  render()
+}
+
+function cancelStaffAdministrativeProfileEdit(windowId) {
+  const state = getStaffAdministrativeProfileWindowState(windowId)
+  if (!state || state.isSaving) return
+
+  setStaffAdministrativeProfileWindowState(windowId, {
+    mode: 'view',
+    centerId: state.centerId,
+    ['staffMemberId']: state.staffMemberId,
+    profileId: state.profileId || '',
+    values: null,
+    errors: {},
+    message: '',
+    isSaving: false,
+    revealedFields: new Set(),
+  })
+  render()
+}
+
+function setStaffAdministrativeProfileWindowMessage(windowId, message) {
+  const state = getStaffAdministrativeProfileWindowState(windowId)
+  if (!state) return
+  setStaffAdministrativeProfileWindowState(windowId, {
+    ...state,
+    isSaving: false,
+    message,
+  })
+  isStaffAdministrativeProfileSaving = false
+  render()
+}
+
+function denyStaffAdministrativeProfileWindow(windowId) {
+  const windowItem = openWindows.find((item) => item.id === windowId)
+  staffAdministrativeProfileWindowStates.delete(windowId)
+  if (windowItem) {
+    setStaffAdministrativeProfileWindowState(windowId, {
+      mode: 'denied',
+      centerId: windowItem.centerId,
+      ['staffMemberId']: windowItem.staffMemberId,
+      profileId: '',
+      values: null,
+      errors: {},
+      message: '',
+      isSaving: false,
+      revealedFields: new Set(),
+    })
+  }
+  isStaffAdministrativeProfileSaving = false
+  staffNotice = STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE
+  render()
+}
+
+function updateStaffAdministrativeProfileDraftField(windowId, fieldPath, value) {
+  const state = getStaffAdministrativeProfileWindowState(windowId)
+  if (!state || !['create', 'edit'].includes(state.mode) || state.isSaving) return
+
+  setStaffAdministrativeProfileWindowState(windowId, {
+    ...state,
+    values: setStaffAdministrativeProfileDraftValue(state.values, fieldPath, value),
+  })
+}
+
+function collectStaffAdministrativeProfileDraftValues(formElement, state) {
+  let values = state.values
+  formElement.querySelectorAll('[data-staff-administrative-field]').forEach((control) => {
+    values = setStaffAdministrativeProfileDraftValue(
+      values,
+      control.dataset.staffAdministrativeField,
+      control.value,
+    )
+  })
+  return values
+}
+
+async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
+  const state = getStaffAdministrativeProfileWindowState(windowId)
+
+  if (
+    !state ||
+    !['create', 'edit'].includes(state.mode) ||
+    state.isSaving ||
+    isStaffAdministrativeProfileSaving
+  ) {
+    return
+  }
+
+  const values = collectStaffAdministrativeProfileDraftValues(formElement, state)
+  const errors = validateStaffAdministrativeProfile(values)
+  if (Object.keys(errors).length) {
+    setStaffAdministrativeProfileWindowState(windowId, {
+      ...state,
+      values,
+      errors,
+      message: 'Vui lòng kiểm tra các trường chưa hợp lệ.',
+      isSaving: false,
+    })
+    render()
+    focusFirstStaffAdministrativeProfileError(windowId)
+    return
+  }
+
+  isStaffAdministrativeProfileSaving = true
+  setStaffAdministrativeProfileWindowState(windowId, {
+    ...state,
+    values,
+    errors: {},
+    message: '',
+    isSaving: true,
+  })
+  render()
+
+  const access = await getLatestStaffAdministrativeProfileAccessContext(state.centerId)
+  const latestWindow = openWindows.find((item) => item.id === windowId)
+  const latestState = getStaffAdministrativeProfileWindowState(windowId)
+
+  if (!access.ok) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  if (
+    !latestWindow ||
+    !latestState ||
+    latestState.mode !== state.mode ||
+    latestWindow.centerId !== state.centerId ||
+    getCurrentStorageCenterId() !== state.centerId
+  ) {
+    staffAdministrativeProfileWindowStates.delete(windowId)
+    isStaffAdministrativeProfileSaving = false
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Dữ liệu hồ sơ hành chính cần được kiểm tra. Không ghi đè storage hiện tại.',
+    )
+    return
+  }
+  const staffMember = getUniqueCurrentCenterStaffMember(state.staffMemberId, state.centerId)
+  const lookup = resolveStaffAdministrativeProfileForStaff(
+    staffAdministrativeProfiles,
+    state.staffMemberId,
+    state.centerId,
+  )
+
+  if (!staffMember || staffMember.archivedAt) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Hồ sơ Nhân viên không còn ở trạng thái cho phép chỉnh sửa.',
+    )
+    return
+  }
+
+  if (state.mode === 'create' && lookup.status !== 'not-created') {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Hồ sơ hành chính đã được tạo ở phiên khác. Không ghi thêm bản trùng.',
+    )
+    return
+  }
+
+  if (
+    state.mode === 'edit' &&
+    (
+      !lookup.profile ||
+      lookup.profile.id !== state.profileId ||
+      lookup.profile.revision !== state.expectedRevision ||
+      lookup.profile.updatedAt !== state.expectedUpdatedAt
+    )
+  ) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Hồ sơ đã thay đổi ở phiên khác. Vui lòng hủy và mở lại trước khi lưu.',
+    )
+    return
+  }
+
+  if (
+    state.mode === 'edit' &&
+    staffAdministrativeProfiles.filter((profile) => profile.id === state.profileId).length !== 1
+  ) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Profile ID không còn duy nhất. Hệ thống đã dừng lưu để bảo vệ dữ liệu.',
+    )
+    return
+  }
+
+  const profileId = state.mode === 'create' ? createStaffAdministrativeProfileId() : state.profileId
+  if (
+    state.mode === 'create' &&
+    staffAdministrativeProfiles.some((profile) => profile.id === profileId)
+  ) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Không thể tạo stable profile ID duy nhất. Vui lòng thử lại.',
+    )
+    return
+  }
+  const savedProfile = buildStaffAdministrativeProfileFromDraft(values, lookup.profile, {
+    centerId: state.centerId,
+    ['staffMemberId']: state.staffMemberId,
+    profileId,
+  })
+  const nextProfiles = state.mode === 'create'
+    ? [savedProfile, ...staffAdministrativeProfiles]
+    : staffAdministrativeProfiles.map((profile) =>
+        profile.id === savedProfile.id ? savedProfile : profile,
+      )
+  const linkedCount = nextProfiles.filter(
+    (profile) =>
+      profile.centerId === state.centerId && profile.staffMemberId === state.staffMemberId,
+  ).length
+
+  if (linkedCount !== 1) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Dữ liệu vi phạm quan hệ một-một. Hệ thống đã dừng lưu để bảo vệ hồ sơ.',
+    )
+    return
+  }
+
+  if (!saveStoredCenterStaffAdministrativeProfiles(nextProfiles)) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Hệ thống đã dừng lưu vì collection hồ sơ cần được kiểm tra.',
+    )
+    return
+  }
+  refreshStaffDataFromStorage()
+  setStaffAdministrativeProfileWindowState(windowId, {
+    mode: 'view',
+    centerId: state.centerId,
+    ['staffMemberId']: state.staffMemberId,
+    profileId: savedProfile.id,
+    values: null,
+    errors: {},
+    message: 'Đã lưu hồ sơ hành chính.',
+    isSaving: false,
+    revealedFields: new Set(),
+  })
+  isStaffAdministrativeProfileSaving = false
+  render()
+}
+
+async function markStaffAdministrativeProfileAsReviewed(windowId) {
+  const state = getStaffAdministrativeProfileWindowState(windowId)
+  if (!state || state.isSaving || isStaffAdministrativeProfileSaving) return
+
+  refreshStaffDataFromStorage()
+  const capturedLookup = resolveStaffAdministrativeProfileForStaff(
+    staffAdministrativeProfiles,
+    state.staffMemberId,
+    state.centerId,
+  )
+  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok || !capturedLookup.profile) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Không thể đánh dấu kiểm tra từ dữ liệu hiện tại.',
+    )
+    return
+  }
+  const capturedProfileId = capturedLookup.profile.id
+  const capturedRevision = capturedLookup.profile.revision
+  const capturedUpdatedAt = capturedLookup.profile.updatedAt
+
+  isStaffAdministrativeProfileSaving = true
+  setStaffAdministrativeProfileWindowState(windowId, { ...state, isSaving: true, message: '' })
+  render()
+
+  const access = await getLatestStaffAdministrativeProfileAccessContext(state.centerId)
+  if (!access.ok) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const latestWindow = openWindows.find((item) => item.id === windowId)
+  const latestState = getStaffAdministrativeProfileWindowState(windowId)
+  if (
+    !latestWindow ||
+    !latestState ||
+    latestWindow.centerId !== state.centerId ||
+    latestState.staffMemberId !== state.staffMemberId ||
+    getCurrentStorageCenterId() !== state.centerId
+  ) {
+    staffAdministrativeProfileWindowStates.delete(windowId)
+    isStaffAdministrativeProfileSaving = false
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Dữ liệu hồ sơ hành chính cần được kiểm tra. Không ghi đè storage hiện tại.',
+    )
+    return
+  }
+  const staffMember = getUniqueCurrentCenterStaffMember(state.staffMemberId, state.centerId)
+  const lookup = resolveStaffAdministrativeProfileForStaff(
+    staffAdministrativeProfiles,
+    state.staffMemberId,
+    state.centerId,
+  )
+
+  if (!staffMember || staffMember.archivedAt || !lookup.profile) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Không thể đánh dấu kiểm tra từ trạng thái hiện tại.',
+    )
+    return
+  }
+  if (
+    lookup.profile.id !== capturedProfileId ||
+    lookup.profile.revision !== capturedRevision ||
+    lookup.profile.updatedAt !== capturedUpdatedAt ||
+    staffAdministrativeProfiles.filter((profile) => profile.id === capturedProfileId).length !== 1
+  ) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Hồ sơ đã thay đổi ở phiên khác. Vui lòng tải lại trước khi đánh dấu kiểm tra.',
+    )
+    return
+  }
+  if (!getStaffAdministrativeCompletionChecklist(lookup.profile).complete) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Checklist chưa đủ để đánh dấu đã kiểm tra.',
+    )
+    return
+  }
+
+  const reviewedProfile = markStaffAdministrativeProfileReviewed(lookup.profile, {
+    reviewedBy: cloudStatus.user?.id || '',
+    reviewedByLabel: cloudStatus.user?.email || access.role,
+  })
+  if (!reviewedProfile) {
+    setStaffAdministrativeProfileWindowMessage(windowId, 'Không thể cập nhật trạng thái kiểm tra.')
+    return
+  }
+
+  const nextProfiles = staffAdministrativeProfiles.map((profile) =>
+    profile.id === reviewedProfile.id ? reviewedProfile : profile,
+  )
+  if (!saveStoredCenterStaffAdministrativeProfiles(nextProfiles)) {
+    setStaffAdministrativeProfileWindowMessage(
+      windowId,
+      'Hệ thống đã dừng lưu vì collection hồ sơ cần được kiểm tra.',
+    )
+    return
+  }
+  refreshStaffDataFromStorage()
+  setStaffAdministrativeProfileWindowState(windowId, {
+    mode: 'view',
+    centerId: state.centerId,
+    ['staffMemberId']: state.staffMemberId,
+    profileId: reviewedProfile.id,
+    values: null,
+    errors: {},
+    message: 'Đã đánh dấu hồ sơ được kiểm tra.',
+    isSaving: false,
+    revealedFields: new Set(),
+  })
+  isStaffAdministrativeProfileSaving = false
+  render()
+}
+
+async function toggleStaffAdministrativeSensitiveField(
+  windowId,
+  fieldPath,
+  button,
+  windowElement,
+) {
+  let state = getStaffAdministrativeProfileWindowState(windowId)
+  const windowItem = openWindows.find(
+    (item) => item.id === windowId && item.type === 'staff-administrative-profile',
+  )
+  const access = getStaffAdministrativeProfileAccessContext()
+
+  if (
+    !windowItem ||
+    !windowElement ||
+    !access.ok ||
+    !state ||
+    state.centerId !== access.centerId ||
+    windowItem.centerId !== access.centerId ||
+    !isStaffAdministrativeSensitiveField(fieldPath)
+  ) {
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+
+  const wasRevealed = state.revealedFields instanceof Set && state.revealedFields.has(fieldPath)
+
+  if (!wasRevealed) {
+    const latestAccess = await getLatestStaffAdministrativeProfileAccessContext(state.centerId)
+    const latestWindow = openWindows.find(
+      (item) => item.id === windowId && item.type === 'staff-administrative-profile',
+    )
+    const latestState = getStaffAdministrativeProfileWindowState(windowId)
+
+    if (
+      !latestAccess.ok ||
+      !latestWindow ||
+      !latestState ||
+      latestAccess.centerId !== latestState.centerId ||
+      latestWindow.centerId !== latestAccess.centerId
+    ) {
+      denyStaffAdministrativeProfileWindow(windowId)
+      return
+    }
+
+    state = latestState
+    windowElement = document.querySelector(
+      `.desktop-window.is-staff-administrative-profile[data-window-id="${CSS.escape(windowId)}"]`,
+    )
+    button = windowElement?.querySelector(
+      `[data-staff-administrative-action="toggle-sensitive"][data-sensitive-field="${CSS.escape(fieldPath)}"]`,
+    )
+    if (!windowElement || !button) return
+  }
+
+  const revealedFields = toggleStaffAdministrativeRevealedField(
+    state.revealedFields,
+    fieldPath,
+  )
+  const revealed = revealedFields.has(fieldPath)
+  const fieldControl = windowElement.querySelector(
+    `[data-staff-administrative-field="${CSS.escape(fieldPath)}"]`,
+  )
+  const displayControl = windowElement.querySelector(
+    `[data-staff-administrative-sensitive-value="${CSS.escape(fieldPath)}"]`,
+  )
+
+  if (displayControl) {
+    refreshStaffDataFromStorage()
+    const lookup = resolveStaffAdministrativeProfileForStaff(
+      staffAdministrativeProfiles,
+      state.staffMemberId,
+      state.centerId,
+    )
+    const profileId = lookup.profile?.id || ''
+
+    if (!lookup.profile || state.profileId !== profileId) {
+      maskStaffAdministrativeSensitiveView(windowId, windowElement, lookup.profile)
+      return
+    }
+
+    const value = getStaffAdministrativeSensitiveValue(lookup.profile, fieldPath)
+    if (!value) {
+      displayControl.textContent = maskStaffAdministrativeValue('')
+      return
+    }
+    displayControl.textContent = revealed ? value : maskStaffAdministrativeValue(value)
+  } else if (fieldControl) {
+    fieldControl.type = revealed ? 'text' : 'password'
+  } else {
+    return
+  }
+
+  setStaffAdministrativeProfileWindowState(windowId, {
+    ...state,
+    revealedFields,
+  })
+  button.textContent = revealed ? 'Ẩn' : 'Hiện'
+  button.setAttribute('aria-pressed', String(revealed))
+}
+
+function maskStaffAdministrativeSensitiveView(windowId, windowElement, profile) {
+  const state = getStaffAdministrativeProfileWindowState(windowId)
+  if (!state || !windowElement) return
+
+  windowElement.querySelectorAll('[data-staff-administrative-sensitive-value]').forEach((control) => {
+    const fieldPath = control.dataset.staffAdministrativeSensitiveValue
+    const value = getStaffAdministrativeSensitiveValue(profile, fieldPath)
+    control.textContent = maskStaffAdministrativeValue(value)
+  })
+  windowElement
+    .querySelectorAll('[data-staff-administrative-action="toggle-sensitive"]')
+    .forEach((control) => {
+      control.textContent = 'Hiện'
+      control.setAttribute('aria-pressed', 'false')
+    })
+  setStaffAdministrativeProfileWindowState(windowId, {
+    ...state,
+    profileId: profile?.id || '',
+    revealedFields: new Set(),
+  })
+}
+
+function navigateStaffAdministrativeProfileSection(button) {
+  const windowElement = button.closest('.desktop-window.is-staff-administrative-profile')
+  const scrollElement = windowElement?.querySelector('.staff-administrative-content-scroll')
+  const section = windowElement?.querySelector(`#${CSS.escape(button.dataset.sectionId || '')}`)
+  if (!scrollElement || !section) return
+
+  scrollElement.scrollTo({
+    top: Math.max(0, section.offsetTop - scrollElement.offsetTop - 12),
+    behavior: 'smooth',
+  })
+}
+
+function focusFirstStaffAdministrativeProfileError(windowId) {
+  const windowElement = document.querySelector(`[data-window-id="${CSS.escape(windowId)}"]`)
+  const error = windowElement?.querySelector('.staff-administrative-field-error')
+  const field = error?.closest('label')?.querySelector('[data-staff-administrative-field]')
+  const scrollElement = windowElement?.querySelector('.staff-administrative-content-scroll')
+  if (!field || !scrollElement) return
+
+  const fieldRect = field.getBoundingClientRect()
+  const scrollRect = scrollElement.getBoundingClientRect()
+  scrollElement.scrollTop += fieldRect.top - scrollRect.top - 72
+  field.focus({ preventScroll: true })
 }
 
 function ensureStaffAccountDirectoryLoading() {
@@ -3050,20 +3853,20 @@ function unlinkTeacherFromStaff(staffId, teacherId) {
 
 function openLinkedStaffFromTeacher(staffId) {
   refreshStaffDataFromStorage()
-  const staffMember = staffMembers.find((item) => item.id === staffId)
+  const matchingStaff = staffMembers.filter((item) => item.id === staffId)
+  const staffMember = getUniqueCurrentCenterStaffMember(staffId)
 
   if (!staffMember) {
-    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+    staffNotice = matchingStaff.length > 1
+      ? 'Có nhiều hồ sơ Nhân viên trùng stable ID. Cần kiểm tra dữ liệu trước khi mở.'
+      : 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+    staffFilters = clearStaffListFilters(staffFilters)
     openModuleWindowFromChildInteraction('nhan-vien')
     return
   }
 
   staffFormState = createEditStaffFormState(staffMember)
-  staffFilters = {
-    ...staffFilters,
-    employmentStatus: 'all',
-    query: staffMember.employeeCode || staffMember.fullName || '',
-  }
+  staffFilters = clearStaffListFilters(staffFilters)
   openModuleWindowFromChildInteraction('nhan-vien')
 }
 
@@ -6399,7 +7202,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -6409,12 +7212,12 @@ function renderModuleWindow(windowItem) {
     >
       <div class="window-titlebar" data-drag-window-id="${windowItem.id}">
         <span class="module-window-hero-slot designer-image-slot" aria-hidden="true"></span>
-        <h2 id="${windowItem.id}-title">${headerTitle}</h2>
+        <h2 id="${windowItem.id}-title">${escapeHtml(headerTitle)}</h2>
         <div class="window-controls">
           ${renderModuleNotificationBell(windowItem)}
-          <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${headerTitle}">-</button>
-          <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${headerTitle}">□</button>
-          <button type="button" data-window-action="close" data-window-id="${windowItem.id}" aria-label="Đóng ${headerTitle}">X</button>
+          <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${escapeAttribute(headerTitle)}">-</button>
+          <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${escapeAttribute(headerTitle)}">□</button>
+          <button type="button" data-window-action="close" data-window-id="${windowItem.id}" aria-label="Đóng ${escapeAttribute(headerTitle)}">X</button>
         </div>
       </div>
       <div class="window-body">
@@ -6464,7 +7267,113 @@ function renderModuleNotificationBell(windowItem) {
   `
 }
 
+function renderCurrentStaffModule() {
+  ensureStaffAccountDirectoryLoading()
+  const administrativeAccess = getStaffAdministrativeProfileAccessContext()
+
+  return renderStaffModule({
+    staffMembers,
+    departments: staffDepartments,
+    teachers,
+    scheduleSessions,
+    sessionReports,
+    filters: staffFilters,
+    formState: staffFormState,
+    isDepartmentPanelOpen: isStaffDepartmentPanelOpen,
+    departmentFormState: staffDepartmentFormState,
+    accountMemberships: staffAccountDirectoryState.memberships,
+    accountDirectoryState: staffAccountDirectoryState,
+    accountLinkState: staffAccountLinkState,
+    lifecycleState: staffLifecycleState,
+    administrativeProfiles: administrativeAccess.ok ? staffAdministrativeProfiles : [],
+    administrativeAccessAllowed: administrativeAccess.ok,
+    administrativeStorageHealthy: getStoredCenterStaffAdministrativeProfilesReadStatus().ok,
+    currentCenterId: getCurrentStorageCenterId(),
+    notice: staffNotice,
+  })
+}
+
 function renderWindowBody(windowItem) {
+  if (windowItem.type === 'staff-administrative-profile') {
+    const access = getStaffAdministrativeProfileAccessContext()
+
+    if (!access.ok || windowItem.centerId !== access.centerId) {
+      staffAdministrativeProfileWindowStates.delete(windowItem.id)
+      return renderStaffAdministrativeProfileWindow({ accessAllowed: false })
+    }
+
+    const staffMember = getUniqueCurrentCenterStaffMember(
+      windowItem.staffMemberId,
+      windowItem.centerId,
+    )
+    const department = staffDepartments.find(
+      (item) => item.id === staffMember?.departmentId,
+    )
+    const storageStatus = getStoredCenterStaffAdministrativeProfilesReadStatus()
+    const lookup = storageStatus.ok
+      ? resolveStaffAdministrativeProfileForStaff(
+          staffAdministrativeProfiles,
+          windowItem.staffMemberId,
+          windowItem.centerId,
+        )
+      : { status: 'malformed', profile: null, candidates: [], issues: [storageStatus.reason] }
+    let state = getStaffAdministrativeProfileWindowState(windowItem.id) || {
+      mode: 'view',
+      centerId: windowItem.centerId,
+      ['staffMemberId']: windowItem.staffMemberId,
+      profileId: lookup.profile?.id || '',
+      values: null,
+      errors: {},
+      message: '',
+      isSaving: false,
+      revealedFields: new Set(),
+    }
+    if (
+      !staffMember ||
+      ['malformed', 'duplicate'].includes(lookup.status) ||
+      (staffMember.archivedAt && ['create', 'edit'].includes(state.mode))
+    ) {
+      state = {
+        mode: 'view',
+        centerId: windowItem.centerId,
+        ['staffMemberId']: windowItem.staffMemberId,
+        profileId: lookup.profile?.id || '',
+        values: null,
+        errors: {},
+        message: '',
+        isSaving: false,
+        revealedFields: new Set(),
+      }
+      setStaffAdministrativeProfileWindowState(windowItem.id, state)
+    }
+    if (
+      state.mode === 'view' &&
+      (
+        state.centerId !== windowItem.centerId ||
+        state.staffMemberId !== windowItem.staffMemberId ||
+        state.profileId !== (lookup.profile?.id || '')
+      )
+    ) {
+      state = {
+        ...state,
+        centerId: windowItem.centerId,
+        ['staffMemberId']: windowItem.staffMemberId,
+        profileId: lookup.profile?.id || '',
+        revealedFields: new Set(),
+      }
+      setStaffAdministrativeProfileWindowState(windowItem.id, state)
+    }
+
+    return renderStaffAdministrativeProfileWindow({
+      windowId: windowItem.id,
+      staffMember,
+      departmentName: department?.name || '',
+      lookup,
+      state,
+      accessAllowed: true,
+    })
+  }
+
   if (windowItem.type === 'student-detail') {
     return renderStudentDetailWithDeleteAction(getStudentById(windowItem.studentId), classSessions)
   }
@@ -6537,23 +7446,7 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'nhan-vien') {
-    ensureStaffAccountDirectoryLoading()
-    return renderStaffModule({
-      staffMembers,
-      departments: staffDepartments,
-      teachers,
-      scheduleSessions,
-      sessionReports,
-      filters: staffFilters,
-      formState: staffFormState,
-      isDepartmentPanelOpen: isStaffDepartmentPanelOpen,
-      departmentFormState: staffDepartmentFormState,
-      accountMemberships: staffAccountDirectoryState.memberships,
-      accountDirectoryState: staffAccountDirectoryState,
-      accountLinkState: staffAccountLinkState,
-      lifecycleState: staffLifecycleState,
-      notice: staffNotice,
-    })
+    return renderCurrentStaffModule()
   }
 
   if (moduleItem.id === 'thoi-khoa-bieu') {
@@ -6765,6 +7658,14 @@ function renderStudentDetailWithDeleteAction(student, classSessions = []) {
 }
 
 function getWindowTitle(windowItem) {
+  if (windowItem.type === 'staff-administrative-profile') {
+    const staffMember = getUniqueCurrentCenterStaffMember(
+      windowItem.staffMemberId,
+      windowItem.centerId,
+    )
+    return getStaffAdministrativeWindowTitle(staffMember)
+  }
+
   if (windowItem.type === 'student-detail') {
     return getStudentDetailWindowTitle(getStudentById(windowItem.studentId))
   }
@@ -6985,7 +7886,7 @@ function renderTaskbar() {
           type="button"
           data-taskbar-window-id="${windowItem.id}"
         >
-          ${title}
+          ${escapeHtml(title)}
         </button>
       `
     })
@@ -7453,7 +8354,7 @@ function renderWindowOverflowMenu(openWindowItems, activeWindowId) {
           type="button"
           data-taskbar-window-id="${windowItem.id}"
         >
-          <span class="window-overflow-title">${title}</span>
+          <span class="window-overflow-title">${escapeHtml(title)}</span>
           <span class="window-overflow-state">
             ${windowItem.minimized ? 'Đã thu nhỏ' : 'Đang mở'}
           </span>
@@ -7538,6 +8439,10 @@ function openModuleWindow(moduleId) {
     isNotificationCenterOpen = false
     render()
     return
+  }
+
+  if (moduleId === 'nhan-vien') {
+    staffFilters = clearStaffListFilters(staffFilters)
   }
 
   const offset = (openWindows.length % 7) * 28
@@ -8909,6 +9814,15 @@ function toggleMaximizeWindow(windowId) {
 }
 
 function closeWindow(windowId) {
+  const closingWindow = openWindows.find((windowItem) => windowItem.id === windowId)
+  if (closingWindow?.type === 'staff-administrative-profile') {
+    const closingState = getStaffAdministrativeProfileWindowState(windowId)
+    staffAdministrativeProfileWindowStates.delete(windowId)
+    if (closingState?.isSaving) {
+      isStaffAdministrativeProfileSaving = false
+    }
+  }
+
   const remainingWindows = openWindows.filter((windowItem) => windowItem.id !== windowId)
   const nextActiveWindow = remainingWindows
     .filter((windowItem) => !windowItem.minimized)
@@ -12281,6 +13195,242 @@ async function initializeSupabaseAuth() {
   }
 }
 
+const staffListFilterNames = ['query', 'departmentId', 'employmentStatus', 'teacherLink', 'accountLink']
+const staffAttendanceFilterNames = ['weekStartDate', 'location', 'person']
+
+function getOpenStaffModuleElement() {
+  return document.querySelector('.desktop-window[data-module-id="nhan-vien"] .staff-module')
+}
+
+function buildDetachedStaffModuleElement() {
+  const template = document.createElement('template')
+  template.innerHTML = renderCurrentStaffModule().trim()
+  return template.content.firstElementChild
+}
+
+function refreshStaffModuleRegion(region) {
+  const currentModule = getOpenStaffModuleElement()
+
+  if (!currentModule) {
+    return false
+  }
+
+  const nextModule = buildDetachedStaffModuleElement()
+
+  if (!nextModule) {
+    return false
+  }
+
+  if (region === 'profile-list') {
+    const currentList = currentModule.querySelector('[aria-labelledby="staff-profile-list-title"]')
+    const nextList = nextModule.querySelector('[aria-labelledby="staff-profile-list-title"]')
+
+    if (!currentList || !nextList) {
+      return false
+    }
+
+    currentList.replaceWith(nextList)
+    bindStaffActionButtons(nextList)
+    return true
+  }
+
+  if (region === 'attendance') {
+    const currentDetails = currentModule.querySelector('.staff-attendance-details')
+    const nextDetails = nextModule.querySelector('.staff-attendance-details')
+
+    if (!currentDetails || !nextDetails) {
+      return false
+    }
+
+    staffAttendanceFilterNames.forEach((filterName) => {
+      const currentControl = currentDetails.querySelector(`[data-staff-filter="${filterName}"]`)
+      const nextControl = nextDetails.querySelector(`[data-staff-filter="${filterName}"]`)
+
+      if (!currentControl || !nextControl) {
+        return
+      }
+
+      if (currentControl.tagName === 'SELECT') {
+        currentControl.innerHTML = nextControl.innerHTML
+      }
+      currentControl.value = nextControl.value
+    })
+
+    const currentSummary = currentDetails.querySelector('.staff-summary')
+    const nextSummary = nextDetails.querySelector('.staff-summary')
+    const currentLayout = currentDetails.querySelector('.staff-layout')
+    const nextLayout = nextDetails.querySelector('.staff-layout')
+
+    if (!currentSummary || !nextSummary || !currentLayout || !nextLayout) {
+      return false
+    }
+
+    currentSummary.replaceWith(nextSummary)
+    currentLayout.replaceWith(nextLayout)
+    return true
+  }
+
+  return false
+}
+
+function syncStaffListFilterControls() {
+  const currentModule = getOpenStaffModuleElement()
+
+  if (!currentModule) {
+    return
+  }
+
+  staffListFilterNames.forEach((filterName) => {
+    const control = currentModule.querySelector(`[data-staff-filter="${filterName}"]`)
+    if (control) {
+      control.value = staffFilters[filterName]
+    }
+  })
+}
+
+function clearStaffListFiltersFromUi() {
+  staffFilters = clearStaffListFilters(staffFilters)
+  syncStaffListFilterControls()
+  refreshStaffModuleRegion('profile-list')
+}
+
+function bindStaffFilterControls(root = document) {
+  root.querySelectorAll('[data-staff-filter]').forEach((control) => {
+    const eventName = control.tagName === 'SELECT' ? 'change' : 'input'
+
+    control.addEventListener(eventName, () => {
+      const filterName = control.dataset.staffFilter
+      staffFilters = {
+        ...staffFilters,
+        [filterName]: control.value,
+      }
+
+      if (staffListFilterNames.includes(filterName)) {
+        refreshStaffModuleRegion('profile-list')
+        return
+      }
+
+      if (staffAttendanceFilterNames.includes(filterName)) {
+        refreshStaffModuleRegion('attendance')
+      }
+    })
+  })
+}
+
+function bindStaffActionButtons(root = document) {
+  root.querySelectorAll('[data-staff-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const action = button.dataset.staffAction
+
+      if (action === 'save') {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (action === 'clear-filters') {
+        clearStaffListFiltersFromUi()
+        return
+      }
+
+      if (action === 'open-create') {
+        openCreateStaffForm()
+        return
+      }
+
+      if (action === 'open-edit') {
+        openEditStaffForm(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'open-administrative-profile') {
+        openStaffAdministrativeProfileWindow(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'close-form') {
+        closeStaffForm()
+        return
+      }
+
+      if (action === 'archive') {
+        handleArchiveStaff(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'restore') {
+        handleRestoreStaff(button.dataset.staffId)
+        return
+      }
+
+      if (action === 'open-linked-teacher') {
+        openLinkedTeacherFromStaff(button.dataset.teacherId)
+        return
+      }
+
+      if (action === 'unlink-teacher') {
+        unlinkTeacherFromStaff(button.dataset.staffId, button.dataset.teacherId)
+        return
+      }
+
+      if (action === 'open-departments') {
+        openStaffDepartmentPanel()
+      }
+    })
+  })
+}
+
+function bindStaffAdministrativeProfileActionDelegates(root = document) {
+  root
+    .querySelectorAll('.desktop-window.is-staff-administrative-profile[data-window-id]')
+    .forEach((windowElement) => {
+      if (boundStaffAdministrativeActionWindows.has(windowElement)) return
+      boundStaffAdministrativeActionWindows.add(windowElement)
+
+      windowElement.addEventListener('click', (event) => {
+        const button = event.target.closest?.('[data-staff-administrative-action]')
+
+        if (!button || !windowElement.contains(button)) return
+        event.preventDefault()
+        event.stopPropagation()
+
+        const action = button.dataset.staffAdministrativeAction
+        const windowId = windowElement.dataset.windowId
+
+        if (!windowId) return
+        if (action === 'start-create') {
+          startStaffAdministrativeProfileCreate(windowId)
+          return
+        }
+        if (action === 'start-edit') {
+          startStaffAdministrativeProfileEdit(windowId)
+          return
+        }
+        if (action === 'cancel-edit') {
+          cancelStaffAdministrativeProfileEdit(windowId)
+          return
+        }
+        if (action === 'mark-reviewed') {
+          void markStaffAdministrativeProfileAsReviewed(windowId)
+          return
+        }
+        if (action === 'toggle-sensitive') {
+          void toggleStaffAdministrativeSensitiveField(
+            windowId,
+            button.dataset.sensitiveField,
+            button,
+            windowElement,
+          )
+          return
+        }
+        if (action === 'navigate') {
+          navigateStaffAdministrativeProfileSection(button)
+        }
+      })
+    })
+}
+
 function bindEvents() {
   bindStartMenuOutsidePointer()
   bindWindowOverflowOutsidePointer()
@@ -13011,17 +14161,7 @@ function bindEvents() {
     render()
   })
 
-  document.querySelectorAll('[data-staff-filter]').forEach((control) => {
-    const eventName = control.tagName === 'SELECT' ? 'change' : 'input'
-
-    control.addEventListener(eventName, () => {
-      staffFilters = {
-        ...staffFilters,
-        [control.dataset.staffFilter]: control.value,
-      }
-      render()
-    })
-  })
+  bindStaffFilterControls()
 
   document.querySelectorAll('[data-staff-form-field]').forEach((control) => {
     const eventName = control.tagName === 'SELECT' ? 'change' : 'input'
@@ -13037,6 +14177,30 @@ function bindEvents() {
     event.preventDefault()
     handleStaffFormSubmit(event.currentTarget)
   })
+
+  document.querySelectorAll('[data-staff-administrative-field]').forEach((control) => {
+    const eventName = control.matches('select, input[type="date"]') ? 'change' : 'input'
+    control.addEventListener(eventName, () => {
+      const windowId = control.closest('[data-window-id]')?.dataset.windowId
+      if (windowId) {
+        updateStaffAdministrativeProfileDraftField(
+          windowId,
+          control.dataset.staffAdministrativeField,
+          control.value,
+        )
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-staff-administrative-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault()
+      const windowId = form.closest('[data-window-id]')?.dataset.windowId
+      if (windowId) void handleStaffAdministrativeProfileSubmit(windowId, form)
+    })
+  })
+
+  bindStaffAdministrativeProfileActionDelegates()
 
   document.querySelectorAll('[data-staff-lifecycle-field]').forEach((control) => {
     const eventName = control.matches('select, input[type="date"], input[type="radio"], input[type="checkbox"]')
@@ -13083,57 +14247,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelectorAll('[data-staff-action]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      const action = button.dataset.staffAction
-
-      if (action === 'save') {
-        return
-      }
-
-      event.preventDefault()
-      event.stopPropagation()
-
-      if (action === 'open-create') {
-        openCreateStaffForm()
-        return
-      }
-
-      if (action === 'open-edit') {
-        openEditStaffForm(button.dataset.staffId)
-        return
-      }
-
-      if (action === 'close-form') {
-        closeStaffForm()
-        return
-      }
-
-      if (action === 'archive') {
-        handleArchiveStaff(button.dataset.staffId)
-        return
-      }
-
-      if (action === 'restore') {
-        handleRestoreStaff(button.dataset.staffId)
-        return
-      }
-
-      if (action === 'open-linked-teacher') {
-        openLinkedTeacherFromStaff(button.dataset.teacherId)
-        return
-      }
-
-      if (action === 'unlink-teacher') {
-        unlinkTeacherFromStaff(button.dataset.staffId, button.dataset.teacherId)
-        return
-      }
-
-      if (action === 'open-departments') {
-        openStaffDepartmentPanel()
-      }
-    })
-  })
+  bindStaffActionButtons()
 
   document.querySelector('[data-staff-account-query]')?.addEventListener('input', (event) => {
     updateStaffAccountLinkSearch(event.currentTarget.value)

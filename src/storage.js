@@ -1,7 +1,13 @@
-﻿const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
+﻿import {
+  getStaffAdministrativeProfileCollectionIssues,
+  normalizeStaffAdministrativeProfiles,
+} from './staff-administrative-profile-module.js'
+
+const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
 const DEFAULT_STORAGE_CENTER_ID = 'dreamhome'
 let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
+const staffAdministrativeProfileReadStatuses = new Map()
 
 export function normalizeStorageCenterId(centerId) {
   const normalized = String(centerId ?? '')
@@ -44,6 +50,9 @@ const DELETED_NOTIFICATION_IDS_KEY = createCenterScopedStorageKey('notifications
 const TUITION_KEY = createCenterScopedStorageKey('tuition')
 const TEACHERS_KEY = createCenterScopedStorageKey('teachers')
 const CENTER_STAFF_MEMBERS_KEY = createCenterScopedStorageKey('centerStaffMembers')
+const CENTER_STAFF_ADMINISTRATIVE_PROFILES_KEY = createCenterScopedStorageKey(
+  'centerStaffAdministrativeProfiles',
+)
 const CENTER_DEPARTMENTS_KEY = createCenterScopedStorageKey('centerDepartments')
 const SCHEDULE_KEY = createCenterScopedStorageKey('schedule')
 const SESSION_REPORTS_KEY = createCenterScopedStorageKey('sessionReports')
@@ -499,6 +508,114 @@ export function saveStoredCenterStaffMembers(staffMembers) {
     CENTER_STAFF_MEMBERS_KEY,
     JSON.stringify(normalizeCenterStaffMembers(staffMembers)),
   )
+}
+
+export function getStoredCenterStaffAdministrativeProfiles(defaultProfiles = []) {
+  const centerId = getCurrentStorageCenterId()
+  let storedValue = null
+
+  try {
+    storedValue = localStorage.getItem(CENTER_STAFF_ADMINISTRATIVE_PROFILES_KEY)
+  } catch {
+    staffAdministrativeProfileReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'storage-read-failed',
+    })
+    return normalizeStaffAdministrativeProfiles(defaultProfiles, {
+      currentCenterId: centerId,
+    })
+  }
+
+  if (storedValue === null) {
+    staffAdministrativeProfileReadStatuses.set(centerId, { ok: true, reason: 'not-created' })
+    return normalizeStaffAdministrativeProfiles(defaultProfiles, {
+      currentCenterId: centerId,
+    })
+  }
+
+  try {
+    const storedProfiles = JSON.parse(storedValue)
+
+    if (Array.isArray(storedProfiles)) {
+      const hasMalformedItem = storedProfiles.some(
+        (profile) => !profile || typeof profile !== 'object' || Array.isArray(profile),
+      )
+      const normalizedProfiles = normalizeStaffAdministrativeProfiles(storedProfiles, {
+        currentCenterId: centerId,
+      })
+      const collectionIssues = getStaffAdministrativeProfileCollectionIssues(
+        normalizedProfiles,
+        centerId,
+      )
+      staffAdministrativeProfileReadStatuses.set(centerId, {
+        ok: !hasMalformedItem && !collectionIssues.length,
+        reason: hasMalformedItem
+          ? 'malformed-collection-item'
+          : collectionIssues.length
+            ? 'malformed-profile-record'
+            : '',
+      })
+      return normalizedProfiles
+    }
+    staffAdministrativeProfileReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-collection',
+    })
+  } catch {
+    // Sensitive metadata is never deleted or rewritten just because a read failed.
+    staffAdministrativeProfileReadStatuses.set(centerId, {
+      ok: false,
+      reason: 'malformed-json',
+    })
+  }
+
+  return normalizeStaffAdministrativeProfiles(defaultProfiles, {
+    currentCenterId: centerId,
+  })
+}
+
+export function getStoredCenterStaffAdministrativeProfilesReadStatus() {
+  return staffAdministrativeProfileReadStatuses.get(getCurrentStorageCenterId()) || {
+    ok: true,
+    reason: 'not-read',
+  }
+}
+
+export function saveStoredCenterStaffAdministrativeProfiles(profiles) {
+  const centerId = getCurrentStorageCenterId()
+  const hasMalformedItem =
+    !Array.isArray(profiles) ||
+    profiles.some((profile) => !profile || typeof profile !== 'object' || Array.isArray(profile))
+
+  if (hasMalformedItem) {
+    return false
+  }
+
+  const normalizedProfiles = normalizeStaffAdministrativeProfiles(profiles, {
+    currentCenterId: centerId,
+  })
+  const collectionIssues = getStaffAdministrativeProfileCollectionIssues(
+    normalizedProfiles,
+    centerId,
+  )
+
+  if (collectionIssues.length) {
+    return false
+  }
+
+  try {
+    localStorage.setItem(
+      CENTER_STAFF_ADMINISTRATIVE_PROFILES_KEY,
+      JSON.stringify(normalizedProfiles),
+    )
+  } catch {
+    return false
+  }
+  staffAdministrativeProfileReadStatuses.set(centerId, {
+    ok: true,
+    reason: '',
+  })
+  return true
 }
 
 export function getStoredCenterDepartments(defaultDepartments = []) {
@@ -1447,7 +1564,7 @@ function normalizeScheduleSessions(sessions) {
         scheduleType: VALID_SCHEDULE_TYPES.includes(session.scheduleType)
           ? session.scheduleType
           : 'recurring',
-        title: String(session.title || 'Buá»•i há»c máº«u'),
+        title: String(session.title || 'Buổi học mẫu'),
         dayOfWeek: VALID_SCHEDULE_DAYS.includes(session.dayOfWeek)
           ? session.dayOfWeek
           : 'monday',
