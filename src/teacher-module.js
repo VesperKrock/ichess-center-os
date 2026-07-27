@@ -1408,7 +1408,7 @@ function renderTeacherStaffLinkProfile(teacher, staffLink) {
   if (staffLink.staffMember) {
     const staffMember = staffLink.staffMember
     const label = [staffMember.employeeCode, staffMember.fullName].filter(Boolean).join(' · ')
-    const isArchived = staffMember.employmentStatus === 'archived'
+    const isArchived = Boolean(staffMember.archivedAt) || staffMember.employmentStatus === 'archived'
 
     return `
       <section class="teacher-profile-section teacher-staff-link-card">
@@ -1596,7 +1596,12 @@ function renderTeacherStaffError(error) {
 function getAvailableStaffForTeacherLink(staffMembers, query = '') {
   const normalizedQuery = normalizeText(query)
   return (staffMembers || [])
-    .filter((staffMember) => staffMember && staffMember.employmentStatus !== 'archived' && !staffMember.teacherId)
+    .filter((staffMember) =>
+      staffMember &&
+      !staffMember.archivedAt &&
+      staffMember.employmentStatus !== 'archived' &&
+      !staffMember.teacherId,
+    )
     .filter((staffMember) => {
       if (!normalizedQuery) {
         return true

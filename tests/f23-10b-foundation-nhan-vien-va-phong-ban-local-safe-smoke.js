@@ -121,7 +121,7 @@ assert.notEqual(editedStaff.updatedAt, editedStaff.createdAt)
 
 const archivedStaff = staffModule.archiveStaffMember(editedStaff)
 assert.equal(archivedStaff.id, editedStaff.id)
-assert.equal(archivedStaff.employmentStatus, 'archived')
+assert.equal(archivedStaff.employmentStatus, 'active')
 assert(archivedStaff.archivedAt)
 const restoredStaff = staffModule.restoreStaffMember(archivedStaff)
 assert.equal(restoredStaff.id, editedStaff.id)

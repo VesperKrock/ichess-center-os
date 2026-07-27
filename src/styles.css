@@ -4265,6 +4265,7 @@ h3 {
   width: min(920px, 100%);
   max-height: 100%;
   overflow: auto;
+  overscroll-behavior: contain;
   gap: 12px;
   border: 1px solid rgba(160, 184, 214, 0.2);
   border-radius: 8px;
@@ -4418,6 +4419,241 @@ h3 {
 
 .staff-account-card.is-warning {
   border-color: rgba(250, 204, 21, 0.34);
+}
+
+.staff-lifecycle-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.staff-lifecycle-card.is-warning {
+  border-color: rgba(250, 204, 21, 0.34);
+}
+
+.staff-lifecycle-heading,
+.staff-lifecycle-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.staff-lifecycle-heading h5,
+.staff-termination-checklist h5 {
+  margin: 0;
+  color: #f4f7fb;
+  font-size: 0.88rem;
+}
+
+.staff-lifecycle-statuses,
+.staff-lifecycle-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.staff-lifecycle-statuses div,
+.staff-lifecycle-preview div {
+  min-width: 0;
+  border: 1px solid rgba(160, 184, 214, 0.12);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.staff-lifecycle-statuses dt,
+.staff-lifecycle-preview dt {
+  color: #9fb1c7;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.staff-lifecycle-statuses dd,
+.staff-lifecycle-preview dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: #edf3fa;
+  font-size: 0.82rem;
+}
+
+.staff-lifecycle-warning {
+  margin: 0;
+  color: #fde9a9;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.staff-lifecycle-actions {
+  justify-content: flex-end;
+}
+
+.staff-lifecycle-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #edf3fa;
+  background: rgba(31, 93, 153, 0.38);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.staff-lifecycle-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.staff-lifecycle-history {
+  border-top: 1px solid rgba(160, 184, 214, 0.14);
+  padding-top: 8px;
+}
+
+.staff-lifecycle-history summary {
+  color: #cfe0f3;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.staff-lifecycle-history ol {
+  display: grid;
+  gap: 8px;
+  margin: 9px 0 0;
+  padding-left: 22px;
+}
+
+.staff-lifecycle-history li {
+  color: #dbe6f2;
+  font-size: 0.78rem;
+}
+
+.staff-lifecycle-history li span,
+.staff-lifecycle-history li p,
+.staff-lifecycle-history > p {
+  display: block;
+  margin: 3px 0 0;
+  color: #9fb1c7;
+  line-height: 1.4;
+}
+
+.staff-lifecycle-modal {
+  position: fixed;
+  z-index: 292;
+  inset: 22px 22px calc(var(--app-taskbar-safe-height) + 18px) 22px;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(3, 7, 12, 0.76);
+}
+
+.staff-lifecycle-window {
+  display: grid;
+  width: min(680px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  gap: 12px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  padding: 14px;
+  background: #0b121a;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.48);
+}
+
+.staff-lifecycle-window > label {
+  display: grid;
+  gap: 5px;
+}
+
+.staff-lifecycle-window > label > span {
+  color: #9fb1c7;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
+.staff-lifecycle-window input,
+.staff-lifecycle-window select,
+.staff-lifecycle-window textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #101923;
+  font: inherit;
+}
+
+.staff-lifecycle-window select {
+  color-scheme: dark;
+}
+
+.staff-lifecycle-window textarea {
+  resize: vertical;
+}
+
+.staff-lifecycle-window input:focus,
+.staff-lifecycle-window select:focus,
+.staff-lifecycle-window textarea:focus {
+  border-color: rgba(118, 164, 231, 0.72);
+  outline: none;
+}
+
+.staff-termination-checklist {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgba(160, 184, 214, 0.14);
+  padding-top: 10px;
+}
+
+.staff-termination-checklist p {
+  margin: 0;
+  color: #b7c5d5;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.staff-lifecycle-window .staff-lifecycle-choice {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  color: #dbe6f2;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.staff-lifecycle-window .staff-lifecycle-choice input {
+  width: 16px;
+  min-height: 16px;
+  margin: 2px 0 0;
+}
+
+.staff-lifecycle-window .staff-lifecycle-choice label {
+  cursor: pointer;
+}
+
+.staff-lifecycle-window .staff-lifecycle-choice input:disabled + label {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.staff-lifecycle-window .staff-lifecycle-choice input:focus-visible {
+  outline: 2px solid rgba(118, 164, 231, 0.9);
+  outline-offset: 2px;
+}
+
+.staff-lifecycle-choice.is-confirmation {
+  margin-top: 4px;
+  color: #fde9a9;
 }
 
 .staff-account-card-heading {
@@ -4593,6 +4829,8 @@ h3 {
 
 @media (max-width: 700px) {
   .staff-account-meta,
+  .staff-lifecycle-statuses,
+  .staff-lifecycle-preview,
   .staff-form-grid {
     grid-template-columns: 1fr;
   }

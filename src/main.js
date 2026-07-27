@@ -297,8 +297,10 @@ import {
   renderReportModule,
 } from './report-module.js'
 import {
+  STAFF_EMPLOYMENT_STATUSES,
   archiveDepartment,
   archiveStaffMember,
+  buildStaffEmploymentTransition,
   buildDepartmentFromForm,
   buildStaffMemberFromForm,
   createEditDepartmentFormState,
@@ -309,7 +311,10 @@ import {
   findStaffMemberByMembershipId,
   findStaffMemberByTeacherId,
   getAvailableStaffAccountMemberships,
+  getAvailableStaffEmploymentTransitions,
+  getStaffEmploymentStatus,
   isAccountMembershipActive,
+  isStaffMemberArchived,
   initialStaffFilters,
   linkStaffMemberToAccount,
   renderStaffModule,
@@ -488,6 +493,8 @@ const preservedScrollTargets = [
   ['.teacher-profile-grid', 'teacher-profile'],
   ['.teacher-profile-pane', 'teacher-profile-pane'],
   ['.teacher-update-table-wrap', 'teacher-update-table'],
+  ['.staff-form', 'staff-form'],
+  ['.staff-lifecycle-window', 'staff-lifecycle-window'],
   ['.schedule-week-scroll', 'schedule-week'],
   ['.tuition-table-wrap', 'tuition-table'],
   ['.tuition-advisory-table-wrap', 'tuition-advisory'],
@@ -565,6 +572,8 @@ let staffAccountDirectoryState = createStaffAccountDirectoryState()
 let staffAccountLinkState = null
 let isStaffAccountLinkSaving = false
 let staffAccountDirectoryRunId = 0
+let staffLifecycleState = null
+let isStaffLifecycleSaving = false
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
@@ -1141,6 +1150,8 @@ function resetTransientStateForCenterSwitch() {
   staffAccountDirectoryState = createStaffAccountDirectoryState()
   staffAccountLinkState = null
   isStaffAccountLinkSaving = false
+  staffLifecycleState = null
+  isStaffLifecycleSaving = false
   teacherStaffLinkState = null
   isTeacherStaffLinkSaving = false
   scheduleFormState = null
@@ -1412,7 +1423,7 @@ async function openStaffAccountLinkModal(staffId) {
     return
   }
 
-  if (staffMember.employmentStatus === 'archived') {
+  if (isStaffMemberArchived(staffMember)) {
     staffNotice = 'Hồ sơ đã lưu trữ không nhận liên kết tài khoản mới.'
     render()
     return
@@ -1616,7 +1627,7 @@ async function handleConfirmStaffAccountLink() {
     return
   }
 
-  if (staffMember.employmentStatus === 'archived') {
+  if (isStaffMemberArchived(staffMember)) {
     finishStaffAccountLinkError('Hồ sơ đã được lưu trữ nên không thể nhận liên kết tài khoản mới.')
     return
   }
@@ -1918,10 +1929,17 @@ async function openStaffAccountManagement(staffId) {
   const directoryResult = await listCenterAccountMemberships({ centerId: context.centerId })
   const latestContext = getStaffAccountCenterContext()
   refreshStaffDataFromStorage()
-  const staffMember = staffMembers.find((item) => item.id === staffId)
+  const staffMatches = staffMembers.filter((item) => item.id === staffId)
+  const staffMember = staffMatches.length === 1 ? staffMatches[0] : null
 
   if (!directoryResult.ok || !latestContext.ok || latestContext.centerId !== context.centerId) {
     staffNotice = directoryResult.error || 'Cơ sở đã thay đổi khi mở quản lý tài khoản.'
+    render()
+    return
+  }
+
+  if (!staffMember || staffMatches.length !== 1) {
+    staffNotice = 'Không tìm thấy duy nhất một hồ sơ nhân viên mới nhất.'
     render()
     return
   }
@@ -2067,6 +2085,10 @@ function handleStaffFormSubmit(formElement) {
     return
   }
 
+  if (existingStaffMember) {
+    values.employmentStatus = getStaffEmploymentStatus(existingStaffMember)
+  }
+
   const errors = validateStaffForm(values, {
     staffMembers,
     departments: staffDepartments,
@@ -2109,22 +2131,335 @@ function focusFirstStaffFormError() {
   }
 }
 
+function getStaffLifecycleHistorySignature(staffMember) {
+  return JSON.stringify(
+    Array.isArray(staffMember?.employmentLifecycleEvents)
+      ? staffMember.employmentLifecycleEvents
+      : [],
+  )
+}
+
+function openStaffLifecycleModal(staffId, mode = 'status') {
+  if (isStaffLifecycleSaving) {
+    return
+  }
+
+  refreshStaffDataFromStorage()
+  const matches = staffMembers.filter((item) => item.id === staffId)
+  const staffMember = matches.length === 1 ? matches[0] : null
+  const currentCenterId = getStaffCurrentCenterId()
+
+  if (!staffMember || matches.length !== 1) {
+    staffNotice = 'Không tìm thấy duy nhất một hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+  if (staffMember.centerId && staffMember.centerId !== currentCenterId) {
+    staffNotice = 'Hồ sơ nhân viên thuộc cơ sở khác. Không thể cập nhật trạng thái.'
+    render()
+    return
+  }
+  if (isStaffMemberArchived(staffMember)) {
+    staffNotice = 'Hồ sơ đang được lưu trữ. Vui lòng khôi phục trước khi cập nhật trạng thái làm việc.'
+    render()
+    return
+  }
+
+  const currentStatus = getStaffEmploymentStatus(staffMember)
+  if (mode === 'termination' && currentStatus === 'terminated') {
+    staffNotice = 'Nhân viên đã ở trạng thái Đã nghỉ việc.'
+    render()
+    return
+  }
+  const availableTransitions = getAvailableStaffEmploymentTransitions(staffMember)
+  const toStatus = mode === 'termination' ? 'terminated' : availableTransitions[0] || currentStatus
+
+  staffLifecycleState = {
+    mode,
+    staffId: staffMember.id,
+    centerId: currentCenterId,
+    expectedStatus: currentStatus,
+    expectedArchivedAt: String(staffMember.archivedAt || ''),
+    expectedHistorySignature: getStaffLifecycleHistorySignature(staffMember),
+    values: {
+      toStatus,
+      effectiveDate: '',
+      note: '',
+      followUp: 'none',
+      confirmed: false,
+    },
+    errors: {},
+    message: '',
+    isSaving: false,
+  }
+  staffNotice = ''
+  render()
+  focusElementWithoutScrolling(
+    document.querySelector(
+      mode === 'termination'
+        ? '[data-staff-lifecycle-field="effectiveDate"]'
+        : '[data-staff-lifecycle-field="toStatus"]',
+    ),
+  )
+}
+
+function closeStaffLifecycleModal() {
+  if (isStaffLifecycleSaving) {
+    return
+  }
+
+  staffLifecycleState = null
+  render()
+}
+
+function updateStaffLifecycleField(fieldName, value) {
+  if (!staffLifecycleState) {
+    return
+  }
+
+  staffLifecycleState = {
+    ...staffLifecycleState,
+    values: {
+      ...staffLifecycleState.values,
+      [fieldName]: value,
+    },
+    errors: {
+      ...staffLifecycleState.errors,
+      [fieldName]: undefined,
+      ...(fieldName === 'toStatus' ? { status: undefined } : {}),
+    },
+    message: '',
+  }
+}
+
+function syncStaffLifecycleDraftDom(fieldName) {
+  if (!staffLifecycleState) {
+    return
+  }
+
+  const nextStatus = staffLifecycleState.mode === 'termination'
+    ? 'terminated'
+    : String(staffLifecycleState.values?.toStatus || '')
+  const effectiveDate = formatStaffLifecyclePreviewDate(staffLifecycleState.values?.effectiveDate)
+  const previewValues = {
+    'new-status': STAFF_EMPLOYMENT_STATUSES.find((status) => status.value === nextStatus)?.label || 'Không xác định',
+    'effective-date': effectiveDate,
+    'end-date': nextStatus === 'terminated' ? effectiveDate : 'Đến nay',
+  }
+
+  Object.entries(previewValues).forEach(([previewName, previewValue]) => {
+    const element = document.querySelector(`[data-staff-lifecycle-preview="${previewName}"]`)
+    if (element) {
+      element.textContent = previewValue
+    }
+  })
+
+  const errorFieldName = fieldName === 'toStatus' ? 'status' : fieldName
+  document.querySelector(`[data-staff-lifecycle-error-for="${errorFieldName}"]`)?.remove()
+  document.querySelector('[data-staff-lifecycle-message]')?.remove()
+}
+
+function formatStaffLifecyclePreviewDate(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : 'Chưa chọn'
+}
+
+function collectStaffLifecycleValues(formElement) {
+  const values = { ...(staffLifecycleState?.values || {}) }
+
+  formElement.querySelectorAll('[data-staff-lifecycle-field]').forEach((control) => {
+    const fieldName = control.dataset.staffLifecycleField
+    if (control.type === 'radio') {
+      if (control.checked) {
+        values[fieldName] = control.value
+      }
+      return
+    }
+    values[fieldName] = control.type === 'checkbox' ? control.checked : control.value
+  })
+
+  return values
+}
+
+function handleStaffLifecycleSubmit(formElement) {
+  if (!staffLifecycleState || isStaffLifecycleSaving) {
+    return
+  }
+
+  const values = collectStaffLifecycleValues(formElement)
+  if (staffLifecycleState.mode === 'termination') {
+    values.toStatus = 'terminated'
+  }
+  if (staffLifecycleState.mode === 'termination' && !values.confirmed) {
+    staffLifecycleState = {
+      ...staffLifecycleState,
+      values,
+      errors: { ...staffLifecycleState.errors, confirmed: 'Vui lòng xác nhận phạm vi xử lý nghỉ việc.' },
+      message: 'Chưa thể lưu khi chưa có xác nhận rõ ràng.',
+    }
+    render()
+    focusFirstStaffLifecycleError()
+    return
+  }
+
+  const expectedState = staffLifecycleState
+  const currentCenterId = getStaffCurrentCenterId()
+  if (expectedState.centerId !== currentCenterId) {
+    staffLifecycleState = {
+      ...staffLifecycleState,
+      values,
+      message: 'Cơ sở đã thay đổi. Không có dữ liệu nào được lưu.',
+    }
+    render()
+    focusFirstStaffLifecycleError()
+    return
+  }
+
+  isStaffLifecycleSaving = true
+  staffLifecycleState = { ...staffLifecycleState, values, isSaving: true, message: '' }
+  render()
+
+  refreshStaffDataFromStorage()
+  const matches = staffMembers.filter((item) => item.id === expectedState.staffId)
+  const latestStaffMember = matches.length === 1 ? matches[0] : null
+
+  if (!latestStaffMember || matches.length !== 1) {
+    finishStaffLifecycleError('Hồ sơ nhân viên đã thay đổi hoặc không còn duy nhất. Vui lòng mở lại.')
+    return
+  }
+  if (latestStaffMember.centerId && latestStaffMember.centerId !== expectedState.centerId) {
+    finishStaffLifecycleError('Hồ sơ nhân viên thuộc cơ sở khác. Không thể lưu chéo cơ sở.')
+    return
+  }
+  if (isStaffMemberArchived(latestStaffMember)) {
+    finishStaffLifecycleError('Hồ sơ đã được lưu trữ trong lúc modal đang mở. Không có dữ liệu nào được lưu.')
+    return
+  }
+  if (
+    getStaffEmploymentStatus(latestStaffMember) !== expectedState.expectedStatus ||
+    String(latestStaffMember.archivedAt || '') !== expectedState.expectedArchivedAt ||
+    getStaffLifecycleHistorySignature(latestStaffMember) !== expectedState.expectedHistorySignature
+  ) {
+    finishStaffLifecycleError('Trạng thái hoặc lịch sử đã thay đổi. Vui lòng đóng và mở lại để dùng dữ liệu mới nhất.')
+    return
+  }
+
+  const transition = buildStaffEmploymentTransition(latestStaffMember, values, {
+    createdBy: cloudStatus.user?.id || '',
+    createdByLabel: cloudStatus.user?.email || '',
+  })
+  if (!transition.ok) {
+    isStaffLifecycleSaving = false
+    staffLifecycleState = {
+      ...staffLifecycleState,
+      values,
+      errors: transition.errors,
+      isSaving: false,
+      message: 'Vui lòng kiểm tra thông tin chuyển trạng thái.',
+    }
+    render()
+    focusFirstStaffLifecycleError()
+    return
+  }
+
+  const savedStaffMember = transition.staffMember
+  staffMembers = staffMembers.map((item) =>
+    item.id === savedStaffMember.id ? savedStaffMember : item,
+  )
+  saveStoredCenterStaffMembers(staffMembers)
+  refreshStaffDataFromStorage()
+  const persistedStaffMember = staffMembers.find((item) => item.id === savedStaffMember.id) || savedStaffMember
+
+  if (staffFormState?.staffId === persistedStaffMember.id) {
+    staffFormState = {
+      ...staffFormState,
+      values: {
+        ...staffFormState.values,
+        employmentStatus: getStaffEmploymentStatus(persistedStaffMember),
+        endDate: persistedStaffMember.endDate || '',
+      },
+      errors: {
+        ...staffFormState.errors,
+        employmentStatus: undefined,
+        endDate: undefined,
+      },
+    }
+  }
+
+  const followUp = expectedState.mode === 'termination' ? values.followUp : 'none'
+  staffLifecycleState = null
+  isStaffLifecycleSaving = false
+  staffNotice = expectedState.mode === 'termination'
+    ? 'Đã đánh dấu Nhân viên nghỉ việc. Hồ sơ Giáo viên, liên kết và tài khoản không thay đổi.'
+    : 'Đã cập nhật trạng thái làm việc và ghi thêm lịch sử.'
+
+  if (followUp === 'teacher' && persistedStaffMember.teacherId) {
+    openLinkedTeacherFromStaff(persistedStaffMember.teacherId)
+    return
+  }
+  if (followUp === 'account' && persistedStaffMember.accountUserId && persistedStaffMember.membershipId) {
+    render()
+    void openStaffAccountManagement(persistedStaffMember.id)
+    return
+  }
+
+  render()
+}
+
+function finishStaffLifecycleError(message) {
+  isStaffLifecycleSaving = false
+  if (staffLifecycleState) {
+    staffLifecycleState = {
+      ...staffLifecycleState,
+      isSaving: false,
+      message,
+    }
+  } else {
+    staffNotice = message
+  }
+  render()
+}
+
+function focusFirstStaffLifecycleError() {
+  const firstError = document.querySelector('.staff-lifecycle-window .staff-field-error')
+  const errorFieldName = firstError?.dataset.staffLifecycleErrorFor
+  const fieldName = errorFieldName === 'status' ? 'toStatus' : errorFieldName
+  const field = fieldName
+    ? document.querySelector(`[data-staff-lifecycle-field="${fieldName}"]`)
+    : null
+  focusElementWithoutScrolling(field)
+}
+
 function handleArchiveStaff(staffId) {
   if (isStaffSaving) {
     return
   }
 
   refreshStaffDataFromStorage()
-  const staffMember = staffMembers.find((item) => item.id === staffId)
+  const matches = staffMembers.filter((item) => item.id === staffId)
+  const staffMember = matches.length === 1 ? matches[0] : null
 
-  if (!staffMember) {
-    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+  if (!staffMember || matches.length !== 1) {
+    staffNotice = 'Không tìm thấy duy nhất một hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+  if (staffMember.centerId && staffMember.centerId !== getStaffCurrentCenterId()) {
+    staffNotice = 'Hồ sơ nhân viên thuộc cơ sở khác. Không thể lưu trữ chéo cơ sở.'
+    render()
+    return
+  }
+  if (isStaffMemberArchived(staffMember)) {
+    staffNotice = 'Hồ sơ nhân viên đã được lưu trữ.'
     render()
     return
   }
 
+  const activeWarning = getStaffEmploymentStatus(staffMember) === 'active'
+    ? ' Nhân viên vẫn đang ở trạng thái Đang làm việc; lưu trữ không đồng nghĩa nghỉ việc.'
+    : ''
   const confirmed = window.confirm(
-    'Lưu trữ hồ sơ nhân viên này? Hồ sơ sẽ ẩn khỏi danh sách mặc định, dữ liệu lịch sử không bị xóa, giáo viên/tài khoản không bị xóa hoặc khóa.',
+    `Lưu trữ hồ sơ nhân viên này?${activeWarning} Trạng thái làm việc, lịch sử, liên kết Giáo viên và tài khoản được giữ nguyên; không có dữ liệu nào bị khóa hoặc xóa.`,
   )
 
   if (!confirmed) {
@@ -2135,6 +2470,9 @@ function handleArchiveStaff(staffId) {
   staffMembers = staffMembers.map((item) => (item.id === staffId ? archiveStaffMember(item) : item))
   saveStoredCenterStaffMembers(staffMembers)
   refreshStaffDataFromStorage()
+  if (staffLifecycleState?.staffId === staffId) {
+    staffLifecycleState = null
+  }
   staffNotice = 'Đã lưu trữ hồ sơ nhân viên.'
   isStaffSaving = false
   render()
@@ -2146,10 +2484,21 @@ function handleRestoreStaff(staffId) {
   }
 
   refreshStaffDataFromStorage()
-  const staffMember = staffMembers.find((item) => item.id === staffId)
+  const matches = staffMembers.filter((item) => item.id === staffId)
+  const staffMember = matches.length === 1 ? matches[0] : null
 
-  if (!staffMember) {
-    staffNotice = 'Không tìm thấy hồ sơ nhân viên mới nhất.'
+  if (!staffMember || matches.length !== 1) {
+    staffNotice = 'Không tìm thấy duy nhất một hồ sơ nhân viên mới nhất.'
+    render()
+    return
+  }
+  if (staffMember.centerId && staffMember.centerId !== getStaffCurrentCenterId()) {
+    staffNotice = 'Hồ sơ nhân viên thuộc cơ sở khác. Không thể khôi phục chéo cơ sở.'
+    render()
+    return
+  }
+  if (!isStaffMemberArchived(staffMember)) {
+    staffNotice = 'Hồ sơ nhân viên hiện không ở trạng thái lưu trữ.'
     render()
     return
   }
@@ -2550,7 +2899,7 @@ function handleLinkExistingStaffToTeacher(staffId) {
     return
   }
 
-  if (targetStaff.employmentStatus === 'archived') {
+  if (isStaffMemberArchived(targetStaff)) {
     isTeacherStaffLinkSaving = false
     teacherStaffLinkState = { ...teacherStaffLinkState, isSaving: false, message: 'Không thể liên kết hồ sơ nhân viên đã lưu trữ.' }
     render()
@@ -2719,10 +3068,13 @@ function openLinkedStaffFromTeacher(staffId) {
 }
 
 function openLinkedTeacherFromStaff(teacherId) {
-  const teacher = teachers.find((item) => item.id === teacherId)
+  const matches = teachers.filter((item) => item.id === teacherId)
+  const teacher = matches.length === 1 ? matches[0] : null
 
-  if (!teacher) {
-    staffNotice = 'Không tìm thấy hồ sơ Giáo viên tương ứng.'
+  if (!teacher || matches.length !== 1) {
+    staffNotice = matches.length > 1
+      ? 'Có nhiều hồ sơ Giáo viên trùng stable ID. Cần kiểm tra dữ liệu trước khi mở.'
+      : 'Không tìm thấy hồ sơ Giáo viên tương ứng.'
     render()
     return
   }
@@ -2737,6 +3089,8 @@ function render() {
     deferRenderUntilTextEditingEnds()
     return
   }
+
+  pendingTextEditingRender = false
 
   const activeElementSnapshot = getActiveElementRenderSnapshot()
   const preservedScrollState = rememberPreservedScrollPositions()
@@ -3010,6 +3364,7 @@ function getStableElementSelector(element) {
     'data-report-filter',
     'data-staff-filter',
     'data-staff-form-field',
+    'data-staff-lifecycle-field',
     'data-staff-department-field',
     'data-teacher-staff-create-field',
     'data-teacher-staff-link-query',
@@ -5881,6 +6236,12 @@ function getPreservedScrollKey(element) {
   }
 
   const [selector, targetName] = target
+  const preservedIdentity = String(element.dataset.preserveScrollKey || '').trim()
+
+  if (preservedIdentity) {
+    return `${windowKey}:${targetName}:${preservedIdentity}`
+  }
+
   const matchingElements = Array.from(rootElement.querySelectorAll(selector))
   const targetIndex = matchingElements.indexOf(element)
 
@@ -6190,6 +6551,7 @@ function renderWindowBody(windowItem) {
       accountMemberships: staffAccountDirectoryState.memberships,
       accountDirectoryState: staffAccountDirectoryState,
       accountLinkState: staffAccountLinkState,
+      lifecycleState: staffLifecycleState,
       notice: staffNotice,
     })
   }
@@ -12674,6 +13036,51 @@ function bindEvents() {
   document.querySelector('[data-staff-form]')?.addEventListener('submit', (event) => {
     event.preventDefault()
     handleStaffFormSubmit(event.currentTarget)
+  })
+
+  document.querySelectorAll('[data-staff-lifecycle-field]').forEach((control) => {
+    const eventName = control.matches('select, input[type="date"], input[type="radio"], input[type="checkbox"]')
+      ? 'change'
+      : 'input'
+
+    if (control.matches('input[type="radio"], input[type="checkbox"]')) {
+      control.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+        }
+      })
+    }
+
+    control.addEventListener(eventName, () => {
+      const value = control.type === 'checkbox' ? control.checked : control.value
+      updateStaffLifecycleField(control.dataset.staffLifecycleField, value)
+      syncStaffLifecycleDraftDom(control.dataset.staffLifecycleField)
+    })
+  })
+
+  document.querySelector('[data-staff-lifecycle-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    handleStaffLifecycleSubmit(event.currentTarget)
+  })
+
+  document.querySelectorAll('[data-staff-lifecycle-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const action = button.dataset.staffLifecycleAction
+
+      if (action === 'open-status') {
+        openStaffLifecycleModal(button.dataset.staffId, 'status')
+        return
+      }
+      if (action === 'open-termination') {
+        openStaffLifecycleModal(button.dataset.staffId, 'termination')
+        return
+      }
+      if (action === 'close') {
+        closeStaffLifecycleModal()
+      }
+    })
   })
 
   document.querySelectorAll('[data-staff-action]').forEach((button) => {

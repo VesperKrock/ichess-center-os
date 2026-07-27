@@ -10,8 +10,13 @@ export const STAFF_EMPLOYMENT_STATUSES = [
   { value: 'active', label: 'Đang làm việc', tone: 'active' },
   { value: 'on-leave', label: 'Tạm nghỉ', tone: 'leave' },
   { value: 'terminated', label: 'Đã nghỉ việc', tone: 'terminated' },
-  { value: 'archived', label: 'Đã lưu trữ', tone: 'archived' },
 ]
+
+const STAFF_EMPLOYMENT_TRANSITIONS = Object.freeze({
+  active: Object.freeze(['on-leave', 'terminated']),
+  'on-leave': Object.freeze(['active', 'terminated']),
+  terminated: Object.freeze(['active']),
+})
 
 export const DEPARTMENT_STATUSES = [
   { value: 'active', label: 'Đang hoạt động' },
@@ -108,7 +113,7 @@ export function createEditStaffFormState(staffMember) {
       departmentId: staffMember.departmentId || '',
       positionTitle: staffMember.positionTitle || '',
       employmentType: normalizeEmploymentType(staffMember.employmentType),
-      employmentStatus: normalizeEmploymentStatus(staffMember.employmentStatus),
+      employmentStatus: getStaffEmploymentStatus(staffMember),
       startDate: staffMember.startDate || '',
       endDate: staffMember.endDate || '',
       note: staffMember.note || '',
@@ -154,6 +159,10 @@ export function createEditDepartmentFormState(department) {
 
 export function createStaffId() {
   return `staff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function createStaffLifecycleEventId() {
+  return `staff-lifecycle-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 export function createDepartmentId() {
@@ -270,10 +279,106 @@ export function buildStaffMemberFromForm(values, existingStaffMember = null, cen
     note: cleanText(values.note),
     createdAt: existingStaffMember?.createdAt || now,
     updatedAt: now,
-    archivedAt: employmentStatus === 'archived'
-      ? existingStaffMember?.archivedAt || now
-      : existingStaffMember?.archivedAt || '',
+    archivedAt: existingStaffMember?.archivedAt || '',
   }
+}
+
+export function getStaffEmploymentStatus(staffMember) {
+  const directStatus = cleanText(staffMember?.employmentStatus)
+  if (STAFF_EMPLOYMENT_STATUSES.some((item) => item.value === directStatus)) {
+    return directStatus
+  }
+
+  const legacyStatus = cleanText(staffMember?.employmentStatusBeforeArchive)
+  return STAFF_EMPLOYMENT_STATUSES.some((item) => item.value === legacyStatus)
+    ? legacyStatus
+    : 'active'
+}
+
+export function isStaffMemberArchived(staffMember) {
+  return Boolean(cleanText(staffMember?.archivedAt)) || staffMember?.employmentStatus === 'archived'
+}
+
+export function getAvailableStaffEmploymentTransitions(staffMember) {
+  return [...(STAFF_EMPLOYMENT_TRANSITIONS[getStaffEmploymentStatus(staffMember)] || [])]
+}
+
+export function validateStaffEmploymentTransition(staffMember, values = {}) {
+  const errors = {}
+  const fromStatus = getStaffEmploymentStatus(staffMember)
+  const requestedToStatus = cleanText(values.toStatus)
+  const toStatus = normalizeEmploymentStatus(requestedToStatus)
+  const effectiveDate = cleanText(values.effectiveDate)
+  const allowedStatuses = STAFF_EMPLOYMENT_TRANSITIONS[fromStatus] || []
+
+  if (isStaffMemberArchived(staffMember)) {
+    errors.status = 'Hồ sơ đang được lưu trữ. Vui lòng khôi phục trước khi cập nhật trạng thái làm việc.'
+  } else if (!STAFF_EMPLOYMENT_STATUSES.some((item) => item.value === requestedToStatus)) {
+    errors.status = 'Trạng thái làm việc mới không hợp lệ.'
+  } else if (toStatus === fromStatus) {
+    errors.status = 'Trạng thái mới phải khác trạng thái hiện tại.'
+  } else if (!allowedStatuses.includes(toStatus)) {
+    errors.status = 'Chuyển trạng thái làm việc không hợp lệ.'
+  }
+
+  if (!effectiveDate || !isDateKey(effectiveDate)) {
+    errors.effectiveDate = 'Vui lòng chọn ngày hiệu lực hợp lệ.'
+  } else if (toStatus === 'terminated' && staffMember?.startDate && effectiveDate < staffMember.startDate) {
+    errors.effectiveDate = 'Ngày kết thúc không được trước ngày bắt đầu.'
+  }
+
+  return errors
+}
+
+export function buildStaffEmploymentTransition(
+  staffMember,
+  values = {},
+  {
+    eventId = createStaffLifecycleEventId(),
+    createdAt = new Date().toISOString(),
+    createdBy = '',
+    createdByLabel = '',
+  } = {},
+) {
+  const errors = validateStaffEmploymentTransition(staffMember, values)
+  if (Object.keys(errors).length) {
+    return { ok: false, errors, staffMember }
+  }
+
+  const lifecycleEvents = Array.isArray(staffMember?.employmentLifecycleEvents)
+    ? staffMember.employmentLifecycleEvents
+    : []
+  const normalizedEventId = cleanText(eventId)
+  if (!normalizedEventId || lifecycleEvents.some((event) => cleanText(event?.id) === normalizedEventId)) {
+    return {
+      ok: false,
+      errors: { status: 'Không thể tạo sự kiện lịch sử duy nhất. Vui lòng thử lại.' },
+      staffMember,
+    }
+  }
+
+  const fromStatus = getStaffEmploymentStatus(staffMember)
+  const toStatus = normalizeEmploymentStatus(values.toStatus)
+  const effectiveDate = cleanText(values.effectiveDate)
+  const event = {
+    id: normalizedEventId,
+    fromStatus,
+    toStatus,
+    effectiveDate,
+    note: cleanText(values.note),
+    createdAt,
+    createdBy: cleanText(createdBy),
+    createdByLabel: cleanText(createdByLabel),
+  }
+  const nextStaffMember = {
+    ...staffMember,
+    employmentStatus: toStatus,
+    endDate: toStatus === 'terminated' ? effectiveDate : '',
+    employmentLifecycleEvents: [...lifecycleEvents, event],
+    updatedAt: createdAt,
+  }
+
+  return { ok: true, errors: {}, event, staffMember: nextStaffMember }
 }
 
 export function buildDepartmentFromForm(values, existingDepartment = null, centerId = '') {
@@ -300,7 +405,7 @@ export function archiveStaffMember(staffMember) {
   const now = new Date().toISOString()
   return {
     ...staffMember,
-    employmentStatus: 'archived',
+    employmentStatus: getStaffEmploymentStatus(staffMember),
     updatedAt: now,
     archivedAt: staffMember.archivedAt || now,
   }
@@ -310,7 +415,7 @@ export function restoreStaffMember(staffMember) {
   const now = new Date().toISOString()
   return {
     ...staffMember,
-    employmentStatus: 'active',
+    employmentStatus: getStaffEmploymentStatus(staffMember),
     updatedAt: now,
     archivedAt: '',
   }
@@ -361,7 +466,10 @@ export function getFilteredStaffMembers(staffMembers = [], departments = [], fil
         staffMember.departmentId === activeFilters.departmentId
       const matchesStatus =
         activeFilters.employmentStatus === 'all' ||
-        staffMember.employmentStatus === activeFilters.employmentStatus
+        (activeFilters.employmentStatus === 'archived'
+          ? isStaffMemberArchived(staffMember)
+          : !isStaffMemberArchived(staffMember) &&
+            getStaffEmploymentStatus(staffMember) === activeFilters.employmentStatus)
       const matchesTeacherLink =
         activeFilters.teacherLink === 'all' ||
         (activeFilters.teacherLink === 'linked' && Boolean(staffMember.teacherId)) ||
@@ -656,6 +764,7 @@ export function renderStaffModule({
   accountMemberships = [],
   accountDirectoryState = {},
   accountLinkState = null,
+  lifecycleState = null,
   notice = '',
 } = {}) {
   const activeFilters = normalizeStaffFilters(filters)
@@ -776,6 +885,18 @@ export function renderStaffModule({
             })
           : ''
       }
+      ${
+        lifecycleState
+          ? renderStaffLifecycleModal({
+              state: lifecycleState,
+              staffMember: staffMembers.find((item) => item.id === lifecycleState.staffId) || null,
+              teachers,
+              staffMembers,
+              accountMemberships,
+              accountDirectoryState,
+            })
+          : ''
+      }
 
       <details class="staff-attendance-details">
         <summary>Chấm công theo lịch dạy hiện có</summary>
@@ -879,7 +1000,7 @@ function renderStaffProfileRow(
   accountDirectoryState,
 ) {
   const department = staffMember.departmentId ? departmentLookup.get(staffMember.departmentId) : null
-  const status = getEmploymentStatusMeta(staffMember.employmentStatus)
+  const status = getEmploymentStatusMeta(getStaffEmploymentStatus(staffMember))
   const teacherStatus = getTeacherLinkStatus(staffMember, teacherLookup)
   const accountStatus = getStaffAccountListStatus(
     staffMember,
@@ -887,7 +1008,7 @@ function renderStaffProfileRow(
     accountMemberships,
     accountDirectoryState,
   )
-  const isArchived = staffMember.employmentStatus === 'archived'
+  const isArchived = isStaffMemberArchived(staffMember)
 
   return `
     <tr class="${isArchived ? 'is-archived' : ''}">
@@ -899,7 +1020,10 @@ function renderStaffProfileRow(
       <td title="${escapeAttribute(getDepartmentDisplayName(department))}">${department ? escapeHtml(getDepartmentDisplayName(department)) : 'Chưa có phòng ban'}</td>
       <td title="${escapeAttribute(staffMember.positionTitle)}">${escapeHtml(staffMember.positionTitle || '—')}</td>
       <td>${escapeHtml(getEmploymentTypeLabel(staffMember.employmentType))}</td>
-      <td><span class="staff-status is-${status.tone}">${escapeHtml(status.label)}</span></td>
+      <td>
+        <span class="staff-status is-${status.tone}">${escapeHtml(status.label)}</span>
+        ${isArchived ? '<span class="staff-status is-archived">Đã lưu trữ</span>' : ''}
+      </td>
       <td>${escapeHtml(formatEmploymentPeriod(staffMember))}</td>
       <td>
         <span class="staff-link-status ${teacherStatus.tone}" title="${escapeAttribute(teacherStatus.title)}">${escapeHtml(teacherStatus.label)}</span>
@@ -941,10 +1065,11 @@ function renderStaffForm(formState, departments, accountContext = {}) {
   const endDateDisabled = !isEmploymentEndDateEnabled(employmentStatus)
   const endDateValue = endDateDisabled ? '' : values.endDate
   const endDateHint = endDateDisabled ? 'Đến nay' : ''
+  const scrollKey = `${formState.centerId || 'local'}:${formState.staffId || 'new'}:${formState.mode || 'form'}`
 
   return `
     <div class="staff-modal" role="presentation">
-      <form class="staff-form" data-staff-form aria-labelledby="staff-form-title">
+      <form class="staff-form" data-staff-form data-preserve-scroll-key="${escapeAttribute(scrollKey)}" aria-labelledby="staff-form-title">
         <div class="staff-form-heading">
           <div>
             <h4 id="staff-form-title">${title}</h4>
@@ -976,7 +1101,7 @@ function renderStaffForm(formState, departments, accountContext = {}) {
           </label>
           <label>
             <span>Trạng thái làm việc</span>
-            <select data-staff-form-field="employmentStatus">
+            <select data-staff-form-field="employmentStatus" ${formState.mode === 'edit' ? 'disabled' : ''}>
               ${STAFF_EMPLOYMENT_STATUSES.map((item) => renderOption(item.value, item.label, values.employmentStatus)).join('')}
             </select>
             ${renderFieldError(formState.errors.employmentStatus)}
@@ -993,6 +1118,7 @@ function renderStaffForm(formState, departments, accountContext = {}) {
             ${renderFieldError(formState.errors.note)}
           </label>
         </div>
+        ${renderStaffLifecycleCard({ formState, ...accountContext })}
         ${renderStaffAccountCard({ formState, ...accountContext })}
         <div class="staff-readonly-links" aria-label="Trạng thái liên kết read-only">
           <span>Hồ sơ Giáo viên: ${formState.links?.hasTeacherLink ? 'Đã liên kết' : 'Chưa liên kết'}</span>
@@ -1004,6 +1130,296 @@ function renderStaffForm(formState, departments, accountContext = {}) {
         </div>
       </form>
     </div>
+  `
+}
+
+function renderStaffLifecycleCard({
+  formState,
+  staffMember,
+  staffMembers = [],
+  teachers = [],
+  accountMemberships = [],
+  accountDirectoryState = {},
+} = {}) {
+  if (formState.mode !== 'edit' || !staffMember) {
+    return ''
+  }
+
+  const employmentStatus = getStaffEmploymentStatus(staffMember)
+  const employmentMeta = getEmploymentStatusMeta(employmentStatus)
+  const isArchived = isStaffMemberArchived(staffMember)
+  const teacher = findUniqueTeacherById(teachers, staffMember.teacherId)
+  const accountLink = accountDirectoryState.status === 'loaded'
+    ? resolveStaffAccountLink({
+        staffMember,
+        staffMembers,
+        memberships: accountMemberships,
+        currentCenterId: accountDirectoryState.centerId || staffMember.centerId,
+      })
+    : createStaffAccountLinkResult(
+        staffMember.accountUserId || staffMember.membershipId ? 'pending' : 'unlinked',
+      )
+  const membership = accountLink.membership
+  const warnings = getStaffLifecycleWarnings(staffMember, teacher, membership)
+  const canOpenAccount = ['linked', 'linked-inactive'].includes(accountLink.status)
+
+  return `
+    <section class="staff-lifecycle-card ${warnings.length ? 'is-warning' : ''}" aria-labelledby="staff-lifecycle-card-title">
+      <div class="staff-lifecycle-heading">
+        <h5 id="staff-lifecycle-card-title">Trạng thái và vòng đời</h5>
+        <span class="staff-status is-${escapeAttribute(employmentMeta.tone)}">${escapeHtml(employmentMeta.label)}</span>
+      </div>
+      <dl class="staff-lifecycle-statuses">
+        ${renderStaffAccountMetaRow('Nhân viên', employmentMeta.label)}
+        ${renderStaffAccountMetaRow('Hồ sơ Giáo viên', getLifecycleTeacherStatusLabel(staffMember, teacher))}
+        ${renderStaffAccountMetaRow('Tài khoản', getLifecycleAccountStatusLabel(accountLink))}
+        ${renderStaffAccountMetaRow('Membership', getLifecycleMembershipStatusLabel(accountLink))}
+        ${renderStaffAccountMetaRow('Lưu trữ hồ sơ', isArchived ? 'Đã lưu trữ' : 'Đang sử dụng')}
+      </dl>
+      ${warnings.map((warning) => `<p class="staff-lifecycle-warning" role="alert">${escapeHtml(warning)}</p>`).join('')}
+      <div class="staff-lifecycle-actions">
+        <button type="button" data-staff-lifecycle-action="open-status" data-staff-id="${escapeAttribute(staffMember.id)}" ${isArchived ? 'disabled' : ''}>Cập nhật trạng thái làm việc</button>
+        ${
+          employmentStatus !== 'terminated'
+            ? `<button type="button" data-staff-lifecycle-action="open-termination" data-staff-id="${escapeAttribute(staffMember.id)}" ${isArchived ? 'disabled' : ''}>Xử lý nghỉ việc</button>`
+            : ''
+        }
+        ${
+          teacher
+            ? `<button type="button" data-staff-action="open-linked-teacher" data-teacher-id="${escapeAttribute(teacher.id)}">Mở hồ sơ Giáo viên</button>`
+            : ''
+        }
+        ${
+          canOpenAccount
+            ? `<button type="button" data-staff-account-action="open-management" data-staff-id="${escapeAttribute(staffMember.id)}">Mở quản lý tài khoản</button>`
+            : ''
+        }
+      </div>
+      ${renderStaffLifecycleHistory(staffMember.employmentLifecycleEvents)}
+    </section>
+  `
+}
+
+export function getStaffLifecycleWarnings(staffMember, teacher = null, membership = null) {
+  const warnings = []
+  const status = getStaffEmploymentStatus(staffMember)
+
+  if (status === 'terminated' && teacher?.status === 'active') {
+    warnings.push('Nhân viên đã nghỉ việc nhưng hồ sơ Giáo viên vẫn đang dạy.')
+  }
+  if (status === 'active' && teacher?.status === 'inactive') {
+    warnings.push('Nhân viên vẫn đang làm việc nhưng hồ sơ Giáo viên đã ngừng dạy.')
+  }
+  if (status === 'terminated' && membership?.status === 'active') {
+    warnings.push('Nhân viên đã nghỉ việc nhưng tài khoản vẫn đang hoạt động.')
+  }
+  if (status === 'active' && membership && membership.status !== 'active') {
+    warnings.push('Nhân viên đang làm việc nhưng tài khoản hiện không hoạt động.')
+  }
+
+  return warnings
+}
+
+function getLifecycleTeacherStatusLabel(staffMember, teacher) {
+  if (!staffMember.teacherId) {
+    return 'Chưa liên kết'
+  }
+  if (!teacher) {
+    return 'Liên kết cần kiểm tra'
+  }
+
+  const labels = {
+    active: 'Đang dạy',
+    paused: 'Tạm nghỉ',
+    inactive: 'Ngừng dạy',
+  }
+  return labels[teacher.status] || 'Trạng thái cần kiểm tra'
+}
+
+function findUniqueTeacherById(teachers, teacherId) {
+  const normalizedTeacherId = cleanText(teacherId)
+  if (!normalizedTeacherId) {
+    return null
+  }
+
+  const matches = (Array.isArray(teachers) ? teachers : []).filter(
+    (teacher) => cleanText(teacher?.id) === normalizedTeacherId,
+  )
+  return matches.length === 1 ? matches[0] : null
+}
+
+function getLifecycleAccountStatusLabel(accountLink) {
+  if (accountLink.status === 'unlinked') {
+    return 'Chưa liên kết'
+  }
+  if (accountLink.status === 'pending') {
+    return 'Đang đọc dữ liệu mới nhất'
+  }
+  if (accountLink.status === 'malformed') {
+    return 'Liên kết cần kiểm tra'
+  }
+  return getStaffAccountStatusLabel(accountLink.membership?.accountStatus)
+}
+
+function getLifecycleMembershipStatusLabel(accountLink) {
+  if (accountLink.status === 'unlinked') {
+    return 'Chưa liên kết'
+  }
+  if (accountLink.status === 'pending') {
+    return 'Đang đọc dữ liệu mới nhất'
+  }
+  if (accountLink.status === 'malformed') {
+    return 'Liên kết cần kiểm tra'
+  }
+  return getStaffMembershipStatusLabel(accountLink.membership?.status)
+}
+
+function renderStaffLifecycleHistory(events) {
+  const lifecycleEvents = Array.isArray(events) ? events : []
+  return `
+    <details class="staff-lifecycle-history">
+      <summary>Lịch sử trạng thái làm việc</summary>
+      ${
+        lifecycleEvents.length
+          ? `<ol>${[...lifecycleEvents].reverse().map(renderStaffLifecycleEvent).join('')}</ol>`
+          : '<p>Chưa có lịch sử thay đổi trạng thái.</p>'
+      }
+    </details>
+  `
+}
+
+function renderStaffLifecycleEvent(event) {
+  const fromMeta = STAFF_EMPLOYMENT_STATUSES.find((item) => item.value === event?.fromStatus)
+  const toMeta = STAFF_EMPLOYMENT_STATUSES.find((item) => item.value === event?.toStatus)
+  const validEvent = Boolean(cleanText(event?.id) && fromMeta && toMeta && isDateKey(event?.effectiveDate))
+
+  if (!validEvent) {
+    return '<li><strong>Sự kiện cần kiểm tra</strong><span>Dữ liệu lịch sử được giữ nguyên và không tự sửa.</span></li>'
+  }
+
+  const actorLabel = cleanText(event.createdByLabel)
+  return `
+    <li>
+      <strong>${escapeHtml(fromMeta.label)} → ${escapeHtml(toMeta.label)}</strong>
+      <span>Hiệu lực ${escapeHtml(formatDate(event.effectiveDate))}${actorLabel ? ` · ${escapeHtml(actorLabel)}` : ''}</span>
+      ${event.note ? `<p>${escapeHtml(event.note)}</p>` : ''}
+    </li>
+  `
+}
+
+function renderStaffLifecycleModal({
+  state,
+  staffMember,
+  teachers = [],
+  staffMembers = [],
+  accountMemberships = [],
+  accountDirectoryState = {},
+}) {
+  if (!staffMember) {
+    return ''
+  }
+
+  const currentStatus = getStaffEmploymentStatus(staffMember)
+  const currentMeta = getEmploymentStatusMeta(currentStatus)
+  const isTermination = state.mode === 'termination'
+  const nextStatus = isTermination ? 'terminated' : normalizeEmploymentStatus(state.values?.toStatus)
+  const nextMeta = getEmploymentStatusMeta(nextStatus)
+  const availableTransitions = getAvailableStaffEmploymentTransitions(staffMember)
+  const teacher = findUniqueTeacherById(teachers, staffMember.teacherId)
+  const accountLink = accountDirectoryState.status === 'loaded'
+    ? resolveStaffAccountLink({
+        staffMember,
+        staffMembers,
+        memberships: accountMemberships,
+        currentCenterId: state.centerId,
+      })
+    : createStaffAccountLinkResult('unlinked')
+  const canOpenAccount = ['linked', 'linked-inactive'].includes(accountLink.status)
+  const effectiveDateLabel = isDateKey(state.values?.effectiveDate)
+    ? formatDate(state.values.effectiveDate)
+    : 'Chưa chọn'
+  const scrollKey = `${state.centerId || 'local'}:${state.staffId || 'unknown'}:${state.mode || 'lifecycle'}`
+
+  return `
+    <div class="staff-lifecycle-modal" role="presentation">
+      <form class="staff-lifecycle-window" data-staff-lifecycle-form data-preserve-scroll-key="${escapeAttribute(scrollKey)}" role="dialog" aria-modal="true" aria-labelledby="staff-lifecycle-modal-title">
+        <div class="staff-form-heading">
+          <div>
+            <h4 id="staff-lifecycle-modal-title">${isTermination ? 'Xử lý nghỉ việc' : 'Cập nhật trạng thái làm việc'}</h4>
+            <p>${escapeHtml(getStaffDisplayLabel(staffMember))}</p>
+          </div>
+          <button type="button" data-staff-lifecycle-action="close" aria-label="Đóng">×</button>
+        </div>
+        ${state.message ? `<p class="staff-form-message" data-staff-lifecycle-message role="alert">${escapeHtml(state.message)}</p>` : ''}
+        <dl class="staff-lifecycle-preview">
+          ${renderStaffAccountMetaRow('Trạng thái hiện tại', currentMeta.label)}
+          ${renderStaffLifecyclePreviewRow('Trạng thái mới', nextMeta.label, 'new-status')}
+          ${renderStaffLifecyclePreviewRow('Ngày hiệu lực', effectiveDateLabel, 'effective-date')}
+          ${renderStaffLifecyclePreviewRow('Ngày kết thúc sau lưu', nextStatus === 'terminated' ? effectiveDateLabel : 'Đến nay', 'end-date')}
+        </dl>
+        ${
+          isTermination
+            ? `<input type="hidden" data-staff-lifecycle-field="toStatus" value="terminated" />`
+            : `<label>
+                <span>Trạng thái mới</span>
+                <select data-staff-lifecycle-field="toStatus">
+                  ${availableTransitions.map((status) => {
+                    const meta = getEmploymentStatusMeta(status)
+                    return renderOption(status, meta.label, nextStatus)
+                  }).join('')}
+                </select>
+                ${renderStaffLifecycleFieldError('status', state.errors?.status)}
+              </label>`
+        }
+        <label>
+          <span>${isTermination ? 'Ngày kết thúc' : 'Ngày hiệu lực'}</span>
+          <input type="date" value="${escapeAttribute(state.values?.effectiveDate || '')}" data-staff-lifecycle-field="effectiveDate" />
+          ${renderStaffLifecycleFieldError('effectiveDate', state.errors?.effectiveDate)}
+        </label>
+        <label>
+          <span>Ghi chú</span>
+          <textarea rows="3" data-staff-lifecycle-field="note">${escapeHtml(state.values?.note || '')}</textarea>
+        </label>
+        ${
+          isTermination
+            ? renderStaffTerminationChecklist({ state, staffMember, teacher, accountLink, canOpenAccount })
+            : ''
+        }
+        <div class="staff-lifecycle-actions">
+          <button type="button" data-staff-lifecycle-action="close" ${state.isSaving ? 'disabled' : ''}>Hủy</button>
+          <button type="submit" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang cập nhật...' : isTermination ? 'Xác nhận nghỉ việc' : 'Cập nhật trạng thái'}</button>
+        </div>
+      </form>
+    </div>
+  `
+}
+
+function renderStaffTerminationChecklist({ state, staffMember, teacher, accountLink, canOpenAccount }) {
+  const followUp = state.values?.followUp || 'none'
+  return `
+    <section class="staff-termination-checklist" aria-label="Checklist sau khi nghỉ việc">
+      <h5>Checklist sau khi lưu</h5>
+      <p><strong>Nhân viên:</strong> Chỉ trạng thái Nhân viên và lịch sử được cập nhật.</p>
+      <div class="staff-lifecycle-choice">
+        <input id="staff-lifecycle-follow-up-none" type="radio" name="staff-lifecycle-follow-up" value="none" data-staff-lifecycle-field="followUp" ${followUp === 'none' ? 'checked' : ''} />
+        <label for="staff-lifecycle-follow-up-none">Không mở thêm hồ sơ</label>
+      </div>
+      <p><strong>Giáo viên:</strong> ${escapeHtml(getLifecycleTeacherStatusLabel(staffMember, teacher))}. Ngừng dạy là thao tác độc lập.</p>
+      <div class="staff-lifecycle-choice">
+        <input id="staff-lifecycle-follow-up-teacher" type="radio" name="staff-lifecycle-follow-up" value="teacher" data-staff-lifecycle-field="followUp" ${followUp === 'teacher' ? 'checked' : ''} ${teacher ? '' : 'disabled'} />
+        <label for="staff-lifecycle-follow-up-teacher">Mở hồ sơ Giáo viên sau khi lưu</label>
+      </div>
+      <p><strong>Tài khoản:</strong> ${escapeHtml(getLifecycleMembershipStatusLabel(accountLink))}. Khóa hoặc thu hồi tài khoản là thao tác độc lập.</p>
+      <div class="staff-lifecycle-choice">
+        <input id="staff-lifecycle-follow-up-account" type="radio" name="staff-lifecycle-follow-up" value="account" data-staff-lifecycle-field="followUp" ${followUp === 'account' ? 'checked' : ''} ${canOpenAccount ? '' : 'disabled'} />
+        <label for="staff-lifecycle-follow-up-account">Mở quản lý tài khoản sau khi lưu</label>
+      </div>
+      <div class="staff-lifecycle-choice is-confirmation">
+        <input id="staff-lifecycle-confirmed" type="checkbox" name="staff-lifecycle-confirmed" data-staff-lifecycle-field="confirmed" ${state.values?.confirmed ? 'checked' : ''} />
+        <label for="staff-lifecycle-confirmed">Tôi xác nhận chỉ đánh dấu Nhân viên đã nghỉ việc; không ngừng dạy, gỡ liên kết, revoke hoặc khóa tài khoản.</label>
+      </div>
+      ${renderStaffLifecycleFieldError('confirmed', state.errors?.confirmed)}
+    </section>
   `
 }
 
@@ -1077,7 +1493,7 @@ function renderStaffAccountCard({
   })
 
   if (link.status === 'unlinked') {
-    const canLink = staffMember.employmentStatus !== 'archived'
+    const canLink = !isStaffMemberArchived(staffMember)
     return `
       <section class="staff-account-card" aria-labelledby="staff-account-card-title">
         <div class="staff-account-card-heading">
@@ -1113,9 +1529,7 @@ function renderStaffAccountCard({
 
   const membership = link.membership
   const teacherWarning = getStaffTeacherAccountWarning(staffMember, membership)
-  const teacher = staffMember.teacherId
-    ? teachers.find((item) => item.id === staffMember.teacherId)
-    : null
+  const teacher = findUniqueTeacherById(teachers, staffMember.teacherId)
   const roleLabel = getStaffAccountRoleLabel(membership.role)
 
   return `
@@ -1270,6 +1684,16 @@ function renderStaffAccountMembershipOption(membership, canLink) {
 
 function renderStaffAccountMetaRow(label, value) {
   return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd></div>`
+}
+
+function renderStaffLifecyclePreviewRow(label, value, previewName) {
+  return `<div><dt>${escapeHtml(label)}</dt><dd data-staff-lifecycle-preview="${escapeAttribute(previewName)}">${escapeHtml(value || '—')}</dd></div>`
+}
+
+function renderStaffLifecycleFieldError(fieldName, message) {
+  return message
+    ? `<span class="staff-field-error" data-staff-lifecycle-error-for="${escapeAttribute(fieldName)}">${escapeHtml(message)}</span>`
+    : ''
 }
 
 function renderDepartmentPanel(departments, staffMembers, departmentFormState) {
@@ -1645,12 +2069,13 @@ function renderStaffStat(label, value, tone) {
 
 function buildStaffSummary(staffMembers) {
   const list = Array.isArray(staffMembers) ? staffMembers : []
+  const visible = list.filter((item) => !isStaffMemberArchived(item))
   return {
     total: list.length,
-    active: list.filter((item) => item.employmentStatus === 'active').length,
-    onLeave: list.filter((item) => item.employmentStatus === 'on-leave').length,
-    terminated: list.filter((item) => item.employmentStatus === 'terminated').length,
-    noDepartment: list.filter((item) => item.employmentStatus !== 'archived' && !item.departmentId).length,
+    active: visible.filter((item) => getStaffEmploymentStatus(item) === 'active').length,
+    onLeave: visible.filter((item) => getStaffEmploymentStatus(item) === 'on-leave').length,
+    terminated: visible.filter((item) => getStaffEmploymentStatus(item) === 'terminated').length,
+    noDepartment: visible.filter((item) => !item.departmentId).length,
   }
 }
 
@@ -1885,15 +2310,11 @@ function getPersistedEmploymentEndDate(endDate, employmentStatus, existingEndDat
     return isDateKey(endDate) ? endDate : ''
   }
 
-  if (normalizedStatus === 'archived') {
-    return isDateKey(endDate) ? endDate : isDateKey(existingEndDate) ? existingEndDate : ''
-  }
-
   return ''
 }
 
 function formatEmploymentPeriod(staffMember) {
-  const status = normalizeEmploymentStatus(staffMember?.employmentStatus)
+  const status = getStaffEmploymentStatus(staffMember)
   const startDate = formatDate(staffMember?.startDate)
 
   if (status === 'active' || status === 'on-leave') {
@@ -1905,8 +2326,7 @@ function formatEmploymentPeriod(staffMember) {
     return `${startDate} → ${endDate === '—' ? 'Chưa cập nhật' : endDate}`
   }
 
-  const archivedEndDate = formatDate(staffMember?.endDate)
-  return `${startDate} → ${archivedEndDate === '—' ? 'Chưa cập nhật' : archivedEndDate}`
+  return `${startDate} → Đến nay`
 }
 
 function getDepartmentDisplayName(department) {
@@ -1998,7 +2418,13 @@ function toDateKey(value) {
 }
 
 function isDateKey(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ''))
+  const dateKey = String(value ?? '')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    return false
+  }
+
+  const date = new Date(`${dateKey}T00:00:00.000Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === dateKey
 }
 
 function formatDate(value) {

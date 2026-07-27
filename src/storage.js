@@ -83,7 +83,7 @@ const VALID_STAFF_EMPLOYMENT_TYPES = [
   'contract',
   'unspecified',
 ]
-const VALID_STAFF_EMPLOYMENT_STATUSES = ['active', 'on-leave', 'terminated', 'archived']
+const VALID_STAFF_EMPLOYMENT_STATUSES = ['active', 'on-leave', 'terminated']
 const VALID_DEPARTMENT_STATUSES = ['active', 'archived']
 const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
 const VALID_SCHEDULE_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -1327,17 +1327,16 @@ export function normalizeCenterStaffMembers(staffMembers) {
     .map((staffMember, index) => {
       const now = new Date().toISOString()
       const createdAt = staffMember.createdAt ? normalizeDateTime(staffMember.createdAt) : now
+      const isLegacyArchived = staffMember.employmentStatus === 'archived'
       const employmentStatus = VALID_STAFF_EMPLOYMENT_STATUSES.includes(staffMember.employmentStatus)
         ? staffMember.employmentStatus
-        : staffMember.archivedAt
-          ? 'archived'
+        : VALID_STAFF_EMPLOYMENT_STATUSES.includes(staffMember.employmentStatusBeforeArchive)
+          ? staffMember.employmentStatusBeforeArchive
           : 'active'
-      const archivedAt = employmentStatus === 'archived'
-        ? staffMember.archivedAt
-          ? normalizeDateTime(staffMember.archivedAt)
-          : now
-        : staffMember.archivedAt
-          ? normalizeDateTime(staffMember.archivedAt)
+      const archivedAt = staffMember.archivedAt
+        ? normalizeDateTime(staffMember.archivedAt)
+        : isLegacyArchived
+          ? now
           : ''
 
       return {
@@ -1362,10 +1361,30 @@ export function normalizeCenterStaffMembers(staffMembers) {
         accountLinkedAt: staffMember.accountLinkedAt
           ? normalizeDateTime(staffMember.accountLinkedAt)
           : '',
+        employmentLifecycleEvents: normalizeStaffLifecycleEvents(staffMember.employmentLifecycleEvents),
         note: normalizeStaffText(staffMember.note),
         createdAt,
         updatedAt: staffMember.updatedAt ? normalizeDateTime(staffMember.updatedAt) : createdAt,
         archivedAt,
+      }
+    })
+}
+
+function normalizeStaffLifecycleEvents(events) {
+  return (Array.isArray(events) ? events : [])
+    .filter((event) => event && typeof event === 'object')
+    .map((event) => {
+      const createdAtDate = new Date(event.createdAt)
+      return {
+        ...event,
+        id: normalizeStaffText(event.id),
+        fromStatus: VALID_STAFF_EMPLOYMENT_STATUSES.includes(event.fromStatus) ? event.fromStatus : '',
+        toStatus: VALID_STAFF_EMPLOYMENT_STATUSES.includes(event.toStatus) ? event.toStatus : '',
+        effectiveDate: normalizeStaffDate(event.effectiveDate),
+        note: normalizeStaffText(event.note),
+        createdAt: Number.isNaN(createdAtDate.getTime()) ? '' : createdAtDate.toISOString(),
+        createdBy: normalizeStaffText(event.createdBy),
+        createdByLabel: normalizeStaffText(event.createdByLabel),
       }
     })
 }
