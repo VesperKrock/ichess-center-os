@@ -78,8 +78,11 @@ const actionAccess = (
 
 const ownerAccess = actionAccess('owner', 'administrative-profile.view')
 const adminAccess = actionAccess('center_admin', 'administrative-profile.view')
-assert.equal(STAFF_ADMINISTRATIVE_ACTIONS.length, 16)
+assert.equal(STAFF_ADMINISTRATIVE_ACTIONS.length, 27)
+assert(STAFF_ADMINISTRATIVE_ACTIONS.includes('staff-document.attachment-replace'))
 assert(STAFF_ADMINISTRATIVE_AUDIT_ACTIONS.includes('administrative-profile.reveal-sensitive'))
+assert(STAFF_ADMINISTRATIVE_AUDIT_ACTIONS.includes('staff-document.attachment-replacement-completed'))
+assert(STAFF_ADMINISTRATIVE_AUDIT_ACTIONS.includes('staff-document.attachment-version-download'))
 assert(STAFF_ADMINISTRATIVE_AUDIT_ACTIONS.includes('deletion-request.approve'))
 assert.equal(STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE, 'Yêu cầu đã thay đổi. Vui lòng mở lại để tiếp tục.')
 assert.equal(STAFF_ADMINISTRATIVE_POLICY_STALE_MESSAGE, 'Chính sách đã thay đổi. Vui lòng mở lại để tiếp tục.')
@@ -98,6 +101,9 @@ for (const action of [
   'staff-document.edit',
   'staff-document.archive',
   'staff-document.restore',
+  'staff-document.attachment-remove',
+  'staff-document.attachment-deletion-request',
+  'staff-document.attachment-deletion-cancel',
   'privacy-audit.view',
   'deletion-request.create',
   'deletion-request.cancel',
@@ -110,6 +116,10 @@ for (const action of [
   'deletion-request.review',
   'deletion-request.approve',
   'deletion-request.deny',
+  'staff-document.attachment-deletion-review',
+  'staff-document.attachment-deletion-execute',
+  'staff-document.attachment-legal-hold',
+  'staff-document.attachment-retention-configure',
 ]) {
   assert.equal(hasStaffAdministrativeAction(adminAccess, action), false, `Admin must deny ${action}`)
 }

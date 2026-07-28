@@ -377,6 +377,15 @@ import {
   validateStaffDocument,
 } from './staff-documents-module.js'
 import {
+  staffDocumentAttachmentService,
+  validateStaffDocumentAttachmentFile,
+} from './staff-document-attachments-supabase.js'
+import {
+  STAFF_DOCUMENT_CONTENT_SCROLL_SELECTOR,
+  captureStaffDocumentViewerReturnContext,
+  scheduleStaffDocumentViewerReturnRestore,
+} from './staff-document-viewer-return.js'
+import {
   STAFF_ADMINISTRATIVE_POLICY_STALE_MESSAGE,
   STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE,
   buildStaffAdministrativeAuditEvent,
@@ -658,9 +667,13 @@ let isStaffLifecycleSaving = false
 let staffAdministrativeProfileWindowStates = new Map()
 let staffDocumentWindowStates = new Map()
 let staffAdministrativeGovernanceWindowStates = new Map()
+let staffDocumentAttachmentRequestTokens = new Map()
+let staffDocumentAttachmentViewerState = null
+let pendingStaffDocumentViewerReturnContext = null
 const boundStaffAdministrativeActionWindows = new WeakSet()
 let isStaffAdministrativeProfileSaving = false
 const savingStaffDocumentWindowIds = new Set()
+const uploadingStaffDocumentWindowIds = new Set()
 const savingStaffAdministrativeGovernanceWindowIds = new Set()
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
@@ -1246,8 +1259,12 @@ function resetTransientStateForCenterSwitch() {
   staffAdministrativeProfileWindowStates = new Map()
   staffDocumentWindowStates = new Map()
   staffAdministrativeGovernanceWindowStates = new Map()
+  staffDocumentAttachmentRequestTokens = new Map()
+  staffDocumentAttachmentViewerState = null
+  pendingStaffDocumentViewerReturnContext = null
   isStaffAdministrativeProfileSaving = false
   savingStaffDocumentWindowIds.clear()
+  uploadingStaffDocumentWindowIds.clear()
   savingStaffAdministrativeGovernanceWindowIds.clear()
   teacherStaffLinkState = null
   isTeacherStaffLinkSaving = false
@@ -1496,6 +1513,29 @@ function createStaffDocumentWindowState(centerId, staffMemberId, administrativeP
     message: '',
     isSaving: false,
     filters: { ...initialStaffDocumentFilters },
+    attachment: createStaffDocumentAttachmentState(),
+  }
+}
+
+function createStaffDocumentAttachmentState(overrides = {}) {
+  return {
+    status: 'idle',
+    documentId: '',
+    record: null,
+    history: [],
+    historyStatus: 'unavailable',
+    schemaVersion: 0,
+    replacementReady: false,
+    softRemovalReady: false,
+    deletionGovernanceReady: false,
+    permanentExecutionReady: false,
+    governanceBlocker: '',
+    governance: null,
+    governanceStatus: 'unavailable',
+    message: '',
+    isProcessing: false,
+    processingAction: '',
+    ...overrides,
   }
 }
 
@@ -1597,6 +1637,7 @@ function recordStaffAdministrativeAuditEvent(access, payload = {}) {
     ['staffMemberId']: payload.staffMemberId,
     administrativeProfileId: payload.administrativeProfileId,
     documentId: payload.documentId,
+    attachmentId: payload.attachmentId,
     outcome: payload.outcome || 'success',
     reasonCode: payload.reasonCode,
     noteSummary: payload.noteSummary,
@@ -1911,6 +1952,7 @@ function setStaffAdministrativeProfileWindowMessage(windowId, message) {
 
 function denyStaffAdministrativeProfileWindow(windowId) {
   const windowItem = openWindows.find((item) => item.id === windowId)
+  clearStaffDocumentAttachmentRuntime(windowId)
   staffAdministrativeProfileWindowStates.delete(windowId)
   staffDocumentWindowStates.delete(windowId)
   staffAdministrativeGovernanceWindowStates.delete(windowId)
@@ -2008,6 +2050,7 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
     latestWindow.centerId !== state.centerId ||
     getCurrentStorageCenterId() !== state.centerId
   ) {
+    clearStaffDocumentAttachmentRuntime(windowId)
     staffAdministrativeProfileWindowStates.delete(windowId)
     staffDocumentWindowStates.delete(windowId)
     staffAdministrativeGovernanceWindowStates.delete(windowId)
@@ -2187,6 +2230,7 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
     latestState.staffMemberId !== state.staffMemberId ||
     getCurrentStorageCenterId() !== state.centerId
   ) {
+    clearStaffDocumentAttachmentRuntime(windowId)
     staffAdministrativeProfileWindowStates.delete(windowId)
     staffDocumentWindowStates.delete(windowId)
     staffAdministrativeGovernanceWindowStates.delete(windowId)
@@ -2495,6 +2539,1093 @@ function refreshStaffDocumentsSection(windowId) {
   currentSection.replaceWith(template.content.firstElementChild)
 }
 
+function issueStaffDocumentAttachmentRequestToken(windowId) {
+  const token = (staffDocumentAttachmentRequestTokens.get(windowId) || 0) + 1
+  staffDocumentAttachmentRequestTokens.set(windowId, token)
+  return token
+}
+
+function isCurrentStaffDocumentAttachmentRequest(windowId, token, documentId) {
+  const state = getStaffDocumentWindowState(windowId)
+  return Boolean(
+    state &&
+    staffDocumentAttachmentRequestTokens.get(windowId) === token &&
+    state.mode === 'detail' &&
+    state.selectedDocumentId === documentId &&
+    state.attachment?.documentId === documentId &&
+    getCurrentStorageCenterId() === state.centerId,
+  )
+}
+
+function updateStaffDocumentAttachmentState(windowId, attachment) {
+  const state = getStaffDocumentWindowState(windowId)
+  if (!state) return false
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    attachment: createStaffDocumentAttachmentState(attachment),
+  })
+  refreshStaffDocumentsSection(windowId)
+  return true
+}
+
+function clearStaffDocumentAttachmentRuntime(windowId) {
+  issueStaffDocumentAttachmentRequestToken(windowId)
+  uploadingStaffDocumentWindowIds.delete(windowId)
+  if (staffDocumentAttachmentViewerState?.windowId === windowId) {
+    clearStaffDocumentAttachmentViewerState()
+  }
+  if (pendingStaffDocumentViewerReturnContext?.windowId === windowId) {
+    pendingStaffDocumentViewerReturnContext = null
+  }
+}
+
+function captureStaffDocumentAttachmentViewerReturnContext(
+  windowId,
+  documentRecord,
+  attachment,
+  triggerElement,
+) {
+  const windowItem = openWindows.find(
+    (item) => item.id === windowId && item.type === 'staff-administrative-profile',
+  )
+  const documentState = getStaffDocumentWindowState(windowId)
+  const windowElement = triggerElement?.closest?.(
+    '.desktop-window.is-staff-administrative-profile[data-window-id]',
+  ) || document.querySelector(
+    `.desktop-window.is-staff-administrative-profile[data-window-id="${escapeCssAttributeValue(windowId)}"]`,
+  )
+  const scrollContainer = windowElement?.querySelector(STAFF_DOCUMENT_CONTENT_SCROLL_SELECTOR)
+
+  return captureStaffDocumentViewerReturnContext({
+    windowId,
+    centerId: windowItem?.centerId,
+    ['staffMemberId']: windowItem?.staffMemberId,
+    administrativeProfileId: documentState?.administrativeProfileId,
+    documentId: documentRecord?.id,
+    attachmentId: attachment?.id,
+    sectionId: `${windowId}-documents`,
+    mode: documentState?.mode,
+    triggerAction: triggerElement?.dataset?.staffDocumentAction || 'attachment-view',
+    attachmentVersion: Number(triggerElement?.dataset?.attachmentVersion || 0),
+    maximized: windowItem?.maximized,
+    scrollContainer,
+  })
+}
+
+function getStaffDocumentAttachmentResultStatus(result) {
+  if (result?.code === 'not-configured') return 'not-configured'
+  if (['unauthorized', 'authorization-unavailable'].includes(result?.code)) return 'denied'
+  if (result?.code === 'backend-not-ready') return 'unavailable'
+  return 'error'
+}
+
+async function loadStaffDocumentAttachment(
+  windowId,
+  { preserveCurrent = false, message = '' } = {},
+) {
+  const context = getStaffDocumentWindowContext(windowId, {
+    refresh: true,
+    action: 'staff-document.attachment-view',
+  })
+  const state = getStaffDocumentWindowState(windowId)
+  const documentRecord = context?.documents.find(
+    (item) => item.id === state?.selectedDocumentId,
+  )
+  if (!context || !state || state.mode !== 'detail' || !documentRecord) return
+
+  const documentId = documentRecord.id
+  const token = issueStaffDocumentAttachmentRequestToken(windowId)
+  updateStaffDocumentAttachmentState(windowId, {
+    ...(preserveCurrent ? state.attachment : {}),
+    status: 'checking',
+    documentId,
+    message,
+    isProcessing: false,
+  })
+
+  const readiness = await staffDocumentAttachmentService.checkReadiness({
+    centerId: context.access.centerId,
+  })
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, documentId)) return
+  if (!readiness.ok) {
+    const status = getStaffDocumentAttachmentResultStatus(readiness)
+    if (status === 'denied') {
+      clearStaffDocumentAttachmentRuntime(windowId)
+      denyStaffAdministrativeProfileWindow(windowId)
+      return
+    }
+    updateStaffDocumentAttachmentState(windowId, {
+      ...(preserveCurrent ? getStaffDocumentWindowState(windowId)?.attachment : {}),
+      status,
+      documentId,
+      message: readiness.error,
+    })
+    return
+  }
+  if (!readiness.data.ready) {
+    updateStaffDocumentAttachmentState(windowId, {
+      ...(preserveCurrent ? getStaffDocumentWindowState(windowId)?.attachment : {}),
+      status: 'unavailable',
+      documentId,
+      schemaVersion: readiness.data.schemaVersion,
+      replacementReady: false,
+      softRemovalReady: false,
+      deletionGovernanceReady: false,
+      permanentExecutionReady: false,
+      governanceBlocker: readiness.data.governanceBlocker || '',
+      governance: null,
+      governanceStatus: 'unavailable',
+      message: 'Kho tệp riêng tư chưa sẵn sàng.',
+    })
+    return
+  }
+
+  const result = await staffDocumentAttachmentService.listPrimary({
+    centerId: context.access.centerId,
+    ['staffMemberId']: context.staffMember.id,
+    administrativeProfileId: context.lookup.profile.id,
+    documentId,
+  })
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, documentId)) return
+  if (!result.ok) {
+    const status = getStaffDocumentAttachmentResultStatus(result)
+    if (status === 'denied') {
+      clearStaffDocumentAttachmentRuntime(windowId)
+      denyStaffAdministrativeProfileWindow(windowId)
+      return
+    }
+    updateStaffDocumentAttachmentState(windowId, {
+      ...(preserveCurrent ? getStaffDocumentWindowState(windowId)?.attachment : {}),
+      status,
+      documentId,
+      message: result.error,
+    })
+    return
+  }
+  const schemaVersion = Number(readiness.data.schemaVersion || 0)
+  const replacementReady = schemaVersion >= 2
+  const softRemovalReady = readiness.data.softRemovalReady === true
+  const deletionGovernanceReady = readiness.data.deletionRequestReady === true
+  const permanentExecutionReady = readiness.data.permanentExecutionReady === true
+  let history = result.data ? [result.data] : []
+  let historyStatus = replacementReady ? 'ready' : 'unavailable'
+  let governance = null
+  let governanceStatus = deletionGovernanceReady ? 'ready' : 'unavailable'
+  if (replacementReady) {
+    const historyResult = await staffDocumentAttachmentService.listHistory({
+      centerId: context.access.centerId,
+      ['staffMemberId']: context.staffMember.id,
+      administrativeProfileId: context.lookup.profile.id,
+      documentId,
+      includeCleanupColumns: softRemovalReady,
+    })
+    if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, documentId)) return
+    if (historyResult.ok) {
+      history = historyResult.data
+    } else {
+      historyStatus = 'error'
+    }
+  }
+  if (deletionGovernanceReady) {
+    const governanceResult = await staffDocumentAttachmentService.getGovernanceSnapshot({
+      centerId: context.access.centerId,
+      ['staffMemberId']: context.staffMember.id,
+      administrativeProfileId: context.lookup.profile.id,
+      documentId,
+    })
+    if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, documentId)) return
+    if (governanceResult.ok) {
+      governance = governanceResult.data
+    } else {
+      governanceStatus = 'error'
+    }
+  }
+  updateStaffDocumentAttachmentState(windowId, {
+    status: result.data?.state === 'failed' ? 'failed' : 'ready',
+    documentId,
+    record: result.data,
+    history,
+    historyStatus,
+    schemaVersion,
+    replacementReady,
+    softRemovalReady,
+    deletionGovernanceReady,
+    permanentExecutionReady,
+    governanceBlocker: readiness.data.governanceBlocker || '',
+    governance,
+    governanceStatus,
+    message: message || (result.data?.state === 'failed'
+      ? 'Lượt tải gần nhất chưa được backend xác nhận.'
+      : ''),
+    processingAction: '',
+  })
+}
+
+function isAttachmentFileValidationCode(code) {
+  return [
+    'file-missing',
+    'mime-not-allowed',
+    'file-empty',
+    'file-too-large',
+    'extension-mismatch',
+    'file-unreadable',
+    'signature-mismatch',
+  ].includes(code)
+}
+
+function getSafeStaffDocumentAttachmentAuditSummary(file) {
+  const mimeCategory = file?.type === 'application/pdf' ? 'pdf' : 'image'
+  const size = Number(file?.size || 0)
+  const sizeBucket = size <= 1024 * 1024
+    ? 'up-to-1mib'
+    : size <= 5 * 1024 * 1024
+      ? 'up-to-5mib'
+      : 'up-to-10mib'
+  return `${mimeCategory}-${sizeBucket}`
+}
+
+async function isStaffDocumentAttachmentFinalizeContextCurrent(captured) {
+  const action = captured.expectedCurrentAttachmentId
+    ? 'staff-document.attachment-replace'
+    : 'staff-document.attachment-upload'
+  if (
+    !uploadingStaffDocumentWindowIds.has(captured.windowId) ||
+    getCurrentStorageCenterId() !== captured.centerId
+  ) return false
+  const access = await getLatestStaffAdministrativeProfileAccessContext(
+    captured.centerId,
+    action,
+  )
+  if (
+    !uploadingStaffDocumentWindowIds.has(captured.windowId) ||
+    getCurrentStorageCenterId() !== captured.centerId ||
+    !access.ok ||
+    access.centerId !== captured.centerId
+  ) return false
+  refreshStaffDataFromStorage()
+  const staffMember = getUniqueCurrentCenterStaffMember(captured.staffMemberId, captured.centerId)
+  const lookup = resolveStaffAdministrativeProfileForStaff(
+    staffAdministrativeProfiles,
+    captured.staffMemberId,
+    captured.centerId,
+  )
+  const documentRecord = staffDocuments.find(
+    (item) =>
+      item.id === captured.documentId &&
+      item.centerId === captured.centerId &&
+      item.staffMemberId === captured.staffMemberId &&
+      item.administrativeProfileId === captured.administrativeProfileId,
+  )
+  const attachmentState = getStaffDocumentWindowState(captured.windowId)?.attachment
+  return Boolean(
+    staffMember &&
+    !staffMember.archivedAt &&
+    lookup.profile?.id === captured.administrativeProfileId &&
+    documentRecord &&
+    !documentRecord.archivedAt &&
+    documentRecord.revision === captured.revision &&
+    documentRecord.updatedAt === captured.updatedAt &&
+    (
+      !captured.expectedCurrentAttachmentId ||
+      (
+        attachmentState?.documentId === captured.documentId &&
+        attachmentState?.record?.id === captured.expectedCurrentAttachmentId &&
+        attachmentState.record.state === 'available' &&
+        attachmentState.record.isPrimary === true
+      )
+    ),
+  )
+}
+
+async function handleStaffDocumentAttachmentSelection(windowId, input) {
+  if (uploadingStaffDocumentWindowIds.has(windowId)) return
+  const file = input?.files?.[0]
+  const context = getStaffDocumentWindowContext(windowId, {
+    refresh: true,
+    action: 'staff-document.attachment-upload',
+  })
+  const state = getStaffDocumentWindowState(windowId)
+  const documentRecord = context?.documents.find(
+    (item) => item.id === state?.selectedDocumentId,
+  )
+  if (
+    !context ||
+    !state ||
+    state.mode !== 'detail' ||
+    !documentRecord ||
+    context.staffMember?.archivedAt ||
+    documentRecord.archivedAt
+  ) {
+    if (windowId) denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+
+  const validation = validateStaffDocumentAttachmentFile(file)
+  const auditSummary = getSafeStaffDocumentAttachmentAuditSummary(file)
+  if (!validation.ok) {
+    recordStaffAdministrativeAuditEvent(context.access, {
+      action: 'staff-document.attachment-upload-failed',
+      targetType: 'staff-document',
+      targetId: documentRecord.id,
+      ['staffMemberId']: context.staffMember.id,
+      administrativeProfileId: context.lookup.profile.id,
+      documentId: documentRecord.id,
+      outcome: 'validation-failed',
+      reasonCode: validation.code,
+      noteSummary: auditSummary,
+    })
+    updateStaffDocumentAttachmentState(windowId, {
+      status: 'failed',
+      documentId: documentRecord.id,
+      message: validation.error,
+    })
+    return
+  }
+  if (!window.confirm('Tải tệp đã chọn lên kho riêng tư?')) return
+
+  const latestAccess = await getLatestStaffAdministrativeProfileAccessContext(
+    context.access.centerId,
+    'staff-document.attachment-upload',
+  )
+  if (!latestAccess.ok) {
+    clearStaffDocumentAttachmentRuntime(windowId)
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  if (!recordStaffAdministrativeAuditEvent(latestAccess, {
+    action: 'staff-document.attachment-upload-start',
+    targetType: 'staff-document',
+    targetId: documentRecord.id,
+    ['staffMemberId']: context.staffMember.id,
+    administrativeProfileId: context.lookup.profile.id,
+    documentId: documentRecord.id,
+    reasonCode: 'attachment-upload-start',
+    noteSummary: auditSummary,
+  })) {
+    updateStaffDocumentAttachmentState(windowId, {
+      status: 'failed',
+      documentId: documentRecord.id,
+      message: 'Không thể ghi nhật ký quyền riêng tư; lượt tải chưa được bắt đầu.',
+    })
+    return
+  }
+
+  const captured = {
+    windowId,
+    centerId: context.access.centerId,
+    ['staffMemberId']: context.staffMember.id,
+    administrativeProfileId: context.lookup.profile.id,
+    documentId: documentRecord.id,
+    revision: documentRecord.revision,
+    updatedAt: documentRecord.updatedAt,
+  }
+  const token = issueStaffDocumentAttachmentRequestToken(windowId)
+  uploadingStaffDocumentWindowIds.add(windowId)
+  updateStaffDocumentAttachmentState(windowId, {
+    ...state.attachment,
+    status: 'preparing',
+    documentId: documentRecord.id,
+    isProcessing: true,
+  })
+
+  const result = await staffDocumentAttachmentService.upload({
+    centerId: captured.centerId,
+    ['staffMemberId']: captured.staffMemberId,
+    administrativeProfileId: captured.administrativeProfileId,
+    documentId: captured.documentId,
+    file,
+    onStage: ({ stage }) => {
+      if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+      updateStaffDocumentAttachmentState(windowId, {
+        ...getStaffDocumentWindowState(windowId)?.attachment,
+        status: stage,
+        documentId: captured.documentId,
+        isProcessing: true,
+      })
+    },
+    beforeFinalize: () => isStaffDocumentAttachmentFinalizeContextCurrent(captured),
+  })
+  uploadingStaffDocumentWindowIds.delete(windowId)
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+
+  const auditAccess = await getLatestStaffAdministrativeProfileAccessContext(
+    captured.centerId,
+    result.ok
+      ? 'staff-document.attachment-view'
+      : 'staff-document.attachment-upload',
+  )
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+  if (!auditAccess.ok) {
+    clearStaffDocumentAttachmentRuntime(windowId)
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const attachmentId = result.data?.id || result.attachmentId || ''
+  const auditSaved = recordStaffAdministrativeAuditEvent(auditAccess, {
+    action: result.ok
+      ? 'staff-document.attachment-upload-success'
+      : 'staff-document.attachment-upload-failed',
+    targetType: attachmentId ? 'staff-document-attachment' : 'staff-document',
+    targetId: attachmentId || captured.documentId,
+    ['staffMemberId']: captured.staffMemberId,
+    administrativeProfileId: captured.administrativeProfileId,
+    documentId: captured.documentId,
+    attachmentId,
+    outcome: result.ok
+      ? 'success'
+      : isAttachmentFileValidationCode(result.code)
+        ? 'validation-failed'
+        : result.code === 'stale-context'
+          ? 'stale'
+          : 'failed',
+    reasonCode: result.ok ? 'attachment-upload-success' : result.code,
+    noteSummary: auditSummary,
+  })
+  const latestAttachmentState = getStaffDocumentWindowState(windowId)?.attachment
+  updateStaffDocumentAttachmentState(windowId, {
+    ...latestAttachmentState,
+    status: result.ok ? 'ready' : 'failed',
+    documentId: captured.documentId,
+    record: result.ok ? result.data : null,
+    message: auditSaved
+      ? (result.ok ? 'Tệp đã được backend xác nhận sẵn sàng.' : result.error)
+      : 'Thao tác đã kết thúc nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng và kiểm tra storage.',
+    isProcessing: false,
+  })
+  if (result.ok && latestAttachmentState?.replacementReady) {
+    void loadStaffDocumentAttachment(windowId, {
+      preserveCurrent: true,
+      message: 'Tệp đã được backend xác nhận sẵn sàng.',
+    })
+  }
+}
+
+async function handleStaffDocumentAttachmentReplacement(windowId, input) {
+  if (uploadingStaffDocumentWindowIds.has(windowId)) return
+  const file = input?.files?.[0]
+  const context = getStaffDocumentWindowContext(windowId, {
+    refresh: true,
+    action: 'staff-document.attachment-replace',
+  })
+  const state = getStaffDocumentWindowState(windowId)
+  const documentRecord = context?.documents.find(
+    (item) => item.id === state?.selectedDocumentId,
+  )
+  const currentAttachment = state?.attachment?.record
+  if (!context) {
+    if (windowId) denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  if (
+    !state ||
+    state.mode !== 'detail' ||
+    !documentRecord ||
+    context.staffMember?.archivedAt ||
+    documentRecord.archivedAt ||
+    state.attachment?.replacementReady !== true ||
+    currentAttachment?.state !== 'available' ||
+    currentAttachment.isPrimary !== true ||
+    currentAttachment.documentId !== documentRecord.id
+  ) {
+    if (windowId && state) {
+      updateStaffDocumentAttachmentState(windowId, {
+        ...state.attachment,
+        status: 'replacement-failed',
+        message: state.attachment?.replacementReady
+          ? 'Không thể thay tệp từ trạng thái hiện tại; phiên bản hiện hành không đổi.'
+          : 'Chức năng Thay tệp đang chờ migration F23.11E.1.',
+        isProcessing: false,
+      })
+    }
+    return
+  }
+
+  const validation = validateStaffDocumentAttachmentFile(file)
+  const auditSummary = getSafeStaffDocumentAttachmentAuditSummary(file)
+  if (!validation.ok) {
+    recordStaffAdministrativeAuditEvent(context.access, {
+      action: 'staff-document.attachment-replacement-failed',
+      targetType: 'staff-document-attachment',
+      targetId: currentAttachment.id,
+      ['staffMemberId']: context.staffMember.id,
+      administrativeProfileId: context.lookup.profile.id,
+      documentId: documentRecord.id,
+      attachmentId: currentAttachment.id,
+      outcome: 'validation-failed',
+      reasonCode: validation.code,
+      noteSummary: `version-${currentAttachment.version}-${auditSummary}`,
+    })
+    updateStaffDocumentAttachmentState(windowId, {
+      ...state.attachment,
+      status: 'replacement-failed',
+      message: validation.error,
+      isProcessing: false,
+    })
+    return
+  }
+
+  const confirmed = window.confirm(
+    'Tệp mới sẽ trở thành phiên bản hiện hành.\n' +
+    'Phiên bản hiện tại vẫn được lưu trong lịch sử và có thể xem hoặc tải xuống.',
+  )
+  if (!confirmed) return
+
+  const captured = {
+    windowId,
+    centerId: context.access.centerId,
+    ['staffMemberId']: context.staffMember.id,
+    administrativeProfileId: context.lookup.profile.id,
+    documentId: documentRecord.id,
+    revision: documentRecord.revision,
+    updatedAt: documentRecord.updatedAt,
+    expectedCurrentAttachmentId: currentAttachment.id,
+  }
+  uploadingStaffDocumentWindowIds.add(windowId)
+  updateStaffDocumentAttachmentState(windowId, {
+    ...state.attachment,
+    status: 'preparing',
+    message: '',
+    isProcessing: true,
+  })
+
+  const latestAccess = await getLatestStaffAdministrativeProfileAccessContext(
+    context.access.centerId,
+    'staff-document.attachment-replace',
+  )
+  if (!latestAccess.ok) {
+    uploadingStaffDocumentWindowIds.delete(windowId)
+    clearStaffDocumentAttachmentRuntime(windowId)
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  if (!(await isStaffDocumentAttachmentFinalizeContextCurrent(captured))) {
+    uploadingStaffDocumentWindowIds.delete(windowId)
+    const latestState = getStaffDocumentWindowState(windowId)
+    if (latestState?.selectedDocumentId === captured.documentId) {
+      const staleMessage = 'Ngữ cảnh tài liệu đã thay đổi; phiên bản hiện hành không đổi.'
+      updateStaffDocumentAttachmentState(windowId, {
+        ...latestState.attachment,
+        status: 'replacement-failed',
+        message: staleMessage,
+        isProcessing: false,
+      })
+      void loadStaffDocumentAttachment(windowId, {
+        preserveCurrent: true,
+        message: staleMessage,
+      })
+    }
+    return
+  }
+
+  const token = issueStaffDocumentAttachmentRequestToken(windowId)
+  let preparedAuditRecorded = false
+  let replacementVersion = Number(currentAttachment.version || 1) + 1
+
+  const result = await staffDocumentAttachmentService.replace({
+    centerId: captured.centerId,
+    ['staffMemberId']: captured.staffMemberId,
+    administrativeProfileId: captured.administrativeProfileId,
+    documentId: captured.documentId,
+    expectedCurrentAttachmentId: captured.expectedCurrentAttachmentId,
+    file,
+    onStage: ({ stage, attachmentId, version }) => {
+      if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+      if (Number(version) > 0) replacementVersion = Number(version)
+      if (stage === 'uploading' && attachmentId && !preparedAuditRecorded) {
+        preparedAuditRecorded = recordStaffAdministrativeAuditEvent(latestAccess, {
+          action: 'staff-document.attachment-replacement-prepared',
+          targetType: 'staff-document-attachment',
+          targetId: attachmentId,
+          ['staffMemberId']: captured.staffMemberId,
+          administrativeProfileId: captured.administrativeProfileId,
+          documentId: captured.documentId,
+          attachmentId,
+          reasonCode: 'attachment-replacement-prepared',
+          noteSummary: `version-${replacementVersion}-${auditSummary}`,
+        })
+      }
+      updateStaffDocumentAttachmentState(windowId, {
+        ...getStaffDocumentWindowState(windowId)?.attachment,
+        status: stage,
+        isProcessing: true,
+      })
+    },
+    beforeFinalize: () => isStaffDocumentAttachmentFinalizeContextCurrent(captured),
+  })
+  uploadingStaffDocumentWindowIds.delete(windowId)
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+
+  const auditAccess = await getLatestStaffAdministrativeProfileAccessContext(
+    captured.centerId,
+    'staff-document.attachment-replace',
+  )
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+  if (!auditAccess.ok) {
+    clearStaffDocumentAttachmentRuntime(windowId)
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+
+  const replacementAttachmentId = result.data?.id || result.attachmentId || ''
+  const auditSaved = recordStaffAdministrativeAuditEvent(auditAccess, {
+    action: result.ok
+      ? 'staff-document.attachment-replacement-completed'
+      : 'staff-document.attachment-replacement-failed',
+    targetType: 'staff-document-attachment',
+    targetId: replacementAttachmentId || captured.expectedCurrentAttachmentId,
+    ['staffMemberId']: captured.staffMemberId,
+    administrativeProfileId: captured.administrativeProfileId,
+    documentId: captured.documentId,
+    attachmentId: replacementAttachmentId || captured.expectedCurrentAttachmentId,
+    outcome: result.ok
+      ? 'success'
+      : result.code === 'replacement-stale'
+        ? 'stale'
+        : isAttachmentFileValidationCode(result.code)
+          ? 'validation-failed'
+          : 'failed',
+    reasonCode: result.ok ? 'attachment-replacement-completed' : result.code,
+    noteSummary: `version-${replacementVersion}-${auditSummary}`,
+  })
+
+  if (result.ok) {
+    updateStaffDocumentAttachmentState(windowId, {
+      ...getStaffDocumentWindowState(windowId)?.attachment,
+      status: 'ready',
+      record: result.data,
+      message: auditSaved
+        ? 'Tệp mới đã trở thành phiên bản hiện hành; bản cũ được giữ trong lịch sử.'
+        : 'Thay tệp đã hoàn tất nhưng nhật ký quyền riêng tư chưa ghi được.',
+      isProcessing: false,
+    })
+    void loadStaffDocumentAttachment(windowId, {
+      preserveCurrent: true,
+      message: 'Tệp mới đã trở thành phiên bản hiện hành; bản cũ được giữ trong lịch sử.',
+    })
+    return
+  }
+
+  const failureMessage = auditSaved
+    ? result.error
+    : 'Thay tệp không hoàn tất và nhật ký quyền riêng tư chưa ghi được; phiên bản hiện hành không đổi.'
+  updateStaffDocumentAttachmentState(windowId, {
+    ...getStaffDocumentWindowState(windowId)?.attachment,
+    status: 'replacement-failed',
+    record: currentAttachment,
+    message: failureMessage,
+    isProcessing: false,
+  })
+  void loadStaffDocumentAttachment(windowId, {
+    preserveCurrent: true,
+    message: failureMessage,
+  })
+}
+
+const STAFF_DOCUMENT_ATTACHMENT_GOVERNANCE_PERMISSION = Object.freeze({
+  remove: 'staff-document.attachment-remove',
+  'deletion-request': 'staff-document.attachment-deletion-request',
+  approve: 'staff-document.attachment-deletion-review',
+  reject: 'staff-document.attachment-deletion-review',
+  cancel: 'staff-document.attachment-deletion-cancel',
+  execute: 'staff-document.attachment-deletion-execute',
+  'hold-place': 'staff-document.attachment-legal-hold',
+  'hold-release': 'staff-document.attachment-legal-hold',
+})
+
+const STAFF_DOCUMENT_ATTACHMENT_GOVERNANCE_AUDIT_ACTION = Object.freeze({
+  remove: 'staff_document_attachment_removed',
+  'deletion-request': 'staff_document_attachment_deletion_requested',
+  approve: 'staff_document_attachment_deletion_approved',
+  reject: 'staff_document_attachment_deletion_rejected',
+  cancel: 'staff_document_attachment_deletion_canceled',
+  execute: 'staff_document_attachment_deletion_completed',
+  'hold-place': 'staff_document_attachment_legal_hold_placed',
+  'hold-release': 'staff_document_attachment_legal_hold_released',
+})
+
+function confirmStaffDocumentAttachmentGovernanceAction(action) {
+  const message = {
+    remove:
+      'Tệp sẽ không còn là phiên bản hiện hành của tài liệu.\n' +
+      'Tệp vẫn được lưu riêng tư trong lịch sử và chưa bị xóa khỏi hệ thống.',
+    'deletion-request':
+      'Đây là yêu cầu xóa vĩnh viễn object khỏi kho lưu trữ riêng tư.\n' +
+      'Yêu cầu cần Owner khác phê duyệt và chỉ được thực thi khi đủ điều kiện lưu trữ, không có legal hold.',
+    approve: 'Phê duyệt yêu cầu xóa này? Object chưa bị xóa cho đến khi Owner chủ động thực thi.',
+    reject: 'Từ chối yêu cầu xóa này? Object vẫn được giữ riêng tư.',
+    cancel: 'Hủy yêu cầu xóa này? Phiên bản và object vẫn được giữ riêng tư.',
+    execute:
+      'Object sẽ bị xóa khỏi kho lưu trữ riêng tư.\n' +
+      'Sau khi hoàn tất, phiên bản chỉ còn bản ghi lịch sử và không thể xem hoặc tải xuống.',
+    'hold-place': 'Đặt legal hold cho phiên bản này? Mọi phê duyệt và thực thi xóa sẽ bị chặn.',
+    'hold-release': 'Giải phóng legal hold? Yêu cầu xóa sẽ không tự động thực thi.',
+  }[action]
+  return Boolean(message && window.confirm(message))
+}
+
+async function handleStaffDocumentAttachmentGovernanceAction(windowId, action, button) {
+  if (uploadingStaffDocumentWindowIds.has(windowId)) return
+  const permission = STAFF_DOCUMENT_ATTACHMENT_GOVERNANCE_PERMISSION[action]
+  if (!permission || !confirmStaffDocumentAttachmentGovernanceAction(action)) return
+
+  const context = getStaffDocumentWindowContext(windowId, {
+    refresh: true,
+    action: permission,
+  })
+  const state = getStaffDocumentWindowState(windowId)
+  const documentRecord = context?.documents.find(
+    (item) => item.id === state?.selectedDocumentId,
+  )
+  const attachmentId = String(button?.dataset?.attachmentId || '').trim()
+  const requestId = String(button?.dataset?.requestId || '').trim()
+  const attachment = action === 'remove'
+    ? state?.attachment?.record
+    : state?.attachment?.history?.find((item) => item.id === attachmentId)
+  const request = state?.attachment?.governance?.requests?.find((item) => item.id === requestId)
+  const capabilityReady = action === 'remove'
+    ? state?.attachment?.softRemovalReady === true
+    : action === 'execute'
+      ? state?.attachment?.permanentExecutionReady === true
+      : state?.attachment?.deletionGovernanceReady === true
+
+  if (
+    !context ||
+    !state ||
+    state.mode !== 'detail' ||
+    !documentRecord ||
+    !capabilityReady ||
+    context.staffMember?.archivedAt ||
+    documentRecord.archivedAt ||
+    (!attachment || attachment.documentId !== documentRecord.id) ||
+    (['approve', 'reject', 'cancel', 'execute'].includes(action) && !request)
+  ) {
+    if (windowId && !context) denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+
+  const captured = {
+    centerId: context.access.centerId,
+    ['staffMemberId']: context.staffMember.id,
+    administrativeProfileId: context.lookup.profile.id,
+    documentId: documentRecord.id,
+    attachmentId: attachment?.id || '',
+    requestId: request?.id || '',
+    version: Number(attachment?.version || 0),
+  }
+  const token = issueStaffDocumentAttachmentRequestToken(windowId)
+  const processingAction = `${captured.attachmentId}:${captured.requestId}`
+  uploadingStaffDocumentWindowIds.add(windowId)
+  updateStaffDocumentAttachmentState(windowId, {
+    ...state.attachment,
+    status: action === 'execute' ? 'preparing-deletion' : 'governance-processing',
+    isProcessing: true,
+    processingAction,
+    message: '',
+  })
+
+  const latestAccess = await getLatestStaffAdministrativeProfileAccessContext(
+    context.access.centerId,
+    permission,
+  )
+  if (!latestAccess.ok) {
+    clearStaffDocumentAttachmentRuntime(windowId)
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+
+  let executionStartAudited = false
+  let result
+  if (action === 'remove') {
+    result = await staffDocumentAttachmentService.removeFromDocument({
+      centerId: captured.centerId,
+      attachmentId: captured.attachmentId,
+      expectedCurrentAttachmentId: captured.attachmentId,
+      reasonCode: 'user_requested',
+    })
+  } else if (action === 'deletion-request') {
+    result = await staffDocumentAttachmentService.requestDeletion({
+      centerId: captured.centerId,
+      attachmentId: captured.attachmentId,
+      reasonCode: 'user_requested',
+    })
+  } else if (action === 'approve') {
+    result = await staffDocumentAttachmentService.approveDeletion({
+      centerId: captured.centerId,
+      requestId: captured.requestId,
+    })
+  } else if (action === 'reject') {
+    result = await staffDocumentAttachmentService.rejectDeletion({
+      centerId: captured.centerId,
+      requestId: captured.requestId,
+    })
+  } else if (action === 'cancel') {
+    result = await staffDocumentAttachmentService.cancelDeletion({
+      centerId: captured.centerId,
+      requestId: captured.requestId,
+      owner: latestAccess.role === 'owner',
+    })
+  } else if (action === 'hold-place') {
+    result = await staffDocumentAttachmentService.placeLegalHold({
+      centerId: captured.centerId,
+      attachmentId: captured.attachmentId,
+    })
+  } else if (action === 'hold-release') {
+    result = await staffDocumentAttachmentService.releaseLegalHold({
+      centerId: captured.centerId,
+      attachmentId: captured.attachmentId,
+    })
+  } else if (action === 'execute') {
+    result = await staffDocumentAttachmentService.executeDeletion({
+      centerId: captured.centerId,
+      ['staffMemberId']: captured.staffMemberId,
+      administrativeProfileId: captured.administrativeProfileId,
+      documentId: captured.documentId,
+      requestId: captured.requestId,
+      attachmentId: captured.attachmentId,
+      onStage: ({ stage }) => {
+        if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+        if (stage === 'deleting' && !executionStartAudited) {
+          executionStartAudited = recordStaffAdministrativeAuditEvent(latestAccess, {
+            action: 'staff_document_attachment_deletion_execution_started',
+            targetType: 'staff-document-attachment',
+            targetId: captured.attachmentId,
+            ['staffMemberId']: captured.staffMemberId,
+            administrativeProfileId: captured.administrativeProfileId,
+            documentId: captured.documentId,
+            attachmentId: captured.attachmentId,
+            requestId: captured.requestId,
+            reasonCode: 'execution_started',
+            noteSummary: `version-${captured.version}-executing`,
+          })
+        }
+        updateStaffDocumentAttachmentState(windowId, {
+          ...getStaffDocumentWindowState(windowId)?.attachment,
+          status: stage === 'deleting' ? 'deleting' : `${stage}-deletion`,
+          isProcessing: true,
+          processingAction,
+        })
+      },
+    })
+  }
+
+  uploadingStaffDocumentWindowIds.delete(windowId)
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, captured.documentId)) return
+  const auditAction = result?.ok
+    ? STAFF_DOCUMENT_ATTACHMENT_GOVERNANCE_AUDIT_ACTION[action]
+    : action === 'execute'
+      ? 'staff_document_attachment_deletion_failed'
+      : STAFF_DOCUMENT_ATTACHMENT_GOVERNANCE_AUDIT_ACTION[action]
+  const resultingRequestId = result?.data?.id || captured.requestId
+  if (auditAction) {
+    recordStaffAdministrativeAuditEvent(latestAccess, {
+      action: auditAction,
+      targetType: 'staff-document-attachment',
+      targetId: captured.attachmentId,
+      ['staffMemberId']: captured.staffMemberId,
+      administrativeProfileId: captured.administrativeProfileId,
+      documentId: captured.documentId,
+      attachmentId: captured.attachmentId,
+      requestId: resultingRequestId,
+      outcome: result?.ok ? 'success' : result?.code === 'removal-stale' ? 'stale' : 'failed',
+      reasonCode: result?.ok
+        ? action === 'remove'
+          ? 'user_requested'
+          : action === 'deletion-request'
+            ? 'user_requested'
+            : action === 'approve'
+              ? 'owner_approved'
+              : action === 'reject'
+                ? 'owner_rejected'
+                : action === 'cancel'
+                  ? latestAccess.role === 'owner' ? 'owner_canceled' : 'requester_canceled'
+                  : action === 'hold-place'
+                    ? 'legal_requirement'
+                    : action === 'hold-release'
+                      ? 'hold_released'
+                      : action === 'execute'
+                        ? 'object_absence_verified'
+                        : 'server_retention_confirmed'
+        : result?.code || 'governance_failed',
+      noteSummary: `version-${captured.version}-${result?.ok ? 'success' : 'failed'}`,
+    })
+  }
+
+  const message = result?.ok
+    ? {
+        remove: 'Tệp đã được gỡ khỏi phiên bản hiện hành và vẫn được giữ riêng tư trong lịch sử.',
+        'deletion-request': 'Đã tạo yêu cầu xóa; object chưa bị xóa.',
+        approve: 'Đã phê duyệt; chưa tự động xóa object.',
+        reject: 'Đã từ chối yêu cầu xóa.',
+        cancel: 'Đã hủy yêu cầu xóa.',
+        execute: 'Đã xóa object và ghi tombstone lịch sử.',
+        'hold-place': 'Đã đặt legal hold; phê duyệt và thực thi xóa bị chặn.',
+        'hold-release': 'Đã giải phóng legal hold; không có thao tác xóa tự động.',
+      }[action]
+    : result?.error || 'Không thể hoàn tất thao tác quản trị tệp.'
+  updateStaffDocumentAttachmentState(windowId, {
+    ...getStaffDocumentWindowState(windowId)?.attachment,
+    status: result?.ok ? 'ready' : 'error',
+    message,
+    isProcessing: false,
+    processingAction: '',
+  })
+  void loadStaffDocumentAttachment(windowId, { preserveCurrent: true, message })
+}
+
+async function handleStaffDocumentAttachmentAccess(
+  windowId,
+  mode,
+  triggerElement = null,
+  requestedVersion = null,
+) {
+  const action = mode === 'download'
+    ? 'staff-document.attachment-download'
+    : 'staff-document.attachment-view'
+  const context = getStaffDocumentWindowContext(windowId, { refresh: true, action })
+  const state = getStaffDocumentWindowState(windowId)
+  const documentRecord = context?.documents.find(
+    (item) => item.id === state?.selectedDocumentId,
+  )
+  const normalizedVersion = Number(requestedVersion)
+  const isVersionAccess = Number.isInteger(normalizedVersion) && normalizedVersion > 0
+  const attachment = isVersionAccess
+    ? state?.attachment?.history?.find((item) => Number(item.version) === normalizedVersion)
+    : state?.attachment?.record
+  if (
+    !context ||
+    !state ||
+    !documentRecord ||
+    !attachment ||
+    !(
+      (attachment.state === 'available' && attachment.isPrimary === true) ||
+      (attachment.state === 'archived' && attachment.isPrimary === false)
+    ) ||
+    attachment.documentId !== documentRecord.id
+  ) return
+
+  const viewerReturnContext = mode === 'download'
+    ? null
+    : captureStaffDocumentAttachmentViewerReturnContext(
+        windowId,
+        documentRecord,
+        attachment,
+        triggerElement,
+      )
+  if (mode !== 'download' && !viewerReturnContext) return
+
+  const token = issueStaffDocumentAttachmentRequestToken(windowId)
+  setStaffDocumentWindowState(windowId, {
+    ...state,
+    attachment: {
+      ...state.attachment,
+      message: mode === 'download' ? 'Đang chuẩn bị tải xuống…' : 'Đang chuẩn bị xem…',
+    },
+  })
+  refreshStaffDocumentsSection(windowId)
+  const result = await staffDocumentAttachmentService.createAccessUrl({
+    centerId: context.access.centerId,
+    ['staffMemberId']: context.staffMember.id,
+    administrativeProfileId: context.lookup.profile.id,
+    documentId: documentRecord.id,
+    attachmentId: attachment.id,
+    mode,
+  })
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, documentRecord.id)) return
+  if (!result.ok) {
+    if (getStaffDocumentAttachmentResultStatus(result) === 'denied') {
+      clearStaffDocumentAttachmentRuntime(windowId)
+      denyStaffAdministrativeProfileWindow(windowId)
+      return
+    }
+    updateStaffDocumentAttachmentState(windowId, {
+      ...state.attachment,
+      status: 'error',
+      documentId: documentRecord.id,
+      message: result.error,
+    })
+    return
+  }
+
+  const latestAccess = await getLatestStaffAdministrativeProfileAccessContext(
+    context.access.centerId,
+    action,
+  )
+  if (!isCurrentStaffDocumentAttachmentRequest(windowId, token, documentRecord.id)) return
+  if (!latestAccess.ok) {
+    clearStaffDocumentAttachmentRuntime(windowId)
+    denyStaffAdministrativeProfileWindow(windowId)
+    return
+  }
+  const auditSaved = recordStaffAdministrativeAuditEvent(latestAccess, {
+    action: isVersionAccess
+      ? mode === 'download'
+        ? 'staff-document.attachment-version-download'
+        : 'staff-document.attachment-version-view'
+      : mode === 'download'
+        ? 'staff-document.attachment-download'
+        : 'staff-document.attachment-view',
+    targetType: 'staff-document-attachment',
+    targetId: attachment.id,
+    ['staffMemberId']: context.staffMember.id,
+    administrativeProfileId: context.lookup.profile.id,
+    documentId: documentRecord.id,
+    attachmentId: attachment.id,
+    reasonCode: isVersionAccess
+      ? mode === 'download'
+        ? 'attachment-version-download'
+        : 'attachment-version-view'
+      : mode === 'download'
+        ? 'attachment-download'
+        : 'attachment-view',
+    noteSummary: `version-${attachment.version}-${attachment.mimeType === 'application/pdf' ? 'pdf' : 'image'}`,
+  })
+  if (!auditSaved) {
+    updateStaffDocumentAttachmentState(windowId, {
+      ...state.attachment,
+      status: 'error',
+      documentId: documentRecord.id,
+      message: 'Không thể ghi nhật ký quyền riêng tư; quyền truy cập tệp không được sử dụng.',
+    })
+    return
+  }
+
+  if (mode === 'download') {
+    const anchor = document.createElement('a')
+    anchor.href = result.data.signedUrl
+    anchor.download = result.data.safeFileName || 'staff-document'
+    anchor.rel = 'noopener noreferrer'
+    anchor.hidden = true
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+    updateStaffDocumentAttachmentState(windowId, {
+      ...state.attachment,
+      message: '',
+    })
+    return
+  }
+
+  staffDocumentAttachmentViewerState = {
+    windowId,
+    centerId: context.access.centerId,
+    documentId: documentRecord.id,
+    attachmentId: attachment.id,
+    mimeType: result.data.mimeType,
+    signedUrl: result.data.signedUrl,
+    expiresAt: Date.now() + result.data.expiresIn * 1000,
+    returnContext: viewerReturnContext,
+    expiryTimerId: null,
+  }
+  const viewerAttachmentId = attachment.id
+  staffDocumentAttachmentViewerState.expiryTimerId = window.setTimeout(() => {
+    if (
+      staffDocumentAttachmentViewerState?.attachmentId === viewerAttachmentId &&
+      Date.now() >= staffDocumentAttachmentViewerState.expiresAt
+    ) closeStaffDocumentAttachmentViewer()
+  }, result.data.expiresIn * 1000)
+  render()
+}
+
 function refreshStaffDocumentResultsRegion(windowId) {
   const context = getStaffDocumentWindowContext(windowId)
   const state = getStaffDocumentWindowState(windowId)
@@ -2633,8 +3764,13 @@ function openStaffDocumentDetail(windowId, documentId) {
     errors: {},
     message: '',
     isSaving: false,
+    attachment: createStaffDocumentAttachmentState({
+      status: 'checking',
+      documentId,
+    }),
   })
   refreshStaffDocumentsSection(windowId)
+  void loadStaffDocumentAttachment(windowId)
 }
 
 function closeStaffDocumentFormOrDetail(windowId) {
@@ -2644,6 +3780,7 @@ function closeStaffDocumentFormOrDetail(windowId) {
   }
   const state = getStaffDocumentWindowState(windowId)
   if (!state || state.isSaving) return
+  clearStaffDocumentAttachmentRuntime(windowId)
   setStaffDocumentWindowState(windowId, {
     ...state,
     mode: 'list',
@@ -2655,6 +3792,7 @@ function closeStaffDocumentFormOrDetail(windowId) {
     errors: {},
     message: '',
     isSaving: false,
+    attachment: createStaffDocumentAttachmentState(),
   })
   refreshStaffDocumentsSection(windowId)
 }
@@ -5516,8 +6654,10 @@ function render() {
   restorePreservedScrollPositions(preservedScrollState)
   restoreActiveElementRenderSnapshot(activeElementSnapshot)
   restorePendingWindowFocusAfterRender()
+  focusStaffDocumentAttachmentViewerAfterRender()
   focusPendingInternalAccountCard()
   focusPendingAttendanceBaselineCell()
+  restorePendingStaffDocumentViewerReturnContextAfterRender()
   skipNextParentContactScrollCapture = false
   updateClock()
 }
@@ -8878,6 +10018,7 @@ function renderWindowBody(windowItem) {
     const access = getStaffAdministrativeProfileAccessContext()
 
     if (!access.ok || windowItem.centerId !== access.centerId) {
+      clearStaffDocumentAttachmentRuntime(windowItem.id)
       staffAdministrativeProfileWindowStates.delete(windowItem.id)
       staffDocumentWindowStates.delete(windowItem.id)
       staffAdministrativeGovernanceWindowStates.delete(windowItem.id)
@@ -9634,15 +10775,119 @@ function getTaskbarWindowGroups(windowItems = []) {
 }
 
 function renderSystemOverlay() {
-  if (!isNotificationCenterOpen) {
+  if (!isNotificationCenterOpen && !staffDocumentAttachmentViewerState) {
     return '<div class="system-overlay-root" id="system-overlay-root"></div>'
   }
 
   return `
     <div class="system-overlay-root active" id="system-overlay-root">
-      ${renderNotificationCenterHotfix(getUnreadNotificationCount())}
+      ${isNotificationCenterOpen ? renderNotificationCenterHotfix(getUnreadNotificationCount()) : ''}
+      ${renderStaffDocumentAttachmentViewer()}
     </div>
   `
+}
+
+function renderStaffDocumentAttachmentViewer() {
+  const viewer = staffDocumentAttachmentViewerState
+  if (!viewer?.signedUrl) return ''
+  const isPdf = viewer.mimeType === 'application/pdf'
+  return `
+    <section
+      class="staff-document-attachment-viewer"
+      data-staff-document-attachment-viewer
+      role="dialog"
+      aria-modal="true"
+      aria-label="Xem tệp tài liệu nhân sự"
+      tabindex="-1"
+    >
+      <div class="staff-document-attachment-viewer-shell">
+        <header>
+          <div><strong>Xem tệp tài liệu</strong><span>${isPdf ? 'PDF' : 'Hình ảnh'}</span></div>
+          <button type="button" data-staff-document-viewer-action="close" aria-label="Đóng trình xem">Đóng</button>
+        </header>
+        <div class="staff-document-attachment-viewer-content">
+          ${isPdf
+            ? `<iframe src="${escapeAttribute(viewer.signedUrl)}" title="Tệp PDF tài liệu nhân sự" referrerpolicy="no-referrer"></iframe>`
+            : `<img src="${escapeAttribute(viewer.signedUrl)}" alt="Tệp hình ảnh tài liệu nhân sự" referrerpolicy="no-referrer" />`}
+        </div>
+      </div>
+    </section>
+  `
+}
+
+function closeStaffDocumentAttachmentViewer() {
+  if (!staffDocumentAttachmentViewerState) return
+  const returnContext = clearStaffDocumentAttachmentViewerState()
+  pendingStaffDocumentViewerReturnContext = returnContext || null
+  render()
+}
+
+function clearStaffDocumentAttachmentViewerState() {
+  const viewer = staffDocumentAttachmentViewerState
+  if (!viewer) return null
+  if (viewer.expiryTimerId !== null) {
+    window.clearTimeout(viewer.expiryTimerId)
+  }
+  const returnContext = viewer.returnContext || null
+  viewer.signedUrl = ''
+  viewer.returnContext = null
+  viewer.expiryTimerId = null
+  staffDocumentAttachmentViewerState = null
+  return returnContext
+}
+
+function bindStaffDocumentAttachmentViewer() {
+  const viewer = document.querySelector('[data-staff-document-attachment-viewer]')
+  if (!viewer) return
+  viewer.addEventListener('click', (event) => {
+    if (
+      event.target === viewer ||
+      event.target.closest?.('[data-staff-document-viewer-action="close"]')
+    ) closeStaffDocumentAttachmentViewer()
+  })
+  viewer.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    closeStaffDocumentAttachmentViewer()
+  })
+}
+
+function focusStaffDocumentAttachmentViewerAfterRender() {
+  document
+    .querySelector('[data-staff-document-attachment-viewer]')
+    ?.focus({ preventScroll: true })
+}
+
+function restorePendingStaffDocumentViewerReturnContextAfterRender() {
+  const context = pendingStaffDocumentViewerReturnContext
+  if (!context) return
+  pendingStaffDocumentViewerReturnContext = null
+
+  scheduleStaffDocumentViewerReturnRestore({
+    context,
+    resolveWindowElement: (windowId) => document.querySelector(
+      `.desktop-window.is-staff-administrative-profile[data-window-id="${escapeCssAttributeValue(windowId)}"]`,
+    ),
+    resolveWindowItem: (windowId) => openWindows.find((item) => item.id === windowId),
+    resolveDocumentState: getStaffDocumentWindowState,
+    resolveScrollContainer: (windowElement) => windowElement.querySelector(
+      STAFF_DOCUMENT_CONTENT_SCROLL_SELECTOR,
+    ),
+    resolveSection: (windowElement, sectionId) => windowElement.querySelector(
+      `#${escapeCssIdentifier(sectionId)}`,
+    ),
+    resolveTrigger: (windowElement, returnContext) => {
+      const versionSelector = returnContext.triggerAction === 'attachment-version-view'
+        ? `[data-attachment-version="${escapeCssAttributeValue(returnContext.attachmentVersion)}"]`
+        : ''
+      return windowElement.querySelector(
+        `[data-staff-document-action="${escapeCssAttributeValue(returnContext.triggerAction)}"]` +
+        `[data-document-id="${escapeCssAttributeValue(returnContext.documentId)}"]` +
+        versionSelector,
+      )
+    },
+    scheduleFrame: (callback) => requestAnimationFrame(callback),
+  })
 }
 
 function renderNotificationCenterV15J(unreadCount) {
@@ -11456,6 +12701,7 @@ function closeWindow(windowId) {
   const closingWindow = openWindows.find((windowItem) => windowItem.id === windowId)
   if (closingWindow?.type === 'staff-administrative-profile') {
     const closingState = getStaffAdministrativeProfileWindowState(windowId)
+    clearStaffDocumentAttachmentRuntime(windowId)
     staffAdministrativeProfileWindowStates.delete(windowId)
     staffDocumentWindowStates.delete(windowId)
     staffAdministrativeGovernanceWindowStates.delete(windowId)
@@ -15032,6 +16278,22 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
       boundStaffAdministrativeActionWindows.add(windowElement)
 
       windowElement.addEventListener('click', (event) => {
+        const governanceButton = event.target.closest?.(
+          '[data-staff-document-attachment-governance-action]',
+        )
+        if (governanceButton && windowElement.contains(governanceButton)) {
+          event.preventDefault()
+          event.stopPropagation()
+          const governanceWindowId = windowElement.dataset.windowId
+          if (governanceWindowId) {
+            void handleStaffDocumentAttachmentGovernanceAction(
+              governanceWindowId,
+              governanceButton.dataset.staffDocumentAttachmentGovernanceAction,
+              governanceButton,
+            )
+          }
+          return
+        }
         const button = event.target.closest?.('[data-staff-document-action]')
         if (!button || !windowElement.contains(button)) return
         event.preventDefault()
@@ -15048,6 +16310,26 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
           return closeStaffDocumentFormOrDetail(windowId)
         }
         if (action === 'clear-filters') return clearStaffDocumentFilters(windowId)
+        if (action === 'attachment-retry-load') {
+          void loadStaffDocumentAttachment(windowId)
+          return
+        }
+        if ([
+          'attachment-view',
+          'attachment-download',
+          'attachment-version-view',
+          'attachment-version-download',
+        ].includes(action)) {
+          void handleStaffDocumentAttachmentAccess(
+            windowId,
+            action.endsWith('download') ? 'download' : 'preview',
+            button,
+            action.startsWith('attachment-version-')
+              ? button.dataset.attachmentVersion
+              : null,
+          )
+          return
+        }
         if (action === 'archive' || action === 'restore') {
           void changeStaffDocumentArchiveState(windowId, documentId, action)
         }
@@ -15064,6 +16346,12 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
         }
         if (control.dataset.staffDocumentField) {
           updateStaffDocumentDraftField(windowId, control.dataset.staffDocumentField, control.value)
+        }
+        if (control.dataset.staffDocumentAttachmentInput !== undefined) {
+          void handleStaffDocumentAttachmentSelection(windowId, control)
+        }
+        if (control.dataset.staffDocumentAttachmentReplacementInput !== undefined) {
+          void handleStaffDocumentAttachmentReplacement(windowId, control)
         }
       })
 
@@ -15224,6 +16512,7 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
 }
 
 function bindEvents() {
+  bindStaffDocumentAttachmentViewer()
   bindStartMenuOutsidePointer()
   bindWindowOverflowOutsidePointer()
   bindNotificationOutsidePointer()

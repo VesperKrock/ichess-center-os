@@ -46,17 +46,30 @@ assert(storage.includes('getCurrentCenterMembership(user.id, normalizedCenterId)
 
 assert(migration.includes('create or replace function public.can_manage_transaction_attachments'))
 assert(migration.includes('auth.uid() is not null'))
-assert(migration.includes("lower(cm.role) in ('owner', 'center_admin')"))
-assert(migration.includes("coalesce(cm.status, 'active') = 'active'"))
-assert(migration.includes('alter table if exists public.transaction_attachments enable row level security'))
+assert(migration.includes("lower(btrim(coalesce(cm.status::text, ''))) = 'active'"))
+assert(migration.includes("in ('owner', 'center_admin')"))
+assert(!migration.includes("coalesce(cm.status, 'active')"))
+assert(migration.includes('alter table public.transaction_attachments enable row level security'))
+assert(!migration.includes('alter table if exists public.transaction_attachments enable row level security'))
 assert(migration.includes("set public = false"))
 assert(migration.includes("where id = 'transaction-images'"))
-assert(migration.includes("storage_path like center_id || '/transaction-images/%'"))
+assert(migration.includes('create or replace function public.is_valid_transaction_attachment_path'))
+assert(migration.includes("split_part(requested_storage_path, '/', 1) = requested_center_id"))
+assert(migration.includes("array_length(string_to_array(requested_storage_path, '/'), 1) = 5"))
+assert(!/storage_path\s+like\s+center_id/i.test(migration))
 assert(migration.includes('uploaded_by = auth.uid()'))
+assert(migration.includes('transaction_attachment_identity_immutable'))
+assert(migration.includes('new.center_id'))
+assert(migration.includes('new.uploaded_by'))
+assert(migration.includes('new.storage_bucket'))
+assert(migration.includes('new.storage_path'))
 assert(migration.includes('on storage.objects'))
 assert(migration.includes("bucket_id = 'transaction-images'"))
 assert(migration.includes('(storage.foldername(name))[1]'))
-assert(migration.includes('(storage.foldername(name))[2] = \'transaction-images\''))
+assert(migration.includes('SUP-CF.1 prerequisite missing: public.transaction_attachments'))
+assert(migration.includes('SUP-CF.1 prerequisite missing: public.center_members'))
+assert(migration.includes('SUP-CF.1 prerequisite missing: transaction-images bucket'))
+assert(migration.includes("set search_path = ''"))
 
 const runtimeAndMigration = [main, attachments, storage, migration].join('\n')
 assert(!runtimeAndMigration.includes('owner.duchai@ichess.vn'))
@@ -64,7 +77,8 @@ assert(!migration.includes('dreamhome_prod'))
 assert(!migration.includes('dreamhome'))
 assert(!runtimeAndMigration.includes('service_role'))
 assert(!migration.includes('public = true'))
-assert(!/grant\s+select,\s*insert,\s*update,\s*delete\s+on\s+public\.transaction_attachments\s+to\s+authenticated/i.test(migration))
+assert(/grant\s+select,\s*insert,\s*update,\s*delete\s+on\s+table\s+public\.transaction_attachments\s+to\s+authenticated/i.test(migration))
+assert(migration.includes('from public, anon;'))
 
 for (const marker of [
   'Target Trace',
@@ -72,6 +86,7 @@ for (const marker of [
   'RLS Patch',
   'Access Matrix',
   'POLICY FIX PREPARED - AWAITING REMOTE APPLY APPROVAL',
+  'SUP-CF.1 HARDENED - READY FOR LOCAL MIGRATION TEST',
 ]) {
   assert(doc.includes(marker), `Doc missing marker: ${marker}`)
 }

@@ -179,7 +179,7 @@ assert(mainSource.includes("attachmentDraft.mode === 'remove-existing'"), 'Remov
 assert(mainSource.includes("previousDraft.mode === 'staged-new'"), 'Gỡ staged image in edit must return to keep-existing.')
 
 assert(!mainSource.includes('src/tuition-module.js'), 'F23.8B must not add tuition sync wiring.')
-assert(!mainSource.includes('application/pdf'), 'F23.8B must not enable PDF.')
+assert(!cashflowSource.includes('application/pdf'), 'F23.8B cashflow evidence must not enable PDF.')
 assert(!mainSource.includes('application/vnd.ms-excel'), 'F23.8B must not enable Excel.')
 assert(!mainSource.includes('data-module-launcher][data-cashflow-evidence'), 'Evidence must not use launcher marker.')
 assert(!mainSource.includes('openModuleWindow(button.dataset.cashflow'), 'Evidence button must not open module windows.')

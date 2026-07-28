@@ -15,6 +15,17 @@ export const STAFF_ADMINISTRATIVE_ACTIONS = Object.freeze([
   'staff-document.edit',
   'staff-document.archive',
   'staff-document.restore',
+  'staff-document.attachment-upload',
+  'staff-document.attachment-replace',
+  'staff-document.attachment-view',
+  'staff-document.attachment-download',
+  'staff-document.attachment-remove',
+  'staff-document.attachment-deletion-request',
+  'staff-document.attachment-deletion-cancel',
+  'staff-document.attachment-deletion-review',
+  'staff-document.attachment-deletion-execute',
+  'staff-document.attachment-legal-hold',
+  'staff-document.attachment-retention-configure',
   'privacy-audit.view',
   'retention-policy.view',
   'retention-policy.manage',
@@ -34,6 +45,26 @@ export const STAFF_ADMINISTRATIVE_AUDIT_ACTIONS = Object.freeze([
   'staff-document.edit',
   'staff-document.archive',
   'staff-document.restore',
+  'staff-document.attachment-upload-start',
+  'staff-document.attachment-upload-success',
+  'staff-document.attachment-upload-failed',
+  'staff-document.attachment-replacement-prepared',
+  'staff-document.attachment-replacement-completed',
+  'staff-document.attachment-replacement-failed',
+  'staff-document.attachment-version-view',
+  'staff-document.attachment-version-download',
+  'staff-document.attachment-view',
+  'staff-document.attachment-download',
+  'staff_document_attachment_removed',
+  'staff_document_attachment_deletion_requested',
+  'staff_document_attachment_deletion_approved',
+  'staff_document_attachment_deletion_rejected',
+  'staff_document_attachment_deletion_canceled',
+  'staff_document_attachment_deletion_execution_started',
+  'staff_document_attachment_deletion_completed',
+  'staff_document_attachment_deletion_failed',
+  'staff_document_attachment_legal_hold_placed',
+  'staff_document_attachment_legal_hold_released',
   'retention-policy.update',
   'deletion-request.create',
   'deletion-request.cancel',
@@ -47,6 +78,7 @@ export const STAFF_ADMINISTRATIVE_AUDIT_OUTCOMES = Object.freeze([
   'validation-failed',
   'stale',
   'cancelled',
+  'failed',
 ])
 
 export const STAFF_ADMINISTRATIVE_DELETION_SCOPES = Object.freeze([
@@ -78,6 +110,13 @@ const CENTER_ADMIN_PERMISSIONS = new Set([
   'staff-document.edit',
   'staff-document.archive',
   'staff-document.restore',
+  'staff-document.attachment-upload',
+  'staff-document.attachment-replace',
+  'staff-document.attachment-view',
+  'staff-document.attachment-download',
+  'staff-document.attachment-remove',
+  'staff-document.attachment-deletion-request',
+  'staff-document.attachment-deletion-cancel',
   'privacy-audit.view',
   'deletion-request.create',
   'deletion-request.cancel',
@@ -107,6 +146,7 @@ const SAFE_AUDIT_SUMMARY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,119}$/i
 const AUDIT_TARGET_TYPE_SET = new Set([
   'administrative-profile',
   'staff-document',
+  'staff-document-attachment',
   'retention-policy',
   'deletion-request',
   'staff-member',
@@ -124,6 +164,7 @@ const AUDIT_ALLOWED_FIELD_SET = new Set([
   'staffMemberId',
   'administrativeProfileId',
   'documentId',
+  'attachmentId',
   'outcome',
   'reasonCode',
   'noteSummary',
@@ -258,6 +299,7 @@ export function buildStaffAdministrativeAuditEvent(payload = {}) {
     staffMemberId: normalizeText(payload.staffMemberId),
     administrativeProfileId: normalizeText(payload.administrativeProfileId),
     documentId: normalizeText(payload.documentId),
+    attachmentId: normalizeText(payload.attachmentId),
     outcome: normalizeText(payload.outcome),
     reasonCode: normalizeText(payload.reasonCode),
     noteSummary: SAFE_AUDIT_SUMMARY_PATTERN.test(noteSummary) ? noteSummary : '',
@@ -285,6 +327,7 @@ export function normalizeStaffAdministrativeAuditEvent(event, { currentCenterId 
     staffMemberId: normalizeOwnedText(event, 'staffMemberId', issues),
     administrativeProfileId: normalizeOwnedText(event, 'administrativeProfileId', issues),
     documentId: normalizeOwnedText(event, 'documentId', issues),
+    attachmentId: normalizeOwnedText(event, 'attachmentId', issues),
     outcome: normalizeOwnedText(event, 'outcome', issues),
     reasonCode: normalizeOwnedText(event, 'reasonCode', issues),
     noteSummary: normalizeOwnedText(event, 'noteSummary', issues),
@@ -321,9 +364,16 @@ export function getStaffAdministrativeAuditEventIssues(event, currentCenterId = 
   if (event.targetType !== 'staff-member' && !normalizeText(event.administrativeProfileId)) {
     issues.push('administrativeProfileId:missing')
   }
-  if (event.targetType === 'staff-document' && !normalizeText(event.documentId)) {
+  if (
+    ['staff-document', 'staff-document-attachment'].includes(event.targetType) &&
+    !normalizeText(event.documentId)
+  ) {
     issues.push('documentId:missing')
   }
+  if (
+    event.targetType === 'staff-document-attachment' &&
+    !normalizeText(event.attachmentId)
+  ) issues.push('attachmentId:missing')
   if (event.targetType === 'deletion-request' && !normalizeText(event.requestId)) {
     issues.push('requestId:missing')
   }
@@ -833,6 +883,9 @@ function renderAccessPanel(access) {
     ['Reveal dữ liệu nhạy cảm', 'administrative-profile.reveal-sensitive'],
     ['Sửa Hồ sơ hành chính', 'administrative-profile.edit'],
     ['Quản lý tài liệu', 'staff-document.edit'],
+    ['Tải tệp tài liệu riêng tư', 'staff-document.attachment-upload'],
+    ['Thay tệp và lưu phiên bản cũ', 'staff-document.attachment-replace'],
+    ['Xem / tải tệp tài liệu', 'staff-document.attachment-view'],
     ['Tạo yêu cầu xóa', 'deletion-request.create'],
     ['Xem xét / phê duyệt', 'deletion-request.approve'],
   ]
@@ -997,6 +1050,19 @@ function normalizeAuditFilters(filters = {}) {
 }
 
 function getAuditActionLabel(action) {
+  const attachmentGovernanceLabel = {
+    staff_document_attachment_removed: 'Gỡ tệp khỏi tài liệu',
+    staff_document_attachment_deletion_requested: 'Yêu cầu xóa vĩnh viễn tệp',
+    staff_document_attachment_deletion_approved: 'Phê duyệt xóa vĩnh viễn tệp',
+    staff_document_attachment_deletion_rejected: 'Từ chối xóa vĩnh viễn tệp',
+    staff_document_attachment_deletion_canceled: 'Hủy yêu cầu xóa tệp',
+    staff_document_attachment_deletion_execution_started: 'Bắt đầu thực thi xóa tệp',
+    staff_document_attachment_deletion_completed: 'Hoàn tất xóa object tệp',
+    staff_document_attachment_deletion_failed: 'Xóa tệp thất bại',
+    staff_document_attachment_legal_hold_placed: 'Đặt legal hold cho tệp',
+    staff_document_attachment_legal_hold_released: 'Giải phóng legal hold cho tệp',
+  }[action]
+  if (attachmentGovernanceLabel) return attachmentGovernanceLabel
   return {
     'administrative-profile.open': 'Mở Hồ sơ hành chính',
     'administrative-profile.reveal-sensitive': 'Reveal trường nhạy cảm',
@@ -1006,6 +1072,16 @@ function getAuditActionLabel(action) {
     'staff-document.edit': 'Sửa tài liệu',
     'staff-document.archive': 'Lưu trữ tài liệu',
     'staff-document.restore': 'Khôi phục tài liệu',
+    'staff-document.attachment-upload-start': 'Bắt đầu tải tệp tài liệu',
+    'staff-document.attachment-upload-success': 'Tải tệp tài liệu thành công',
+    'staff-document.attachment-upload-failed': 'Tải tệp tài liệu thất bại',
+    'staff-document.attachment-replacement-prepared': 'Chuẩn bị phiên bản tệp thay thế',
+    'staff-document.attachment-replacement-completed': 'Thay tệp tài liệu thành công',
+    'staff-document.attachment-replacement-failed': 'Thay tệp tài liệu thất bại',
+    'staff-document.attachment-version-view': 'Xem phiên bản tệp tài liệu',
+    'staff-document.attachment-version-download': 'Tải xuống phiên bản tệp tài liệu',
+    'staff-document.attachment-view': 'Xem tệp tài liệu',
+    'staff-document.attachment-download': 'Tải xuống tệp tài liệu',
     'retention-policy.update': 'Cập nhật chính sách lưu trữ',
     'deletion-request.create': 'Tạo yêu cầu xóa',
     'deletion-request.cancel': 'Hủy yêu cầu xóa',
@@ -1021,6 +1097,7 @@ function getAuditOutcomeLabel(outcome) {
     'validation-failed': 'Validation không đạt',
     stale: 'Dữ liệu đã thay đổi',
     cancelled: 'Đã hủy',
+    failed: 'Thất bại',
   }[outcome] || 'Cần kiểm tra'
 }
 
@@ -1028,6 +1105,7 @@ function getAuditTargetLabel(targetType) {
   return {
     'administrative-profile': 'Hồ sơ hành chính',
     'staff-document': 'Tài liệu nhân sự',
+    'staff-document-attachment': 'Tệp tài liệu nhân sự',
     'retention-policy': 'Chính sách lưu trữ',
     'deletion-request': 'Yêu cầu xóa',
     'staff-member': 'Nhân viên',
@@ -1048,6 +1126,15 @@ function getAuditReasonLabel(reasonCode) {
     'access-denied': 'Không đủ quyền theo action',
     'validation-failed': 'Dữ liệu nhập chưa hợp lệ',
     'stale-revision': 'Revision mới nhất không khớp',
+    'attachment-upload-start': 'Bắt đầu lượt tải tệp rõ ràng',
+    'attachment-upload-success': 'Backend xác nhận tệp sẵn sàng',
+    'attachment-upload-failed': 'Lượt tải tệp chưa hoàn tất',
+    'attachment-replacement-prepared': 'Backend đã tạo metadata phiên bản mới',
+    'attachment-replacement-completed': 'Backend đã chuyển phiên bản mới thành hiện hành',
+    'attachment-version-view': 'Yêu cầu URL xem phiên bản ngắn hạn',
+    'attachment-version-download': 'Yêu cầu URL tải phiên bản ngắn hạn',
+    'attachment-view': 'Yêu cầu URL xem ngắn hạn',
+    'attachment-download': 'Yêu cầu URL tải xuống ngắn hạn',
   }[reasonCode] || 'Lý do hệ thống an toàn'
 }
 

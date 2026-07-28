@@ -2,7 +2,7 @@
 
 Date: 2026-07-23
 
-Status: policy/app patch prepared only. No remote SQL was applied. No commit/push.
+Status: policy/app patch prepared only; F23.11E.1 SQL hardening is migration-ready. No local reset, remote SQL, deploy, commit or push was performed.
 
 ## Target Trace
 
@@ -50,26 +50,40 @@ Policy helper:
 Rule:
 
 - `auth.uid()` must be present.
-- `public.center_members` must have the same `center_id`.
-- membership `status` must be active.
-- membership `role` must be `owner` or `center_admin`.
+- requested center must be nonblank and match `public.center_members.center_id` exactly.
+- membership user must equal `auth.uid()` exactly.
+- normalized membership `status` must be exactly `active`; `NULL`, blank and malformed values deny.
+- normalized membership `role` must be exactly `owner` or `center_admin`.
+- authorization never uses email, display name, client role label or JWT user metadata.
+
+Prerequisite gate:
+
+- missing `public.transaction_attachments`, `public.center_members`, `storage.buckets` or `storage.objects` raises an explicit `SUP-CF.1 prerequisite missing` exception;
+- missing policy columns raises an exception naming the table and missing columns;
+- missing `transaction-images` bucket raises an explicit exception;
+- migration no longer skips table RLS/policy creation through `IF EXISTS`.
 
 Metadata table:
 
 - `public.transaction_attachments` RLS remains enabled.
 - SELECT/INSERT/UPDATE/DELETE are scoped by `center_id`.
 - `storage_bucket` must be `transaction-images`.
-- `storage_path` must start with `<center_id>/transaction-images/`.
+- `storage_path` must match exactly `<center_id>/transaction-images/<YYYY>/<MM>/<fileName>` as five nonempty slash segments; center identity uses equality, never `LIKE`.
 - INSERT requires `uploaded_by = auth.uid()`.
+- UPDATE trigger rejects changes to `center_id`, `uploaded_by`, `storage_bucket` or `storage_path`; normal transaction code/date/month/amount/type/note edits remain valid.
+- Browser runtime directly lists/inserts/updates/deletes metadata, so `authenticated` keeps exactly SELECT/INSERT/UPDATE/DELETE table privileges while RLS performs authorization; `public` and `anon` have no table grant.
 
 Storage:
 
 - Bucket `transaction-images` is kept private with `public = false`.
 - `storage.objects` SELECT/INSERT/UPDATE/DELETE policies require bucket `transaction-images`.
-- Path is parsed through `storage.foldername(name)`.
-- First path segment is treated as canonical `center_id`.
-- Second path segment must be `transaction-images`.
+- Path is parsed through `storage.foldername(name)` and the same exact five-segment helper.
+- First path segment equals canonical `center_id` literally, including center IDs containing `_`.
+- Second path segment is exactly `transaction-images`; year/month/filename segments must satisfy the runtime contract.
 - The parsed center id must pass the same active owner/center_admin membership helper.
+- UPDATE/DELETE policies remain because F23.8B replace/remove and cleanup use them; this does not change F23.11E's no-delete boundary.
+
+All `SECURITY DEFINER` functions use `set search_path = ''` and schema-qualified sensitive relations. Execute is revoked from `public` and `anon`; only the membership helper needed by authenticated policies is granted to `authenticated`. No wildcard/public policy, email authorization or browser service role is introduced.
 
 ## Access Matrix
 
@@ -86,19 +100,24 @@ Owner history access is center-wide, not restricted to rows uploaded by the owne
 
 ## Known Schema Boundary
 
-The current repo has a metadata table helper for `transaction_attachments`, but no Supabase cashflow transaction table/migration in this scope. Therefore this patch enforces center linkage through metadata `center_id` plus private storage path prefix. A future cloud cashflow table should add a foreign-key/transaction-center check when that table becomes the source of truth.
+The current repo has a metadata table helper for `transaction_attachments`, but no Supabase cashflow transaction table creation migration in this scope. Therefore the hardened migration intentionally fails local migration test until that prerequisite exists in the tested baseline/order; it must not report a false PASS. Center linkage is enforced through metadata `center_id` plus exact private Storage path. A future cloud cashflow table should add a foreign-key/transaction-center check when that table becomes the source of truth.
 
 ## Review/Apply Step
 
-After review, apply only to project `zahcfnpaprbnuqpegdmo`:
+Required order, not executed in this patch:
 
-```bash
-supabase db push --project-ref zahcfnpaprbnuqpegdmo
+```text
+SUP-CF.1 hardened migration
+→ F23.11E private staff attachment migration
+→ local supabase db reset
+→ static/security verification
+→ migration list
+→ remote dry-run
+→ review
+→ remote apply
 ```
 
-Alternative review path: open the migration SQL in Supabase SQL Editor for project `zahcfnpaprbnuqpegdmo`, review the policies, then run it manually.
-
-Do not apply to another project. Do not provision membership blindly. If QA still fails after apply, first run readonly inspection for the signed-in `auth.uid()`, current `cloudStatus.centerId`, `center_members.center_id`, `role`, and `status`.
+The current checkpoint is before local reset. Do not provision membership blindly. A prerequisite failure is a migration-order/baseline review item, not permission to weaken the gate. Before any remote apply, use readonly inspection to verify the signed-in `auth.uid()`, current canonical center ID and exact `center_members.center_id`/`role`/`status` contract.
 
 ## Manual QA After Apply
 
@@ -113,3 +132,5 @@ Do not apply to another project. Do not provision membership blindly. If QA stil
 9. Verify teacher/consultant or revoked membership cannot list/upload/view/remove.
 
 POLICY FIX PREPARED - AWAITING REMOTE APPLY APPROVAL
+
+SUP-CF.1 HARDENED - READY FOR LOCAL MIGRATION TEST

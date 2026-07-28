@@ -2105,6 +2105,175 @@ h3 {
   color: #edf5ff;
 }
 
+.staff-document-attachment-state.is-warning {
+  border-color: rgba(244, 183, 73, 0.34);
+  background: rgba(120, 74, 17, 0.18);
+}
+
+.staff-document-attachment-heading,
+.staff-document-attachment-actions,
+.staff-document-attachment-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.staff-document-attachment-heading {
+  justify-content: space-between;
+}
+
+.staff-document-attachment-heading > div {
+  min-width: 0;
+}
+
+.staff-document-attachment-heading p {
+  overflow-wrap: anywhere;
+}
+
+.staff-document-attachment-heading > span,
+.staff-document-attachment-meta span {
+  color: #9fb1c7;
+  font-size: 0.74rem;
+}
+
+.staff-document-attachment-meta,
+.staff-document-attachment-actions {
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.staff-document-attachment-picker {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.staff-document-attachment-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.staff-document-attachment-picker span {
+  border: 1px solid rgba(112, 158, 224, 0.38);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #edf5ff;
+  background: rgba(52, 98, 166, 0.2);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.staff-document-attachment-picker input:focus-visible + span {
+  outline: 2px solid #8fc1ff;
+  outline-offset: 2px;
+}
+
+.staff-document-attachment-picker.is-replacement {
+  margin-top: 0;
+}
+
+.staff-document-replacement-progress,
+.staff-document-replacement-readiness {
+  margin: 10px 0 0;
+  color: #aebed1;
+  font-size: 0.78rem;
+}
+
+.staff-document-version-history {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  border-top: 1px solid rgba(160, 184, 214, 0.16);
+  padding-top: 12px;
+}
+
+.staff-document-version-history h5,
+.staff-document-version-card p {
+  margin: 0;
+}
+
+.staff-document-version-list {
+  display: grid;
+  gap: 8px;
+}
+
+.staff-document-version-card {
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 7px;
+  padding: 10px;
+  background: rgba(6, 12, 20, 0.36);
+}
+
+.staff-document-version-card.is-current {
+  border-color: rgba(87, 190, 139, 0.34);
+}
+
+.staff-document-version-card.is-deleted {
+  border-color: rgba(238, 105, 105, 0.3);
+  background: rgba(72, 24, 30, 0.2);
+}
+
+.staff-document-version-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.staff-document-version-history-heading h5 {
+  margin: 0;
+}
+
+.staff-document-version-history-heading > span,
+.staff-document-retention-status,
+.staff-document-deletion-request-status,
+.staff-document-legal-hold {
+  color: #aebed1;
+  font-size: 0.76rem;
+}
+
+.staff-document-retention-status,
+.staff-document-deletion-request-status,
+.staff-document-legal-hold {
+  margin: 8px 0 0;
+}
+
+.staff-document-legal-hold.is-active {
+  color: #ffe0a3;
+}
+
+.staff-document-version-card.is-deleted .staff-document-version-heading span {
+  color: #ffc1c1;
+  background: rgba(142, 46, 58, 0.26);
+}
+
+.staff-document-version-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.staff-document-version-heading span {
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #c8d7e8;
+  background: rgba(90, 117, 151, 0.22);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.staff-document-version-card.is-current .staff-document-version-heading span {
+  color: #b9f2d3;
+  background: rgba(31, 119, 78, 0.24);
+}
+
 .staff-governance-section,
 .staff-governance-panel,
 .staff-governance-form,
@@ -19365,6 +19534,76 @@ h3 {
 
 .system-overlay-root.active {
   pointer-events: none;
+}
+
+.staff-document-attachment-viewer {
+  position: fixed;
+  z-index: 2147483006;
+  inset: 10px 10px 58px;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: stretch;
+  padding: 10px;
+  background: rgba(2, 7, 14, 0.82);
+  pointer-events: auto;
+}
+
+.staff-document-attachment-viewer-shell {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(160, 190, 226, 0.32);
+  border-radius: 9px;
+  background: #0b1119;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.58);
+}
+
+.staff-document-attachment-viewer-shell > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(160, 184, 214, 0.16);
+}
+
+.staff-document-attachment-viewer-shell > header div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.staff-document-attachment-viewer-shell > header span {
+  color: #9fb1c7;
+  font-size: 0.75rem;
+}
+
+.staff-document-attachment-viewer-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.staff-document-attachment-viewer-content img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  object-fit: contain;
+}
+
+.staff-document-attachment-viewer-content iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  border: 0;
+  background: #ffffff;
 }
 
 .notification-center {

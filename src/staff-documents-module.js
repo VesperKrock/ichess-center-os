@@ -565,7 +565,12 @@ export function renderStaffDocumentsSection({
       ${mode === 'create' || mode === 'edit'
         ? renderStaffDocumentForm({ state, readOnly })
         : mode === 'detail' && selected
-          ? renderStaffDocumentDetail({ documentRecord: selected, readOnly, today })
+          ? renderStaffDocumentDetail({
+              documentRecord: selected,
+              readOnly,
+              today,
+              attachmentState: state.attachment,
+            })
           : renderStaffDocumentCatalog({ documents, filteredDocuments, filters, readOnly, today })}
     </section>
   `
@@ -653,7 +658,7 @@ export function renderStaffDocumentResults({ documents, filteredDocuments, readO
   }).join('')}</div>`
 }
 
-function renderStaffDocumentDetail({ documentRecord, readOnly, today }) {
+function renderStaffDocumentDetail({ documentRecord, readOnly, today, attachmentState }) {
   const status = getStaffDocumentValidityStatus(documentRecord, { today })
   return `
     <div class="staff-document-detail" data-staff-document-detail>
@@ -671,12 +676,514 @@ function renderStaffDocumentDetail({ documentRecord, readOnly, today }) {
         ${renderDetailField('Ngày hết hạn', formatDate(documentRecord.expiryDate))}
         ${renderDetailField('Ghi chú', documentRecord.note, true)}
       </div>
-      <div class="staff-document-attachment-state">
-        <strong>Chưa có tệp đính kèm</strong>
-        <p>Backend lưu trữ riêng tư chưa được bật cho Hồ sơ hành chính. Phase này chỉ quản lý metadata tài liệu và không có thao tác tải tệp.</p>
-      </div>
+      ${renderStaffDocumentAttachmentPanel({
+        documentRecord,
+        readOnly,
+        state: attachmentState,
+      })}
     </div>
   `
+}
+
+export function renderStaffDocumentAttachmentPanel({
+  documentRecord,
+  readOnly = false,
+  state = {},
+} = {}) {
+  const status = normalizeText(state?.status) || 'idle'
+  const attachment = state?.record && typeof state.record === 'object'
+    ? state.record
+    : null
+  const replacementReady = state?.replacementReady === true
+  const softRemovalReady = state?.softRemovalReady === true
+  const deletionGovernanceReady = state?.deletionGovernanceReady === true
+  const permanentExecutionReady = state?.permanentExecutionReady === true
+  const governance = state?.governance && typeof state.governance === 'object'
+    ? state.governance
+    : null
+  const isProcessing = state?.isProcessing === true
+  const processingAction = normalizeText(state?.processingAction)
+  const uploadLocked = Boolean(
+    readOnly || documentRecord?.archivedAt || isProcessing,
+  )
+
+  if ((status === 'checking' || status === 'idle') && !attachment) {
+    return renderAttachmentMessage(
+      'Đang kiểm tra kho tệp riêng tư',
+      'Quyền và readiness backend đang được xác minh.',
+      'is-loading',
+    )
+  }
+  if (status === 'not-configured') {
+    return renderAttachmentMessage(
+      'Kho tệp riêng tư chưa được cấu hình.',
+      'Không có tệp hoặc URL nào được lưu cục bộ.',
+      'is-warning',
+    )
+  }
+  if (status === 'unavailable') {
+    return renderAttachmentMessage(
+      'Kho tệp riêng tư chưa sẵn sàng.',
+      'Migration và chính sách quyền cần được review, apply thủ công trước khi bật upload.',
+      'is-warning',
+    )
+  }
+  if (status === 'denied') {
+    return renderAttachmentMessage(
+      'Bạn không có quyền truy cập tệp này.',
+      'Dữ liệu tệp không được render khi membership không còn hợp lệ.',
+      'is-warning',
+    )
+  }
+  if (status === 'error' && !attachment) {
+    return renderAttachmentMessage(
+      'Không thể kết nối kho tệp riêng tư.',
+      state?.message || 'Vui lòng thử lại khi kết nối ổn định.',
+      'is-warning',
+      '<button type="button" data-staff-document-action="attachment-retry-load">Thử lại</button>',
+    )
+  }
+  if (['preparing', 'uploading', 'finalizing'].includes(status) && !attachment) {
+    const label = status === 'preparing'
+      ? 'Đang chuẩn bị'
+      : status === 'uploading'
+        ? 'Đang tải lên'
+        : 'Đang hoàn tất'
+    return renderAttachmentMessage(
+      label,
+      'Không đóng hoặc chuyển cơ sở cho đến khi thao tác hoàn tất.',
+      'is-loading',
+    )
+  }
+
+  if (attachment?.state === 'available') {
+    const replacementProgress = isProcessing
+      ? `<p class="staff-document-replacement-progress" role="status">${escapeHtml(
+          status === 'preparing'
+            ? 'Đang chuẩn bị...'
+            : status === 'uploading'
+              ? 'Đang tải lên...'
+              : 'Đang hoàn tất...',
+        )}</p>`
+      : ''
+    const replacementNotice = state?.message
+      ? `<p class="staff-documents-notice ${status === 'replacement-failed' ? 'is-warning' : ''}" role="status">${escapeHtml(state.message)}</p>`
+      : ''
+    return `
+      <div class="staff-document-attachment-state is-available" data-staff-document-attachment-panel>
+        <div class="staff-document-attachment-heading">
+          <div>
+            <strong>Đã tải lên</strong>
+            <p>${escapeHtml(attachment.originalFileName || 'Tệp tài liệu')}</p>
+          </div>
+          <span>${escapeHtml(getStaffDocumentAttachmentMimeLabel(attachment.mimeType))}</span>
+        </div>
+        <div class="staff-document-attachment-meta">
+          <span>${escapeHtml(formatStaffDocumentAttachmentSize(attachment.sizeBytes))}</span>
+          <span>${escapeHtml(formatAttachmentDateTime(attachment.createdAt))}</span>
+          <span>Phiên bản ${Number(attachment.version) || 1}</span>
+        </div>
+        <div class="staff-document-attachment-actions">
+          <button
+            type="button"
+            data-staff-document-action="attachment-view"
+            data-document-id="${escapeAttribute(documentRecord.id)}"
+          >Xem</button>
+          <button type="button" data-staff-document-action="attachment-download">Tải xuống</button>
+          ${replacementReady && !readOnly && !documentRecord?.archivedAt
+            ? renderStaffDocumentReplacementControl({ disabled: isProcessing })
+            : ''}
+          ${softRemovalReady && !readOnly && !documentRecord?.archivedAt
+            ? `<button
+                type="button"
+                data-staff-document-attachment-governance-action="remove"
+                data-attachment-id="${escapeAttribute(attachment.id)}"
+                ${isProcessing ? 'disabled' : ''}
+              >Gỡ khỏi tài liệu</button>`
+            : ''}
+        </div>
+        ${replacementProgress}
+        ${replacementNotice}
+        ${replacementReady
+          ? renderStaffDocumentVersionHistory({
+              documentRecord,
+              history: state?.history,
+              historyStatus: state?.historyStatus,
+              softRemovalReady,
+              deletionGovernanceReady,
+              permanentExecutionReady,
+              governanceBlocker: state?.governanceBlocker,
+              governance,
+              readOnly,
+              isProcessing,
+              processingAction,
+            })
+          : '<p class="staff-document-replacement-readiness">Thay tệp và lịch sử phiên bản đang chờ migration F23.11E.1; Xem và Tải xuống phiên bản hiện hành vẫn hoạt động.</p>'}
+      </div>
+    `
+  }
+
+  if (attachment?.state === 'pending') {
+    return renderAttachmentMessage(
+      'Tệp đang chờ hoàn tất',
+      'Backend chưa xác nhận object ở trạng thái sẵn sàng. Không có kết quả giả được hiển thị.',
+      'is-loading',
+    )
+  }
+
+  if (attachment?.state === 'failed' || status === 'failed') {
+    return `
+      <div class="staff-document-attachment-state is-warning" data-staff-document-attachment-panel>
+        <strong>Tải lên thất bại</strong>
+        <p>${escapeHtml(state?.message || 'Lượt tải chưa được xác nhận là sẵn sàng.')}</p>
+        ${uploadLocked ? '' : renderStaffDocumentAttachmentPicker('Thử tải lại')}
+      </div>
+    `
+  }
+
+  return `
+    <div class="staff-document-attachment-state" data-staff-document-attachment-panel>
+      ${replacementReady
+        ? renderStaffDocumentVersionHistory({
+            documentRecord,
+            history: state?.history,
+            historyStatus: state?.historyStatus,
+            softRemovalReady,
+            deletionGovernanceReady,
+            permanentExecutionReady,
+            governanceBlocker: state?.governanceBlocker,
+            governance,
+            readOnly,
+            isProcessing,
+            processingAction,
+          })
+        : ''}
+      <strong>Chưa có tệp đính kèm</strong>
+      <p>PDF, JPEG, PNG hoặc WebP; tối đa 10 MiB. Tệp được lưu trong bucket riêng tư.</p>
+      ${uploadLocked
+        ? '<p>Hồ sơ hoặc tài liệu đang ở chế độ chỉ đọc.</p>'
+        : renderStaffDocumentAttachmentPicker('Tải tệp lên')}
+    </div>
+  `
+}
+
+function renderStaffDocumentReplacementControl({ disabled = false } = {}) {
+  if (disabled) {
+    return '<button type="button" disabled data-staff-document-replacement-disabled>Thay tệp</button>'
+  }
+  return `
+    <label class="staff-document-attachment-picker is-replacement">
+      <input
+        type="file"
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        data-staff-document-attachment-replacement-input
+      />
+      <span>Thay tệp</span>
+    </label>
+  `
+}
+
+export function renderStaffDocumentVersionHistory({
+  documentRecord,
+  history = [],
+  historyStatus = 'ready',
+  softRemovalReady = false,
+  deletionGovernanceReady = false,
+  permanentExecutionReady = false,
+  governanceBlocker = '',
+  governance = null,
+  readOnly = false,
+  isProcessing = false,
+  processingAction = '',
+} = {}) {
+  if (softRemovalReady) {
+    return renderStaffDocumentCleanupVersionHistory({
+      documentRecord,
+      history,
+      historyStatus,
+      governance,
+      deletionGovernanceReady,
+      permanentExecutionReady,
+      governanceBlocker,
+      readOnly,
+      isProcessing,
+      processingAction,
+    })
+  }
+  if (historyStatus === 'error') {
+    return `
+      <section class="staff-document-version-history" data-staff-document-version-history>
+        <h5>Lịch sử phiên bản</h5>
+        <p class="staff-documents-notice is-warning">Không thể đọc lịch sử phiên bản. Phiên bản hiện hành vẫn có thể xem và tải xuống.</p>
+      </section>
+    `
+  }
+
+  const successfulVersions = (Array.isArray(history) ? history : [])
+    .filter((version) => (
+      (version?.state === 'available' && version?.isPrimary === true) ||
+      (version?.state === 'archived' && version?.isPrimary === false)
+    ))
+    .sort((left, right) => Number(right.version || 0) - Number(left.version || 0))
+
+  return `
+    <section class="staff-document-version-history" data-staff-document-version-history>
+      <h5>Lịch sử phiên bản</h5>
+      ${successfulVersions.length
+        ? `<div class="staff-document-version-list">${successfulVersions.map((version) => {
+            const versionNumber = Math.max(1, Number(version.version) || 1)
+            const current = version.state === 'available' && version.isPrimary === true
+            return `
+              <article class="staff-document-version-card ${current ? 'is-current' : 'is-archived'}" data-staff-document-version="${versionNumber}">
+                <div class="staff-document-version-heading">
+                  <strong>Phiên bản ${versionNumber}</strong>
+                  <span>${current ? 'Hiện hành' : 'Đã thay thế'}</span>
+                </div>
+                <p>${escapeHtml(version.originalFileName || 'Tệp tài liệu')}</p>
+                <div class="staff-document-attachment-meta">
+                  <span>${escapeHtml(getStaffDocumentAttachmentMimeLabel(version.mimeType))}</span>
+                  <span>${escapeHtml(formatStaffDocumentAttachmentSize(version.sizeBytes))}</span>
+                  <span>Tải lên ${escapeHtml(formatAttachmentDateTime(version.createdAt))}</span>
+                  ${current || !version.archivedAt
+                    ? ''
+                    : `<span>Được thay thế ${escapeHtml(formatAttachmentDateTime(version.archivedAt))}</span>`}
+                </div>
+                <div class="staff-document-attachment-actions">
+                  <button
+                    type="button"
+                    data-staff-document-action="attachment-version-view"
+                    data-document-id="${escapeAttribute(documentRecord?.id)}"
+                    data-attachment-version="${versionNumber}"
+                  >Xem</button>
+                  <button
+                    type="button"
+                    data-staff-document-action="attachment-version-download"
+                    data-document-id="${escapeAttribute(documentRecord?.id)}"
+                    data-attachment-version="${versionNumber}"
+                  >Tải xuống</button>
+                </div>
+              </article>
+            `
+          }).join('')}</div>`
+        : '<p>Chưa có phiên bản thành công để hiển thị.</p>'}
+    </section>
+  `
+}
+
+function renderStaffDocumentCleanupVersionHistory({
+  documentRecord,
+  history,
+  historyStatus,
+  governance,
+  deletionGovernanceReady,
+  permanentExecutionReady,
+  governanceBlocker,
+  readOnly,
+  isProcessing,
+  processingAction,
+}) {
+  if (historyStatus === 'error') {
+    return `
+      <section class="staff-document-version-history" data-staff-document-version-history>
+        <h5>Lịch sử phiên bản</h5>
+        <p class="staff-documents-notice is-warning">Không thể đọc đầy đủ lịch sử và trạng thái quản trị xóa.</p>
+      </section>
+    `
+  }
+
+  const versions = (Array.isArray(history) ? history : [])
+    .filter((version) => (
+      (version?.state === 'available' && version?.isPrimary === true) ||
+      (version?.state === 'archived' && version?.isPrimary === false) ||
+      (version?.state === 'deleted' && version?.isPrimary === false)
+    ))
+    .sort((left, right) => Number(right.version || 0) - Number(left.version || 0))
+  const requests = Array.isArray(governance?.requests) ? governance.requests : []
+  const holds = Array.isArray(governance?.holds) ? governance.holds : []
+  const viewerRole = normalizeText(governance?.viewerRole)
+  const viewerUserId = normalizeText(governance?.viewerUserId)
+  const isOwner = deletionGovernanceReady && viewerRole === 'owner'
+  const canRequest = deletionGovernanceReady && (isOwner || viewerRole === 'center_admin')
+  const retention = governance?.retention || {}
+  const retentionPanel = !deletionGovernanceReady
+    ? `<p class="staff-documents-notice is-warning">Xóa vĩnh viễn đang khóa: ${escapeHtml(
+        governanceBlocker || 'cần server executor và nguồn vòng đời nhân sự canonical được duyệt',
+      )}.</p>`
+    : retention.configured
+    ? `<p class="staff-document-retention-status">Mốc retention phía máy chủ: ${retention.eligibleAfter
+        ? escapeHtml(formatAttachmentDateTime(retention.eligibleAfter))
+        : 'cần kiểm tra'}.</p>`
+    : '<p class="staff-documents-notice is-warning">Có thể ghi nhận yêu cầu và phê duyệt; thực thi xóa vẫn khóa vì chưa có retention canonical và server executor.</p>'
+
+  return `
+    <section class="staff-document-version-history" data-staff-document-version-history>
+      <div class="staff-document-version-history-heading">
+        <h5>Lịch sử phiên bản</h5>
+        <span>Kho riêng tư</span>
+      </div>
+      ${retentionPanel}
+      ${versions.length
+        ? `<div class="staff-document-version-list">${versions.map((version) => {
+            const versionNumber = Math.max(1, Number(version.version) || 1)
+            const current = version.state === 'available' && version.isPrimary === true
+            const deleted = version.state === 'deleted'
+            const removed = version.archiveReason === 'removed'
+            const versionRequests = requests
+              .filter((request) => request.attachmentId === version.id)
+              .sort((left, right) => String(right.requestedAt).localeCompare(String(left.requestedAt)))
+            const request = versionRequests[0] || null
+            const activeRequest = request && ['requested', 'approved', 'executing'].includes(request.status)
+            const activeHold = holds.find(
+              (hold) => hold.attachmentId === version.id && hold.status === 'active',
+            ) || null
+            const releasedHold = !activeHold && holds.find(
+              (hold) => hold.attachmentId === version.id && hold.status === 'released',
+            )
+            const actionKey = `${version.id}:${request?.id || ''}`
+            const disabled = isProcessing
+            const requestStatus = request ? renderAttachmentDeletionRequestStatus(request, viewerUserId) : ''
+            const governanceActions = []
+
+            if (!readOnly && !deleted && !current && canRequest && !activeHold && !activeRequest) {
+              governanceActions.push(`<button
+                type="button"
+                data-staff-document-attachment-governance-action="deletion-request"
+                data-attachment-id="${escapeAttribute(version.id)}"
+                ${disabled ? 'disabled' : ''}
+              >Yêu cầu xóa vĩnh viễn</button>`)
+            }
+            if (!readOnly && request?.status === 'requested' && isOwner && request.requestedByUserId !== viewerUserId && !activeHold) {
+              governanceActions.push(`<button type="button" data-staff-document-attachment-governance-action="approve" data-attachment-id="${escapeAttribute(version.id)}" data-request-id="${escapeAttribute(request.id)}" ${disabled ? 'disabled' : ''}>Phê duyệt</button>`)
+              governanceActions.push(`<button type="button" data-staff-document-attachment-governance-action="reject" data-attachment-id="${escapeAttribute(version.id)}" data-request-id="${escapeAttribute(request.id)}" ${disabled ? 'disabled' : ''}>Từ chối</button>`)
+            }
+            if (!readOnly && request && (
+              (request.status === 'requested' && (isOwner || request.requestedByUserId === viewerUserId)) ||
+              (request.status === 'approved' && isOwner)
+            )) {
+              governanceActions.push(`<button type="button" data-staff-document-attachment-governance-action="cancel" data-attachment-id="${escapeAttribute(version.id)}" data-request-id="${escapeAttribute(request.id)}" ${disabled ? 'disabled' : ''}>Hủy yêu cầu</button>`)
+            }
+            if (!readOnly && permanentExecutionReady && request && isOwner && ['approved', 'failed'].includes(request.status) && request.canExecute && !activeHold) {
+              governanceActions.push(`<button type="button" data-staff-document-attachment-governance-action="execute" data-attachment-id="${escapeAttribute(version.id)}" data-request-id="${escapeAttribute(request.id)}" ${disabled ? 'disabled' : ''}>${request.status === 'failed' ? 'Thử lại thực thi' : 'Thực thi xóa'}</button>`)
+            }
+            if (!readOnly && !deleted && !current && isOwner) {
+              governanceActions.push(activeHold
+                ? `<button type="button" data-staff-document-attachment-governance-action="hold-release" data-attachment-id="${escapeAttribute(version.id)}" ${disabled ? 'disabled' : ''}>Giải phóng legal hold</button>`
+                : `<button type="button" data-staff-document-attachment-governance-action="hold-place" data-attachment-id="${escapeAttribute(version.id)}" ${disabled ? 'disabled' : ''}>Đặt legal hold</button>`)
+            }
+
+            return `
+              <article class="staff-document-version-card ${current ? 'is-current' : deleted ? 'is-deleted' : 'is-archived'}" data-staff-document-version="${versionNumber}">
+                <div class="staff-document-version-heading">
+                  <strong>Phiên bản ${versionNumber}</strong>
+                  <span>${deleted ? 'Đã xóa' : current ? 'Hiện hành' : removed ? 'Đã gỡ' : 'Đã thay thế'}</span>
+                </div>
+                ${deleted
+                  ? `<p>Chỉ còn bản ghi lịch sử; tên tệp đã được lược bỏ.</p>`
+                  : `<p>${escapeHtml(version.originalFileName || 'Tệp tài liệu')}</p>`}
+                <div class="staff-document-attachment-meta">
+                  ${deleted
+                    ? `<span>Xóa ${escapeHtml(formatAttachmentDateTime(version.deletedAt))}</span><span>Owner được phân quyền</span><span>${escapeHtml(getAttachmentGovernanceReasonLabel(request?.reasonCode || version.removalReason))}</span>`
+                    : `<span>${escapeHtml(getStaffDocumentAttachmentMimeLabel(version.mimeType))}</span><span>${escapeHtml(formatStaffDocumentAttachmentSize(version.sizeBytes))}</span><span>Tải lên ${escapeHtml(formatAttachmentDateTime(version.createdAt))}</span>${current || !version.archivedAt ? '' : `<span>${removed ? 'Gỡ' : 'Thay thế'} ${escapeHtml(formatAttachmentDateTime(version.archivedAt))}</span>`}`}
+                </div>
+                ${activeHold
+                  ? '<p class="staff-document-legal-hold is-active">Legal hold đang hoạt động · Không thể xóa khi legal hold đang hoạt động</p>'
+                  : releasedHold
+                    ? '<p class="staff-document-legal-hold">Legal hold đã giải phóng</p>'
+                    : ''}
+                ${requestStatus}
+                ${processingAction === actionKey
+                  ? '<p class="staff-document-replacement-progress" role="status">Đang xử lý...</p>'
+                  : ''}
+                <div class="staff-document-attachment-actions">
+                  ${deleted ? '' : `
+                    <button type="button" data-staff-document-action="attachment-version-view" data-document-id="${escapeAttribute(documentRecord?.id)}" data-attachment-version="${versionNumber}">Xem</button>
+                    <button type="button" data-staff-document-action="attachment-version-download" data-document-id="${escapeAttribute(documentRecord?.id)}" data-attachment-version="${versionNumber}">Tải xuống</button>
+                  `}
+                  ${governanceActions.join('')}
+                </div>
+              </article>
+            `
+          }).join('')}</div>`
+        : '<p>Chưa có phiên bản thành công để hiển thị.</p>'}
+    </section>
+  `
+}
+
+function renderAttachmentDeletionRequestStatus(request, viewerUserId) {
+  const label = {
+    requested: request.requestedByUserId === viewerUserId
+      ? 'Đã yêu cầu xóa · Chờ Owner khác phê duyệt'
+      : 'Đã yêu cầu xóa',
+    approved: 'Đã duyệt',
+    rejected: 'Bị từ chối',
+    canceled: 'Đã hủy',
+    executing: 'Đang xóa',
+    completed: 'Đã xóa',
+    failed: 'Xóa thất bại',
+  }[request.status] || 'Trạng thái xóa cần kiểm tra'
+  const timing = request.status === 'approved' && !request.canExecute
+    ? ' · Đang chờ đủ retention và thời gian duyệt'
+    : ''
+  return `<p class="staff-document-deletion-request-status">${escapeHtml(label + timing)}</p>`
+}
+
+function getAttachmentGovernanceReasonLabel(reasonCode) {
+  return {
+    user_requested: 'Yêu cầu của người dùng',
+    duplicate: 'Phiên bản trùng',
+    incorrect_attachment: 'Tệp không chính xác',
+    retention_review: 'Rà soát thời hạn lưu trữ',
+    other: 'Lý do được phê duyệt',
+  }[normalizeText(reasonCode)] || 'Lý do được phê duyệt'
+}
+
+function renderStaffDocumentAttachmentPicker(label) {
+  return `
+    <label class="staff-document-attachment-picker">
+      <input
+        type="file"
+        accept="application/pdf,image/jpeg,image/png,image/webp"
+        data-staff-document-attachment-input
+      />
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `
+}
+
+function renderAttachmentMessage(title, description, className = '', action = '') {
+  return `
+    <div class="staff-document-attachment-state ${escapeAttribute(className)}" data-staff-document-attachment-panel>
+      <strong>${escapeHtml(title)}</strong>
+      <p>${escapeHtml(description)}</p>
+      ${action}
+    </div>
+  `
+}
+
+export function getStaffDocumentAttachmentMimeLabel(mimeType) {
+  return {
+    'application/pdf': 'PDF',
+    'image/jpeg': 'JPEG',
+    'image/png': 'PNG',
+    'image/webp': 'WebP',
+  }[normalizeText(mimeType).toLowerCase()] || 'Tệp cần kiểm tra'
+}
+
+export function formatStaffDocumentAttachmentSize(sizeBytes) {
+  const size = Number(sizeBytes)
+  if (!Number.isFinite(size) || size < 0) return 'Kích thước cần kiểm tra'
+  if (size < 1024) return `${Math.round(size)} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MiB`
+}
+
+function formatAttachmentDateTime(value) {
+  const date = new Date(value)
+  if (!value || Number.isNaN(date.getTime())) return 'Thời gian cần kiểm tra'
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date)
 }
 
 function renderStaffDocumentForm({ state, readOnly }) {

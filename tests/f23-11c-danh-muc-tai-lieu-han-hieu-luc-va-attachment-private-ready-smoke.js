@@ -327,15 +327,18 @@ assert(!catalogHtml.includes('admin-profile-001'))
 const detailHtml = renderStaffDocumentsSection({
   windowId: 'window-docs',
   documents: [created],
-  state: { mode: 'detail', selectedDocumentId: created.id },
+  state: {
+    mode: 'detail',
+    selectedDocumentId: created.id,
+    attachment: { status: 'unavailable', documentId: created.id },
+  },
   accessAllowed: true,
   storageHealthy: true,
   today: '2026-07-27',
 })
-assert(detailHtml.includes('Chưa có tệp đính kèm'))
-assert(detailHtml.includes('Backend lưu trữ riêng tư chưa được bật'))
+assert(detailHtml.includes('Kho tệp riêng tư chưa sẵn sàng.'))
+assert(detailHtml.includes('apply thủ công trước khi bật upload'))
 assert(!detailHtml.includes('type="file"'))
-assert(!detailHtml.includes('Tải tệp'))
 
 const formHtml = renderStaffDocumentsSection({
   windowId: 'window-docs',
@@ -429,7 +432,7 @@ for (const forbidden of [
 ]) {
   assert(!documentSource.includes(forbidden), `Forbidden staff-document runtime marker: ${forbidden}`)
 }
-assert(!documentSource.includes('type="file"'))
+assert(documentSource.includes('data-staff-document-attachment-input'))
 assert(!documentSource.includes('data-staff-document-field="status"'))
 assert(!sourceSlice(main, 'function getStaffDocumentWindowContext', 'function focusFirstStaffAdministrativeProfileError').includes('console.'))
 assert(!sourceSlice(main, 'async function handleStaffDocumentSubmit', 'async function changeStaffDocumentArchiveState').includes('saveStoredCenterStaffAdministrativeProfiles'))
