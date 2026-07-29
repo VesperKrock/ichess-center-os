@@ -106,11 +106,11 @@ F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhâ
         F23.11E.2A DONE backend/public / Gỡ mềm, deletion request, review và legal hold
         F23.11E.2B LATER backend / Permanent object deletion bằng server-side executor và lifecycle canonical
 
-F23.12 NEXT design / Platform Owner quyền tối cao và hỗ trợ xuyên cơ sở
-    F23.12A TODO design / Role platform_owner-super_admin và nguồn cấp quyền server-side
-    F23.12B TODO design / Internal Console toàn hệ thống và danh sách cơ sở
-    F23.12C TODO design / Acting mode hỗ trợ cơ sở có audit, thời hạn và thoát vai rõ ràng
-    F23.12D TODO design / Gán tài khoản vận hành làm Platform Owner, không hardcode email phía client
+F23.12 DONE design / Platform Owner và hỗ trợ xuyên cơ sở
+    F23.12A DONE design / Role platform_owner và nguồn cấp quyền server-side fail-closed
+    F23.12B DONE design / Global Internal Console và center inventory
+    F23.12C DONE design / Acting request/session, approval, expiry, revoke và thoát vai fail-closed
+    F23.12D DONE design / Controlled bootstrap, assignment và revoke drill
 ```
 
-F23.12 không được triển khai trong finalization F23.11.
+F23.12A–D đã hoàn tất design qua chuỗi tài liệu canonical, nhưng implementation vẫn `BLOCKED`; chưa triển khai runtime/backend, route, authority service hoặc gán tài khoản thật.
