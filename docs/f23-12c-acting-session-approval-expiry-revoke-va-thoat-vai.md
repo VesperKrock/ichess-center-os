@@ -876,8 +876,8 @@ Docs smoke F23.12C phải assert A/B/C final audit PASS, implementation BLOCKED,
 F23.12 DONE design / Platform Owner và hỗ trợ xuyên cơ sở
     F23.12A DONE design / Role platform_owner và nguồn cấp quyền server-side fail-closed
     F23.12B DONE design / Global Internal Console và center inventory
-    F23.12C DONE design / Acting request/session, approval, expiry, revoke và thoát vai fail-closed
-    F23.12D DONE design / Controlled bootstrap, assignment và revoke drill
+    F23.12C DONE design / Acting request-session, approval, expiry, revoke và safe exit
+    F23.12D DONE design / Controlled Platform Owner bootstrap, assignment và revoke drill
 ```
 
 F23.12 implementation không `DONE`. F23.12A/B/C đều chỉ `DONE design` và implementation `BLOCKED`.

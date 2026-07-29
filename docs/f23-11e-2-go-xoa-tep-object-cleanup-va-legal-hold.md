@@ -109,8 +109,18 @@ F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhâ
 F23.12 DONE design / Platform Owner và hỗ trợ xuyên cơ sở
     F23.12A DONE design / Role platform_owner và nguồn cấp quyền server-side fail-closed
     F23.12B DONE design / Global Internal Console và center inventory
-    F23.12C DONE design / Acting request/session, approval, expiry, revoke và thoát vai fail-closed
-    F23.12D DONE design / Controlled bootstrap, assignment và revoke drill
+    F23.12C DONE design / Acting request-session, approval, expiry, revoke và safe exit
+    F23.12D DONE design / Controlled Platform Owner bootstrap, assignment và revoke drill
+
+F23.13 DONE design / Bảo mật tài khoản, liên kết Google identity, MFA và quyền Tư vấn
+    F23.13A DONE design / Audit nền Auth-security và chốt boundary
+    F23.13B DONE design / Liên kết Google identity và login-recovery semantics
+    F23.13C DONE design / MFA-2FA enrollment, enforcement, step-up và recovery
+    F23.13D DONE design / Quyền Tư vấn, provisioning, capability matrix và server enforcement
 ```
 
-F23.12A–D đã hoàn tất design qua chuỗi tài liệu canonical, nhưng implementation vẫn `BLOCKED`; chưa triển khai runtime/backend, route, authority service hoặc gán tài khoản thật.
+F23.12A–D và F23.13A–D/parent đã final technical audit `PASS`, nhưng toàn bộ F23.12/F23.13 implementation vẫn `BLOCKED`; runtime vẫn `NOT STARTED`, chưa có route, authority service hoặc gán tài khoản thật. Design closeout không mở implementation F23.12 hoặc F23.13.
+
+F23.13 FINAL TECHNICAL AUDIT: PASS
+F23.13 IMPLEMENTATION: BLOCKED
+F23.13 RUNTIME IMPLEMENTATION: NOT STARTED

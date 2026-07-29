@@ -394,8 +394,8 @@ for (const marker of [
   'F23.12 DONE design / Platform Owner và hỗ trợ xuyên cơ sở',
   'F23.12A DONE design',
   'F23.12B DONE design / Global Internal Console và center inventory',
-  'F23.12C DONE design / Acting request/session, approval, expiry, revoke và thoát vai fail-closed',
-  'F23.12D DONE design / Controlled bootstrap, assignment và revoke drill',
+  'F23.12C DONE design / Acting request-session, approval, expiry, revoke và safe exit',
+  'F23.12D DONE design / Controlled Platform Owner bootstrap, assignment và revoke drill',
 ]) {
   assert(design.includes(marker), `F23.12C roadmap missing: ${marker}`)
   assert(consoleDesign.includes(marker), `F23.12B roadmap missing: ${marker}`)

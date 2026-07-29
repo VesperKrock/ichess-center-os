@@ -5,6 +5,8 @@ Ngày chốt design: 2026-07-29
 ```text
 F23_12D_STATUS: DONE DESIGN
 F23_12_STATUS: DESIGN COMPLETE
+F23_12D_FINAL_TECHNICAL_AUDIT: PASS
+F23_12_FINAL_TECHNICAL_AUDIT: PASS
 F23_12A_FINAL_TECHNICAL_AUDIT: PASS
 F23_12B_FINAL_TECHNICAL_AUDIT: PASS
 F23_12C_FINAL_TECHNICAL_AUDIT: PASS
@@ -563,8 +565,8 @@ Blockers include canonical account lifecycle; a pre-existing exactly-one global 
 F23.12 DONE design / Platform Owner và hỗ trợ xuyên cơ sở
     F23.12A DONE design / Role platform_owner và nguồn cấp quyền server-side fail-closed
     F23.12B DONE design / Global Internal Console và center inventory
-    F23.12C DONE design / Acting request/session, approval, expiry, revoke và thoát vai fail-closed
-    F23.12D DONE design / Controlled bootstrap, assignment và revoke drill
+    F23.12C DONE design / Acting request-session, approval, expiry, revoke và safe exit
+    F23.12D DONE design / Controlled Platform Owner bootstrap, assignment và revoke drill
 ```
 
 F23.12 runtime/backend/route/assignment implementation is not started and not done.
@@ -584,4 +586,4 @@ F23.12 DESIGN COMPLETE; implementation A–D vẫn `BLOCKED`.
 - negative cases 25–36, 28 threats và D-AG1–D-AG20: **PASS**;
 - no real account/runtime/SQL/migration/Auth/Supabase/deploy: **PASS**.
 
-F23.12D GLOBAL AUTHORITY MUTEX AND EXECUTION ENVELOPE HARDENING COMPLETE - READY FOR FINAL AUDIT
+F23.12D FINAL TECHNICAL AUDIT PASS - F23.13 DESIGN MAY START

@@ -16,6 +16,8 @@ const roadmap = read('docs/f23-11e-2-go-xoa-tep-object-cleanup-va-legal-hold.md'
 for (const marker of [
   'F23_12D_STATUS: DONE DESIGN',
   'F23_12_STATUS: DESIGN COMPLETE',
+  'F23_12D_FINAL_TECHNICAL_AUDIT: PASS',
+  'F23_12_FINAL_TECHNICAL_AUDIT: PASS',
   'F23_12A_FINAL_TECHNICAL_AUDIT: PASS',
   'F23_12B_FINAL_TECHNICAL_AUDIT: PASS',
   'F23_12C_FINAL_TECHNICAL_AUDIT: PASS',
@@ -80,7 +82,7 @@ for (const marker of [
   'SUPABASE_ACTION: NOT RUN',
   'AUTH_MUTATION: NOT RUN',
   'DEPLOY: NOT RUN',
-  'F23.12D GLOBAL AUTHORITY MUTEX AND EXECUTION ENVELOPE HARDENING COMPLETE - READY FOR FINAL AUDIT',
+  'F23.12D FINAL TECHNICAL AUDIT PASS - F23.13 DESIGN MAY START',
   'F23.12 DESIGN COMPLETE; implementation A–D vẫn `BLOCKED`.',
 ]) assert(design.includes(marker), `Missing F23.12D marker: ${marker}`)
 
@@ -330,8 +332,8 @@ for (const marker of [
   'F23.12 DONE design / Platform Owner và hỗ trợ xuyên cơ sở',
   'F23.12A DONE design',
   'F23.12B DONE design / Global Internal Console và center inventory',
-  'F23.12C DONE design / Acting request/session, approval, expiry, revoke và thoát vai fail-closed',
-  'F23.12D DONE design / Controlled bootstrap, assignment và revoke drill',
+  'F23.12C DONE design / Acting request-session, approval, expiry, revoke và safe exit',
+  'F23.12D DONE design / Controlled Platform Owner bootstrap, assignment và revoke drill',
 ]) {
   for (const [name, content] of [
     ['A design', authorityDesign],
@@ -360,6 +362,7 @@ assert(!design.includes('REAL_PLATFORM_OWNER_ASSIGNMENT: YES'))
 assert(!design.includes('CANONICAL_ACCOUNT_LIFECYCLE_IMPLEMENTATION_READY: YES'))
 assert(!design.includes('F23_12D_IMPLEMENTATION_READINESS: READY'))
 assert(!design.includes('F23_12_RUNTIME_IMPLEMENTATION: DONE'))
+assert(!design.includes('F23.12D GLOBAL AUTHORITY MUTEX AND EXECUTION ENVELOPE HARDENING COMPLETE - READY FOR FINAL AUDIT'))
 assert(!design.includes('CLIENT_SELF_GRANT_ALLOWED: YES'))
 assert(!design.includes('PLATFORM_OWNER_INDEPENDENT_FROM_CENTER_MEMBERSHIP: NO'))
 assert(!scopedDocs.includes('EMPTY_ASSIGNMENT_SET_IS_MUTEX: YES'))

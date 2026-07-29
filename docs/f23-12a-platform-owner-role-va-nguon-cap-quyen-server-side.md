@@ -667,8 +667,8 @@ F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhâ
 F23.12 DONE design / Platform Owner và hỗ trợ xuyên cơ sở
     F23.12A DONE design / Role platform_owner và nguồn cấp quyền server-side fail-closed
     F23.12B DONE design / Global Internal Console và center inventory
-    F23.12C DONE design / Acting request/session, approval, expiry, revoke và thoát vai fail-closed
-    F23.12D DONE design / Controlled bootstrap, assignment và revoke drill
+    F23.12C DONE design / Acting request-session, approval, expiry, revoke và safe exit
+    F23.12D DONE design / Controlled Platform Owner bootstrap, assignment và revoke drill
 ```
 
 ## 21. Implementation readiness
