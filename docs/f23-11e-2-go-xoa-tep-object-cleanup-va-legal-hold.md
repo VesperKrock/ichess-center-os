@@ -97,7 +97,11 @@ Known UX deferred: đóng attachment viewer đôi lúc làm vùng Hồ sơ hành
 F23.2 DONE design / Nối dây Phụ huynh ↔ Tư vấn ↔ Học viên: entity, relationship và lifecycle canonical
 
 F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
-    F23.3E TODO design / Convert thật có idempotency, rollback và chống trùng Phụ huynh-Học viên
+    F23.3A DONE design / Thiết kế Module Phụ huynh-Tư vấn CRM nhẹ
+    F23.3B DONE public / CRM shell local-safe
+    F23.3C DONE qua F23.3B / Form khách mới local-safe
+    F23.3D DONE public / Convert preview, chưa ghi dữ liệu thật
+    F23.3E DONE design / Convert thật có idempotency, rollback, chống trùng và atomic action graph
 
 F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhân sự và attachment private
     F23.11A DONE design / Kiến trúc Hồ sơ hành chính, dữ liệu nhạy cảm và tài liệu nhân sự
