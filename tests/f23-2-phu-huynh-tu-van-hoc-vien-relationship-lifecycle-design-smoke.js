@@ -648,13 +648,13 @@ includesAll(design, [
 const canonicalRoadmapLines = [
   'F23.2 DONE design / Nối dây Phụ huynh ↔ Tư vấn ↔ Học viên: entity, relationship và lifecycle canonical',
   'F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ',
-  'F23.3E TODO design / Convert thật có idempotency, rollback và chống trùng Phụ huynh-Học viên',
+  'F23.3E DONE design / Convert thật có idempotency, rollback, chống trùng và atomic action graph',
 ]
 includesAll(roadmap, canonicalRoadmapLines, 'RoadmapRealTime F23.2/F23.3 canonical closeout is incomplete')
 includesAll(canonicalRoadmapMirror, canonicalRoadmapLines, 'Canonical roadmap mirror F23.2/F23.3 closeout is incomplete')
 for (const roadmapContent of [roadmap, canonicalRoadmapMirror]) {
   assert(!roadmapContent.includes('F23.2 TODO design'), 'F23.2 must not remain TODO after final audit PASS.')
-  assert(!roadmapContent.includes('F23.3E DONE'), 'F23.3E must remain TODO design.')
+  assert(!roadmapContent.includes('F23.3E TODO design'), 'F23.3E must not remain TODO after final audit PASS.')
   assert(!roadmapContent.includes('F23.3E READY'), 'F23.3E must not be marked runtime-ready.')
 }
 
