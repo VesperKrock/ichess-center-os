@@ -94,6 +94,11 @@ Known UX deferred: đóng attachment viewer đôi lúc làm vùng Hồ sơ hành
 ## Canonical roadmap
 
 ```text
+F23.2 DONE design / Nối dây Phụ huynh ↔ Tư vấn ↔ Học viên: entity, relationship và lifecycle canonical
+
+F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
+    F23.3E TODO design / Convert thật có idempotency, rollback và chống trùng Phụ huynh-Học viên
+
 F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhân sự và attachment private
     F23.11A DONE design / Kiến trúc Hồ sơ hành chính, dữ liệu nhạy cảm và tài liệu nhân sự
     F23.11B DONE public / Hồ sơ hành chính center-scoped, local-safe, masking-reveal và cửa sổ riêng
