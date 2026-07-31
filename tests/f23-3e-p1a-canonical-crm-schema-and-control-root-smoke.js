@@ -31,14 +31,34 @@ for (const [name, expectedHash] of appliedMigrationHashes) {
   assert.equal(actualHash, expectedHash, `Applied migration SHA-256 drift: ${name}`)
 }
 
-const expectedMigrationNames = [...appliedMigrationHashes.keys(), migrationName].sort()
+const checkpointVersion = 202607310001n
+const migrationFilenamePattern = /^([0-9]+)_[a-z0-9_]+\.sql$/
+const requiredMigrationNames = new Set([...appliedMigrationHashes.keys(), migrationName])
 const actualMigrationNames = fs.readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('.sql'))
   .sort()
+
+for (const name of actualMigrationNames) {
+  const match = migrationFilenamePattern.exec(name)
+  assert(match, `Invalid migration filename: ${name}`)
+  const version = BigInt(match[1])
+  if (version <= checkpointVersion) {
+    assert(requiredMigrationNames.has(name), `Unexpected migration at or before P1A checkpoint: ${name}`)
+  }
+}
+
+for (const name of requiredMigrationNames) {
+  assert(actualMigrationNames.includes(name), `Missing required P1A checkpoint migration: ${name}`)
+}
+
+const checkpointMigrations = actualMigrationNames.filter((name) => {
+  const match = migrationFilenamePattern.exec(name)
+  return BigInt(match[1]) === checkpointVersion
+})
 assert.deepEqual(
-  actualMigrationNames,
-  expectedMigrationNames,
-  'Migration directory must contain the six immutable applied migrations and exactly one P1A migration',
+  checkpointMigrations,
+  [migrationName],
+  'P1A checkpoint version must resolve to exactly the canonical P1A migration',
 )
 
 assert(fs.existsSync(migrationPath), `Missing exact migration: ${migrationName}`)
@@ -422,11 +442,14 @@ const requiredRoadmapLines = [
   'F23.3E DONE design / Convert thật có idempotency, rollback, chống trùng và atomic action graph',
   'F23.3E-P1 DONE implementation planning / Canonical CRM foundation: center root, Contact, Case, Assignment, conversion request, idempotency, transactional audit/outbox',
   'F23.3E-P1A DONE backend/local verified / Physical CRM schema và exactly-one center_crm_control; migration trong repo, local Docker apply và behavioral QA PASS; chưa apply remote',
-  'F23.3E-P1B TODO backend',
+  'F23.3E-P1B DONE backend/local verified / Protected conversion draft RPCs, scoped idempotency, exact prior-result replay, transactional Audit-Outbox và concurrency QA PASS; chưa apply remote, chưa browser wiring',
   'F23.3E-P1C TODO backend',
   'F23.3E-P1D TODO backend',
   'F23.3E-P1E TODO backend',
   'F23.3E-P1F TODO QA',
+  'F23.3E-P2 TODO backend/design',
+  'F23.3E-P3 TODO backend',
+  'F23.3E-P4 TODO public/QA',
 ]
 for (const roadmap of [canonicalRoadmap, localRoadmap]) {
   includesAll(roadmap, requiredRoadmapLines, 'P1A/F23.2/F23.3E roadmap closeout is incomplete')
