@@ -26,6 +26,40 @@ const CLOUD_ENTITY_SELECT_FIELDS =
   'center_id, entity_type, local_id, payload, source_module, source_version, updated_at, deleted_at'
 const CLOUD_ENTITY_READINESS_SELECT_FIELDS = 'local_id, deleted_at, updated_at'
 
+// F23.3E-P1E deny-only boundary: canonical CRM tables may never be represented
+// as generic center_cloud_entities records or shadow payload sources.
+export const RESERVED_CANONICAL_CRM_ENTITY_TYPES = Object.freeze([
+  'center_crm_control',
+  'crm_contact',
+  'consultation_case',
+  'consultation_case_candidate_student',
+  'consultation_case_assignment',
+  'crm_care_log',
+  'crm_conversion_request',
+  'crm_idempotency_registry',
+  'crm_audit_event',
+  'crm_outbox_event',
+])
+const RESERVED_CANONICAL_CRM_ENTITY_TYPE_SET = new Set(RESERVED_CANONICAL_CRM_ENTITY_TYPES)
+
+export function isReservedCanonicalCrmEntityType(entityType) {
+  return RESERVED_CANONICAL_CRM_ENTITY_TYPE_SET.has(String(entityType || '').trim())
+}
+
+function denyGenericCanonicalCrmEntity(entityType) {
+  if (!isReservedCanonicalCrmEntityType(entityType)) return null
+
+  return {
+    ok: false,
+    error: 'Canonical CRM entity type is reserved and denied on the generic cloud path.',
+    detail: {
+      category: 'canonical-crm-generic-path-denied',
+      target: 'center_cloud_entities',
+      code: 'GENERIC_CLOUD_CANONICAL_CRM_ENTITY_DENIED',
+    },
+  }
+}
+
 export async function getCloudDbContext(centerId = CURRENT_CENTER_ID) {
   const configStatus = getSupabaseConfigStatus()
 
@@ -133,6 +167,12 @@ export async function checkCloudDbReadiness(centerId = CURRENT_CENTER_ID) {
 }
 
 export async function listCloudEntities({ supabase, centerId = CURRENT_CENTER_ID, entityType } = {}) {
+  const reservedDenial = denyGenericCanonicalCrmEntity(entityType)
+
+  if (reservedDenial) {
+    return reservedDenial
+  }
+
   if (!supabase) {
     return { ok: false, error: 'Thiếu Supabase client.' }
   }
@@ -218,6 +258,12 @@ export async function upsertCloudEntities({
   items = [],
   userId = null,
 } = {}) {
+  const reservedDenial = denyGenericCanonicalCrmEntity(entityType)
+
+  if (reservedDenial) {
+    return reservedDenial
+  }
+
   if (!supabase) {
     return { ok: false, error: 'Thiếu Supabase client.' }
   }

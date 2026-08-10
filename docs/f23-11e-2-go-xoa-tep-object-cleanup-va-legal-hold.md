@@ -107,13 +107,14 @@ F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
             F23.3E-P1B DONE backend/local verified / Protected conversion draft RPCs, scoped idempotency, exact prior-result replay, transactional Audit-Outbox và concurrency QA PASS; chưa apply remote, chưa browser wiring
             F23.3E-P1C DONE backend/local verified / Typed exact-center Audit read và durable Outbox claim-lease-ACK-retry-reclaim-dead-letter runtime; fault/concurrency QA PASS; chưa apply remote, chưa network worker
             F23.3E-P1D DONE backend/local verified / Typed Contact, Case, Assignment và Care Log service operations; exact-center, expected-version, target eligibility lock-recheck, Audit-Outbox atomic và fault/concurrency QA PASS; chưa apply remote, chưa browser/final capability wiring
-            F23.3E-P1E TODO backend / RLS-read path remediation, server masking và LocalStorage import readiness
+            F23.3E-P1E DONE backend/local verified / Fail-closed CRM read path, service-only masked projections, generic cloud CRM deny guard và deterministic prototype-safe LocalStorage import-preview readiness; multi-account/security/fault QA PASS; chưa apply remote, chưa browser/final capability/full reveal/real import
             F23.3E-P1F TODO QA / Direct API, multi-account, exact-center, concurrency, fault injection và rollout gates
         F23.3E-P2 TODO backend/design / Identity matching, duplicate review, identity mutex và profile-creation reservation
         F23.3E-P3 TODO backend / Fresh step-up approval, single-use authority và real conversion executor atomic
         F23.3E-P4 TODO public/QA / Nối UI conversion thật, legacy projection và manual QA end-to-end
 * Historical checkpoint compatibility note — non-current P1A-era marker: F23.3E-P1C TODO backend
 * Historical checkpoint compatibility note — non-current P1A/P1C-era marker: F23.3E-P1D TODO backend
+* Historical checkpoint compatibility note — non-current P1D-era marker: F23.3E-P1E TODO backend / RLS-read path remediation, server masking và LocalStorage import readiness
 
 F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhân sự và attachment private
     F23.11A DONE design / Kiến trúc Hồ sơ hành chính, dữ liệu nhạy cảm và tài liệu nhân sự
