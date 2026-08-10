@@ -105,13 +105,14 @@ F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
         F23.3E-P1 DONE implementation planning / Canonical CRM foundation: center root, Contact, Case, Assignment, conversion request, idempotency, transactional audit/outbox
             F23.3E-P1A DONE backend/local verified / Physical CRM schema và exactly-one center_crm_control; migration trong repo, local Docker apply và behavioral QA PASS; chưa apply remote
             F23.3E-P1B DONE backend/local verified / Protected conversion draft RPCs, scoped idempotency, exact prior-result replay, transactional Audit-Outbox và concurrency QA PASS; chưa apply remote, chưa browser wiring
-            F23.3E-P1C TODO backend / Transactional immutable audit và durable outbox runtime
+            F23.3E-P1C DONE backend/local verified / Typed exact-center Audit read và durable Outbox claim-lease-ACK-retry-reclaim-dead-letter runtime; fault/concurrency QA PASS; chưa apply remote, chưa network worker
             F23.3E-P1D TODO backend / Typed CRM service operations cho Contact, Case, Assignment, Care Log và Request
             F23.3E-P1E TODO backend / RLS-read path remediation, server masking và LocalStorage import readiness
             F23.3E-P1F TODO QA / Direct API, multi-account, exact-center, concurrency, fault injection và rollout gates
         F23.3E-P2 TODO backend/design / Identity matching, duplicate review, identity mutex và profile-creation reservation
         F23.3E-P3 TODO backend / Fresh step-up approval, single-use authority và real conversion executor atomic
         F23.3E-P4 TODO public/QA / Nối UI conversion thật, legacy projection và manual QA end-to-end
+* Historical checkpoint compatibility note — non-current P1A-era marker: F23.3E-P1C TODO backend
 
 F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhân sự và attachment private
     F23.11A DONE design / Kiến trúc Hồ sơ hành chính, dữ liệu nhạy cảm và tài liệu nhân sự
