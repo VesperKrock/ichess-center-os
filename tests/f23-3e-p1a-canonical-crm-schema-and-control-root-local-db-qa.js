@@ -313,7 +313,7 @@ const ids = Object.fromEntries(
   [
     'centerA', 'centerB', 'userA', 'userB', 'contactA', 'contactB',
     'caseA', 'caseB', 'caseTerminal', 'candidateA', 'assignmentA1',
-    'assignmentA2', 'assignmentB', 'careA', 'careCorrection', 'requestA',
+    'assignmentA2', 'assignmentB', 'assignmentTerminal', 'careA', 'careCorrection', 'requestA',
     'idempotencyA', 'auditA', 'outboxA', 'outboxB', 'claimA', 'claimB',
   ].map((name) => [name, randomUUID()]),
 )
@@ -475,6 +475,12 @@ insert into public.consultation_case_assignment (
 update public.consultation_case
 set active_assignment_id = ${q(ids.assignmentB)}::uuid, case_version = case_version + 1
 where consultation_case_id = ${q(ids.caseB)}::uuid;
+insert into public.consultation_case_assignment (
+  assignment_id, center_id, consultation_case_id, assigned_consultant_user_id, assigned_by_user_id
+) values (${q(ids.assignmentTerminal)}::uuid, ${q(ids.centerA)}, ${q(ids.caseTerminal)}::uuid, ${q(ids.userA)}::uuid, ${q(ids.userA)}::uuid);
+update public.consultation_case
+set active_assignment_id = ${q(ids.assignmentTerminal)}::uuid, case_version = case_version + 1
+where consultation_case_id = ${q(ids.caseTerminal)}::uuid;
 set constraints all immediate;
 set constraints all deferred;
 
@@ -681,13 +687,13 @@ insert into public.crm_idempotency_registry (
 );
 insert into public.crm_conversion_request (
   conversion_request_id, center_id, consultation_case_id, source_contact_id,
-  source_case_version, source_contact_version, source_assignment_version,
+  source_case_version, source_contact_version, source_assignment_id, source_assignment_version,
   identity_policy_version, conversion_policy_version, relationship_policy_version,
   student_profile_policy_version, action_graph_digest, idempotency_scope,
   idempotency_key_reference, intent_digest, requested_by_user_id
 ) values (
   ${q(ids.requestA)}::uuid, ${q(ids.centerA)}, ${q(ids.caseA)}::uuid, ${q(ids.contactA)}::uuid,
-  4, 3, 1, 1, 1, 1, 1, decode(repeat('34', 32), 'hex'), 'qa_scope',
+  4, 3, ${q(ids.assignmentA2)}::uuid, 1, 1, 1, 1, 1, decode(repeat('34', 32), 'hex'), 'qa_scope',
   ${q(ids.idempotencyA)}::uuid, decode(repeat('33', 32), 'hex'), ${q(ids.userA)}::uuid
 );
 set constraints all immediate;
@@ -712,13 +718,13 @@ begin
     );
     insert into public.crm_conversion_request (
       conversion_request_id, center_id, consultation_case_id, source_contact_id,
-      source_case_version, source_contact_version, source_assignment_version,
+      source_case_version, source_contact_version, source_assignment_id, source_assignment_version,
       identity_policy_version, conversion_policy_version, relationship_policy_version,
       student_profile_policy_version, action_graph_digest, idempotency_scope,
       idempotency_key_reference, intent_digest, requested_by_user_id
     ) values (
       v_request, ${q(ids.centerA)}, ${q(ids.caseA)}::uuid, ${q(ids.contactA)}::uuid,
-      4, 3, 1, 1, 1, 1, 1, decode(repeat('44', 32), 'hex'), 'qa_scope_second',
+      4, 3, ${q(ids.assignmentA2)}::uuid, 1, 1, 1, 1, 1, decode(repeat('44', 32), 'hex'), 'qa_scope_second',
       v_idempotency, decode(repeat('43', 32), 'hex'), ${q(ids.userA)}::uuid
     );
   exception when unique_violation then
@@ -800,16 +806,16 @@ select pg_temp.qa_expect_failure(
 select pg_temp.qa_expect_failure(
   $sql$insert into public.crm_conversion_request (
     conversion_request_id, center_id, consultation_case_id, source_contact_id,
-    source_case_version, source_contact_version, source_assignment_version,
+    source_case_version, source_contact_version, source_assignment_id, source_assignment_version,
     identity_policy_version, conversion_policy_version, relationship_policy_version,
     student_profile_policy_version, action_graph_digest, idempotency_scope,
     idempotency_key_reference, intent_digest, requested_by_user_id
   ) values (
-    '${randomUUID()}', ${q(ids.centerB)}, '${ids.caseA}', '${ids.contactA}',
-    1, 1, 1, 1, 1, 1, 1, decode(repeat('64', 32), 'hex'), 'cross_center',
+    '${randomUUID()}', ${q(ids.centerB)}, '${ids.caseB}', '${ids.contactA}',
+    1, 1, '${ids.assignmentB}', 1, 1, 1, 1, 1, decode(repeat('64', 32), 'hex'), 'cross_center',
     '${randomUUID()}', decode(repeat('65', 32), 'hex'), '${ids.userB}'
   )$sql$,
-  array['23503'], 'Request B with Case/Contact A'
+  array['23503'], 'Request B with Contact A'
 );
 
 select pg_temp.qa_expect_failure(
@@ -857,13 +863,13 @@ begin
     );
     insert into public.crm_conversion_request (
       conversion_request_id, center_id, consultation_case_id, source_contact_id,
-      source_case_version, source_contact_version, source_assignment_version,
+      source_case_version, source_contact_version, source_assignment_id, source_assignment_version,
       identity_policy_version, conversion_policy_version, relationship_policy_version,
       student_profile_policy_version, action_graph_digest, idempotency_scope,
       idempotency_key_reference, intent_digest, status, requested_by_user_id
     ) values (
       v_request, ${q(ids.centerA)}, ${q(ids.caseTerminal)}::uuid, ${q(ids.contactA)}::uuid,
-      2, 3, 1, 1, 1, 1, 1, decode(repeat('69', 32), 'hex'), 'bad_initial_request',
+      3, 3, ${q(ids.assignmentTerminal)}::uuid, 1, 1, 1, 1, 1, decode(repeat('69', 32), 'hex'), 'bad_initial_request',
       v_idempotency, decode(repeat('68', 32), 'hex'), 'READY_FOR_REVIEW', ${q(ids.userA)}::uuid
     );
   exception when raise_exception then
@@ -887,7 +893,10 @@ set status = 'IN_PROGRESS', idempotency_version = idempotency_version + 1
 where idempotency_record_id = ${q(ids.idempotencyA)}::uuid;
 update public.crm_idempotency_registry
 set status = 'COMPLETED', idempotency_version = idempotency_version + 1,
-    completed_at = pg_catalog.transaction_timestamp(), terminal_outcome_digest = decode(repeat('71', 32), 'hex')
+    completed_at = pg_catalog.transaction_timestamp(), terminal_outcome_digest = decode(repeat('71', 32), 'hex'),
+    result_request_id = ${q(ids.requestA)}::uuid, result_request_version = 3,
+    result_case_version = 4, result_request_status = 'READY_FOR_REVIEW',
+    result_outcome_code = 'REVIEW_SUBMITTED', result_correlation_id = ${q(randomUUID())}::uuid
 where idempotency_record_id = ${q(ids.idempotencyA)}::uuid;
 select pg_temp.qa_expect_failure(
   $sql$update public.crm_idempotency_registry
@@ -936,7 +945,7 @@ insert into public.crm_outbox_event (
   )
 );
 select pg_temp.qa_assert(
-  (select delivery_status = 'PENDING' and event_version = 1 and attempt_count = 0
+  (select delivery_status = 'PENDING' and event_version = 1 and delivery_version = 1 and attempt_count = 0
    from public.crm_outbox_event where outbox_event_id = ${q(ids.outboxA)}::uuid),
   'outbox initial state'
 );
@@ -980,7 +989,8 @@ select pg_temp.qa_expect_failure(
 
 select pg_temp.qa_expect_failure(
   $sql$update public.crm_outbox_event
-        set delivery_status = 'CLAIMED', event_version = event_version + 1, attempt_count = attempt_count + 1
+        set delivery_status = 'CLAIMED', delivery_version = delivery_version + 1,
+            attempt_count = attempt_count + 1, last_attempt_at = pg_catalog.transaction_timestamp()
         where outbox_event_id = '${ids.outboxA}'$sql$,
   array['23514'], 'outbox claim without lease metadata'
 );
@@ -988,39 +998,44 @@ select pg_temp.qa_expect_failure(
   $sql$update public.crm_outbox_event
         set delivery_status = 'CLAIMED', attempt_count = attempt_count + 1,
             claim_id = '${ids.claimA}', claimed_by = 'qa_worker',
-            claim_expires_at = pg_catalog.transaction_timestamp() + interval '5 minutes'
+            claim_expires_at = pg_catalog.transaction_timestamp() + interval '5 minutes',
+            last_attempt_at = pg_catalog.transaction_timestamp()
         where outbox_event_id = '${ids.outboxA}'$sql$,
   array['P0001'], 'outbox version unchanged'
 );
 update public.crm_outbox_event
-set delivery_status = 'CLAIMED', event_version = event_version + 1,
+set delivery_status = 'CLAIMED', delivery_version = delivery_version + 1,
     attempt_count = attempt_count + 1, claim_id = ${q(ids.claimA)}::uuid,
     claimed_by = 'qa_worker', claim_expires_at = pg_catalog.transaction_timestamp() + interval '5 minutes',
+    last_attempt_at = pg_catalog.transaction_timestamp(),
     updated_at = pg_catalog.transaction_timestamp() - interval '100 years'
 where outbox_event_id = ${q(ids.outboxA)}::uuid;
 select pg_temp.qa_assert(
-  (select delivery_status = 'CLAIMED' and event_version = 2 and attempt_count = 1
-          and updated_at = pg_catalog.transaction_timestamp()
+  (select delivery_status = 'CLAIMED' and event_version = 1 and delivery_version = 2 and attempt_count = 1
+          and last_attempt_at >= pg_catalog.transaction_timestamp()
+          and updated_at >= pg_catalog.transaction_timestamp()
+          and updated_at <= pg_catalog.clock_timestamp()
    from public.crm_outbox_event where outbox_event_id = ${q(ids.outboxA)}::uuid),
   'valid outbox claim/version/timestamp'
 );
 update public.crm_outbox_event
-set delivery_status = 'RETRY', event_version = event_version + 1,
+set delivery_status = 'RETRY', delivery_version = delivery_version + 1,
     claim_id = null, claimed_by = null, claim_expires_at = null,
     available_at = pg_catalog.transaction_timestamp() + interval '1 minute'
 where outbox_event_id = ${q(ids.outboxA)}::uuid;
 update public.crm_outbox_event
-set delivery_status = 'CLAIMED', event_version = event_version + 1,
+set delivery_status = 'CLAIMED', delivery_version = delivery_version + 1,
     attempt_count = attempt_count + 1, claim_id = ${q(ids.claimB)}::uuid,
-    claimed_by = 'qa_worker', claim_expires_at = pg_catalog.transaction_timestamp() + interval '5 minutes'
+    claimed_by = 'qa_worker', claim_expires_at = pg_catalog.transaction_timestamp() + interval '5 minutes',
+    last_attempt_at = pg_catalog.transaction_timestamp()
 where outbox_event_id = ${q(ids.outboxA)}::uuid;
 update public.crm_outbox_event
-set delivery_status = 'DELIVERED', event_version = event_version + 1,
+set delivery_status = 'DELIVERED', delivery_version = delivery_version + 1,
     delivered_at = pg_catalog.transaction_timestamp()
 where outbox_event_id = ${q(ids.outboxA)}::uuid;
 select pg_temp.qa_expect_failure(
   $sql$update public.crm_outbox_event
-        set delivery_status = 'PENDING', event_version = event_version + 1,
+        set delivery_status = 'PENDING', delivery_version = delivery_version + 1,
             claim_id = null, claimed_by = null, claim_expires_at = null,
             delivered_at = null
         where outbox_event_id = '${ids.outboxA}'$sql$,
@@ -1031,7 +1046,7 @@ insert into public.crm_outbox_event (
 ) values (${q(ids.outboxB)}::uuid, ${q(ids.centerA)}, 'consultation_case', ${q(ids.caseTerminal)}::uuid, 'crm.case.pending', '{}'::jsonb);
 select pg_temp.qa_expect_failure(
   $sql$update public.crm_outbox_event
-        set aggregate_id = '${ids.caseA}', delivery_status = 'CANCELLED', event_version = event_version + 1
+        set aggregate_id = '${ids.caseA}', delivery_status = 'CANCELLED', delivery_version = delivery_version + 1
         where outbox_event_id = '${ids.outboxB}'$sql$,
   array['P0001'], 'outbox identity rewrite'
 );
@@ -1044,7 +1059,7 @@ select pg_temp.qa_assert(
   and (select assignment_version = 2 from public.consultation_case_assignment where assignment_id = ${q(ids.assignmentA1)}::uuid)
   and (select request_version = 3 from public.crm_conversion_request where conversion_request_id = ${q(ids.requestA)}::uuid)
   and (select idempotency_version = 3 from public.crm_idempotency_registry where idempotency_record_id = ${q(ids.idempotencyA)}::uuid)
-  and (select event_version = 5 from public.crm_outbox_event where outbox_event_id = ${q(ids.outboxA)}::uuid),
+  and (select event_version = 1 and delivery_version = 5 from public.crm_outbox_event where outbox_event_id = ${q(ids.outboxA)}::uuid),
   'monotonic +1 version outcomes'
 );
 \echo P1A_QA_MONOTONIC_VERSION_PLUS_ONE: PASS
