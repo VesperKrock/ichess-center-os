@@ -110,7 +110,7 @@ F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
             F23.3E-P1E DONE backend/local verified / Fail-closed CRM read path, service-only masked projections, generic cloud CRM deny guard và deterministic prototype-safe LocalStorage import-preview readiness; multi-account/security/fault QA PASS; chưa apply remote, chưa browser/final capability/full reveal/real import
             F23.3E-P1F DONE QA/local verified / Integrated P1A-P1E direct API, multi-account/multi-center, exact-center, stale/concurrency/deadlock, Audit-Outbox fault, import replay/conflict, READ_ONLY và deterministic kill-switch QA PASS; P2 entry technical gate PASS; active/remote rollout vẫn BLOCKED
         F23.3E-P2 DONE design / Identity matching, exact-center duplicate review, versioned normalization, stable sorted identity mutex, masked candidate projection và profile-creation reservation; runtime implementation chưa bắt đầu
-            F23.3E-P2A TODO backend / Physical identity-policy, mutex, review và profile-creation reservation schema foundation
+            CURRENT CHECKPOINT — F23.3E-P2A DONE backend/local verified / Physical identity-policy, opaque identity mutex, immutable match review và profile-creation reservation schema foundation; RLS/direct-access fail-closed, exact-center/lifecycle/lock-order local QA PASS; chưa apply remote
             F23.3E-P2B TODO backend / Versioned normalization và exact-center masked candidate search
             F23.3E-P2C TODO backend / Reviewed-match decision và create-new reservation typed runtime
             F23.3E-P2D TODO QA / Integrated duplicate, concurrency, security, fault QA và P3-entry gate
@@ -122,6 +122,8 @@ F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
 * Historical checkpoint compatibility note — non-current P1D-era marker: F23.3E-P1E TODO backend / RLS-read path remediation, server masking và LocalStorage import readiness
 * Historical checkpoint compatibility note — non-current P1D/P1E-era marker: F23.3E-P1F TODO QA / Direct API, multi-account, exact-center, concurrency, fault injection và rollout gates
 * Historical checkpoint compatibility note — non-current P1-era marker: F23.3E-P2 TODO backend/design / Identity matching, duplicate review, identity mutex và profile-creation reservation
+* Historical checkpoint compatibility note — non-current P2-design-era P2A marker; the indented literal below is not a current status:
+            F23.3E-P2A TODO backend / Physical identity-policy, mutex, review và profile-creation reservation schema foundation
 
 F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhân sự và attachment private
     F23.11A DONE design / Kiến trúc Hồ sơ hành chính, dữ liệu nhạy cảm và tài liệu nhân sự

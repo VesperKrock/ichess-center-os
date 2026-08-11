@@ -135,23 +135,31 @@ const migrationCheckpoints = new Map([
   ['202608100003_f23_3e_p1e_rls_read_masking_and_import_readiness.sql', '33B502519901449AD9661C4F54579C7667399775B9CF9859E1832F5B5E4D0F19'],
 ])
 const migrationFiles = readdirSync(migrationsPath).filter((name) => name.endsWith('.sql')).sort()
-assert.equal(migrationFiles.length, 11, 'Migration inventory changed during P2 design')
+assert.equal(migrationCheckpoints.size, 11, 'P2 inherited migration checkpoint count drift')
+assert(migrationFiles.length >= migrationCheckpoints.size, 'Migration inventory is missing a P2 inherited checkpoint')
 for (const [name, expectedHash] of migrationCheckpoints) {
   assert(migrationFiles.includes(name), `Missing migration checkpoint: ${name}`)
   assert.equal(sha256(join(migrationsPath, name)), expectedHash, `Immutable migration changed: ${name}`)
   includesAll(design, [name, expectedHash], `P2 checkpoint inventory ${name}`)
 }
-assert.equal(migrationFiles.filter((name) => /f23_3e_p2/i.test(name)).length, 0, 'P2 SQL migration exists')
+const bareP2DesignToken = /f23[-_]3e[-_]p2(?![a-z0-9])/i
+assert(bareP2DesignToken.test('202608110000_f23_3e_p2_identity_design.sql'), 'Bare P2 migration predicate is too narrow')
+for (const phase of ['p2a', 'p2b', 'p2c', 'p2d', 'p2z']) {
+  assert(!bareP2DesignToken.test(`202608110001_f23_3e_${phase}_forward.sql`), `Bare P2 predicate captures forward phase ${phase}`)
+}
+const p2DesignOwnedMigrations = migrationFiles.filter((name) => bareP2DesignToken.test(name))
+assert.equal(p2DesignOwnedMigrations.length, 0, 'Bare P2 design SQL migration exists')
 
 const exactArtifacts = [designRelative, smokeRelative].sort()
 const discoveredArtifacts = [
-  ...readdirSync(join(root, 'docs')).filter((name) => name.includes('f23-3e-p2-identity')).map((name) => `docs/${name}`),
-  ...readdirSync(join(root, 'tests')).filter((name) => name.includes('f23-3e-p2-identity')).map((name) => `tests/${name}`),
-  ...migrationFiles.filter((name) => /f23_3e_p2/i.test(name)).map((name) => `supabase/migrations/${name}`),
+  ...readdirSync(join(root, 'docs')).filter((name) => bareP2DesignToken.test(name)).map((name) => `docs/${name}`),
+  ...readdirSync(join(root, 'tests')).filter((name) => bareP2DesignToken.test(name)).map((name) => `tests/${name}`),
+  ...p2DesignOwnedMigrations.map((name) => `supabase/migrations/${name}`),
 ].sort()
 assert.deepEqual(discoveredArtifacts, exactArtifacts, 'P2 must contain exactly two named artifacts')
 
-const migrationSource = migrationFiles.map((name) => read(`supabase/migrations/${name}`)).join('\n')
+const migrationSource = [...migrationCheckpoints.keys()]
+  .map((name) => read(`supabase/migrations/${name}`)).join('\n')
 const storageSource = read('src/storage.js')
 const parentSource = read('src/parent-consultation-module.js')
 const studentModule = read('src/student-module.js')
@@ -591,6 +599,7 @@ const forbiddenCommandPatterns = [
 for (const pattern of forbiddenCommandPatterns) assert(!pattern.test(newArtifacts), `Forbidden command present: ${pattern}`)
 
 assert(design.trimEnd().endsWith('F23.3E-P2 FINAL CLOSEOUT COMPLETE — EXTERNAL TECHNICAL AUDIT PASS'), 'P2 final closeout marker missing')
-console.log('P2_NEW_MIGRATION_COUNT: 0')
+console.log(`P2_DESIGN_OWNED_MIGRATION_COUNT: ${p2DesignOwnedMigrations.length}`)
+console.log(`P2_INHERITED_MIGRATION_HASH_CHECKPOINT_COUNT: ${migrationCheckpoints.size}`)
 console.log('P2_EXISTING_MIGRATION_CHANGED: NO')
 console.log('F23.3E-P2 identity duplicate review mutex reservation design smoke passed')
