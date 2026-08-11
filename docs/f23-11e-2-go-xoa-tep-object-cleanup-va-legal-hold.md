@@ -116,10 +116,14 @@ F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
             CURRENT CHECKPOINT — F23.3E-P2D DONE QA/local verified / Integrated duplicate, concurrency, security và fault QA PASS; P2 foundation cleared for P3 implementation; real conversion vẫn chưa ready và còn 7 P3 prerequisites
         CURRENT CHECKPOINT — F23.3E-P3 PARTIAL backend/design / Real-conversion architecture đã freeze ở P3A; P3B–P3D runtime chưa implement
             CURRENT CHECKPOINT — F23.3E-P3A DONE design/local verified / Dependency closure, canonical target model, fresh step-up/final capability/single-use authority, typed action aggregate, atomic executor design, dual digest binding và action-version lifecycle ordering đã external audit PASS
+            CURRENT CHECKPOINT — F23.3E-P3B DONE backend/local verified / Fresh step-up assertion projection, final exact-center capability resolver, typed conversion-action foundation và single-use conversion authority runtime; terminal environment binding/status-scope/security/concurrency/fault QA PASS; chưa apply remote, chưa real Auth-provider verification
+            CURRENT CHECKPOINT — F23.3E-P3C TODO backend / Canonical Student, Guardian, source-target binding và Guardian–Student Relationship protected target runtime; next implementation phase after P3B external audit PASS
+            CURRENT CHECKPOINT — F23.3E-P3D TODO backend/QA / Atomic real-conversion executor, reservation/authority consume và integrated execution QA; sequentially blocked until P3C PASS
+        F23.3E-P4 TODO public/QA / Nối UI conversion thật, legacy projection và manual QA end-to-end
+* Historical checkpoint compatibility note — non-current P3A-era P3B/P3C/P3D markers required by the inherited P3A smoke; the indented literals below are not current statuses:
             F23.3E-P3B TODO backend / Fresh step-up, final conversion capability resolver và single-use conversion authority runtime
             F23.3E-P3C TODO backend / Canonical Student, Guardian, source-target binding và Guardian–Student Relationship protected target runtime; sequentially blocked until P3B PASS
             F23.3E-P3D TODO backend/QA / Atomic real-conversion executor, reservation/authority consume và integrated execution QA; sequentially blocked until P3B + P3C PASS
-        F23.3E-P4 TODO public/QA / Nối UI conversion thật, legacy projection và manual QA end-to-end
 * Historical checkpoint compatibility note — non-current P2-era P3 marker; the indented literal below is not a current status:
         F23.3E-P3 TODO backend / Fresh step-up approval, single-use authority và real conversion executor atomic
 * Historical checkpoint compatibility note — non-current P1A-era parent marker: F23.3E-P1 DONE implementation planning / Canonical CRM foundation: center root, Contact, Case, Assignment, conversion request, idempotency, transactional audit/outbox
