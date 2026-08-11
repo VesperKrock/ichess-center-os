@@ -111,7 +111,7 @@ F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
             F23.3E-P1F DONE QA/local verified / Integrated P1A-P1E direct API, multi-account/multi-center, exact-center, stale/concurrency/deadlock, Audit-Outbox fault, import replay/conflict, READ_ONLY và deterministic kill-switch QA PASS; P2 entry technical gate PASS; active/remote rollout vẫn BLOCKED
         F23.3E-P2 DONE design / Identity matching, exact-center duplicate review, versioned normalization, stable sorted identity mutex, masked candidate projection và profile-creation reservation; runtime implementation chưa bắt đầu
             CURRENT CHECKPOINT — F23.3E-P2A DONE backend/local verified / Physical identity-policy, opaque identity mutex, immutable match review và profile-creation reservation schema foundation; RLS/direct-access fail-closed, exact-center/lifecycle/lock-order local QA PASS; chưa apply remote
-            F23.3E-P2B TODO backend / Versioned normalization và exact-center masked candidate search
+            CURRENT CHECKPOINT — F23.3E-P2B DONE backend/local verified / Versioned Student identity normalization, protected keyed digests, sorted identity mutex và exact-center masked candidate search PASS; same-name + exact-birth strong duplicate signal yêu cầu review; Guardian target adapter và create authority vẫn BLOCKED
             F23.3E-P2C TODO backend / Reviewed-match decision và create-new reservation typed runtime
             F23.3E-P2D TODO QA / Integrated duplicate, concurrency, security, fault QA và P3-entry gate
         F23.3E-P3 TODO backend / Fresh step-up approval, single-use authority và real conversion executor atomic
@@ -124,6 +124,8 @@ F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ
 * Historical checkpoint compatibility note — non-current P1-era marker: F23.3E-P2 TODO backend/design / Identity matching, duplicate review, identity mutex và profile-creation reservation
 * Historical checkpoint compatibility note — non-current P2-design-era P2A marker; the indented literal below is not a current status:
             F23.3E-P2A TODO backend / Physical identity-policy, mutex, review và profile-creation reservation schema foundation
+* Historical checkpoint compatibility note — non-current P2A-era P2B marker; the indented literal below is not a current status:
+            F23.3E-P2B TODO backend / Versioned normalization và exact-center masked candidate search
 
 F23.11 DONE public/backend / Hồ sơ hành chính Nhân viên, tài liệu nhân sự và attachment private
     F23.11A DONE design / Kiến trúc Hồ sơ hành chính, dữ liệu nhạy cảm và tài liệu nhân sự
