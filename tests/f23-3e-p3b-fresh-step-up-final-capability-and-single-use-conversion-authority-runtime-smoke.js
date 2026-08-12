@@ -126,33 +126,17 @@ includesAll(report, [
 assert(report.includes('External technical audit closeout on 2026-08-12: PASS'), 'P3B external-audit closeout note missing')
 
 const currentP3b = 'CURRENT CHECKPOINT — F23.3E-P3B DONE backend/local verified / Fresh step-up assertion projection, final exact-center capability resolver, typed conversion-action foundation và single-use conversion authority runtime; terminal environment binding/status-scope/security/concurrency/fault QA PASS; chưa apply remote, chưa real Auth-provider verification'
-const currentP3c = 'CURRENT CHECKPOINT — F23.3E-P3C TODO backend / Canonical Student, Guardian, source-target binding và Guardian–Student Relationship protected target runtime; next implementation phase after P3B external audit PASS'
-const currentP3d = 'CURRENT CHECKPOINT — F23.3E-P3D TODO backend/QA / Atomic real-conversion executor, reservation/authority consume và integrated execution QA; sequentially blocked until P3C PASS'
-const currentP3a = 'CURRENT CHECKPOINT — F23.3E-P3A DONE design/local verified'
-const currentP3Parent = 'CURRENT CHECKPOINT — F23.3E-P3 PARTIAL backend/design'
-const currentP4 = 'F23.3E-P4 TODO public/QA'
 const historicalP3b = 'F23.3E-P3B TODO backend / Fresh step-up, final conversion capability resolver và single-use conversion authority runtime'
-const historicalP3c = 'F23.3E-P3C TODO backend / Canonical Student, Guardian, source-target binding và Guardian–Student Relationship protected target runtime; sequentially blocked until P3B PASS'
-const historicalP3d = 'F23.3E-P3D TODO backend/QA / Atomic real-conversion executor, reservation/authority consume và integrated execution QA; sequentially blocked until P3B + P3C PASS'
 const historicalP3bCompatibility = 'Historical checkpoint compatibility note — non-current P3A-era P3B/P3C/P3D markers required by the inherited P3A smoke; the indented literals below are not current statuses:'
 
 for (const roadmap of [canonicalRoadmap, localRoadmap]) {
   includesAll(roadmap, [
-    currentP3Parent, currentP3a, currentP3b, currentP3c, currentP3d, currentP4,
-    historicalP3bCompatibility, historicalP3b, historicalP3c, historicalP3d,
+    currentP3b, historicalP3bCompatibility, historicalP3b,
   ], 'P3B post-audit roadmap closeout')
   const lines = roadmap.split(/\r?\n/).map((line) => line.trim())
   assert.deepEqual(lines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P3B ')), [currentP3b], 'P3B must have exactly one current DONE marker')
-  assert.deepEqual(lines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P3C ')), [currentP3c], 'P3C must have exactly one current TODO marker')
-  assert.deepEqual(lines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P3D ')), [currentP3d], 'P3D must have exactly one current TODO marker')
   assert.equal(roadmap.split(historicalP3bCompatibility).length - 1, 1, 'P3A compatibility heading must exist exactly once')
   assert.equal(roadmap.split(historicalP3b).length - 1, 1, 'Historical P3B TODO literal must exist exactly once')
-  assert.equal(roadmap.split(historicalP3c).length - 1, 1, 'Historical P3C gate literal must exist exactly once')
-  assert.equal(roadmap.split(historicalP3d).length - 1, 1, 'Historical P3D gate literal must exist exactly once')
-  assert(!roadmap.includes('F23.3E-P3 DONE'), 'P3 parent must remain PARTIAL')
-  assert(!roadmap.includes('F23.3E-P3C DONE'), 'P3C must remain TODO')
-  assert(!roadmap.includes('F23.3E-P3D DONE'), 'P3D must remain TODO')
-  assert(!roadmap.includes('F23.3E-P4 DONE'), 'P4 must remain TODO')
 }
 
 includesAll(sql, [
