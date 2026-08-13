@@ -284,29 +284,16 @@ assert(!qa.includes('supabase link'), 'QA must not link a project')
 assert(!qa.includes('supabase db push'), 'QA must not push migrations')
 assert(!qa.includes('supabase migration repair'), 'QA must not repair migration history')
 
-const currentP2BLine = 'F23.3E-P2B DONE backend/local verified / Versioned Student identity normalization, protected keyed digests, sorted identity mutex và exact-center masked candidate search PASS; same-name + exact-birth strong duplicate signal yêu cầu review; Guardian target adapter và create authority vẫn BLOCKED'
-const currentP2BMarker = `CURRENT CHECKPOINT — ${currentP2BLine}`
-const historicalP2BTodoLine = 'F23.3E-P2B TODO backend / Versioned normalization và exact-center masked candidate search'
-const historicalP2BHeading = '* Historical checkpoint compatibility note — non-current P2A-era P2B marker; the indented literal below is not a current status:'
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [
-    'F23.3E-P2 DONE design',
-    'F23.3E-P2A DONE backend/local verified',
-    currentP2BMarker,
-    'F23.3E-P2C TODO backend',
-    'F23.3E-P2D TODO QA',
-    'F23.3E-P3 TODO backend',
-    'F23.3E-P4 TODO public/QA',
-    historicalP2BHeading,
-    historicalP2BTodoLine,
-  ], 'Post-audit roadmap boundary')
-  const trimmedLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P2B ')), [currentP2BMarker], 'Roadmap must have exactly one current P2B status')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P2B ')), [historicalP2BTodoLine], 'P2B TODO must exist only as the historical compatibility literal')
-  assert.equal(roadmap.split(currentP2BLine).length - 1, 1, 'P2B DONE status count drift')
-  assert.equal(roadmap.split(historicalP2BHeading).length - 1, 1, 'P2B historical heading count drift')
-  assert.equal(roadmap.split(historicalP2BTodoLine).length - 1, 1, 'P2B historical TODO count drift')
-}
+const currentP2BLine = 'F23.3E-P2B DONE backend/local verified / Versioned normalization và exact-center masked search'
+includesAll(localRoadmap, [
+  currentP2BLine,
+  'F23.3E-P2 DONE backend/local verified',
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
+], 'Current P2B roadmap milestone')
+assert.equal(localRoadmap.split('F23.3E-P2B DONE backend/local verified').length - 1, 1, 'P2B must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P2B TODO backend'), 'Stale P2B TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P2B DONE backend/local verified'), 'Historical P2B checkpoint evidence drifted')
 
 const totalInventoryExpression = ['migrationFiles', 'length'].join('.')
 assert(!smoke.includes(`${totalInventoryExpression} ===`), 'P2B smoke must not freeze total migration inventory')

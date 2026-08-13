@@ -349,29 +349,16 @@ assert(!qa.includes('supabase db push'), 'P2A QA must not push a database')
 assert(!qa.includes('supabase db pull'), 'P2A QA must not pull a database')
 assert(!qa.includes('migration repair'), 'P2A QA must not repair remote migration state')
 
-const currentP2ALine = 'F23.3E-P2A DONE backend/local verified / Physical identity-policy, opaque identity mutex, immutable match review và profile-creation reservation schema foundation; RLS/direct-access fail-closed, exact-center/lifecycle/lock-order local QA PASS; chưa apply remote'
-const currentP2AMarker = `CURRENT CHECKPOINT — ${currentP2ALine}`
-const historicalP2ATodoLine = 'F23.3E-P2A TODO backend / Physical identity-policy, mutex, review và profile-creation reservation schema foundation'
-const historicalP2AHeading = '* Historical checkpoint compatibility note — non-current P2-design-era P2A marker; the indented literal below is not a current status:'
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [
-    'F23.3E-P2 DONE design',
-    currentP2AMarker,
-    'F23.3E-P2B TODO backend',
-    'F23.3E-P2C TODO backend',
-    'F23.3E-P2D TODO QA',
-    'F23.3E-P3 TODO backend',
-    'F23.3E-P4 TODO public/QA',
-    historicalP2AHeading,
-    historicalP2ATodoLine,
-  ], 'Post-audit P2A roadmap checkpoint')
-  const trimmedLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P2A ')), [currentP2AMarker], 'Roadmap must have exactly one current P2A status')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P2A ')), [historicalP2ATodoLine], 'P2A TODO must exist only as the historical compatibility literal')
-  assert.equal(roadmap.split(currentP2ALine).length - 1, 1, 'P2A DONE status count drift')
-  assert.equal(roadmap.split(historicalP2AHeading).length - 1, 1, 'P2A historical heading count drift')
-  assert.equal(roadmap.split(historicalP2ATodoLine).length - 1, 1, 'P2A historical TODO count drift')
-}
+const currentP2ALine = 'F23.3E-P2A DONE backend/local verified / Identity-policy, mutex, immutable review và reservation foundation'
+includesAll(localRoadmap, [
+  currentP2ALine,
+  'F23.3E-P2 DONE backend/local verified',
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
+], 'Current P2A roadmap milestone')
+assert.equal(localRoadmap.split('F23.3E-P2A DONE backend/local verified').length - 1, 1, 'P2A must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P2A TODO backend'), 'Stale P2A TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P2A DONE backend/local verified'), 'Historical P2A checkpoint evidence drifted')
 
 const auditedContent = [migration, report, smoke, qa].join('\n')
 const mojibakeSequences = [

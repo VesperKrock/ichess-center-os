@@ -195,40 +195,18 @@ assert(!/set\s+status\s*=\s*'CONSUMED'/i.test(p2cMigration), 'P2C must not consu
 assert(!/\b(?:guardian|student)_profile\s*\(/i.test(p2cMigration), 'P2C must not write profiles')
 assert(!/guardian_student_relationship/i.test(p2cMigration), 'P2C must not write relationships')
 
-const currentP2Line = 'F23.3E-P2 DONE backend/local verified / Identity matching, duplicate review, versioned normalization, exact-center masked search, reviewed decisions, create-new reservation và integrated P3-entry gate hoàn tất local; P2 foundation ready for P3, chưa real conversion'
-const currentP2Marker = `CURRENT CHECKPOINT — ${currentP2Line}`
-const historicalP2Line = 'F23.3E-P2 DONE design / Identity matching, exact-center duplicate review, versioned normalization, stable sorted identity mutex, masked candidate projection và profile-creation reservation; runtime implementation chưa bắt đầu'
-const historicalP2Heading = '* Historical checkpoint compatibility note — non-current P2-design parent marker; the indented literal below is not a current status:'
-const currentP2DLine = 'F23.3E-P2D DONE QA/local verified / Integrated duplicate, concurrency, security và fault QA PASS; P2 foundation cleared for P3 implementation; real conversion vẫn chưa ready và còn 7 P3 prerequisites'
-const currentP2DMarker = `CURRENT CHECKPOINT — ${currentP2DLine}`
-const historicalP2DLine = 'F23.3E-P2D TODO QA / Integrated duplicate, concurrency, security, fault QA và P3-entry gate'
-const historicalP2DHeading = '* Historical checkpoint compatibility note — non-current P2C-era marker; the indented literal below is not a current status:'
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [
-    currentP2Marker,
-    'F23.3E-P2C DONE backend/local verified',
-    currentP2DMarker,
-    'F23.3E-P3 TODO backend',
-    'F23.3E-P4 TODO public/QA',
-    historicalP2Heading,
-    historicalP2Line,
-    historicalP2DHeading,
-    historicalP2DLine,
-  ], 'Post-audit P2 closeout roadmap state')
-  const trimmedLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P2 ')), [currentP2Marker], 'Roadmap must have exactly one current P2 parent status')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P2D ')), [currentP2DMarker], 'Roadmap must have exactly one current P2D status')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P2 ')), [historicalP2Line], 'P2 design literal must exist only as historical compatibility')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P2D ')), [historicalP2DLine], 'P2D TODO literal must exist only as historical compatibility')
-  for (const [value, label] of [
-    [currentP2Line, 'P2 current DONE'],
-    [currentP2DLine, 'P2D current DONE'],
-    [historicalP2Heading, 'P2 historical heading'],
-    [historicalP2Line, 'P2 historical literal'],
-    [historicalP2DHeading, 'P2D historical heading'],
-    [historicalP2DLine, 'P2D historical literal'],
-  ]) assert.equal(roadmap.split(value).length - 1, 1, `${label} count drift`)
-}
+const currentP2Line = 'F23.3E-P2 DONE backend/local verified / Identity matching, duplicate review, normalization, masked search, reviewed decisions và P3-entry gate PASS'
+const currentP2DLine = 'F23.3E-P2D DONE QA/local verified / Integrated duplicate, concurrency, security và fault QA'
+includesAll(localRoadmap, [
+  currentP2Line,
+  currentP2DLine,
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
+], 'Current P2 closeout roadmap state')
+assert.equal(localRoadmap.split('F23.3E-P2 DONE backend/local verified').length - 1, 1, 'P2 must have exactly one current DONE status')
+assert.equal(localRoadmap.split('F23.3E-P2D DONE QA/local verified').length - 1, 1, 'P2D must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P2D TODO QA'), 'Stale P2D TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P2D DONE QA/local verified'), 'Historical P2D checkpoint evidence drifted')
 
 const auditedContent = [report, smoke, qa].join('\n')
 for (const value of [

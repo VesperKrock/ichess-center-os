@@ -438,26 +438,23 @@ for (const [name, expectedHash] of appliedMigrationHashes) {
 
 const requiredRoadmapLines = [
   'F23.2 DONE design / Nối dây Phụ huynh ↔ Tư vấn ↔ Học viên: entity, relationship và lifecycle canonical',
-  'F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ',
-  'F23.3E DONE design / Convert thật có idempotency, rollback, chống trùng và atomic action graph',
-  'F23.3E-P1 DONE implementation planning / Canonical CRM foundation: center root, Contact, Case, Assignment, conversion request, idempotency, transactional audit/outbox',
-  'F23.3E-P1A DONE backend/local verified / Physical CRM schema và exactly-one center_crm_control; migration trong repo, local Docker apply và behavioral QA PASS; chưa apply remote',
-  'F23.3E-P1B DONE backend/local verified / Protected conversion draft RPCs, scoped idempotency, exact prior-result replay, transactional Audit-Outbox và concurrency QA PASS; chưa apply remote, chưa browser wiring',
-  'F23.3E-P1C TODO backend',
-  'F23.3E-P1D TODO backend',
-  'F23.3E-P1E TODO backend',
-  'F23.3E-P1F TODO QA',
-  'F23.3E-P2 TODO backend/design',
-  'F23.3E-P3 TODO backend',
-  'F23.3E-P4 TODO public/QA',
+  'F23.3 PARTIAL public/backend',
+  'F23.3E PARTIAL public/backend/QA',
+  'F23.3E-P1 DONE backend/local verified',
+  'F23.3E-P1A DONE backend/local verified',
+  'F23.3E-P1B DONE backend/local verified',
+  'F23.3E-P1C DONE backend/local verified',
+  'F23.3E-P1D DONE backend/local verified',
+  'F23.3E-P1E DONE backend/local verified',
+  'F23.3E-P1F DONE QA/local verified',
+  'F23.3E-P2 DONE backend/local verified',
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
 ]
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, requiredRoadmapLines, 'P1A/F23.2/F23.3E roadmap closeout is incomplete')
-  assert(!roadmap.includes('F23.3E-P1A IN PROGRESS'), 'P1A roadmap status must not remain IN PROGRESS')
-  assert(!roadmap.includes('F23.3E-P1A DONE runtime'), 'P1A roadmap must not claim runtime completion')
-  assert(!roadmap.includes('F23.3E-P1A DONE remote'), 'P1A roadmap must not claim remote apply')
-  assert(!roadmap.includes('F23.3E-P1A production ready'), 'P1A roadmap must not claim production readiness')
-}
+includesAll(localRoadmap, requiredRoadmapLines, 'Current P1A/F23.3E roadmap state is incomplete')
+assert(!localRoadmap.includes('CURRENT CHECKPOINT —'), 'Completed milestones must not retain checkpoint prefixes')
+assert(!localRoadmap.includes('Supabase applied'), 'Roadmap must not claim remote apply')
+assert(canonicalRoadmap.includes('F23.3E-P1A DONE backend/local verified'), 'Historical P1A closeout evidence drifted')
 
 const requiredQaMarkers = [
   'P1A_QA_EXISTING_CENTER_ROOT_BACKFILL: PASS',

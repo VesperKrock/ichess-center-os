@@ -520,35 +520,17 @@ includesAll(future, [
   'No phase may self-close external audit',
 ], 'Future implementation gates')
 
-const currentP2Line = 'F23.3E-P2 DONE design / Identity matching, exact-center duplicate review, versioned normalization, stable sorted identity mutex, masked candidate projection và profile-creation reservation; runtime implementation chưa bắt đầu'
+const currentP2Line = 'F23.3E-P2 DONE backend/local verified / Identity matching, duplicate review, normalization, masked search, reviewed decisions và P3-entry gate PASS'
 const p2ImplementationChildren = [
-  'F23.3E-P2A TODO backend / Physical identity-policy, mutex, review và profile-creation reservation schema foundation',
-  'F23.3E-P2B TODO backend / Versioned normalization và exact-center masked candidate search',
-  'F23.3E-P2C TODO backend / Reviewed-match decision và create-new reservation typed runtime',
-  'F23.3E-P2D TODO QA / Integrated duplicate, concurrency, security, fault QA và P3-entry gate',
+  'F23.3E-P2A DONE backend/local verified',
+  'F23.3E-P2B DONE backend/local verified',
+  'F23.3E-P2C DONE backend/local verified',
+  'F23.3E-P2D DONE QA/local verified',
 ]
-const currentP3Line = 'F23.3E-P3 TODO backend / Fresh step-up approval, single-use authority và real conversion executor atomic'
-const currentP4Line = 'F23.3E-P4 TODO public/QA / Nối UI conversion thật, legacy projection và manual QA end-to-end'
-const historicalP2TodoLiteral = 'F23.3E-P2 TODO backend/design'
-const historicalP2Marker = `* Historical checkpoint compatibility note — non-current P1-era marker: ${historicalP2TodoLiteral}`
-const historicalP2CompatibilityLine = `${historicalP2Marker} / Identity matching, duplicate review, identity mutex và profile-creation reservation`
-
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  assert(/^\s*F23\.3E-P1 DONE backend\/local foundation verified\b/m.test(roadmap), 'P1 current status changed')
-  includesAll(roadmap, [currentP2Line, ...p2ImplementationChildren, currentP3Line, currentP4Line, historicalP2CompatibilityLine], 'Post-audit P2 roadmap state')
-  const trimmedLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  const currentP2Lines = trimmedLines.filter((line) => line.startsWith('F23.3E-P2 '))
-  assert.equal(currentP2Lines.length, 1, 'Roadmap must have exactly one current P2 status')
-  assert.deepEqual(currentP2Lines, [currentP2Line], 'P2 current status must be DONE design')
-  for (const child of p2ImplementationChildren) {
-    assert.deepEqual(trimmedLines.filter((line) => line.startsWith(`${child.split(' ')[0]} `)), [child], `P2 implementation child drift: ${child}`)
-  }
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P3 ')), [currentP3Line], 'P3 current status changed')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P4 ')), [currentP4Line], 'P4 current status changed')
-  assert.equal(roadmap.split(historicalP2TodoLiteral).length - 1, 1, 'Historical P2 TODO literal count drift')
-  assert.equal(roadmap.split(historicalP2Marker).length - 1, 1, 'Historical P2 compatibility marker count drift')
-  assert.equal(roadmap.split(historicalP2CompatibilityLine).length - 1, 1, 'Historical P2 compatibility line drift')
-}
+includesAll(localRoadmap, [currentP2Line, ...p2ImplementationChildren, 'F23.3E-P3 DONE backend/local verified', 'F23.3E-P4A DONE backend/local verified'], 'Current P2 roadmap state')
+assert.equal(localRoadmap.split('F23.3E-P2 DONE backend/local verified').length - 1, 1, 'P2 must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P2 TODO backend/design'), 'Stale P2 TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P2 DONE design'), 'Historical P2 design evidence drifted')
 
 for (const forbiddenClaim of [
   'F23_3E_P2_FINAL_TECHNICAL_AUDIT: NOT RUN',

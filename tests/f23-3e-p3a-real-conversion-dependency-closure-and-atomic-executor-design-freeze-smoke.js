@@ -109,41 +109,18 @@ includesAll(report, [
 ], 'P3A status and ownership')
 assert(report.includes('External technical audit closeout on 2026-08-12: PASS'), 'P3A external audit closeout note missing')
 
-const currentP3Line = 'F23.3E-P3 PARTIAL backend/design / Real-conversion architecture đã freeze ở P3A; P3B–P3D runtime chưa implement'
-const currentP3Marker = `CURRENT CHECKPOINT — ${currentP3Line}`
-const currentP3aLine = 'F23.3E-P3A DONE design/local verified / Dependency closure, canonical target model, fresh step-up/final capability/single-use authority, typed action aggregate, atomic executor design, dual digest binding và action-version lifecycle ordering đã external audit PASS'
-const currentP3aMarker = `CURRENT CHECKPOINT — ${currentP3aLine}`
-const currentP3bLine = 'F23.3E-P3B TODO backend / Fresh step-up, final conversion capability resolver và single-use conversion authority runtime'
-const currentP3cLine = 'F23.3E-P3C TODO backend / Canonical Student, Guardian, source-target binding và Guardian–Student Relationship protected target runtime; sequentially blocked until P3B PASS'
-const currentP3dLine = 'F23.3E-P3D TODO backend/QA / Atomic real-conversion executor, reservation/authority consume và integrated execution QA; sequentially blocked until P3B + P3C PASS'
-const currentP4Line = 'F23.3E-P4 TODO public/QA / Nối UI conversion thật, legacy projection và manual QA end-to-end'
-const historicalP3Heading = '* Historical checkpoint compatibility note — non-current P2-era P3 marker; the indented literal below is not a current status:'
-const historicalP3Line = 'F23.3E-P3 TODO backend / Fresh step-up approval, single-use authority và real conversion executor atomic'
-
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [
-    currentP3Marker,
-    currentP3aMarker,
-    currentP3bLine,
-    currentP3cLine,
-    currentP3dLine,
-    currentP4Line,
-    historicalP3Heading,
-    historicalP3Line,
-  ], 'P3A post-audit roadmap closeout')
-  const trimmedLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P3 ')), [currentP3Marker], 'Roadmap must have exactly one current P3 PARTIAL status')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P3A ')), [currentP3aMarker], 'Roadmap must have exactly one current P3A DONE status')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P3B ')), [currentP3bLine], 'P3B current TODO status drift')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P3C ')), [currentP3cLine], 'P3C sequential gate drift')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P3D ')), [currentP3dLine], 'P3D sequential gate drift')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P4 ')), [currentP4Line], 'P4 must remain TODO')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P3 ')), [historicalP3Line], 'P3 TODO literal must exist only as historical compatibility')
-  assert.equal(roadmap.split('F23.3E-P3 PARTIAL backend/design').length - 1, 1, 'Current P3 PARTIAL literal count drift')
-  assert.equal(roadmap.split('F23.3E-P3 TODO backend').length - 1, 1, 'Historical P3 TODO literal count drift')
-  assert.equal(roadmap.split(historicalP3Heading).length - 1, 1, 'Historical P3 compatibility heading count drift')
-  assert(!roadmap.includes('F23.3E-P3 DONE'), 'P3 parent must not be marked DONE')
-}
+const currentP3Line = 'F23.3E-P3 DONE backend/local verified / P3A-P3D hoàn tất real-conversion backend và technical acceptance local; remote Supabase apply/deploy chưa chạy'
+includesAll(localRoadmap, [
+  currentP3Line,
+  'F23.3E-P3A DONE design/local verified',
+  'F23.3E-P3B DONE backend/local verified',
+  'F23.3E-P3C DONE backend/local verified',
+  'F23.3E-P3D DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
+], 'Current P3 roadmap milestone')
+assert.equal(localRoadmap.split('F23.3E-P3 DONE backend/local verified').length - 1, 1, 'P3 must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P3 TODO backend'), 'Stale P3 TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P3A DONE design/local verified'), 'Historical P3A checkpoint evidence drifted')
 
 const blockerInputs = [
   'P3_STEP_UP_AUTHORITY_RUNTIME: BLOCKED_PREREQUISITE',

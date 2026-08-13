@@ -648,23 +648,26 @@ includesAll(design, [
   'never runtime/implementation done',
 ], 'Design readiness boundary is incomplete')
 
-const canonicalRoadmapLines = [
+const currentRoadmapLines = [
   'F23.2 DONE design / Nối dây Phụ huynh ↔ Tư vấn ↔ Học viên: entity, relationship và lifecycle canonical',
-  'F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ',
+  'F23.3 PARTIAL public/backend',
   'F23.3A DONE design / Thiết kế Module Phụ huynh-Tư vấn CRM nhẹ',
   'F23.3B DONE public / CRM shell local-safe',
   'F23.3C DONE qua F23.3B / Form khách mới local-safe',
   'F23.3D DONE public / Convert preview',
-  'F23.3E DONE design / Convert thật có idempotency, rollback, chống trùng và atomic action graph',
+  'F23.3E PARTIAL public/backend/QA',
+  'F23.3E-P1 DONE backend/local verified',
+  'F23.3E-P2 DONE backend/local verified',
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P3D DONE backend/local verified',
+  'F23.3E-P4 PARTIAL public/backend/QA',
+  'F23.3E-P4A DONE backend/local verified',
 ]
-includesAll(roadmap, canonicalRoadmapLines, 'RoadmapRealTime F23.3E final closeout is incomplete')
-includesAll(canonicalRoadmapMirror, canonicalRoadmapLines, 'Canonical roadmap mirror F23.3E final closeout is incomplete')
-for (const roadmapContent of [roadmap, canonicalRoadmapMirror]) {
-  assert(!roadmapContent.includes('F23.3E TODO design'), 'F23.3E must not remain TODO after final audit PASS')
-  assert(!roadmapContent.includes('F23.3E DONE runtime'), 'F23.3E must not be marked runtime done')
-  assert(!roadmapContent.includes('F23.3E implementation ready'), 'F23.3E must not be marked implementation ready')
-  assert(!roadmapContent.includes('F23.3E real conversion implemented'), 'F23.3E must not be marked implemented')
-}
+includesAll(roadmap, currentRoadmapLines, 'RoadmapRealTime current F23.3E state is incomplete')
+assert(!roadmap.includes('F23.3E TODO design'), 'F23.3E must not regress to the design-era TODO state')
+assert(!roadmap.includes('CURRENT CHECKPOINT —'), 'Completed F23.3E milestones must not retain checkpoint prefixes')
+assert(!roadmap.includes('Historical checkpoint compatibility note'), 'Current roadmap must not keep a compatibility museum')
+assert(canonicalRoadmapMirror.includes('F23.3E DONE design'), 'Historical design-closeout evidence drifted')
 
 for (const forbiddenClaim of [
   'F23_3E_FINAL_TECHNICAL_AUDIT: NOT RUN',

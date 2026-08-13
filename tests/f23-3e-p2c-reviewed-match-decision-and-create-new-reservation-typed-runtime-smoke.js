@@ -242,29 +242,16 @@ assert(!qa.includes('supabase link'))
 assert(!qa.includes('supabase db push'))
 assert(!qa.includes('supabase migration repair'))
 
-const currentP2CLine = 'F23.3E-P2C DONE backend/local verified / Protected reviewed-match decisions và create-new reservation runtime PASS; scoped idempotency, transactional Audit-Outbox, exact-center/stale/concurrency/fault QA PASS; reservation vẫn không cấp profile/create/conversion authority và không CONSUMED trước P3'
-const currentP2CMarker = `CURRENT CHECKPOINT — ${currentP2CLine}`
-const historicalP2CTodoLine = 'F23.3E-P2C TODO backend / Reviewed-match decision và create-new reservation typed runtime'
-const historicalP2CHeading = '* Historical checkpoint compatibility note — non-current P2B-era marker; the indented literal below is not a current status:'
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [
-    'F23.3E-P2 DONE design',
-    'F23.3E-P2A DONE backend/local verified',
-    'F23.3E-P2B DONE backend/local verified',
-    currentP2CMarker,
-    'F23.3E-P2D TODO QA',
-    'F23.3E-P3 TODO backend',
-    'F23.3E-P4 TODO public/QA',
-    historicalP2CHeading,
-    historicalP2CTodoLine,
-  ], 'Post-audit P2C roadmap checkpoint')
-  const trimmedLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P2C ')), [currentP2CMarker], 'Roadmap must have exactly one current P2C status')
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P2C ')), [historicalP2CTodoLine], 'P2C TODO must exist only as the historical compatibility literal')
-  assert.equal(roadmap.split(currentP2CLine).length - 1, 1, 'P2C DONE status count drift')
-  assert.equal(roadmap.split(historicalP2CHeading).length - 1, 1, 'P2C historical heading count drift')
-  assert.equal(roadmap.split(historicalP2CTodoLine).length - 1, 1, 'P2C historical TODO count drift')
-}
+const currentP2CLine = 'F23.3E-P2C DONE backend/local verified / Reviewed decision và create-new reservation runtime'
+includesAll(localRoadmap, [
+  currentP2CLine,
+  'F23.3E-P2 DONE backend/local verified',
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
+], 'Current P2C roadmap milestone')
+assert.equal(localRoadmap.split('F23.3E-P2C DONE backend/local verified').length - 1, 1, 'P2C must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P2C TODO backend'), 'Stale P2C TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P2C DONE backend/local verified'), 'Historical P2C checkpoint evidence drifted')
 
 const totalInventoryExpression = ['migrationFiles', 'length'].join('.')
 assert(!smoke.includes(`${totalInventoryExpression} ===`), 'P2C smoke must not freeze total migration inventory')

@@ -222,20 +222,11 @@ includesAll(report, [
   ...exactArtifacts,
 ], 'Implementation report incomplete')
 
-const p1dRoadmapLine = 'F23.3E-P1D DONE backend/local verified / Typed Contact, Case, Assignment và Care Log service operations; exact-center, expected-version, target eligibility lock-recheck, Audit-Outbox atomic và fault/concurrency QA PASS; chưa apply remote, chưa browser/final capability wiring'
-const historicalP1dMarker = '* Historical checkpoint compatibility note — non-current P1A/P1C-era marker: F23.3E-P1D TODO backend'
-const pendingRoadmapLines = [
-  'F23.3E-P1E TODO backend / RLS-read path remediation, server masking và LocalStorage import readiness',
-  'F23.3E-P1F TODO QA / Direct API, multi-account, exact-center, concurrency, fault injection và rollout gates',
-  'F23.3E-P2 TODO backend/design', 'F23.3E-P3 TODO backend', 'F23.3E-P4 TODO public/QA',
-]
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [p1dRoadmapLine, historicalP1dMarker, ...pendingRoadmapLines], 'P1D closeout roadmap drift')
-  const currentP1dLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-    .filter((line) => line.startsWith('F23.3E-P1D '))
-  assert.deepEqual(currentP1dLines, [p1dRoadmapLine], 'P1D roadmap must have exactly one current status line')
-  assert.equal((roadmap.match(/F23\.3E-P1D TODO backend/g) ?? []).length, 1, 'P1D historical compatibility marker count drift')
-}
+const p1dRoadmapLine = 'F23.3E-P1D DONE backend/local verified / Typed Contact, Case, Assignment và Care Log operations'
+includesAll(localRoadmap, [p1dRoadmapLine, 'F23.3E-P3 DONE backend/local verified', 'F23.3E-P4A DONE backend/local verified'], 'Current P1D roadmap state drift')
+assert.equal(localRoadmap.split('F23.3E-P1D DONE backend/local verified').length - 1, 1, 'P1D must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P1D TODO backend'), 'Stale P1D TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P1D DONE backend/local verified'), 'Historical P1D closeout evidence drifted')
 
 const qaMarkers = [
   'P1D_QA_BROWSER_RPC_EXECUTE_DENIED: PASS', 'P1D_QA_SERVICE_ROLE_RPC_GRANTS_EXACT: PASS',

@@ -246,17 +246,10 @@ includesAll(report, [
   ...exactArtifacts,
 ], 'Implementation report incomplete')
 
-const p1cRoadmapLine = 'F23.3E-P1C DONE backend/local verified / Typed exact-center Audit read và durable Outbox claim-lease-ACK-retry-reclaim-dead-letter runtime; fault/concurrency QA PASS; chưa apply remote, chưa network worker'
-const pendingRoadmapLines = [
-  'F23.3E-P1D TODO backend', 'F23.3E-P1E TODO backend', 'F23.3E-P1F TODO QA',
-  'F23.3E-P2 TODO backend/design', 'F23.3E-P3 TODO backend', 'F23.3E-P4 TODO public/QA',
-]
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [p1cRoadmapLine, ...pendingRoadmapLines], 'P1C closeout roadmap drift')
-  const currentP1cLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-    .filter((line) => line.startsWith('F23.3E-P1C '))
-  assert.deepEqual(currentP1cLines, [p1cRoadmapLine], 'P1C roadmap must have exactly one current status line')
-}
+const p1cRoadmapLine = 'F23.3E-P1C DONE backend/local verified / Transactional Audit và durable Outbox'
+includesAll(localRoadmap, [p1cRoadmapLine, 'F23.3E-P3 DONE backend/local verified', 'F23.3E-P4A DONE backend/local verified'], 'Current P1C roadmap state drift')
+assert.equal(localRoadmap.split('F23.3E-P1C DONE backend/local verified').length - 1, 1, 'P1C must have exactly one current DONE status')
+assert(canonicalRoadmap.includes('F23.3E-P1C DONE backend/local verified'), 'Historical P1C closeout evidence drifted')
 
 const qaMarkers = [
   'P1C_QA_AUDIT_EXACT_CENTER: PASS', 'P1C_QA_AUDIT_SAFE_PROJECTION: PASS',

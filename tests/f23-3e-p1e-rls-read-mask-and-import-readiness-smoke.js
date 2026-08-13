@@ -310,19 +310,11 @@ for (const pattern of [
 
 const canonicalRoadmap = readFileSync(join(root, 'docs', 'f23-11e-2-go-xoa-tep-object-cleanup-va-legal-hold.md'), 'utf8')
 const localRoadmap = readFileSync(join(root, 'RoadmapRealTime.txt'), 'utf8')
-const p1eRoadmapLine = 'F23.3E-P1E DONE backend/local verified / Fail-closed CRM read path, service-only masked projections, generic cloud CRM deny guard và deterministic prototype-safe LocalStorage import-preview readiness; multi-account/security/fault QA PASS; chưa apply remote, chưa browser/final capability/full reveal/real import'
-const historicalP1eMarker = '* Historical checkpoint compatibility note — non-current P1D-era marker: F23.3E-P1E TODO backend / RLS-read path remediation, server masking và LocalStorage import readiness'
-const pendingRoadmapLines = [
-  'F23.3E-P1F TODO QA / Direct API, multi-account, exact-center, concurrency, fault injection và rollout gates',
-  'F23.3E-P2 TODO backend/design', 'F23.3E-P3 TODO backend', 'F23.3E-P4 TODO public/QA',
-]
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [p1eRoadmapLine, historicalP1eMarker, ...pendingRoadmapLines], 'P1E closeout roadmap drift')
-  const currentP1eLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-    .filter((line) => line.startsWith('F23.3E-P1E '))
-  assert.deepEqual(currentP1eLines, [p1eRoadmapLine], 'P1E roadmap must have exactly one current status line')
-  assert.equal((roadmap.match(/F23\.3E-P1E TODO backend/g) ?? []).length, 1, 'P1E historical compatibility marker count drift')
-}
+const p1eRoadmapLine = 'F23.3E-P1E DONE backend/local verified / RLS read, masking và import-readiness'
+includesAll(localRoadmap, [p1eRoadmapLine, 'F23.3E-P3 DONE backend/local verified', 'F23.3E-P4A DONE backend/local verified'], 'Current P1E roadmap state drift')
+assert.equal(localRoadmap.split('F23.3E-P1E DONE backend/local verified').length - 1, 1, 'P1E must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P1E TODO backend'), 'Stale P1E TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P1E DONE backend/local verified'), 'Historical P1E closeout evidence drifted')
 
 assert(smoke.includes('202608100003n') && smoke.includes('BigInt'), 'Forward-compatible checkpoint guard missing')
 console.log(`F23.3E-P1E semantic smoke passed (migration SHA-256 ${p1eHash})`)

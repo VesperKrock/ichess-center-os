@@ -180,28 +180,15 @@ for (const forbidden of [
   /https?:\/\/(?!127\.0\.0\.1|localhost|\[::1\])/i,
 ]) assert(!forbidden.test(`${qa}\n${report}`), `P1F artifact contains forbidden scope ${forbidden}`)
 
-const currentP1fLine = 'F23.3E-P1F DONE QA/local verified / Integrated P1A-P1E direct API, multi-account/multi-center, exact-center, stale/concurrency/deadlock, Audit-Outbox fault, import replay/conflict, READ_ONLY và deterministic kill-switch QA PASS; P2 entry technical gate PASS; active/remote rollout vẫn BLOCKED'
-const currentParentP1Line = 'F23.3E-P1 DONE backend/local foundation verified / P1A-P1F hoàn tất local: canonical CRM schema/control root, request-idempotency, transactional Audit-Outbox, typed CRM mutations, masked reads/import readiness và integrated rollout-gate QA; chưa apply remote, chưa browser/final capability/full reveal/real import'
-const historicalParentP1Literal = 'F23.3E-P1 DONE implementation planning / Canonical CRM foundation: center root, Contact, Case, Assignment, conversion request, idempotency, transactional audit/outbox'
-const historicalParentP1Marker = `* Historical checkpoint compatibility note — non-current P1A-era parent marker: ${historicalParentP1Literal}`
-const historicalP1fTodoLiteral = 'F23.3E-P1F TODO QA / Direct API, multi-account, exact-center, concurrency, fault injection và rollout gates'
-const historicalP1fMarker = `* Historical checkpoint compatibility note — non-current P1D/P1E-era marker: ${historicalP1fTodoLiteral}`
-const pendingPostP1Lines = [
-  'F23.3E-P2 TODO backend/design / Identity matching, duplicate review, identity mutex và profile-creation reservation',
-  'F23.3E-P3 TODO backend / Fresh step-up approval, single-use authority và real conversion executor atomic',
-  'F23.3E-P4 TODO public/QA / Nối UI conversion thật, legacy projection và manual QA end-to-end',
-]
-for (const file of ['docs/f23-11e-2-go-xoa-tep-object-cleanup-va-legal-hold.md', 'RoadmapRealTime.txt']) {
-  const roadmap = readFileSync(join(root, file), 'utf8')
-  includesAll(roadmap, [currentP1fLine, currentParentP1Line, historicalParentP1Marker, historicalP1fMarker, ...pendingPostP1Lines], `${file} post-audit roadmap closeout`)
-  const trimmedLines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P1F ')), [currentP1fLine], `${file} must have exactly one current P1F status`)
-  assert.deepEqual(trimmedLines.filter((line) => line.startsWith('F23.3E-P1 ')), [currentParentP1Line], `${file} must have exactly one current parent P1 status`)
-  assert.equal(roadmap.split(historicalParentP1Literal).length - 1, 1, `${file} historical parent P1 literal count drift`)
-  assert.equal(roadmap.split(historicalParentP1Marker).length - 1, 1, `${file} historical parent P1 compatibility marker count drift`)
-  assert.equal(roadmap.split(historicalP1fTodoLiteral).length - 1, 1, `${file} historical P1F TODO literal count drift`)
-  assert.equal(roadmap.split(historicalP1fMarker).length - 1, 1, `${file} historical P1F compatibility marker count drift`)
-}
+const localRoadmap = readFileSync(join(root, 'RoadmapRealTime.txt'), 'utf8')
+includesAll(localRoadmap, [
+  'F23.3E-P1 DONE backend/local verified',
+  'F23.3E-P1F DONE QA/local verified / Integrated P1 rollout-gate QA',
+  'F23.3E-P2 DONE backend/local verified',
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
+], 'Current P1F roadmap state drift')
+assert(!localRoadmap.includes('Historical checkpoint compatibility note'), 'Stale historical compatibility museum must be removed')
 
 assert(smoke.includes('migrationCheckpoints') && smoke.includes('createHash'), 'Smoke does not hard-verify migration hashes')
 console.log('P1F_NEW_MIGRATION_COUNT: 0')

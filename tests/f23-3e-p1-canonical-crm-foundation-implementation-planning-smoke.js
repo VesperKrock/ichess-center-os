@@ -750,19 +750,12 @@ includesAll(closeout, [
   'F23.3E-P1 IMPLEMENTATION DESIGN: SAFE TO START AFTER EXPLICIT APPROVAL',
 ], 'Final technical audit closeout is incomplete')
 
-const canonicalRoadmapState = 'F23.3E DONE design / Convert thật có idempotency, rollback, chống trùng và atomic action graph'
-const packageRoadmapState = 'F23.3E-P1 DONE implementation planning / Canonical CRM foundation: center root, Contact, Case, Assignment, conversion request, idempotency, transactional audit/outbox'
-for (const roadmapContent of [roadmap, canonicalRoadmapMirror]) {
-  assert(roadmapContent.includes(canonicalRoadmapState), 'Inherited F23.3E roadmap closeout changed')
-  assert(roadmapContent.includes(packageRoadmapState), 'Package 1 implementation-planning roadmap closeout is missing')
-  assert(!roadmapContent.includes('F23.3E-P1 READY'), 'Package 1 roadmap must not claim readiness')
-  for (const invalidLine of [
-    /^\s*F23\.3E-P1 DONE implementation\s*$/m,
-    /^\s*F23\.3E-P1 DONE runtime\s*$/m,
-    /^\s*F23\.3E-P1 SQL approved\s*$/m,
-    /^\s*F23\.3E-P1 Supabase applied\s*$/m,
-  ]) assert(!invalidLine.test(roadmapContent), 'Package 1 roadmap overclaims implementation/runtime/remote execution')
-}
+const currentRoadmapState = 'F23.3E PARTIAL public/backend/QA / Design và backend P1-P3 DONE; đang thực hiện P4 UI conversion thật, legacy projection và manual E2E; remote Supabase apply/deploy chưa chạy'
+const currentP1RoadmapState = 'F23.3E-P1 DONE backend/local verified / Nền CRM canonical, Request-idempotency, Audit-Outbox, typed operations, masked reads và rollout-gate QA PASS'
+includesAll(roadmap, [currentRoadmapState, currentP1RoadmapState, 'F23.3E-P4A DONE backend/local verified'], 'Current F23.3E roadmap state is incomplete')
+assert(!roadmap.includes('F23.3E-P1 READY'), 'P1 roadmap must not claim a non-terminal READY state')
+assert(!roadmap.includes('Supabase applied'), 'Roadmap must not claim remote apply')
+assert(canonicalRoadmapMirror.includes('F23.3E-P1 DONE implementation planning'), 'Historical P1 design evidence drifted')
 
 for (const forbiddenClaim of [
   'F23_3E_P1_FINAL_TECHNICAL_AUDIT: NOT RUN',

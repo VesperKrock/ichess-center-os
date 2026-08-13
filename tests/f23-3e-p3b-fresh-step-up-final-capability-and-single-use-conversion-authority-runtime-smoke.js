@@ -125,19 +125,15 @@ includesAll(report, [
 ], 'P3B report status')
 assert(report.includes('External technical audit closeout on 2026-08-12: PASS'), 'P3B external-audit closeout note missing')
 
-const currentP3b = 'CURRENT CHECKPOINT — F23.3E-P3B DONE backend/local verified / Fresh step-up assertion projection, final exact-center capability resolver, typed conversion-action foundation và single-use conversion authority runtime; terminal environment binding/status-scope/security/concurrency/fault QA PASS; chưa apply remote, chưa real Auth-provider verification'
-const historicalP3b = 'F23.3E-P3B TODO backend / Fresh step-up, final conversion capability resolver và single-use conversion authority runtime'
-const historicalP3bCompatibility = 'Historical checkpoint compatibility note — non-current P3A-era P3B/P3C/P3D markers required by the inherited P3A smoke; the indented literals below are not current statuses:'
-
-for (const roadmap of [canonicalRoadmap, localRoadmap]) {
-  includesAll(roadmap, [
-    currentP3b, historicalP3bCompatibility, historicalP3b,
-  ], 'P3B post-audit roadmap closeout')
-  const lines = roadmap.split(/\r?\n/).map((line) => line.trim())
-  assert.deepEqual(lines.filter((line) => line.startsWith('CURRENT CHECKPOINT — F23.3E-P3B ')), [currentP3b], 'P3B must have exactly one current DONE marker')
-  assert.equal(roadmap.split(historicalP3bCompatibility).length - 1, 1, 'P3A compatibility heading must exist exactly once')
-  assert.equal(roadmap.split(historicalP3b).length - 1, 1, 'Historical P3B TODO literal must exist exactly once')
-}
+const currentP3b = 'F23.3E-P3B DONE backend/local verified / Step-up, capability và single-use conversion authority runtime'
+includesAll(localRoadmap, [
+  currentP3b,
+  'F23.3E-P3 DONE backend/local verified',
+  'F23.3E-P4A DONE backend/local verified',
+], 'Current P3B roadmap milestone')
+assert.equal(localRoadmap.split('F23.3E-P3B DONE backend/local verified').length - 1, 1, 'P3B must have exactly one current DONE status')
+assert(!localRoadmap.includes('F23.3E-P3B TODO backend'), 'Stale P3B TODO marker must be removed')
+assert(canonicalRoadmap.includes('F23.3E-P3B DONE backend/local verified'), 'Historical P3B checkpoint evidence drifted')
 
 includesAll(sql, [
   'add column membership_version integer not null default 1',
