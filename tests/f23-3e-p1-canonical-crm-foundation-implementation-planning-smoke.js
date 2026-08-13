@@ -171,9 +171,10 @@ includesAll(parentSource, [
   'export function buildParentConvertPreview',
   'export function getParentConvertCandidates',
   'Trùng số điện thoại',
-  'Xác nhận chuyển đổi - chưa mở',
+  'data-p4b-conversion-action="prepare"',
+  'data-p4b-conversion-action="execute"',
 ], 'CRM/F23.3D source truth changed')
-assert(parentSource.includes('<button type="button" disabled>Xác nhận chuyển đổi - chưa mở</button>'), 'Real conversion confirmation must remain disabled')
+assert(parentSource.includes('JWT, quyền đúng cơ sở'), 'Current conversion UI must retain the trusted-server warning')
 includesAll(previewDesign, [
   'chỉ là bản xem trước',
   'chưa ghi `linkedStudentIds`',

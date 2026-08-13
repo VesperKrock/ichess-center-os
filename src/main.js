@@ -14,6 +14,17 @@ import {
 } from './supabase-auth.js'
 import { getSupabaseClient, getSupabaseConfigStatus } from './supabase-client.js'
 import {
+  approveAndExecuteCanonicalConversion,
+  crmConversionBridgeErrorMessage,
+  getStoredConversionEnvelope,
+  listLegacyStudentProjections,
+  listVerifiedTotpFactors,
+  prepareCanonicalConversion,
+  refreshCanonicalConversion,
+  reviewCanonicalConversion,
+  verifyFreshTotp,
+} from './crm-conversion-bridge.js'
+import {
   buildAttachmentFileName,
   buildTransactionCode,
   buildTransactionImageStoragePath,
@@ -890,6 +901,56 @@ function createInternalCenterSwitchState(overrides = {}) {
 function getCurrentResolvedCenterId() {
   const binding = resolveAppCenterBinding(cloudStatus)
   return binding.currentCenterId || getCurrentStorageCenterId()
+}
+
+function getStudentsWithCanonicalProjections() {
+  const projections = listLegacyStudentProjections(getCurrentResolvedCenterId())
+  const localCanonicalIds = new Set(students.map((student) => student.canonicalId).filter(Boolean))
+  return [...students, ...projections.filter((projection) => !localCanonicalIds.has(projection.canonicalId))]
+}
+
+function parseCanonicalReviewDecision(value) {
+  const [decision = 'CREATE_NEW', targetId = '', targetVersion = ''] = String(value || '').split('|')
+  return {
+    decision,
+    targetId: ['REUSE_EXISTING', 'DO_NOT_CREATE'].includes(decision) && targetId ? targetId : null,
+    targetVersion: ['REUSE_EXISTING', 'DO_NOT_CREATE'].includes(decision) && targetId ? Number(targetVersion) || null : null,
+  }
+}
+
+async function refreshParentCanonicalConversion({ loadFactors = true } = {}) {
+  if (!parentConvertPreviewState?.contactId || !parentConvertPreviewState.bridgeEnvelope?.bridgeSessionId) return
+  const state = parentConvertPreviewState
+  try {
+    const refreshed = await refreshCanonicalConversion({
+      centerId: getCurrentResolvedCenterId(),
+      sourceRecordId: state.contactId,
+      envelope: state.bridgeEnvelope,
+    })
+    let factors = state.totpFactors || []
+    if (loadFactors && refreshed.envelope.status === 'REVIEWED') {
+      try { factors = await listVerifiedTotpFactors() } catch { factors = [] }
+    }
+    if (parentConvertPreviewState?.contactId !== state.contactId) return
+    parentConvertPreviewState = {
+      ...parentConvertPreviewState,
+      bridgeResult: refreshed.result,
+      bridgeEnvelope: refreshed.envelope,
+      studentSearch: refreshed.result.student_search || parentConvertPreviewState.studentSearch,
+      guardianSearch: refreshed.result.guardian_search || parentConvertPreviewState.guardianSearch,
+      totpFactors: factors,
+      bridgeBusy: false,
+      bridgeError: '',
+    }
+  } catch (error) {
+    if (parentConvertPreviewState?.contactId !== state.contactId) return
+    parentConvertPreviewState = {
+      ...parentConvertPreviewState,
+      bridgeBusy: false,
+      bridgeError: crmConversionBridgeErrorMessage(error),
+    }
+  }
+  render()
 }
 
 function getCloudAttachmentAccessContext() {
@@ -10186,7 +10247,7 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'hoc-vien') {
     return renderStudentModule(
-      students,
+      getStudentsWithCanonicalProjections(),
       studentFilters,
       studentFormState,
       teachers,
@@ -10198,7 +10259,7 @@ function renderWindowBody(windowItem) {
     return renderParentConsultationModule(
       parentConsultations,
       parentConsultationFilters,
-      students,
+      getStudentsWithCanonicalProjections(),
       parentConsultationFormState,
       parentQuickNoteState,
       parentNoteHistoryContactId,
@@ -10416,7 +10477,7 @@ function renderWindowBody(windowItem) {
 function renderStudentDetailWithDeleteAction(student, classSessions = []) {
   const detailHtml = renderStudentDetail(student, teachers, classSessions, tuitionRecords)
 
-  if (!student || student.isDeleted) {
+  if (!student || student.isDeleted || student.readOnlyProjection) {
     return detailHtml
   }
 
@@ -10475,7 +10536,7 @@ function getWindowHeaderTitle(windowItem) {
 }
 
 function getStudentById(studentId) {
-  return students.find((student) => student.id === studentId)
+  return getStudentsWithCanonicalProjections().find((student) => student.id === studentId)
 }
 
 function getTeacherById(teacherId) {
@@ -20651,7 +20712,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-parent-convert-preview-action="open"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', async (event) => {
       event.preventDefault()
       event.stopPropagation()
 
@@ -20662,12 +20723,20 @@ function bindEvents() {
         return
       }
 
+      const bridgeEnvelope = getStoredConversionEnvelope(getCurrentResolvedCenterId(), contactId)
       parentConvertPreviewState = {
         contactId,
         mode: 'create',
         selectedCandidateKey: '',
+        birthDate: '',
+        bridgeEnvelope,
+        bridgeResult: bridgeEnvelope?.safeProjection ? { projection: bridgeEnvelope.safeProjection } : null,
+        bridgeBusy: false,
+        bridgeError: '',
+        totpFactors: [],
       }
       render()
+      if (bridgeEnvelope?.bridgeSessionId) await refreshParentCanonicalConversion()
     })
   })
 
@@ -20707,6 +20776,94 @@ function bindEvents() {
         ...parentConvertPreviewState,
         mode: 'merge',
         selectedCandidateKey: button.dataset.candidateKey || '',
+      }
+      render()
+    })
+  })
+
+  document.querySelector('[data-p4b-conversion-field="birth-date"]')?.addEventListener('change', (event) => {
+    if (!parentConvertPreviewState) return
+    parentConvertPreviewState = { ...parentConvertPreviewState, birthDate: event.target.value || '' }
+  })
+
+  document.querySelectorAll('[data-p4b-conversion-action]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault()
+      if (!parentConvertPreviewState || parentConvertPreviewState.bridgeBusy) return
+      const action = button.dataset.p4bConversionAction
+      const contact = parentConsultations.find((item) => item.id === parentConvertPreviewState.contactId)
+      const centerId = getCurrentResolvedCenterId()
+      if (!contact || !centerId) {
+        parentConvertPreviewState = { ...parentConvertPreviewState, bridgeError: 'Chưa xác định được khách hoặc cơ sở hiện tại.' }
+        render()
+        return
+      }
+      if (action === 'refresh') {
+        parentConvertPreviewState = { ...parentConvertPreviewState, bridgeBusy: true, bridgeError: '' }
+        render()
+        await refreshParentCanonicalConversion()
+        return
+      }
+
+      const currentState = parentConvertPreviewState
+      parentConvertPreviewState = { ...currentState, bridgeBusy: true, bridgeError: '' }
+      render()
+      try {
+        if (action === 'prepare') {
+          const birthDate = currentState.birthDate || ''
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) throw new Error('Vui lòng nhập ngày sinh đầy đủ trước khi chuẩn bị.')
+          const prepared = await prepareCanonicalConversion({ centerId, contact, birthDate })
+          parentConvertPreviewState = {
+            ...parentConvertPreviewState,
+            bridgeResult: prepared.result,
+            bridgeEnvelope: prepared.envelope,
+            studentSearch: prepared.result.student_search,
+            guardianSearch: prepared.result.guardian_search,
+            bridgeBusy: false,
+          }
+        } else if (action === 'review') {
+          const student = parseCanonicalReviewDecision(document.querySelector('[data-p4b-conversion-field="student-decision"]')?.value)
+          const guardian = parseCanonicalReviewDecision(document.querySelector('[data-p4b-conversion-field="guardian-decision"]')?.value)
+          let relationshipDecision = document.querySelector('[data-p4b-conversion-field="relationship-decision"]')?.value || 'CREATE_RELATIONSHIP'
+          if (student.decision === 'DO_NOT_CREATE' || guardian.decision === 'DO_NOT_CREATE') relationshipDecision = 'DO_NOT_CREATE_RELATIONSHIP'
+          const reviewed = await reviewCanonicalConversion({
+            centerId,
+            sourceRecordId: contact.id,
+            envelope: currentState.bridgeEnvelope,
+            decisions: { student, guardian, relationshipDecision },
+          })
+          let factors = []
+          const binding = resolveAppCenterBinding(cloudStatus)
+          if (['owner', 'center_admin'].includes(binding.role)) factors = await listVerifiedTotpFactors()
+          parentConvertPreviewState = {
+            ...parentConvertPreviewState,
+            bridgeResult: reviewed.result,
+            bridgeEnvelope: reviewed.envelope,
+            totpFactors: factors,
+            bridgeBusy: false,
+          }
+        } else if (action === 'execute') {
+          const factorId = document.querySelector('[data-p4b-conversion-field="totp-factor"]')?.value || ''
+          const code = document.querySelector('[data-p4b-conversion-field="totp-code"]')?.value || ''
+          await verifyFreshTotp({ factorId, code })
+          const executed = await approveAndExecuteCanonicalConversion({
+            centerId,
+            sourceRecordId: contact.id,
+            envelope: currentState.bridgeEnvelope,
+          })
+          parentConvertPreviewState = {
+            ...parentConvertPreviewState,
+            bridgeResult: executed.result,
+            bridgeEnvelope: executed.envelope,
+            bridgeBusy: false,
+          }
+        }
+      } catch (error) {
+        parentConvertPreviewState = {
+          ...parentConvertPreviewState,
+          bridgeBusy: false,
+          bridgeError: crmConversionBridgeErrorMessage(error),
+        }
       }
       render()
     })

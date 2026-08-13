@@ -37,6 +37,9 @@ const p3c = read('supabase/migrations/202608120002_f23_3e_p3c_canonical_student_
 const p3c0 = read('docs/f23-3e-p3c0-guardian-source-evidence-crypto-contract-design-freeze.md')
 const p3d = read('supabase/migrations/202608120003_f23_3e_p3d_atomic_real_conversion_executor_and_integrated_backend_qa.sql')
 const p4a = read('supabase/migrations/202608130001_f23_3e_p4a_canonical_contact_ingress_lookup_normalization_foundation.sql')
+const p4b = read('supabase/migrations/202608130002_f23_3e_p4b_safe_server_bridge_auth_step_up_conversion_ui_legacy_projection.sql')
+const p4bEdge = read('supabase/functions/crm-conversion-bridge/index.ts')
+const p4bAdapter = read('src/crm-conversion-bridge.js')
 const migrations = listFiles('supabase/migrations', (path) => path.endsWith('.sql')).map(read).join('\n')
 
 for (const marker of [
@@ -69,14 +72,15 @@ assert(
   roadmap.includes('F23.3E-P4A DONE backend/local verified'),
   'Roadmap must expose the current P4A checkpoint',
 )
-assert(roadmap.includes('remote apply/deploy chưa chạy'), 'Roadmap must retain remote/deploy NOT RUN truth')
+assert(roadmap.includes('remote Supabase apply/deploy chưa chạy'), 'Roadmap must retain remote/deploy NOT RUN truth')
 assert(!roadmap.includes('CURRENT CHECKPOINT —'), 'Completed milestones must not regain checkpoint prefixes')
 assert(!roadmap.includes('Historical checkpoint compatibility note'), 'Historical compatibility museum must stay removed')
 
 assert(main.includes('let parentConsultations = getStoredParentConsultations'), 'CRM shell must still use local source data')
 assert(main.includes('let students = getStoredStudents'), 'Legacy Student UI source evidence missing')
 assert(parentModule.includes('buildParentConvertPreview'), 'F23.3D preview builder missing')
-assert(parentModule.includes('<button type="button" disabled>Xác nhận chuyển đổi - chưa mở</button>'), 'Real conversion CTA must remain fail closed')
+assert(parentModule.includes('data-p4b-conversion-action="prepare"'), 'Current server prepare CTA missing')
+assert(parentModule.includes('data-p4b-conversion-action="execute"'), 'Current protected execute CTA missing')
 assert(parentModule.includes('Không auto merge theo số điện thoại hoặc tên.'), 'Duplicate-review warning drifted')
 
 assert(supabaseClient.includes('VITE_SUPABASE_PUBLISHABLE_KEY'), 'Browser publishable-key boundary missing')
@@ -93,7 +97,7 @@ assert(!browserSource.includes('f23_3e_p3d_read_conversion_result_status'), 'Bro
 assert(!/SUPABASE_SERVICE_ROLE_KEY|VITE_[A-Z0-9_]*SERVICE_ROLE/.test(browserSource), 'Service role must not enter browser source')
 
 assert(config.includes('[auth.mfa.totp]'), 'Local Auth TOTP section missing')
-assert(/\[auth\.mfa\.totp\][\s\S]*?enroll_enabled\s*=\s*false[\s\S]*?verify_enabled\s*=\s*false/.test(config), 'P4 must not claim local MFA implementation before it exists')
+assert(/\[auth\.mfa\.totp\][\s\S]*?enroll_enabled\s*=\s*true[\s\S]*?verify_enabled\s*=\s*true/.test(config), 'P4B local Auth must enable provider TOTP QA')
 assert(authDesign.includes('MFA_RUNTIME_IMPLEMENTED: NO'), 'Inherited Auth runtime truth drifted')
 assert(authDesign.includes('SERVER_DERIVED_STEP_UP_IMPLEMENTED: NO'), 'Inherited step-up runtime truth drifted')
 assert(p3b.includes('p_server_verified_at < v_now - interval \'2 minutes\''), 'P3B fresh-step-up window drifted')
@@ -124,9 +128,15 @@ assert(p3c.includes('f23_3e_p3c_internal_protect_contact_source_evidence'), 'P3C
 assert(p3d.includes('f23_3e_p3d_internal_protect_candidate_birth_evidence'), 'P3D0 Candidate birth protector missing')
 
 const p4Migrations = listFiles('supabase/migrations', (path) => /f23_3e_p4/i.test(path))
-assert.deepEqual(p4Migrations, ['supabase/migrations/202608130001_f23_3e_p4a_canonical_contact_ingress_lookup_normalization_foundation.sql'], 'P4A must own exactly one forward migration')
+assert.deepEqual(p4Migrations, [
+  'supabase/migrations/202608130001_f23_3e_p4a_canonical_contact_ingress_lookup_normalization_foundation.sql',
+  'supabase/migrations/202608130002_f23_3e_p4b_safe_server_bridge_auth_step_up_conversion_ui_legacy_projection.sql',
+], 'Current P4 must own the P4A and P4B forward migrations')
 const edgeFiles = listFiles('supabase/functions', (path) => path.endsWith('index.ts'))
-assert(!edgeFiles.some((path) => /crm-conversion|conversion-bridge/i.test(path)), 'Blocked P4 must not create a fake conversion Edge bridge')
+assert(edgeFiles.includes('supabase/functions/crm-conversion-bridge/index.ts'), 'Current P4B Edge bridge missing')
+assert(p4bEdge.includes('admin.auth.getUser(token)'), 'P4B Edge must verify Auth server-side')
+assert(p4bAdapter.includes("functions.invoke(functionName"), 'Browser must call Edge rather than protected RPC directly')
+assert(p4b.includes('public.f23_3e_p3d_execute_conversion'), 'P4B server orchestration must reach accepted P3D')
 
 assert.equal(
   sha256(p3d),
@@ -141,4 +151,4 @@ for (const signature of [
   assert(p3d.includes(`grant execute on function public.${signature}`), `P3D service grant missing: ${signature}`)
 }
 
-console.log('F23.3E-P4 readiness smoke passed — P4A backend/local verified; P4B pending')
+console.log('F23.3E-P4 readiness smoke passed — P4A done; P4B local implementation ready for manual E2E')

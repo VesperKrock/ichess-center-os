@@ -1322,7 +1322,7 @@ function renderParentConvertPreviewModal(contacts, students, previewState) {
         <div class="parent-note-modal-header">
           <div>
             <h3>Chuẩn bị chuyển đổi - ${escapeHtml(preview.source.parentName)}</h3>
-            <p>Đây chỉ là bản xem trước local-safe, không ghi dữ liệu nghiệp vụ thật.</p>
+            <p>Đây chỉ là bản xem trước và không ghi dữ liệu. Khối chuyển đổi bảo mật bên dưới chỉ chạy khi người dùng chủ động xác nhận từng bước.</p>
           </div>
           <button type="button" data-parent-convert-preview-action="close" aria-label="Đóng">X</button>
         </div>
@@ -1383,12 +1383,120 @@ function renderParentConvertPreviewModal(contacts, students, previewState) {
               <li>Chưa đổi trạng thái khách hàng.</li>
             </ul>
           </section>
+          ${renderCanonicalConversionControl(preview, previewState)}
         </div>
         <div class="parent-note-modal-actions">
           <button type="button" data-parent-convert-preview-action="close">Đóng bản xem trước</button>
-          <button type="button" disabled>Xác nhận chuyển đổi - chưa mở</button>
+          <button type="button" data-p4b-conversion-action="refresh" ${previewState.bridgeEnvelope?.bridgeSessionId ? '' : 'disabled'}>Tải lại trạng thái</button>
         </div>
       </section>
+    </div>
+  `
+}
+
+function renderCanonicalConversionControl(preview, state) {
+  const bridge = state.bridgeResult || null
+  const envelope = state.bridgeEnvelope || null
+  const status = envelope?.status || bridge?.status || ''
+  const busy = state.bridgeBusy === true
+  const error = state.bridgeError || ''
+  const projection = envelope?.safeProjection || bridge?.projection || bridge?.result?.projection || null
+  const studentSearch = bridge?.student_search || state.studentSearch || null
+  const guardianSearch = bridge?.guardian_search || state.guardianSearch || null
+  const factors = Array.isArray(state.totpFactors) ? state.totpFactors : []
+  const birthDate = state.birthDate || ''
+  const statusLabel = {
+    PREPARED: 'Cần rà soát trùng',
+    REVIEWED: 'Cần xác thực lại và duyệt',
+    COMPLETED: 'Đã chuyển đổi',
+  }[status] || 'Chưa sẵn sàng'
+
+  return `
+    <section class="parent-convert-preview-section parent-convert-canonical" data-p4b-conversion-state="${escapeAttribute(status || 'IDLE')}">
+      <div class="parent-convert-section-heading">
+        <h4>Chuyển đổi canonical bảo mật</h4>
+        <span class="parent-convert-warning is-${status === 'COMPLETED' ? 'low' : 'medium'}">${escapeHtml(statusLabel)}</span>
+      </div>
+      <p class="parent-convert-note">JWT, quyền đúng cơ sở, rà soát trùng và TOTP được kiểm tra lại ở server. Trình duyệt không giữ service-role hoặc khóa bảo mật.</p>
+      ${error ? `<div class="parent-convert-empty" role="alert">${escapeHtml(error)}</div>` : ''}
+      ${!status ? `
+        <label class="parent-convert-live-field">
+          <span>Ngày sinh học viên</span>
+          <input type="date" data-p4b-conversion-field="birth-date" value="${escapeAttribute(birthDate)}" required>
+        </label>
+        <button type="button" data-p4b-conversion-action="prepare" ${busy ? 'disabled' : ''}>
+          ${busy ? 'Đang chuẩn bị...' : 'Chuẩn bị trên server'}
+        </button>
+      ` : ''}
+      ${status === 'PREPARED' ? `
+        ${renderCanonicalIdentityDecision('student', 'Học viên', studentSearch)}
+        ${renderCanonicalIdentityDecision('guardian', 'Phụ huynh', guardianSearch)}
+        <label class="parent-convert-live-field">
+          <span>Quan hệ đã rà soát</span>
+          <select data-p4b-conversion-field="relationship-decision">
+            <option value="CREATE_RELATIONSHIP">Tạo quan hệ Phụ huynh chính</option>
+            <option value="REUSE_EXISTING_RELATIONSHIP">Dùng quan hệ hiện hữu đã rà soát</option>
+            <option value="DO_NOT_CREATE_RELATIONSHIP">Không tạo quan hệ</option>
+          </select>
+        </label>
+        <button type="button" data-p4b-conversion-action="review" ${busy ? 'disabled' : ''}>
+          ${busy ? 'Đang ghi nhận...' : 'Xác nhận quyết định rà soát'}
+        </button>
+      ` : ''}
+      ${status === 'REVIEWED' ? `
+        <p class="parent-convert-note">Người duyệt Owner/Admin phải khác tư vấn viên đã chuẩn bị hồ sơ.</p>
+        <label class="parent-convert-live-field">
+          <span>Thiết bị TOTP đã xác minh</span>
+          <select data-p4b-conversion-field="totp-factor">
+            <option value="">Chọn thiết bị</option>
+            ${factors.map((factor) => `<option value="${escapeAttribute(factor.id)}">${escapeHtml(factor.friendly_name || 'Authenticator')}</option>`).join('')}
+          </select>
+        </label>
+        <label class="parent-convert-live-field">
+          <span>Mã TOTP 6 số</span>
+          <input inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-p4b-conversion-field="totp-code">
+        </label>
+        <button type="button" data-p4b-conversion-action="execute" ${busy || !factors.length ? 'disabled' : ''}>
+          ${busy ? 'Đang chuyển đổi...' : factors.length ? 'Xác thực và chuyển đổi' : 'Cần đăng nhập Owner/Admin có TOTP'}
+        </button>
+      ` : ''}
+      ${status === 'COMPLETED' ? renderCanonicalProjection(projection) : ''}
+    </section>
+  `
+}
+
+function renderCanonicalIdentityDecision(kind, label, search) {
+  const candidates = Array.isArray(search?.candidates) ? search.candidates : []
+  return `
+    <label class="parent-convert-live-field">
+      <span>${escapeHtml(label)} — quyết định rõ ràng</span>
+      <select data-p4b-conversion-field="${escapeAttribute(kind)}-decision">
+        <option value="CREATE_NEW">Tạo mới sau rà soát</option>
+        ${candidates.map((candidate) => `
+          <option value="REUSE_EXISTING|${escapeAttribute(candidate.opaque_target_id)}|${escapeAttribute(candidate.target_version)}">
+            Dùng hồ sơ ${escapeHtml(candidate.masked_display_name || candidate.safe_display_label || 'đã che')} (v${escapeHtml(candidate.target_version)})
+          </option>
+        `).join('')}
+        ${candidates.map((candidate) => `
+          <option value="DO_NOT_CREATE|${escapeAttribute(candidate.opaque_target_id)}|${escapeAttribute(candidate.target_version)}">
+            Không dùng hồ sơ ${escapeHtml(candidate.masked_display_name || candidate.safe_display_label || 'đã che')} và không tạo ${escapeHtml(label.toLowerCase())}
+          </option>
+        `).join('')}
+        ${candidates.length ? '' : `<option value="DO_NOT_CREATE">Không tạo ${escapeHtml(label.toLowerCase())}</option>`}
+      </select>
+      <small>${escapeHtml(search?.safe_reason_code || 'Chưa có kết quả tìm kiếm')}</small>
+    </label>
+  `
+}
+
+function renderCanonicalProjection(projection) {
+  if (!projection) return '<div class="parent-convert-empty">Kết quả đã hoàn tất nhưng projection chưa tải được.</div>'
+  return `
+    <div class="parent-convert-field-grid" data-p4b-safe-projection="true">
+      <article><span>Học viên canonical</span><strong>${escapeHtml(projection.student?.display_name || 'Không tạo')}</strong></article>
+      <article><span>Phụ huynh canonical</span><strong>${escapeHtml(projection.guardian?.display_name || 'Không tạo')}</strong></article>
+      <article><span>Quan hệ</span><strong>${escapeHtml(projection.relationship?.relationship_type || 'Không tạo')}</strong></article>
+      <article><span>Chế độ</span><strong>Projection chỉ đọc, có thể tải lại</strong></article>
     </div>
   `
 }

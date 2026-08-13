@@ -83,7 +83,8 @@ includesAll(crmSource, [
   "export const parentCustomerStages = ['lead', 'consulting', 'converted']",
   'export function buildParentConvertPreview',
   'Không auto merge theo số điện thoại hoặc tên.',
-  'Xác nhận chuyển đổi - chưa mở',
+  'data-p4b-conversion-action="prepare"',
+  'data-p4b-conversion-action="review"',
   'function getParentContactGroupKey',
   'return `phone:${phone}`',
 ], 'Audited CRM repo facts changed')
@@ -645,13 +646,20 @@ includesAll(design, [
   'External final technical audit đã approve design closeout',
 ], 'F23.3E design-only readiness/closeout boundary is missing')
 
-const canonicalRoadmapLines = [
+const currentRoadmapLines = [
+  'F23.2 DONE design / Nối dây Phụ huynh ↔ Tư vấn ↔ Học viên: entity, relationship và lifecycle canonical',
+  'F23.3 PARTIAL public/backend / CRM shell đã có; backend chuyển đổi thật P1-P3 đã hoàn tất; đang làm P4 để nối UI, legacy projection và QA end-to-end',
+  'F23.3E PARTIAL public/backend/QA / Design và backend P1-P3 DONE; đang thực hiện P4 UI conversion thật, legacy projection và manual E2E; remote Supabase apply/deploy chưa chạy',
+  'CURRENT PHASE — F23.3E-P4B IN PROGRESS public/QA',
+]
+const historicalRoadmapMirrorLines = [
   'F23.2 DONE design / Nối dây Phụ huynh ↔ Tư vấn ↔ Học viên: entity, relationship và lifecycle canonical',
   'F23.3 PARTIAL public / Module Phụ huynh-Tư vấn CRM nhẹ',
   'F23.3E DONE design / Convert thật có idempotency, rollback, chống trùng và atomic action graph',
 ]
-includesAll(roadmap, canonicalRoadmapLines, 'RoadmapRealTime F23.2/F23.3 canonical closeout is incomplete')
-includesAll(canonicalRoadmapMirror, canonicalRoadmapLines, 'Canonical roadmap mirror F23.2/F23.3 closeout is incomplete')
+includesAll(roadmap, currentRoadmapLines, 'RoadmapRealTime current F23.2/F23.3/P4B truth is incomplete')
+includesAll(canonicalRoadmapMirror, historicalRoadmapMirrorLines, 'Historical roadmap mirror F23.2/F23.3 closeout evidence is incomplete')
+assert(!roadmap.includes('F23.3E DONE design / Convert thật có idempotency'), 'Current roadmap must not regress to the historical design-only F23.3E milestone.')
 for (const roadmapContent of [roadmap, canonicalRoadmapMirror]) {
   assert(!roadmapContent.includes('F23.2 TODO design'), 'F23.2 must not remain TODO after final audit PASS.')
   assert(!roadmapContent.includes('F23.3E TODO design'), 'F23.3E must not remain TODO after final audit PASS.')

@@ -13769,6 +13769,51 @@ h3 {
   background: rgba(154, 96, 18, 0.1);
 }
 
+.parent-convert-canonical {
+  border-color: rgba(82, 209, 139, 0.28);
+  background: linear-gradient(135deg, rgba(31, 93, 153, 0.13), rgba(82, 209, 139, 0.06));
+}
+
+.parent-convert-live-field {
+  display: grid;
+  gap: 5px;
+  color: #dce8f6;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.parent-convert-live-field input,
+.parent-convert-live-field select {
+  min-height: 38px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #edf4fc;
+  background: rgba(11, 18, 26, 0.88);
+  font: inherit;
+}
+
+.parent-convert-live-field small {
+  color: #9fb1c7;
+  font-weight: 600;
+}
+
+.parent-convert-canonical > button {
+  min-height: 38px;
+  border: 1px solid rgba(82, 209, 139, 0.38);
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: #e8fff0;
+  background: rgba(24, 123, 75, 0.34);
+  font: inherit;
+  font-weight: 900;
+}
+
+.parent-convert-canonical > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .parent-linked-students,
 .parent-detail-note-history {
   display: grid;

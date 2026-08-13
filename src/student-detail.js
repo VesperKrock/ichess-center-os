@@ -34,6 +34,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
   const classSessionLabel = getStudentClassSessionLabel(student, classSessions)
   const primaryParentPhone = student.motherPhone || student.fatherPhone || student.parentPhone
   const studentTuitionLink = buildStudentTuitionLink(student, tuitionRecords, classSessions)
+  const readOnlyProjection = student.readOnlyProjection === true
 
   return `
     <section class="student-detail student-detail-overview" aria-label="Hồ sơ tổng quan học viên">
@@ -45,7 +46,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
             type="button"
             data-student-detail-action="clear-avatar"
             data-student-id="${student.id}"
-            ${student.avatarUrl ? '' : 'disabled'}
+            ${student.avatarUrl && !readOnlyProjection ? '' : 'disabled'}
           >
             Xóa avatar
           </button>
@@ -61,8 +62,9 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
           type="button"
           data-student-action="edit-from-detail"
           data-student-edit-id="${student.id}"
+          ${readOnlyProjection ? 'disabled' : ''}
         >
-          Sửa hồ sơ
+          ${readOnlyProjection ? 'Projection canonical — chỉ đọc' : 'Sửa hồ sơ'}
         </button>
       </div>
 

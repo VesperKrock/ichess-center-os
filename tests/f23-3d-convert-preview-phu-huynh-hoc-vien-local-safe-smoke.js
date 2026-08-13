@@ -144,7 +144,8 @@ assert(previewHtml.includes('Gợi ý kiểm tra, không phải kết luận tr�
 assert(previewHtml.includes('Đây chỉ là bản xem trước'), 'Preview warns it is read-only.')
 assert(previewHtml.includes('Chưa tạo học viên'), 'Preview warns no student is created.')
 assert(previewHtml.includes('Chưa tạo học phí'), 'Preview warns no tuition is created.')
-assert(previewHtml.includes('Xác nhận chuyển đổi - chưa mở'), 'Real conversion confirmation remains disabled.')
+assert(previewHtml.includes('Chuyển đổi canonical bảo mật'), 'Preview must expose the current trusted conversion extension.')
+assert(previewHtml.includes('data-p4b-conversion-action="prepare"'), 'Current prepare action is missing.')
 
 const parentModuleSource = fs.readFileSync('src/parent-consultation-module.js', 'utf8')
 const mainSource = fs.readFileSync('src/main.js', 'utf8')
@@ -169,7 +170,9 @@ assert(!previewBuilderBlock.includes("customerStage: 'converted'"), 'Convert pre
 assert(!previewBuilderBlock.includes("consultationStatus: 'converted'"), 'Convert preview builder must not change consultation status.')
 assert(!mainSource.toLowerCase().includes('teacher-workspace-module'), 'F23.3D must not touch Teacher Workspace.')
 assert(!parentModuleSource.toLowerCase().includes('supabase'), 'F23.3D must not add Supabase behavior.')
-assert(!parentModuleSource.toLowerCase().includes('auth'), 'F23.3D must not add Auth behavior.')
+for (const directAuthPrimitive of ['getSupabaseClient(', 'functions.invoke(', 'auth.mfa.', 'SERVICE_ROLE']) {
+  assert(!parentModuleSource.includes(directAuthPrimitive), `Presentation module must not own Auth authority: ${directAuthPrimitive}`)
+}
 assert(stylesSource.includes('.parent-convert-preview-modal'), 'Convert preview modal styles should exist.')
 
 for (const buttonMatch of parentModuleSource.matchAll(/<button\b[^>]*>/g)) {
