@@ -16,7 +16,7 @@ import {
 } from '../src/storage.js'
 import { renderSettingsModule } from '../src/settings-module.js'
 
-assert.deepEqual(CLOUD_ENTITY_TYPE_VALUES, ['student', 'teacher', 'class_session'])
+assert.deepEqual(CLOUD_ENTITY_TYPE_VALUES, ['student', 'teacher', 'class_session', 'schedule_session'])
 
 const recordResult = buildCloudEntityRecord({
   centerId: 'dreamhome',
@@ -92,10 +92,11 @@ const storage = new Map([
 ])
 const backupStorage = {
   getItem(key) {
-    return storage.has(key) ? storage.get(key) : null
+    const normalizedKey = String(key)
+    return storage.has(normalizedKey) ? storage.get(normalizedKey) : null
   },
   setItem(key, value) {
-    storage.set(key, value)
+    storage.set(String(key), value)
   },
 }
 const backupKey = createCloudDbPullBackup(backupStorage)
@@ -121,18 +122,17 @@ const settingsHtml = renderSettingsModule(
     localCounts: { student: 1, teacher: 1, class_session: 1 },
     cloudCounts: { student: 1, teacher: 1, class_session: 1 },
   },
+  { activeTab: 'center-info' },
 )
-assert(settingsHtml.includes('Cloud DB online core'))
-assert(settingsHtml.includes('data-cloud-db-action="refresh"'))
-assert(settingsHtml.includes('data-cloud-db-action="push"'))
-assert(settingsHtml.includes('data-cloud-db-action="pull"'))
-assert(settingsHtml.includes('<details class="settings-cloud-db-panel"'))
+assert(settingsHtml.includes('settings-data-status-panel'))
+assert(settingsHtml.includes('Dữ liệu cloud:'))
+assert(settingsHtml.includes('Sẵn sàng'))
+assert(!settingsHtml.includes('data-cloud-db-action="push"'))
 
 const objectMessageHtml = renderSettingsModule([], [], {}, null, {
   message: { detail: 'Cloud counts refreshed' },
-})
+}, { activeTab: 'center-info' })
 assert(!objectMessageHtml.includes('[object Object]'))
-assert(objectMessageHtml.includes('{&quot;detail&quot;:&quot;Cloud counts refreshed&quot;}'))
 
 const blockedHtml = renderSettingsModule([], [], {}, null, {
   configStatus: 'configured',
@@ -142,10 +142,12 @@ const blockedHtml = renderSettingsModule([], [], {}, null, {
   readinessStatus: 'error',
   cloudCounts: { student: 99, teacher: 99, class_session: 99 },
   message: { detail: 'not ready' },
-})
-assert(blockedHtml.includes('Học viên —'))
-assert(blockedHtml.includes('data-cloud-db-action="push" disabled'))
-assert(blockedHtml.includes('data-cloud-db-action="pull" disabled'))
+  messageTone: 'error',
+}, { activeTab: 'center-info' })
+assert(blockedHtml.includes('settings-data-status-panel'))
+assert(blockedHtml.includes('Cần kiểm tra'))
+assert(blockedHtml.includes('Có lỗi đồng bộ'))
+assert(!blockedHtml.includes('data-cloud-db-action="push"'))
 assert(!blockedHtml.includes('[object Object]'))
 
 const schemaError = classifyCloudDbError(
@@ -163,7 +165,7 @@ const permissionError = classifyCloudDbError(
 assert.equal(permissionError.category, 'cloud-permission-denied')
 assert.equal(
   getCloudDbReadinessMessage(permissionError),
-  'Không đọc được Cloud DB do quyền DreamHome/RLS. Kiểm tra GRANT authenticated, center_members và policy.',
+  'Không đọc được Cloud DB do quyền/RLS của center current center. Kiểm tra GRANT authenticated, center_members và policy.',
 )
 
 console.log('C1 Cloud DB foundation smoke passed')

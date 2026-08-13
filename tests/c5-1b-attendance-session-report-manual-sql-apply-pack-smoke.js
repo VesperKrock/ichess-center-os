@@ -122,7 +122,6 @@ for (const fileName of [
   'tests/c4-6b-manual-sql-apply-pack-smoke.js',
   'tests/c4-5-cloud-bootstrap-core-entities-smoke.js',
   'tests/f19a-student-custom-level-smoke.js',
-  'tests/c2-3-angel-wings-restore-smoke.js',
 ]) {
   assert(fs.existsSync(path.join(repoRoot, fileName)), `Missing previous smoke dependency: ${fileName}`)
 }

@@ -8,11 +8,11 @@ import {
   normalizeAttendanceRecordFromSessionReport,
 } from '../src/attendance-records.js'
 import {
-  ANGEL_WINGS_SOURCE_TAG,
-  buildAngelWingsRealDataset,
-} from '../src/attendance-board-angel-wings-data.js'
+  buildAttendanceSharedTruthFixture,
+  TEST_IMPORT_SOURCE_TAG,
+} from './fixtures/attendance-shared-truth-fixture.js'
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const sourceReports = JSON.parse(JSON.stringify(dataset.sessionReports))
 const sourceSnapshot = JSON.stringify(sourceReports)
 const records = buildAttendanceRecordsFromSessionReports(sourceReports)
@@ -28,9 +28,9 @@ assert(firstRecord.sourceReportId, 'Record should keep sourceReportId')
 assert(Number.isInteger(firstRecord.sourceAttendanceIndex), 'Record should keep sourceAttendanceIndex')
 assert(firstRecord.status, 'Record should preserve status')
 assert(firstRecord.attendanceStatus, 'Record should preserve attendanceStatus')
-assert.equal(firstRecord.source, 'imported', 'Angel Wings records should map to imported source')
-assert.equal(firstRecord.raw.report.sourceTag, ANGEL_WINGS_SOURCE_TAG)
-assert.equal(firstRecord.raw.attendanceItem.sourceTag, ANGEL_WINGS_SOURCE_TAG)
+assert.equal(firstRecord.source, 'imported', 'Explicit imported records should map to imported source')
+assert.equal(firstRecord.raw.report.sourceTag, TEST_IMPORT_SOURCE_TAG)
+assert.equal(firstRecord.raw.attendanceItem.sourceTag, TEST_IMPORT_SOURCE_TAG)
 
 const trialRecord = records.find((record) => record.attendanceStatus === 'trial')
 assert(trialRecord, 'Adapter should preserve trial attendance')
@@ -40,9 +40,9 @@ assert.equal(trialRecord.creditValue, 0)
 assert(trialRecord.note.includes('Học thử'), 'Trial note should be preserved')
 
 const combinedReport = sourceReports.find((report) =>
-  report.attendance.some((item) => item.displayValue === '3+4'),
+  report.attendance.some((item) => item.displayValue === '7+8'),
 )
-const combinedItemIndex = combinedReport.attendance.findIndex((item) => item.displayValue === '3+4')
+const combinedItemIndex = combinedReport.attendance.findIndex((item) => item.displayValue === '7+8')
 const combinedItem = combinedReport.attendance[combinedItemIndex]
 const combinedRecords = normalizeAttendanceRecordFromSessionReport(
   combinedReport,
@@ -52,7 +52,7 @@ const combinedRecords = normalizeAttendanceRecordFromSessionReport(
 assert.equal(combinedRecords.length, 2, 'Combined credits should become one canonical record per credit')
 assert.deepEqual(
   combinedRecords.map((record) => record.creditNumber),
-  [3, 4],
+  [7, 8],
 )
 assert(combinedRecords.every((record) => record.counted === true))
 assert(combinedRecords.every((record) => record.classSessionId === combinedItem.classSessionId))
@@ -105,13 +105,13 @@ assert.equal(isCountedAttendanceRecord({ attendanceStatus: 'unexcusedAbsent' }),
 const storage = new Map()
 globalThis.localStorage = {
   getItem(key) {
-    return storage.has(key) ? storage.get(key) : null
+    return storage.has(String(key)) ? storage.get(String(key)) : null
   },
   setItem(key, value) {
-    storage.set(key, value)
+    storage.set(String(key), value)
   },
   removeItem(key) {
-    storage.delete(key)
+    storage.delete(String(key))
   },
 }
 buildAttendanceRecordsFromSessionReports(sourceReports)

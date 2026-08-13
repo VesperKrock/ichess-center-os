@@ -5,7 +5,7 @@ import {
   buildAttendanceBoardRows,
   renderAttendanceBoardModule,
 } from '../src/attendance-board-module.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import { buildAttendanceSharedTruthFixture } from './fixtures/attendance-shared-truth-fixture.js'
 import {
   createInitialBaselineEditSnapshot,
   getBaselineEditableDateRange,
@@ -21,19 +21,29 @@ import {
   upsertInitialBaselineAttendanceRecord,
 } from '../src/attendance-records.js'
 
+const NativeDate = globalThis.Date
+globalThis.Date = class extends NativeDate {
+  constructor(...args) {
+    super(...(args.length ? args : ['2026-06-19T12:00:00.000Z']))
+  }
+  static now() {
+    return new NativeDate('2026-06-19T12:00:00.000Z').getTime()
+  }
+}
+
 function createLocalStorageMock() {
   const values = new Map()
 
   return {
     values,
     getItem(key) {
-      return values.has(key) ? values.get(key) : null
+      return values.has(String(key)) ? values.get(String(key)) : null
     },
     setItem(key, value) {
-      values.set(key, value)
+      values.set(String(key), value)
     },
     removeItem(key) {
-      values.delete(key)
+      values.delete(String(key))
     },
   }
 }
@@ -41,7 +51,7 @@ function createLocalStorageMock() {
 const storage = createLocalStorageMock()
 globalThis.localStorage = storage
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const student = {
   ...dataset.students[0],
   id: 'f19c4-baseline-student',
@@ -207,4 +217,5 @@ assert(mainSource.includes('Ô này nằm ngoài khoảng ngày cho phép nhập
 assert(recordsSource.includes('1-99'))
 assert(!mainSource.includes('saveStoredSessionReports(sessionReports, result.records)'))
 
+globalThis.Date = NativeDate
 console.log('F19C.4 bảng điểm danh nhập nền trực tiếp và hoàn tác smoke passed')

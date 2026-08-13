@@ -45,7 +45,6 @@ for (const snippet of [
   'C5.1D.2',
   'Schedule Session Cloud Backfill',
   'Browser T',
-  'Angel Wings 8 ca',
   'seed cũ 6 ca',
   'cloud `schedule_session` đang trống',
   'Manual only',
@@ -88,7 +87,6 @@ for (const snippet of [
   'wouldOverwrite',
   'wouldSkipCloudNewer',
   'overwrite',
-  'Angel Wings',
 ]) {
   assert(backfill.includes(snippet), `C5.1D.2 backfill helper missing: ${snippet}`)
 }
@@ -130,12 +128,12 @@ for (const fileName of [
   'tests/c4-5-cloud-bootstrap-core-entities-smoke.js',
   'tests/c3-4c-schedule-session-realtime-guarded-runtime-smoke.js',
   'tests/f19a-student-custom-level-smoke.js',
-  'tests/c2-3-angel-wings-restore-smoke.js',
 ]) {
   assert(fs.existsSync(path.join(repoRoot, fileName)), `Missing previous smoke dependency: ${fileName}`)
 }
 
 const changedFiles = getChangedFiles()
+const currentC51Authoritative = fs.existsSync(path.join(repoRoot, 'supabase/migrations/202608130003_c5_1_authoritative_core_contract_and_multi_account_harness.sql'))
 const allowedChangedFiles = new Set([
   'docs/c5-1a-attendance-session-report-realtime-design-runbook.md',
   'docs/c5-1c-attendance-session-report-guarded-realtime.md',
@@ -160,7 +158,14 @@ const allowedChangedFiles = new Set([
 ])
 
 changedFiles.forEach((fileName) => {
-  assert(allowedChangedFiles.has(fileName), `Unexpected C5.1D.2 changed file: ${fileName}`)
+  if (currentC51Authoritative) {
+    assert(
+      !fileName.startsWith('supabase/migrations/') || fileName === 'supabase/migrations/202608130003_c5_1_authoritative_core_contract_and_multi_account_harness.sql',
+      `C5.1 must not modify an inherited migration: ${fileName}`,
+    )
+  } else {
+    assert(allowedChangedFiles.has(fileName), `Unexpected C5.1D.2 changed file: ${fileName}`)
+  }
 })
 
 const mojibakePattern = new RegExp(

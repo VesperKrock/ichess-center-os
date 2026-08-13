@@ -29,8 +29,8 @@ assert(helperSource.includes('buildOnlineAccessState'))
 assert(helperSource.includes('canWriteEntity'))
 assert(mainSource.includes('writeTeacherThroughCloud'))
 assert(mainSource.includes('startTeacherRealtimeSubscription'))
-assert(mainSource.includes("writeTeacherThroughCloud(savedTeacher, 'teacher-save')"))
-assert(mainSource.includes("writeTeacherThroughCloud(getTeacherById(teacher.id), 'teacher-status')"))
+assert(mainSource.includes("commitTeacherProjection(savedTeacher, 'teacher-save'"))
+assert(mainSource.includes("}, 'teacher-status')"))
 
 assert(!helperSource.includes('attendance_record'))
 assert(!helperSource.includes('session_report'))
@@ -96,10 +96,11 @@ for (const role of ['center_admin', 'owner', 'qtv']) {
   })
 
   assert.equal(result.ok, true, `${role} should write teacher cloud when ready`)
-  assert.equal(mockSupabase.upsertedRecords.length, 1)
-  assert.equal(mockSupabase.upsertedRecords[0].entity_type, 'teacher')
-  assert.equal(mockSupabase.upsertedRecords[0].center_id, 'dreamhome')
-  assert.equal(mockSupabase.upsertedRecords[0].payload.teacherType, 'parttime')
+  assert.equal(mockSupabase.rpcCalls.length, 1)
+  assert.equal(mockSupabase.rpcCalls[0].name, 'c5_1_mutate_core_entity')
+  assert.equal(mockSupabase.rpcCalls[0].params.p_entity_type, 'teacher')
+  assert.equal(mockSupabase.rpcCalls[0].params.p_center_id, 'dreamhome')
+  assert.equal(mockSupabase.rpcCalls[0].params.p_payload.teacherType, 'parttime')
 }
 
 const normalizedTeacher = normalizeRealtimeTeacherPayload(
@@ -160,9 +161,12 @@ assert.equal(getTeacherRealtimeRecord({ new: realtimeEvents[0] })?.entity_type, 
 const olderLocal = createTeacher({
   id: 'teacher-rt-001',
   fullName: 'Ban moi hon',
+  cloudVersion: 2,
   updatedAt: '2026-06-21T10:00:00.000Z',
 })
 const olderRemoteRecord = {
+  entity_version: 1,
+  updated_at: '2026-06-20T10:00:00.000Z',
   payload: createTeacher({
     id: 'teacher-rt-001',
     fullName: 'Ban cu',
@@ -174,8 +178,10 @@ assert.equal(skippedOlder.changed, false)
 assert.equal(skippedOlder.teachers[0].fullName, 'Ban moi hon')
 
 const mergeResult = mergeRealtimeTeacherIntoList(
-  [createTeacher({ id: 'teacher-rt-001', fullName: 'Cu' })],
+  [createTeacher({ id: 'teacher-rt-001', fullName: 'Cu', cloudVersion: 1 })],
   {
+    entity_version: 2,
+    updated_at: '2026-06-21T11:00:00.000Z',
     payload: createTeacher({
       id: 'teacher-rt-001',
       fullName: 'Moi',
@@ -254,19 +260,23 @@ function createTeacher(overrides = {}) {
 
 function createMockSupabase() {
   const mock = {
-    upsertedRecords: [],
-    upsertOptions: null,
+    rpcCalls: [],
     channelName: '',
     postgresChangesConfig: null,
     realtimeHandler: null,
-    from(tableName) {
-      assert.equal(tableName, 'center_cloud_entities')
+    async rpc(name, params) {
+      mock.rpcCalls.push({ name, params })
       return {
-        upsert: async (records, options) => {
-          mock.upsertedRecords = records
-          mock.upsertOptions = options
-          return { error: null }
+        data: {
+          ok: true,
+          outcome_code: 'COMMITTED',
+          payload: params.p_payload,
+          entity_version: params.p_expected_version + 1,
+          updated_at: '2026-08-14T00:00:00.000Z',
+          deleted_at: null,
+          replayed: false,
         },
+        error: null,
       }
     },
     channel(channelName) {

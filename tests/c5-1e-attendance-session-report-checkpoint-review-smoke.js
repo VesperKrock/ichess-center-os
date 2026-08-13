@@ -34,7 +34,6 @@ for (const snippet of [
   'session_report',
   'schedule_session',
   'upserted: 8',
-  'Angel Wings 8 ca',
   'Runtime Status',
   'Manual QA Status',
   'teacher/consultant',
@@ -79,7 +78,6 @@ for (const fileName of [
   'tests/f22-1-1-kho-hang-unit-creatable-combobox-smoke.js',
   'tests/f22-0-feedback-triage-scope-lock-smoke.js',
   'tests/f19a-student-custom-level-smoke.js',
-  'tests/c2-3-angel-wings-restore-smoke.js',
 ]) {
   assert(fs.existsSync(path.join(repoRoot, fileName)), `Missing smoke dependency: ${fileName}`)
 }

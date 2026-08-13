@@ -1,5 +1,9 @@
 import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
-import { upsertCloudEntities } from './cloud-db-sync.js'
+import {
+  getAuthoritativeCoreVersion,
+  mutateAuthoritativeCoreEntity,
+  projectAuthoritativeCoreRecord,
+} from './cloud-authoritative-core.js'
 import {
   NEEDS_MEMBERSHIP_SQL_PATCH,
   buildOnlineAccessState,
@@ -19,6 +23,7 @@ export async function upsertStudentCloudEntity({
   student,
   userId = null,
   accessState,
+  idempotencyKey,
 } = {}) {
   const normalizedAccessState = buildOnlineAccessState(accessState)
 
@@ -42,12 +47,12 @@ export async function upsertStudentCloudEntity({
     return normalizedStudent
   }
 
-  return upsertCloudEntities({
+  return mutateAuthoritativeCoreEntity({
     supabase,
     centerId,
     entityType: STUDENT_REALTIME_ENTITY_TYPE,
-    items: [normalizedStudent.student],
-    userId,
+    entity: normalizedStudent.student,
+    idempotencyKey,
   })
 }
 
@@ -162,7 +167,9 @@ export function getStudentRealtimeRecord(event = {}) {
 }
 
 export function mergeRealtimeStudentIntoList(students = [], record = {}) {
-  const normalizedStudent = normalizeRealtimeStudentPayload(record.payload)
+  const normalizedStudent = normalizeRealtimeStudentPayload(
+    projectAuthoritativeCoreRecord(record) || record.payload,
+  )
 
   if (!normalizedStudent.ok) {
     return {
@@ -174,7 +181,7 @@ export function mergeRealtimeStudentIntoList(students = [], record = {}) {
   }
 
   const incomingStudent = normalizedStudent.student
-  const incomingUpdatedAt = getTimestamp(incomingStudent.updatedAt)
+  const incomingVersion = getAuthoritativeCoreVersion(incomingStudent)
   let changed = false
   let found = false
   const nextStudents = (Array.isArray(students) ? students : []).map((student) => {
@@ -183,9 +190,9 @@ export function mergeRealtimeStudentIntoList(students = [], record = {}) {
     }
 
     found = true
-    const currentUpdatedAt = getTimestamp(student.updatedAt)
+    const currentVersion = getAuthoritativeCoreVersion(student)
 
-    if (currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt < currentUpdatedAt) {
+    if (currentVersion && incomingVersion <= currentVersion) {
       return student
     }
 
@@ -240,9 +247,4 @@ function createRealtimeUnavailableResult(message, needsMembershipPatch, needsRea
     needsRealtimePatch,
     cleanup: () => {},
   }
-}
-
-function getTimestamp(value) {
-  const timestamp = value ? new Date(value).getTime() : 0
-  return Number.isFinite(timestamp) ? timestamp : 0
 }

@@ -11,6 +11,7 @@ const parentPath = 'src/parent-consultation-module.js'
 const mainPath = 'src/main.js'
 const cloudBootstrapPath = 'src/cloud-bootstrap.js'
 const cloudSyncPath = 'src/cloud-db-sync.js'
+const authoritativeCorePath = 'src/cloud-authoritative-core.js'
 const studentPath = 'src/student-module.js'
 
 const docs = read(docsPath)
@@ -19,6 +20,7 @@ const parent = read(parentPath)
 const main = read(mainPath)
 const cloudBootstrap = read(cloudBootstrapPath)
 const cloudSync = read(cloudSyncPath)
+const authoritativeCore = read(authoritativeCorePath)
 const student = read(studentPath)
 
 function assert(condition, message) {
@@ -60,7 +62,6 @@ requiredMarkers.forEach((marker) => {
 ;[
   'đã lên kế hoạch',
   'Cloud DB online core',
-  'Angel Wings',
   'localStorage',
   'Đẩy local lên cloud',
   'Tải cloud về local',
@@ -72,9 +73,10 @@ requiredMarkers.forEach((marker) => {
 assert(
   cloudBootstrap.includes("'class_session'") &&
     cloudSync.includes('CLOUD_ENTITY_TYPES.CLASS_SESSION') &&
-    main.includes("queueCoreCloudSync('class-session-save')") &&
-    main.includes("queueCoreCloudSync('class-session-status')"),
-  'Class session settings must use existing class_session cloud bridge.',
+    authoritativeCore.includes("supabase.rpc('c5_1_mutate_core_entity'") &&
+    main.includes('writeClassSessionThroughCloud') &&
+    main.includes('commitClassSessionProjection'),
+  'Class session settings must use the current authoritative class_session bridge.',
 )
 
 assert(

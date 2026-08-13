@@ -185,6 +185,5 @@ runNodeTest('tests/c4-7-live-qa-tp-shared-cloud-smoke.js')
 runNodeTest('tests/c4-6b-manual-sql-apply-pack-smoke.js')
 runNodeTest('tests/c4-5-cloud-bootstrap-core-entities-smoke.js')
 runNodeTest('tests/f19a-student-custom-level-smoke.js')
-runNodeTest('tests/c2-3-angel-wings-restore-smoke.js')
 
 console.log('F22.6 feedback checkpoint review smoke passed')

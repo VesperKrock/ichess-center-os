@@ -102,6 +102,7 @@ export function buildSettingsClassSessionFromForm(
   const name = displayLabel
 
   return {
+    ...existingClassSession,
     id: existingClassSession?.id || createClassSessionId(displayLabel || name, classSessions),
     name,
     daysOfWeek,
@@ -516,13 +517,6 @@ function renderCloudDbPanel(state = null) {
     message: '',
     messageTone: '',
     readinessStatus: 'idle',
-    localAngelWingsStatus: {
-      isReadyForCloudPush: false,
-      looksLikeOldSeed: false,
-      studentCount: 0,
-      classSessionCount: 0,
-      hasTeacher: false,
-    },
     ...state,
   }
   const canUseCloud =

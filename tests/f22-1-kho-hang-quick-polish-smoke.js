@@ -169,6 +169,5 @@ runNodeTest('tests/c4-8-no-push-checkpoint-review-smoke.js')
 runNodeTest('tests/c4-7-live-qa-tp-shared-cloud-smoke.js')
 runNodeTest('tests/c4-6b-manual-sql-apply-pack-smoke.js')
 runNodeTest('tests/c4-5-cloud-bootstrap-core-entities-smoke.js')
-runNodeTest('tests/c4-4-shared-staging-dataset-29-shell-polish-smoke.js')
 
 console.log('F22.1 kho hang quick polish smoke passed')

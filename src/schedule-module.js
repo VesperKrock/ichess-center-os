@@ -411,6 +411,7 @@ export function buildScheduleSessionFromForm(
   const groupName = repairScheduleDisplayText(String(normalizedValues.groupName ?? '').trim())
 
   return {
+    ...existingSession,
     id: existingSession?.id ?? `schedule-${Date.now()}`,
     scheduleType,
     title,

@@ -106,7 +106,7 @@ assert(!storageSource.includes('localStorage.clear'))
 
 const mainSource = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 const applyStart = mainSource.indexOf('function applyCoreCloudSnapshotToLocal')
-const applyEnd = mainSource.indexOf('function restoreAngelWingsLocalDataset', applyStart)
+const applyEnd = mainSource.indexOf('async function refreshCloudDbReadiness', applyStart)
 const applySource = mainSource.slice(applyStart, applyEnd)
 assert(applySource.includes('backupResult'))
 assert(applySource.includes('backupResult.ok === false'))

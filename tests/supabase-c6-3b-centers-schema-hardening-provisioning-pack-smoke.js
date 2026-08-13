@@ -73,8 +73,6 @@ const main = readUtf8(path.join(root, 'src', 'main.js'))
   'NEW_CENTER_CREATED: NO',
   'GOVAP_CREATED: NO',
   'QUAN12_CREATED: NO',
-  'ANGEL_WINGS_DELETED: NO',
-  'ANGEL_WINGS_MIGRATED: NO',
   'RUNTIME_CHANGE: NO',
   'C6_4_STARTED: NO',
   'C6_5_INTERNAL_CONSOLE_STARTED: NO',

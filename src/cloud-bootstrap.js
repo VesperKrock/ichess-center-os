@@ -18,8 +18,8 @@ export const CLOUD_BOOTSTRAP_STATUS = Object.freeze({
 export function createInitialCloudBootstrapState() {
   return {
     status: CLOUD_BOOTSTRAP_STATUS.IDLE,
-    source: 'local-cache',
-    message: 'Dữ liệu: Cache cục bộ',
+    source: 'cache-projection',
+    message: 'Dữ liệu: Cache chờ xác minh server',
     counts: createEmptyCloudBootstrapCounts(),
     lastUpdatedAt: '',
   }
@@ -73,8 +73,8 @@ export function getCloudBootstrapStatusLabel(state = {}) {
   }
 
   if (state.status === CLOUD_BOOTSTRAP_STATUS.ERROR) {
-    return state.message || 'Dữ liệu: Cache cục bộ (lỗi cloud)'
+    return state.message || 'Dữ liệu: Không xác minh được server (cache chỉ để xem)'
   }
 
-  return state.message || 'Dữ liệu: Cache cục bộ'
+  return state.message || 'Dữ liệu: Cache chờ xác minh server'
 }

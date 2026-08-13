@@ -54,7 +54,6 @@ for (const snippet of [
   'sampleTitles',
   'sampleIds',
   'skippedReasons',
-  'Angel Wings',
   'No SQL',
   'No C5.2',
   'No all-module sync',
@@ -81,10 +80,10 @@ assert(backfill.includes('visibleWeekCandidateCount'), 'Preview must expose visi
 assert(backfill.includes('eligibleCandidateCount'), 'Preview must expose eligible candidate count')
 assert(backfill.includes('seenLocalIds'), 'Preview must dedupe by stable local_id')
 assert(backfill.includes('skippedReasons'), 'Preview must expose skipped reasons')
-assert(backfill.includes('Khong thay Angel Wings'), 'Preview must warn when sample is not Angel Wings')
+assert(!/angel[ -]?wings/i.test(backfill), 'Retired dataset must not gate schedule backfill')
 assert(backfill.includes('Local co ${scheduleSessions.length} schedule_session'), 'Preview must warn when local raw count exceeds visible source')
 
-assert(main.includes('getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate)'), 'main must pass currently rendered TKB source')
+assert(main.includes('getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions)'), 'main must pass currently rendered TKB source with current class context')
 assert(main.includes('visibleScheduleSessions'), 'main must pass visibleScheduleSessions into helper')
 assert(main.includes('backfillScheduleSessionsToCloud'), 'main must expose manual helper')
 assert(!/backfillScheduleSessionsToCloud\(\s*\{?\s*dryRun:\s*false/.test(main), 'main must not auto-apply backfill')
@@ -121,12 +120,12 @@ for (const fileName of [
   'tests/f22-1-1-kho-hang-unit-creatable-combobox-smoke.js',
   'tests/f22-0-feedback-triage-scope-lock-smoke.js',
   'tests/f19a-student-custom-level-smoke.js',
-  'tests/c2-3-angel-wings-restore-smoke.js',
 ]) {
   assert(fs.existsSync(path.join(repoRoot, fileName)), `Missing previous smoke dependency: ${fileName}`)
 }
 
 const changedFiles = getChangedFiles()
+const currentC51Authoritative = fs.existsSync(path.join(repoRoot, 'supabase/migrations/202608130003_c5_1_authoritative_core_contract_and_multi_account_harness.sql'))
 const allowedChangedFiles = new Set([
   'docs/c5-1a-attendance-session-report-realtime-design-runbook.md',
   'docs/c5-1c-attendance-session-report-guarded-realtime.md',
@@ -151,7 +150,14 @@ const allowedChangedFiles = new Set([
 ])
 
 changedFiles.forEach((fileName) => {
-  assert(allowedChangedFiles.has(fileName), `Unexpected C5.1D.3 changed file: ${fileName}`)
+  if (currentC51Authoritative) {
+    assert(
+      !fileName.startsWith('supabase/migrations/') || fileName === 'supabase/migrations/202608130003_c5_1_authoritative_core_contract_and_multi_account_harness.sql',
+      `C5.1 must not modify an inherited migration: ${fileName}`,
+    )
+  } else {
+    assert(allowedChangedFiles.has(fileName), `Unexpected C5.1D.3 changed file: ${fileName}`)
+  }
 })
 
 const mojibakePattern = new RegExp(

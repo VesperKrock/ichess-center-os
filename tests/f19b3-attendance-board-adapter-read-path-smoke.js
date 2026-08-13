@@ -5,7 +5,10 @@ import {
   buildAttendanceBoardRows,
   renderAttendanceBoardModule,
 } from '../src/attendance-board-module.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import {
+  buildAttendanceSharedTruthFixture,
+  TEST_IMPORT_SOURCE_TAG,
+} from './fixtures/attendance-shared-truth-fixture.js'
 
 const boardSource = fs.readFileSync(new URL('../src/attendance-board-module.js', import.meta.url), 'utf8')
 assert(
@@ -17,7 +20,7 @@ assert(
   'Module 13 read path should build canonical attendance records through the unified adapter',
 )
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const sessionReports = JSON.parse(JSON.stringify(dataset.sessionReports))
 const sessionReportsSnapshot = JSON.stringify(sessionReports)
 const legacyDemoReport = {
@@ -41,14 +44,14 @@ const rows = buildAttendanceBoardRows(
   dataset.tuitionRecords,
   [...sessionReports, legacyDemoReport],
   [],
-  { month: '2026-06', classSessionId: 'all', query: 'Đỗ Minh Tuyết' },
+  { month: '2026-06', classSessionId: 'all', query: 'Hoc vien QA bu hoc' },
 )
-const combinedRow = rows.find((row) => row.student.fullName === 'Đỗ Minh Tuyết')
-assert(combinedRow, 'Expected Angel Wings combined-credit student row')
+const combinedRow = rows.find((row) => row.student.fullName === 'Hoc vien QA bu hoc')
+assert(combinedRow, 'Expected imported combined-credit student row')
 
 const combinedAttendance = combinedRow.attendanceSummary.byDate.get('2026-06-06')
 assert(combinedAttendance, 'Expected attendance on 2026-06-06')
-assert.equal(combinedAttendance.sourceTag, 'angel-wings-2026-06')
+assert.equal(combinedAttendance.sourceTag, TEST_IMPORT_SOURCE_TAG)
 assert.equal(combinedAttendance.attendanceStatus, 'present')
 assert.equal(combinedAttendance.isImportedAttendance, true)
 assert.equal(combinedAttendance.needsMakeupReview, true)
@@ -65,12 +68,12 @@ const html = renderAttendanceBoardModule(
   dataset.tuitionRecords,
   [...sessionReports, legacyDemoReport],
   [],
-  { month: '2026-06', classSessionId: 'all', query: 'Đỗ Minh Tuyết' },
+  { month: '2026-06', classSessionId: 'all', query: 'Hoc vien QA bu hoc' },
   { studentId: combinedRow.student.id, dateKey: '2026-06-06' },
 )
 assert(html.includes('data-attendance-cell-detail'))
 assert(html.includes('>7</span>') && html.includes('>8</span>'))
-assert(html.includes('Angel Wings 06/2026'))
+assert(html.includes('Báo cáo buổi học'))
 assert(!html.includes('legacy-demo-f19b3'))
 assert(!html.includes('Dữ liệu demo cũ không được hiển thị.'))
 assert.equal(JSON.stringify(sessionReports), sessionReportsSnapshot, 'Board read path must not mutate sessionReports')
@@ -78,13 +81,13 @@ assert.equal(JSON.stringify(sessionReports), sessionReportsSnapshot, 'Board read
 const storage = new Map()
 globalThis.localStorage = {
   getItem(key) {
-    return storage.has(key) ? storage.get(key) : null
+    return storage.has(String(key)) ? storage.get(String(key)) : null
   },
   setItem(key, value) {
-    storage.set(key, value)
+    storage.set(String(key), value)
   },
   removeItem(key) {
-    storage.delete(key)
+    storage.delete(String(key))
   },
 }
 renderAttendanceBoardModule(

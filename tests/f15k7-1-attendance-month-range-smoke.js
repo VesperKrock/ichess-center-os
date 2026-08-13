@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 
 import { renderAttendanceBoardModule } from '../src/attendance-board-module.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import { buildAttendanceSharedTruthFixture } from './fixtures/attendance-shared-truth-fixture.js'
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const juneHtml = renderAttendanceBoardModule(
   dataset.students,
   dataset.classSessions,
@@ -43,7 +43,7 @@ const missingClassSessionHtml = renderAttendanceBoardModule(
   dataset.tuitionRecords,
   dataset.sessionReports,
   [],
-  { month: '2026-06', classSessionId: 'all', query: 'Phan Trần Minh Huy' },
+  { month: '2026-06', classSessionId: 'all', query: 'Hoc vien QA bu hoc' },
   null,
   [],
 )
@@ -56,7 +56,7 @@ const explicitClassIdHtml = renderAttendanceBoardModule(
     {
       id: 'student-explicit-aw-class',
       fullName: 'Học viên có classSessionIds',
-      classSessionIds: ['class-session-aw-t4-t6-1900-2030'],
+      classSessionIds: ['class-session-qa-t4-t6-1900-2030'],
     },
   ],
   [],

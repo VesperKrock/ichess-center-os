@@ -12,6 +12,11 @@ import {
   canReadModule,
   getOnlineAccessMessage,
 } from './online-access-control.js'
+import {
+  getAuthoritativeCoreVersion,
+  mutateAuthoritativeCoreEntity,
+  projectAuthoritativeCoreRecord,
+} from './cloud-authoritative-core.js'
 
 export const SCHEDULE_SESSION_REALTIME_ENTITY_TYPE = SCHEDULE_SESSION_BRIDGE_ENTITY_TYPE
 
@@ -24,6 +29,7 @@ export async function upsertScheduleSessionCloudEntity({
   userId = null,
   accessState,
   readiness = {},
+  idempotencyKey,
 } = {}) {
   const bridgeReadiness = getScheduleSessionBridgeReadiness({
     ...readiness,
@@ -55,24 +61,14 @@ export async function upsertScheduleSessionCloudEntity({
     return payloadResult
   }
 
-  const { error } = await supabase
-    .from('center_cloud_entities')
-    .upsert([payloadResult.record], { onConflict: 'center_id,entity_type,local_id' })
-
-  if (error) {
-    return {
-      ok: false,
-      error: String(error?.message || error || 'Khong the upsert schedule_session.'),
-      detail: error,
-    }
-  }
-
-  return {
-    ok: true,
-    count: 1,
+  return mutateAuthoritativeCoreEntity({
+    supabase,
+    centerId,
     entityType: SCHEDULE_SESSION_REALTIME_ENTITY_TYPE,
-    localId: payloadResult.localId,
-  }
+    entity: payloadResult.record.payload,
+    expectedVersion: getAuthoritativeCoreVersion(scheduleSession),
+    idempotencyKey,
+  })
 }
 
 export function subscribeToScheduleSessionCloudRealtime({
@@ -209,7 +205,8 @@ export function getScheduleSessionRealtimeRecord(event = {}) {
 }
 
 export function mergeScheduleSessionRealtimePayload(scheduleSessions = [], record = {}) {
-  const normalized = validateScheduleSessionPayload(record.payload)
+  const projectedRecord = projectAuthoritativeCoreRecord(record) || record.payload
+  const normalized = validateScheduleSessionPayload(projectedRecord)
 
   if (!normalized.ok) {
     return {
@@ -220,8 +217,22 @@ export function mergeScheduleSessionRealtimePayload(scheduleSessions = [], recor
     }
   }
 
-  const incomingSession = normalized.payload
-  const incomingUpdatedAt = getTimestamp(incomingSession.updatedAt)
+  // The schedule validator intentionally normalizes business fields, but the
+  // authoritative projection metadata must survive so version ordering and
+  // soft-delete handling cannot fall back to timestamp/local heuristics.
+  const incomingSession = { ...projectedRecord, ...normalized.payload }
+  const incomingVersion = getAuthoritativeCoreVersion(incomingSession)
+
+  if (incomingSession.isDeleted) {
+    const nextScheduleSessions = (Array.isArray(scheduleSessions) ? scheduleSessions : [])
+      .filter((session) => String(session?.id ?? '') !== incomingSession.id)
+    return {
+      ok: true,
+      changed: nextScheduleSessions.length !== scheduleSessions.length,
+      scheduleSessions: nextScheduleSessions,
+      scheduleSession: incomingSession,
+    }
+  }
   let changed = false
   let found = false
   const nextScheduleSessions = (Array.isArray(scheduleSessions) ? scheduleSessions : []).map((session) => {
@@ -230,9 +241,9 @@ export function mergeScheduleSessionRealtimePayload(scheduleSessions = [], recor
     }
 
     found = true
-    const currentUpdatedAt = getTimestamp(session.updatedAt)
+    const currentVersion = getAuthoritativeCoreVersion(session)
 
-    if (currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt < currentUpdatedAt) {
+    if (currentVersion && incomingVersion <= currentVersion) {
       return session
     }
 
@@ -270,9 +281,4 @@ function createRealtimeUnavailableResult(
     readiness,
     cleanup: () => {},
   }
-}
-
-function getTimestamp(value) {
-  const timestamp = value ? new Date(value).getTime() : 0
-  return Number.isFinite(timestamp) ? timestamp : 0
 }

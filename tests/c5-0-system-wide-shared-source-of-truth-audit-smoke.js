@@ -94,7 +94,16 @@ includesAll(cloudDbSource, [
   "from('center_cloud_entities')", 'pullCloudBootstrapCoreEntities',
   'pushLocalCoreEntitiesToCloud',
 ], 'Generic cloud foundation evidence drifted')
-includesAll(cloudBootstrapSource, ['source: \'local-cache\'', 'CLOUD_BOOTSTRAP_STATUS'], 'Local fallback evidence drifted')
+const c51Migration = 'supabase/migrations/202608130003_c5_1_authoritative_core_contract_and_multi_account_harness.sql'
+if (exists(c51Migration)) {
+  includesAll(cloudBootstrapSource, [
+    "source: 'cache-projection'",
+    'CLOUD_BOOTSTRAP_STATUS',
+    "ERROR: 'error'",
+  ], 'C5.1 durable cache-projection boundary drifted')
+} else {
+  includesAll(cloudBootstrapSource, ['source: \'local-cache\'', 'CLOUD_BOOTSTRAP_STATUS'], 'C5.0 checkpoint fallback evidence drifted')
+}
 includesAll(attendanceCloudSource, [
   "ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE", "ATTENDANCE_BASELINE_STATE_CLOUD_ENTITY_TYPE",
   "SESSION_REPORT_CLOUD_ENTITY_TYPE", ".channel(`ichess-center-attendance-session-report:",

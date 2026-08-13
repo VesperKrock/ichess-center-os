@@ -81,9 +81,10 @@ for (const role of ['center_admin', 'owner', 'qtv']) {
   })
 
   assert.equal(result.ok, true, `${role} should write student cloud when ready`)
-  assert.equal(mockSupabase.upsertedRecords.length, 1)
-  assert.equal(mockSupabase.upsertedRecords[0].entity_type, 'student')
-  assert.equal(mockSupabase.upsertedRecords[0].center_id, 'dreamhome')
+  assert.equal(mockSupabase.rpcCalls.length, 1)
+  assert.equal(mockSupabase.rpcCalls[0].name, 'c5_1_mutate_core_entity')
+  assert.equal(mockSupabase.rpcCalls[0].params.p_entity_type, 'student')
+  assert.equal(mockSupabase.rpcCalls[0].params.p_center_id, 'dreamhome')
 }
 
 const customLevelStudent = createStudent({
@@ -137,9 +138,12 @@ assert.equal(getStudentRealtimeRecord({ new: realtimeEvents[0] })?.entity_type, 
 const olderLocal = createStudent({
   id: 'student-rt-001',
   fullName: 'Ban moi hon',
+  cloudVersion: 2,
   updatedAt: '2026-06-21T10:00:00.000Z',
 })
 const olderRemoteRecord = {
+  entity_version: 1,
+  updated_at: '2026-06-20T10:00:00.000Z',
   payload: createStudent({
     id: 'student-rt-001',
     fullName: 'Ban cu',
@@ -151,8 +155,10 @@ assert.equal(skippedOlder.changed, false)
 assert.equal(skippedOlder.students[0].fullName, 'Ban moi hon')
 
 const mergeResult = mergeRealtimeStudentIntoList(
-  [createStudent({ id: 'student-rt-001', fullName: 'Cu' })],
+  [createStudent({ id: 'student-rt-001', fullName: 'Cu', cloudVersion: 1 })],
   {
+    entity_version: 2,
+    updated_at: '2026-06-21T11:00:00.000Z',
     payload: createStudent({
       id: 'student-rt-001',
       fullName: 'Moi',
@@ -218,17 +224,23 @@ function createStudent(overrides = {}) {
 
 function createMockSupabase() {
   const mock = {
-    upsertedRecords: [],
+    rpcCalls: [],
     channelName: '',
     postgresChangesConfig: null,
     realtimeHandler: null,
-    from(tableName) {
-      assert.equal(tableName, 'center_cloud_entities')
+    async rpc(name, params) {
+      mock.rpcCalls.push({ name, params })
       return {
-        upsert: async (records) => {
-          mock.upsertedRecords = records
-          return { error: null }
+        data: {
+          ok: true,
+          outcome_code: 'COMMITTED',
+          payload: params.p_payload,
+          entity_version: params.p_expected_version + 1,
+          updated_at: '2026-08-14T00:00:00.000Z',
+          deleted_at: null,
+          replayed: false,
         },
+        error: null,
       }
     },
     channel(channelName) {

@@ -421,18 +421,6 @@ import {
   validateStaffAdministrativeRetentionPolicy,
 } from './staff-administrative-governance-module.js'
 import {
-  ANGEL_WINGS_DATASET_ID,
-  ANGEL_WINGS_IMPORT_BATCH_ID,
-  ANGEL_WINGS_SOURCE_TAG,
-  ANGEL_WINGS_TEACHER_ID,
-  createF15K5BackupSnapshot,
-  mergeAngelWingsTeacherRoster,
-  removeAngelWingsAttendanceData,
-  removeLegacyDemoAttendanceReports,
-  upsertAngelWingsAttendanceData,
-  writeAngelWingsPackageCatalog,
-} from './attendance-board-angel-wings-data.js'
-import {
   checkCloudDbReadiness,
   createEmptyCloudEntityCounts,
   getCloudEntityCounts,
@@ -449,6 +437,10 @@ import {
   hasCloudBootstrapSnapshotData,
 } from './cloud-bootstrap.js'
 import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
+import {
+  createCoreCommandIdempotencyKey,
+  mutateAuthoritativeCoreEntity,
+} from './cloud-authoritative-core.js'
 import {
   NEEDS_SUPABASE_REALTIME_PATCH,
   mergeRealtimeStudentIntoList,
@@ -500,7 +492,8 @@ import {
   getOnlineAccessMessage,
   normalizeOnlineRole,
 } from './online-access-control.js'
-import { sampleStudents, shouldReplaceLegacyEightSeed } from './student-data.js'
+import { cleanupLegacyDatasetLocalResidue } from './legacy-dataset-cleanup.js'
+import { sampleStudents } from './student-data.js'
 import { sampleTeachers } from './teacher-data.js'
 import {
   buildTeacherFromForm,
@@ -636,12 +629,9 @@ let textEditingFieldPointerUntil = 0
 let nativeSelectInteractionUntil = 0
 let nativeSelectChangeRenderUntil = 0
 let pendingWindowFocusAfterRender = null
+cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
-if (shouldReplaceLegacyEightSeed(students)) {
-  students = sampleStudents
-  saveStoredStudents(students)
-}
 let classSessions = getStoredClassSessions(sampleClassSessions)
 let teacherFilters = { ...initialTeacherFilters }
 let teachers = getStoredTeachers(sampleTeachers)
@@ -719,11 +709,6 @@ let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
 let attendanceBoardDetailState = null
 let attendanceBoardNoteFormState = null
 let isAttendanceBaselineDetailsOpen = false
-const normalizedTeacherRoster = mergeAngelWingsTeacherRoster(teachers, students)
-if (JSON.stringify(normalizedTeacherRoster) !== JSON.stringify(teachers)) {
-  teachers = normalizedTeacherRoster
-  saveStoredTeachers(teachers)
-}
 let studentFormState = null
 let settingsFilters = { ...initialSettingsFilters }
 let settingsActiveTab = 'class-sessions'
@@ -1388,13 +1373,8 @@ function purgeZombieScheduleSessions({ persist = false, reason = 'schedule-clean
 }
 
 function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
-  const nextStudents = getStoredStudents(useSampleFallback ? sampleStudents : [])
-  students = shouldReplaceLegacyEightSeed(nextStudents) && useSampleFallback
-    ? sampleStudents
-    : nextStudents
-  if (students === sampleStudents) {
-    saveStoredStudents(students)
-  }
+  cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
+  students = getStoredStudents(useSampleFallback ? sampleStudents : [])
   classSessions = getStoredClassSessions(useSampleFallback ? sampleClassSessions : [])
   teachers = getStoredTeachers(useSampleFallback ? sampleTeachers : [])
   parentConsultations = getStoredParentConsultations(
@@ -8504,9 +8484,9 @@ async function handleInternalOpenCenter(centerId) {
     status: 'switching',
     centerId: normalizedCenterId,
   })
+  resetCloudRuntimeStateForOwnerCenterSwitch()
   setCurrentStorageCenterId(normalizedCenterId)
   reloadLocalDataForResolvedCenter({ useSampleFallback: false })
-  resetCloudRuntimeStateForOwnerCenterSwitch()
   cloudStatus = {
     ...cloudStatus,
     centerId: normalizedCenterId,
@@ -10563,7 +10543,7 @@ function createTuitionCareNoteState(studentId, patch = {}) {
   }
 }
 
-function saveTuitionCareNote() {
+async function saveTuitionCareNote() {
   if (!tuitionCareNoteState?.studentId) {
     return
   }
@@ -10583,33 +10563,36 @@ function saveTuitionCareNote() {
 
   const now = new Date().toISOString()
   const noteContent = content || tag
-  students = students.map((student) => {
-    if (String(student.id) !== String(studentId)) {
-      return student
-    }
-
-    const currentCareNotes = Array.isArray(student.careNotes) ? student.careNotes : []
-    const nextCareNotes = [
-      {
-        id: `tuition-note-${studentId}-${Date.now()}`,
-        createdAt: now,
-        updatedAt: now,
-        author: 'Admin DreamHome',
-        content: noteContent,
-        tags: tag ? [tag] : ['Học phí'],
-        sourceModule: 'tuition',
-      },
-      ...currentCareNotes,
-    ]
-
-    return {
-      ...student,
-      careNotes: nextCareNotes,
-      latestCareNote: getLatestCareNoteContent(nextCareNotes),
+  const student = getStudentById(studentId)
+  const currentCareNotes = Array.isArray(student?.careNotes) ? student.careNotes : []
+  const nextCareNotes = [
+    {
+      id: `tuition-note-${studentId}-${Date.now()}`,
+      createdAt: now,
       updatedAt: now,
-    }
-  })
-  saveStoredStudents(students)
+      author: 'Admin DreamHome',
+      content: noteContent,
+      tags: tag ? [tag] : ['Học phí'],
+      sourceModule: 'tuition',
+    },
+    ...currentCareNotes,
+  ]
+  const result = await commitStudentProjection({
+    ...student,
+    careNotes: nextCareNotes,
+    latestCareNote: getLatestCareNoteContent(nextCareNotes),
+    updatedAt: now,
+  }, 'student-tuition-care-note')
+
+  if (!result.ok) {
+    tuitionCareNoteState = createTuitionCareNoteState(studentId, {
+      values: tuitionCareNoteState.values,
+      error: result.error || 'Ghi chú chưa được lưu.',
+    })
+    render()
+    return
+  }
+
   tuitionCareNoteState = createTuitionCareNoteState(studentId, {
     saveState: 'saved',
   })
@@ -10635,7 +10618,7 @@ function getTaskbarCenterProfileState() {
   const dataLabel = cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.CLOUD ||
     cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.EMPTY
       ? 'Cloud'
-      : 'Cache cục bộ'
+      : 'Cache chỉ xem'
 
   return {
     centerName,
@@ -12665,7 +12648,7 @@ function bringWindowToFront(windowId) {
   ]
 }
 
-function handleTeacherFormSave(event = null) {
+async function handleTeacherFormSave(event = null) {
   event?.preventDefault?.()
 
   if (!teacherFormState) {
@@ -12684,6 +12667,9 @@ function handleTeacherFormSave(event = null) {
   }
 
   let savedTeacher = null
+  const commandIdempotencyKey = teacherFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
+  const commandLocalId = teacherFormState.commandLocalId || `teacher-${Date.now()}`
+  teacherFormState = { ...teacherFormState, commandIdempotencyKey, commandLocalId }
 
   if (teacherFormState.mode === 'edit') {
     const existingTeacher = getTeacherById(teacherFormState.teacherId)
@@ -12700,21 +12686,24 @@ function handleTeacherFormSave(event = null) {
     }
 
     const updatedTeacher = buildTeacherFromForm(teacherFormState.values, existingTeacher)
-    teachers = teachers.map((teacher) =>
-      teacher.id === updatedTeacher.id ? updatedTeacher : teacher,
-    )
-    selectedTeacherId = updatedTeacher.id
     savedTeacher = updatedTeacher
   } else {
     const createdTeacher = buildTeacherFromForm(teacherFormState.values)
-    teachers = [createdTeacher, ...teachers]
-    selectedTeacherId = createdTeacher.id
-    savedTeacher = createdTeacher
+    savedTeacher = { ...createdTeacher, id: commandLocalId }
   }
 
-  saveStoredTeachers(teachers)
-  queueCoreCloudSync('teacher-save')
-  writeTeacherThroughCloud(savedTeacher, 'teacher-save')
+  const result = await commitTeacherProjection(savedTeacher, 'teacher-save', commandIdempotencyKey)
+
+  if (!result.ok) {
+    teacherFormState = {
+      ...teacherFormState,
+      errors: { ...teacherFormState.errors, form: result.error || 'Giáo viên chưa được lưu.' },
+    }
+    render()
+    return
+  }
+
+  selectedTeacherId = result.entity.id
   teacherFormState = null
   render()
 }
@@ -12790,7 +12779,7 @@ function closeWindow(windowId) {
   render()
 }
 
-function softDeleteStudent(studentId) {
+async function softDeleteStudent(studentId) {
   const student = getStudentById(studentId)
 
   if (!student || student.isDeleted) {
@@ -12807,16 +12796,18 @@ function softDeleteStudent(studentId) {
 
   const deletedAt = new Date().toISOString()
 
-  students = students.map((item) =>
-    item.id === studentId
-      ? {
-          ...item,
-          isDeleted: true,
-          deletedAt,
-          updatedAt: deletedAt,
-        }
-      : item,
-  )
+  const deletedStudent = {
+    ...student,
+    isDeleted: true,
+    deletedAt,
+    updatedAt: deletedAt,
+  }
+  const result = await commitStudentProjection(deletedStudent, 'student-delete')
+
+  if (!result.ok) {
+    render()
+    return
+  }
 
   studentFilters = {
     ...studentFilters,
@@ -12836,9 +12827,6 @@ function softDeleteStudent(studentId) {
         ['student-detail', 'student-care-notes', 'student-learning'].includes(windowItem.type)
       ),
   )
-  saveStoredStudents(students)
-  queueCoreCloudSync('student-delete')
-  writeStudentThroughCloud(getStudentById(studentId), 'student-delete')
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
@@ -13168,7 +13156,6 @@ function getSettingsCloudDbPanelState() {
     membershipStatus: cloudStatus.membershipStatus,
     role: cloudStatus.role,
     localCounts: getCloudDbLocalCounts(),
-    localAngelWingsStatus: getLocalAngelWingsStatus(),
   }
 }
 
@@ -13180,49 +13167,12 @@ function getCloudDbLocalCounts() {
   }
 }
 
-function getLocalAngelWingsStatus() {
-  const angelWingsStudents = students.filter(isAngelWingsEntity)
-  const angelWingsClassSessions = classSessions.filter(isAngelWingsEntity)
-  const hasAngelWingsTeacher = teachers.some(
-    (teacher) => teacher.id === ANGEL_WINGS_TEACHER_ID || isAngelWingsEntity(teacher),
-  )
-  const looksLikeOldSeed = students.length === 8 && angelWingsStudents.length === 0
-  const isReadyForCloudPush =
-    angelWingsStudents.length >= 29 &&
-    angelWingsClassSessions.length >= 4 &&
-    hasAngelWingsTeacher
-
-  return {
-    isReadyForCloudPush,
-    looksLikeOldSeed,
-    studentCount: angelWingsStudents.length,
-    classSessionCount: angelWingsClassSessions.length,
-    hasTeacher: hasAngelWingsTeacher,
-  }
-}
-
-function isAngelWingsEntity(entity) {
-  return Boolean(
-    entity &&
-      (
-        entity.sourceTag === ANGEL_WINGS_SOURCE_TAG ||
-        entity.datasetId === ANGEL_WINGS_DATASET_ID ||
-        entity.importBatchId === ANGEL_WINGS_IMPORT_BATCH_ID ||
-        entity.isControlledFixture
-      ),
-  )
-}
-
 function canUseCoreCloudDb() {
   return buildCurrentOnlineAccessState({ cloudReady: true }).canRead
 }
 
 function isCoreCloudDbReady() {
-  return (
-    canWriteCoreCloudDb() &&
-    cloudDbState.readinessStatus === 'ready' &&
-    getLocalAngelWingsStatus().isReadyForCloudPush
-  )
+  return canWriteCoreCloudDb() && cloudDbState.readinessStatus === 'ready'
 }
 
 function buildCurrentOnlineAccessState({ cloudReady = false } = {}) {
@@ -13249,7 +13199,102 @@ function canWriteCoreCloudDb(entityType = CLOUD_ENTITY_TYPES.STUDENT) {
   )
 }
 
-async function writeStudentThroughCloud(student, reason = 'student-save') {
+function upsertCommittedCoreProjection(items, entity) {
+  const source = Array.isArray(items) ? items : []
+  const entityId = String(entity?.id || '').trim()
+
+  if (!entityId) {
+    return source
+  }
+
+  const existingIndex = source.findIndex((item) => String(item?.id || '') === entityId)
+
+  if (existingIndex < 0) {
+    return [entity, ...source]
+  }
+
+  return source.map((item, index) => index === existingIndex ? { ...item, ...entity } : item)
+}
+
+async function commitStudentProjection(student, reason, idempotencyKey) {
+  const result = await writeStudentThroughCloud(student, reason, idempotencyKey)
+
+  if (!result.ok) return result
+
+  students = upsertCommittedCoreProjection(students, result.entity)
+  saveStoredStudents(students)
+  return result
+}
+
+async function commitTeacherProjection(teacher, reason, idempotencyKey) {
+  const result = await writeTeacherThroughCloud(teacher, reason, idempotencyKey)
+
+  if (!result.ok) return result
+
+  teachers = upsertCommittedCoreProjection(teachers, result.entity)
+  saveStoredTeachers(teachers)
+  return result
+}
+
+async function writeClassSessionThroughCloud(classSession, reason = 'class-session-save', idempotencyKey) {
+  const accessState = buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  })
+
+  if (!canWriteEntity(accessState, CLOUD_ENTITY_TYPES.CLASS_SESSION)) {
+    return { ok: false, skipped: true, error: getOnlineAccessMessage(accessState) }
+  }
+
+  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
+
+  if (!readiness.ok) return readiness
+
+  const result = await mutateAuthoritativeCoreEntity({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    entityType: CLOUD_ENTITY_TYPES.CLASS_SESSION,
+    entity: classSession,
+    idempotencyKey,
+  })
+
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
+    message: result.ok
+      ? `Đã lưu cloud Ca học (${reason}).`
+      : result.error || 'Chưa thể lưu Ca học lên server.',
+    messageTone: result.ok ? 'success' : 'error',
+    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
+  }
+  render()
+  return result
+}
+
+async function commitClassSessionProjection(classSession, reason, idempotencyKey) {
+  const result = await writeClassSessionThroughCloud(classSession, reason, idempotencyKey)
+
+  if (!result.ok) return result
+
+  classSessions = upsertCommittedCoreProjection(classSessions, result.entity)
+  saveStoredClassSessions(classSessions)
+  return result
+}
+
+async function commitScheduleSessionProjection(scheduleSession, reason, idempotencyKey) {
+  const result = await writeScheduleSessionThroughCloud(scheduleSession, reason, idempotencyKey)
+
+  if (!result.ok) return result
+
+  if (result.entity?.isDeleted) {
+    scheduleSessions = scheduleSessions.filter((item) => item.id !== result.entity.id)
+  } else {
+    scheduleSessions = upsertCommittedCoreProjection(scheduleSessions, result.entity)
+  }
+  saveStoredSchedule(scheduleSessions)
+  return result
+}
+
+async function writeStudentThroughCloud(student, reason = 'student-save', idempotencyKey) {
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
   })
@@ -13297,6 +13342,7 @@ async function writeStudentThroughCloud(student, reason = 'student-save') {
     student,
     userId: readiness.user?.id,
     accessState: writeAccessState,
+    idempotencyKey,
   })
 
   if (runId !== studentCloudWriteRunId) {
@@ -13406,7 +13452,7 @@ function handleStudentRealtimeRecord(record) {
   render()
 }
 
-async function writeTeacherThroughCloud(teacher, reason = 'teacher-save') {
+async function writeTeacherThroughCloud(teacher, reason = 'teacher-save', idempotencyKey) {
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
   })
@@ -13454,6 +13500,7 @@ async function writeTeacherThroughCloud(teacher, reason = 'teacher-save') {
     teacher,
     userId: readiness.user?.id,
     accessState: writeAccessState,
+    idempotencyKey,
   })
 
   if (runId !== teacherCloudWriteRunId) {
@@ -13563,7 +13610,7 @@ function handleTeacherRealtimeRecord(record) {
   render()
 }
 
-async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'schedule-save') {
+async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'schedule-save', idempotencyKey) {
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
   })
@@ -13643,6 +13690,7 @@ async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'sched
       scheduleSessionSqlReady: true,
       realtimeReady: true,
     },
+    idempotencyKey,
   })
 
   if (runId !== scheduleSessionCloudWriteRunId) {
@@ -14488,82 +14536,27 @@ function applyCloudBootstrapSnapshotToLocal(snapshot) {
 
   const backupKey = typeof backupResult === 'string' ? backupResult : null
 
-  if (Array.isArray(snapshot.students) && snapshot.students.length > 0) {
-    students = snapshot.students
-    saveStoredStudents(students)
-    students = getStoredStudents([])
-  }
+  students = Array.isArray(snapshot.students) ? snapshot.students : []
+  teachers = Array.isArray(snapshot.teachers) ? snapshot.teachers : []
+  classSessions = Array.isArray(snapshot.classSessions) ? snapshot.classSessions : []
+  scheduleSessions = Array.isArray(snapshot.scheduleSessions) ? snapshot.scheduleSessions : []
+  scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'cloud-bootstrap' })
 
-  if (Array.isArray(snapshot.teachers) && snapshot.teachers.length > 0) {
-    teachers = snapshot.teachers
-    saveStoredTeachers(teachers)
-    teachers = getStoredTeachers([])
-  }
+  saveStoredStudents(students)
+  saveStoredTeachers(teachers)
+  saveStoredClassSessions(classSessions)
+  saveStoredSchedule(scheduleSessions)
 
-  if (Array.isArray(snapshot.classSessions) && snapshot.classSessions.length > 0) {
-    classSessions = snapshot.classSessions
-    saveStoredClassSessions(classSessions)
-    classSessions = getStoredClassSessions([])
-  }
-
-  if (Array.isArray(snapshot.scheduleSessions) && snapshot.scheduleSessions.length > 0) {
-    scheduleSessions = snapshot.scheduleSessions
-    scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'cloud-bootstrap' })
-    saveStoredSchedule(scheduleSessions)
-    scheduleSessions = getStoredSchedule([])
-    scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'cloud-bootstrap-reload' })
-  }
+  students = getStoredStudents([])
+  teachers = getStoredTeachers([])
+  classSessions = getStoredClassSessions([])
+  scheduleSessions = getStoredSchedule([])
 
   return {
     ok: true,
     backupKey,
     counts: getCloudBootstrapSnapshotCounts({ students, teachers, classSessions, scheduleSessions }),
   }
-}
-
-function restoreAngelWingsLocalDataset() {
-  const backup = createF15K5BackupSnapshot(window.localStorage)
-  const result = upsertAngelWingsAttendanceData()
-
-  students = result.students
-  teachers = mergeAngelWingsTeacherRoster(result.teachers, result.students)
-  parentConsultations = result.parentConsultations
-  classSessions = result.classSessions
-  tuitionRecords = result.tuitionRecords
-  scheduleSessions = result.schedule
-  scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'angel-wings-restore' })
-  sessionReports = result.sessionReports
-  attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
-
-  saveStoredStudents(students)
-  saveStoredTeachers(teachers)
-  saveStoredParentConsultations(parentConsultations)
-  saveStoredClassSessions(classSessions)
-  writeAngelWingsPackageCatalog(window.localStorage, result.tuitionPackages)
-  saveStoredTuition(tuitionRecords)
-  saveStoredSchedule(scheduleSessions)
-  saveStoredSessionReports(sessionReports)
-  saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
-
-  studentFilters = {
-    ...studentFilters,
-    selectedStudentId: students[0]?.id || null,
-  }
-  teacherFilters = { ...initialTeacherFilters }
-  settingsFilters = { ...initialSettingsFilters }
-  settingsClassSessionFormState = null
-  studentFormState = null
-  teacherFormState = null
-  selectedTeacherId = ANGEL_WINGS_TEACHER_ID
-
-  cloudDbState = {
-    ...cloudDbState,
-    cloudCounts: cloudDbState.cloudCounts,
-    message: `Đã khôi phục Angel Wings 06/2026 vào local: ${students.length} học viên, ${teachers.length} giáo viên, ${classSessions.length} ca học. Chưa đẩy cloud. Backup: ${backup?.backupKey || 'không tạo được'}.`,
-    messageTone: 'success',
-  }
-
-  openModuleWindow('hoc-vien')
 }
 
 async function refreshCloudDbReadiness({ showLoading = false } = {}) {
@@ -14672,21 +14665,6 @@ async function pushCloudDbSnapshot() {
       ...cloudDbState,
       isLoading: false,
       message: getOnlineAccessMessage(writeAccess),
-      messageTone: 'error',
-    }
-    render()
-    return
-  }
-
-  const angelWingsStatus = getLocalAngelWingsStatus()
-
-  if (!angelWingsStatus.isReadyForCloudPush) {
-    cloudDbState = {
-      ...cloudDbState,
-      isLoading: false,
-      message: angelWingsStatus.looksLikeOldSeed
-        ? 'Local đang giống seed cũ 8 học viên. Hãy khôi phục Angel Wings 06/2026 trước khi đẩy cloud.'
-        : 'Local chưa có đủ marker Angel Wings 06/2026. Hãy khôi phục/kiểm tra local trước khi đẩy cloud.',
       messageTone: 'error',
     }
     render()
@@ -14829,7 +14807,7 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
           ? CLOUD_BOOTSTRAP_STATUS.ERROR
           : cloudBootstrapState.status,
       source: cloudBootstrapState.source || 'local-cache',
-      message: cloudBootstrapState.message || 'Cloud pull đang tạm dừng sau lỗi 400; giữ cache/local.',
+      message: cloudBootstrapState.message || 'Cloud pull đang tạm dừng; cache chỉ để xem, không xác nhận business truth.',
     }
     return
   }
@@ -14856,8 +14834,8 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
     cloudBootstrapState = {
       ...cloudBootstrapState,
       status: CLOUD_BOOTSTRAP_STATUS.IDLE,
-      source: 'local-cache',
-      message: 'Dữ liệu: Cache cục bộ (đang kiểm cloud nền)',
+      source: 'cache-projection',
+      message: 'Dữ liệu: Cache chờ xác minh cloud (chỉ xem)',
       lastUpdatedAt: new Date().toISOString(),
     }
   }
@@ -14882,10 +14860,10 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
     cloudBootstrapState = {
       ...cloudBootstrapState,
       status: CLOUD_BOOTSTRAP_STATUS.ERROR,
-      source: 'local-cache',
+      source: 'cache-projection-read-only',
       message: isSchemaOrBadRequest
-        ? 'Dữ liệu: Cache cục bộ (cloud lỗi 400/schema, tạm dừng pull)'
-        : 'Dữ liệu: Cache cục bộ (cloud lỗi, đang giữ local)',
+        ? 'Dữ liệu: Cloud lỗi 400/schema; cache chỉ để xem'
+        : 'Dữ liệu: Không xác minh được cloud; cache chỉ để xem',
       counts: null,
       lastUpdatedAt: new Date().toISOString(),
     }
@@ -14903,53 +14881,6 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
   }
 
   const counts = result.counts || getCloudBootstrapSnapshotCounts(result.data)
-  const hasCloudScheduleSessions = Array.isArray(result.data?.scheduleSessions) &&
-    result.data.scheduleSessions.length > 0
-
-  if (result.empty || !hasCloudBootstrapSnapshotData(result.data)) {
-    if (isProductionCenter(centerId)) {
-      reloadLocalDataForResolvedCenter({ useSampleFallback: false })
-      cloudBootstrapState = {
-        ...cloudBootstrapState,
-        status: CLOUD_BOOTSTRAP_STATUS.EMPTY,
-        source: 'cloud-empty',
-        message: 'Dữ liệu: Cloud',
-        counts,
-        lastUpdatedAt: new Date().toISOString(),
-      }
-      cloudDbState = {
-        ...cloudDbState,
-        isLoading: false,
-        readinessStatus: 'ready',
-        cloudCounts: cloudDbState.cloudCounts,
-        message: cloudBootstrapState.message,
-        messageTone: '',
-        lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
-      }
-      render()
-      return
-    }
-
-    cloudBootstrapState = {
-      ...cloudBootstrapState,
-      status: CLOUD_BOOTSTRAP_STATUS.EMPTY,
-      source: 'local-cache',
-      message: 'Cloud chưa có dữ liệu cho center này. Đang dùng cache/staging local.',
-      counts,
-      lastUpdatedAt: new Date().toISOString(),
-    }
-    cloudDbState = {
-      ...cloudDbState,
-      isLoading: false,
-      readinessStatus: 'ready',
-      cloudCounts: cloudDbState.cloudCounts,
-      message: cloudBootstrapState.message,
-      messageTone: '',
-      lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
-    }
-    render()
-    return
-  }
 
   const appliedSnapshot = applyCloudBootstrapSnapshotToLocal(result.data)
 
@@ -14957,7 +14888,7 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
     cloudBootstrapState = {
       ...cloudBootstrapState,
       status: CLOUD_BOOTSTRAP_STATUS.ERROR,
-      source: 'local-cache',
+      source: 'cache-projection-read-only',
       message: 'Không thể lưu cache cloud. Đang giữ dữ liệu cục bộ hiện tại.',
       counts,
       lastUpdatedAt: new Date().toISOString(),
@@ -14975,33 +14906,11 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
     return
   }
 
-  if (!hasCloudScheduleSessions) {
-    cloudBootstrapState = {
-      ...cloudBootstrapState,
-      status: CLOUD_BOOTSTRAP_STATUS.FALLBACK,
-      source: 'local-cache',
-      message: 'Dữ liệu: Cache cục bộ (cloud schedule_session trống; TKB dùng local fallback)',
-      counts,
-      lastUpdatedAt: new Date().toISOString(),
-    }
-    cloudDbState = {
-      ...cloudDbState,
-      isLoading: false,
-      readinessStatus: 'ready',
-      cloudCounts: cloudDbState.cloudCounts,
-      message: cloudBootstrapState.message,
-      messageTone: '',
-      lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
-    }
-    render()
-    return
-  }
-
   cloudBootstrapState = {
     ...cloudBootstrapState,
-    status: CLOUD_BOOTSTRAP_STATUS.CLOUD,
-    source: 'cloud',
-    message: 'Dữ liệu: Cloud',
+    status: result.empty ? CLOUD_BOOTSTRAP_STATUS.EMPTY : CLOUD_BOOTSTRAP_STATUS.CLOUD,
+    source: result.empty ? 'cloud-empty' : 'cloud',
+    message: result.empty ? 'Dữ liệu: Cloud trống (nguồn chính)' : 'Dữ liệu: Cloud',
     counts: appliedSnapshot.counts,
     lastUpdatedAt: new Date().toISOString(),
   }
@@ -19899,18 +19808,6 @@ function bindEvents() {
     refreshCloudDbCounts()
   })
 
-  document.querySelector('[data-cloud-db-action="restore-angel-wings-local"]')?.addEventListener('click', () => {
-    const confirmed = window.confirm(
-      'Khôi phục controlled dataset Angel Wings 06/2026 vào local? App sẽ backup các key liên quan trước khi replace. Thao tác này KHÔNG đẩy dữ liệu lên cloud.',
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    restoreAngelWingsLocalDataset()
-  })
-
   document.querySelector('[data-cloud-db-action="push"]')?.addEventListener('click', () => {
     const confirmed = window.confirm(
       'Đẩy snapshot local của Học viên, Giáo viên và Ca học/Lớp lên Cloud DB C2? Thao tác này không thay đổi local và không sync học phí/điểm danh/thu chi.',
@@ -20335,82 +20232,16 @@ function bindEvents() {
     render()
   })
 
-  document.querySelector('[data-attendance-board-angel-wings-action="load"]')?.addEventListener('click', () => {
-    const confirmed = window.confirm(
-      'N\u1ea1p controlled dataset Angel Wings 06/2026 v\u00e0 replace c\u00e1c key li\u00ean quan: H\u1ecdc vi\u00ean, Gi\u00e1o vi\u00ean, Ph\u1ee5 huynh, Ca h\u1ecdc/Gi\u00e1 g\u00f3i, H\u1ecdc ph\u00ed, Th\u1eddi kh\u00f3a bi\u1ec3u v\u00e0 sessionReports? H\u1ec7 th\u1ed1ng s\u1ebd backup tr\u01b0\u1edbc khi ghi.',
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    createF15K5BackupSnapshot(window.localStorage)
-    const result = upsertAngelWingsAttendanceData()
-
-    students = result.students
-    teachers = mergeAngelWingsTeacherRoster(teachers, result.students)
-    parentConsultations = result.parentConsultations
-    classSessions = result.classSessions
-    tuitionRecords = result.tuitionRecords
-    scheduleSessions = result.schedule
-    scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'angel-wings-action-add' })
-    sessionReports = result.sessionReports
-    attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
-    saveStoredStudents(students)
-    saveStoredTeachers(teachers)
-    saveStoredParentConsultations(parentConsultations)
-    saveStoredClassSessions(classSessions)
-    writeAngelWingsPackageCatalog(window.localStorage, result.tuitionPackages)
-    saveStoredTuition(tuitionRecords)
-    saveStoredSchedule(scheduleSessions)
-    saveStoredSessionReports(sessionReports)
-    saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
-    render()
-  })
-
-  document.querySelector('[data-attendance-board-angel-wings-action="clear"]')?.addEventListener('click', () => {
-    const confirmed = window.confirm(
-      'Xóa dữ liệu nhập Angel Wings khỏi sessionReports và fixture học phí Angel Wings? Học viên thật và dữ liệu khác sẽ được giữ nguyên.',
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    createF15K5BackupSnapshot(window.localStorage)
-    const result = removeAngelWingsAttendanceData()
-
-    students = result.students
-    teachers = mergeAngelWingsTeacherRoster(teachers, result.students)
-    parentConsultations = result.parentConsultations
-    classSessions = result.classSessions
-    tuitionRecords = result.tuitionRecords
-    scheduleSessions = result.schedule
-    scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'angel-wings-action-clear' })
-    sessionReports = result.sessionReports
-    attendanceAdvisoryNotes = result.attendanceAdvisoryNotes
-    saveStoredStudents(students)
-    saveStoredTeachers(teachers)
-    saveStoredParentConsultations(parentConsultations)
-    saveStoredClassSessions(classSessions)
-    writeAngelWingsPackageCatalog(window.localStorage, result.tuitionPackages)
-    saveStoredTuition(tuitionRecords)
-    saveStoredSchedule(scheduleSessions)
-    saveStoredSessionReports(sessionReports)
-    saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
-    render()
-  })
-
   document.querySelector('[data-attendance-board-demo-action="clear"]')?.addEventListener('click', () => {
     const confirmed = window.confirm(
-      'Ch\u1ec9 x\u00f3a demo c\u0169 F15K.1/F15K.3, kh\u00f4ng x\u00f3a d\u1eef li\u1ec7u th\u1eadt ho\u1eb7c Angel Wings. Ti\u1ebfp t\u1ee5c?',
+      'Ch\u1ec9 x\u00f3a demo c\u0169 F15K.1/F15K.3, kh\u00f4ng x\u00f3a d\u1eef li\u1ec7u th\u1eadt. Ti\u1ebfp t\u1ee5c?',
     )
 
     if (!confirmed) {
       return
     }
 
-    sessionReports = removeLegacyDemoAttendanceReports(removeDemoAttendanceReports(sessionReports))
+    sessionReports = removeDemoAttendanceReports(sessionReports)
     saveStoredSessionReports(sessionReports)
     render()
   })
@@ -20449,7 +20280,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-settings-class-session-action="toggle-status"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const classSession = classSessions.find(
         (item) => item.id === button.dataset.classSessionId,
       )
@@ -20471,17 +20302,12 @@ function bindEvents() {
         }
       }
 
-      classSessions = classSessions.map((item) =>
-        item.id === classSession.id
-          ? {
-              ...item,
-              status: nextStatus,
-              updatedAt: new Date().toISOString(),
-            }
-          : item,
-      )
-      saveStoredClassSessions(classSessions)
-      queueCoreCloudSync('class-session-status')
+      const nextClassSession = {
+        ...classSession,
+        status: nextStatus,
+        updatedAt: new Date().toISOString(),
+      }
+      await commitClassSessionProjection(nextClassSession, 'class-session-status')
       render()
     })
   })
@@ -20588,7 +20414,7 @@ function bindEvents() {
 
   document.querySelector('[data-settings-class-session-action="save-form"]')?.addEventListener(
     'click',
-    () => {
+    async () => {
       if (!settingsClassSessionFormState) {
         return
       }
@@ -20609,19 +20435,40 @@ function bindEvents() {
             (item) => item.id === settingsClassSessionFormState.classSessionId,
           )
         : null
-      const nextClassSession = buildSettingsClassSessionFromForm(
+      const commandIdempotencyKey = settingsClassSessionFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
+      const commandLocalId = settingsClassSessionFormState.commandLocalId || `class-${Date.now()}`
+      settingsClassSessionFormState = {
+        ...settingsClassSessionFormState,
+        commandIdempotencyKey,
+        commandLocalId,
+      }
+      const builtClassSession = buildSettingsClassSessionFromForm(
         settingsClassSessionFormState.values,
         existingClassSession,
         classSessions,
       )
+      const nextClassSession = existingClassSession
+        ? builtClassSession
+        : { ...builtClassSession, id: commandLocalId }
 
-      classSessions = existingClassSession
-        ? classSessions.map((item) =>
-            item.id === nextClassSession.id ? nextClassSession : item,
-          )
-        : [nextClassSession, ...classSessions]
-      saveStoredClassSessions(classSessions)
-      queueCoreCloudSync('class-session-save')
+      const result = await commitClassSessionProjection(
+        nextClassSession,
+        'class-session-save',
+        commandIdempotencyKey,
+      )
+
+      if (!result.ok) {
+        settingsClassSessionFormState = {
+          ...settingsClassSessionFormState,
+          errors: {
+            ...settingsClassSessionFormState.errors,
+            form: result.error || 'Ca học chưa được lưu.',
+          },
+        }
+        render()
+        return
+      }
+
       settingsClassSessionFormState = null
       render()
     },
@@ -21685,7 +21532,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-teacher-action="stop-teaching"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', async (event) => {
       event.stopPropagation()
       const teacher = teachers.find((item) => item.id === button.dataset.teacherId)
 
@@ -21701,18 +21548,11 @@ function bindEvents() {
         return
       }
 
-      teachers = teachers.map((item) =>
-        item.id === teacher.id
-          ? {
-              ...item,
-              status: 'inactive',
-              updatedAt: new Date().toISOString(),
-            }
-          : item,
-      )
-      saveStoredTeachers(teachers)
-      queueCoreCloudSync('teacher-status')
-      writeTeacherThroughCloud(getTeacherById(teacher.id), 'teacher-status')
+      await commitTeacherProjection({
+        ...teacher,
+        status: 'inactive',
+        updatedAt: new Date().toISOString(),
+      }, 'teacher-status')
       render()
     })
   })
@@ -23887,7 +23727,7 @@ function bindEvents() {
     return nextValues
   }
 
-  const handleScheduleFormSave = (event) => {
+  const handleScheduleFormSave = async (event) => {
     event?.preventDefault()
 
     if (!scheduleFormState) {
@@ -23936,6 +23776,9 @@ function bindEvents() {
     }
 
     let savedScheduleSession = null
+    const commandIdempotencyKey = scheduleFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
+    const commandLocalId = scheduleFormState.commandLocalId || `schedule-${Date.now()}`
+    scheduleFormState = { ...scheduleFormState, commandIdempotencyKey, commandLocalId }
 
     if (scheduleFormState.mode === 'edit') {
       const existingSession = scheduleSessions.find(
@@ -23959,18 +23802,28 @@ function bindEvents() {
         teachers,
         classSessions,
       )
-      scheduleSessions = scheduleSessions.map((session) =>
-        session.id === updatedSession.id ? updatedSession : session,
-      )
       savedScheduleSession = updatedSession
     } else {
       const createdSession = buildScheduleSessionFromForm(formValues, null, teachers, classSessions)
-      scheduleSessions = [createdSession, ...scheduleSessions]
-      savedScheduleSession = createdSession
+      savedScheduleSession = { ...createdSession, id: commandLocalId }
     }
 
-    saveStoredSchedule(scheduleSessions)
-    writeScheduleSessionThroughCloud(savedScheduleSession, 'schedule-save')
+    const result = await commitScheduleSessionProjection(
+      savedScheduleSession,
+      'schedule-save',
+      commandIdempotencyKey,
+    )
+
+    if (!result.ok) {
+      scheduleFormState = {
+        ...scheduleFormState,
+        values: formValues,
+        errors: { form: result.error || 'Buổi học chưa được lưu.' },
+      }
+      render()
+      return
+    }
+
     scheduleFormState = null
     scheduleReportState = null
     sessionReportAttendanceState = null
@@ -23985,7 +23838,7 @@ function bindEvents() {
   document.querySelector('[data-schedule-form]')?.addEventListener('submit', handleScheduleFormSave)
   document.querySelector('[data-schedule-action="save-form"]')?.addEventListener('click', handleScheduleFormSave)
 
-  document.querySelector('[data-schedule-action="delete-session"]')?.addEventListener('click', () => {
+  document.querySelector('[data-schedule-action="delete-session"]')?.addEventListener('click', async () => {
     if (!scheduleFormState?.sessionId) {
       return
     }
@@ -24008,11 +23861,7 @@ function bindEvents() {
       return
     }
 
-    scheduleSessions = scheduleSessions.filter(
-      (session) => session.id !== scheduleFormState.sessionId,
-    )
-    saveStoredSchedule(scheduleSessions)
-    writeScheduleSessionThroughCloud(
+    const result = await commitScheduleSessionProjection(
       deletedScheduleSession
         ? {
             ...deletedScheduleSession,
@@ -24024,6 +23873,16 @@ function bindEvents() {
         : null,
       'schedule-delete',
     )
+
+    if (!result.ok) {
+      scheduleFormState = {
+        ...scheduleFormState,
+        errors: { ...scheduleFormState.errors, form: result.error || 'Buổi học chưa được xóa.' },
+      }
+      render()
+      return
+    }
+
     scheduleFormState = null
     scheduleReportState = null
     sessionReportAttendanceState = null
@@ -24098,7 +23957,7 @@ function bindEvents() {
       event.stopImmediatePropagation()
     })
 
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', async (event) => {
       event.stopPropagation()
       event.stopImmediatePropagation()
       const { studentDetailAction, studentId } = button.dataset
@@ -24125,18 +23984,11 @@ function bindEvents() {
           return
         }
 
-        students = students.map((item) =>
-          item.id === studentId
-            ? {
-                ...item,
-                avatarUrl: '',
-                updatedAt: new Date().toISOString(),
-              }
-            : item,
-        )
-        saveStoredStudents(students)
-        queueCoreCloudSync('student-avatar')
-        writeStudentThroughCloud(getStudentById(studentId), 'student-avatar')
+        await commitStudentProjection({
+          ...student,
+          avatarUrl: '',
+          updatedAt: new Date().toISOString(),
+        }, 'student-avatar')
         render()
       }
     })
@@ -24314,31 +24166,24 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-care-note-action="delete"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const { careNoteStudentId, careNoteId } = button.dataset
 
       if (!window.confirm('Xóa ghi chú chăm sóc này?')) {
         return
       }
 
-      students = students.map((student) => {
-        if (student.id !== careNoteStudentId) {
-          return student
-        }
+      const student = getStudentById(careNoteStudentId)
+      const nextCareNotes = (student?.careNotes ?? []).filter((note) => note.id !== careNoteId)
+      const result = await commitStudentProjection({
+        ...student,
+        careNotes: nextCareNotes,
+        latestCareNote: getLatestCareNoteContent(nextCareNotes),
+        updatedAt: new Date().toISOString(),
+      }, 'student-care-note')
 
-        const nextCareNotes = (student.careNotes ?? []).filter((note) => note.id !== careNoteId)
-        const latestCareNote = getLatestCareNoteContent(nextCareNotes)
+      if (!result.ok) return
 
-        return {
-          ...student,
-          careNotes: nextCareNotes,
-          latestCareNote,
-          updatedAt: new Date().toISOString(),
-        }
-      })
-      saveStoredStudents(students)
-      queueCoreCloudSync('student-care-note')
-      writeStudentThroughCloud(getStudentById(careNoteStudentId), 'student-care-note')
       careNoteDrafts = {
         ...careNoteDrafts,
         [careNoteStudentId]: { ...emptyCareNoteDraft },
@@ -24348,7 +24193,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-care-note-action="save"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const studentId = button.dataset.careNoteStudentId
       const currentDraft = careNoteDrafts[studentId] ?? emptyCareNoteDraft
       const content = currentDraft.content.trim()
@@ -24365,13 +24210,9 @@ function bindEvents() {
         return
       }
 
-      students = students.map((student) => {
-        if (student.id !== studentId) {
-          return student
-        }
-
-        const currentCareNotes = student.careNotes ?? []
-        const nextCareNotes = currentDraft.editingNoteId
+      const student = getStudentById(studentId)
+      const currentCareNotes = student?.careNotes ?? []
+      const nextCareNotes = currentDraft.editingNoteId
           ? currentCareNotes.map((note) =>
               note.id === currentDraft.editingNoteId
                 ? {
@@ -24393,16 +24234,15 @@ function bindEvents() {
               ...currentCareNotes,
             ]
 
-        return {
-          ...student,
-          careNotes: nextCareNotes,
-          latestCareNote: getLatestCareNoteContent(nextCareNotes),
-          updatedAt: new Date().toISOString(),
-        }
-      })
-      saveStoredStudents(students)
-      queueCoreCloudSync('student-care-note')
-      writeStudentThroughCloud(getStudentById(studentId), 'student-care-note')
+      const result = await commitStudentProjection({
+        ...student,
+        careNotes: nextCareNotes,
+        latestCareNote: getLatestCareNoteContent(nextCareNotes),
+        updatedAt: new Date().toISOString(),
+      }, 'student-care-note')
+
+      if (!result.ok) return
+
       careNoteDrafts = {
         ...careNoteDrafts,
         [studentId]: { ...emptyCareNoteDraft },
@@ -24427,7 +24267,7 @@ function bindEvents() {
     render()
   })
 
-  document.querySelector('[data-student-action="save-form"]')?.addEventListener('click', () => {
+  document.querySelector('[data-student-action="save-form"]')?.addEventListener('click', async () => {
     if (!isStudentFormReady(studentFormState.values)) {
       studentFormState = {
         ...studentFormState,
@@ -24449,31 +24289,38 @@ function bindEvents() {
     }
 
     let savedStudent = null
+    const commandIdempotencyKey = studentFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
+    const commandLocalId = studentFormState.commandLocalId || `stu-${Date.now()}`
+    studentFormState = { ...studentFormState, commandIdempotencyKey, commandLocalId }
 
     if (studentFormState.mode === 'edit') {
       const existingStudent = students.find((student) => student.id === studentFormState.studentId)
       const updatedStudent = buildStudentFromForm(studentFormState.values, existingStudent)
       savedStudent = updatedStudent
-      students = students.map((student) =>
-        student.id === updatedStudent.id ? updatedStudent : student,
-      )
-      studentFilters = {
-        ...studentFilters,
-        selectedStudentId: updatedStudent.id,
-      }
     } else {
       const newStudent = buildStudentFromForm(studentFormState.values)
-      savedStudent = newStudent
-      students = [newStudent, ...students]
-      studentFilters = {
-        ...studentFilters,
-        selectedStudentId: newStudent.id,
-      }
+      savedStudent = { ...newStudent, id: commandLocalId }
     }
 
-    saveStoredStudents(students)
-    queueCoreCloudSync('student-save')
-    writeStudentThroughCloud(savedStudent, 'student-save')
+    const result = await commitStudentProjection(
+      savedStudent,
+      'student-save',
+      commandIdempotencyKey,
+    )
+
+    if (!result.ok) {
+      studentFormState = {
+        ...studentFormState,
+        errors: { ...studentFormState.errors, form: result.error || 'Học viên chưa được lưu.' },
+      }
+      render()
+      return
+    }
+
+    studentFilters = {
+      ...studentFilters,
+      selectedStudentId: result.entity.id,
+    }
     studentFormState = null
     render()
   })

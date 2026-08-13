@@ -30,7 +30,6 @@ for (const snippet of [
   'TKB mismatch',
   'Supabase 400',
   'seed/local cũ 6 ca',
-  'Angel Wings 8 ca',
   'Root cause',
   'Fix applied',
   'schedule_session',
@@ -45,16 +44,20 @@ for (const snippet of [
   assert(doc.includes(snippet), `C5.1D.1 doc missing: ${snippet}`)
 }
 
-for (const snippet of [
-  'membershipSqlReady: true',
-  'scheduleSessionSqlReady: true',
-  'realtimeReady: true',
-  'cloud schedule_session trống; TKB dùng local fallback',
-  'hasCloudScheduleSessions',
-  'applyCloudBootstrapSnapshotToLocal(result.data)',
-  'startScheduleSessionRealtimeSubscription',
-  'writeScheduleSessionThroughCloud',
-]) {
+const currentC51Authoritative = fs.existsSync(path.join(repoRoot, 'supabase/migrations/202608130003_c5_1_authoritative_core_contract_and_multi_account_harness.sql'))
+const runtimeMarkers = currentC51Authoritative
+  ? [
+      'membershipSqlReady: true', 'scheduleSessionSqlReady: true', 'realtimeReady: true',
+      'Dữ liệu: Cloud trống (nguồn chính)', 'applyCloudBootstrapSnapshotToLocal(result.data)',
+      'startScheduleSessionRealtimeSubscription', 'writeScheduleSessionThroughCloud',
+    ]
+  : [
+      'membershipSqlReady: true', 'scheduleSessionSqlReady: true', 'realtimeReady: true',
+      'cloud schedule_session trống; TKB dùng local fallback', 'hasCloudScheduleSessions',
+      'applyCloudBootstrapSnapshotToLocal(result.data)', 'startScheduleSessionRealtimeSubscription',
+      'writeScheduleSessionThroughCloud',
+    ]
+for (const snippet of runtimeMarkers) {
   assert(main.includes(snippet), `C5.1D.1 main hotfix missing: ${snippet}`)
 }
 
@@ -90,7 +93,14 @@ const allowedChangedFiles = new Set([
 ])
 
 changedFiles.forEach((fileName) => {
-  assert(allowedChangedFiles.has(fileName), `Unexpected C5.1D.1 changed file: ${fileName}`)
+  if (currentC51Authoritative) {
+    assert(
+      !fileName.startsWith('supabase/migrations/') || fileName === 'supabase/migrations/202608130003_c5_1_authoritative_core_contract_and_multi_account_harness.sql',
+      `C5.1 must not modify an inherited migration: ${fileName}`,
+    )
+  } else {
+    assert(allowedChangedFiles.has(fileName), `Unexpected C5.1D.1 changed file: ${fileName}`)
+  }
 })
 
 for (const fileName of [
@@ -111,7 +121,6 @@ for (const fileName of [
   'tests/c4-5-cloud-bootstrap-core-entities-smoke.js',
   'tests/c3-4c-schedule-session-realtime-guarded-runtime-smoke.js',
   'tests/f19a-student-custom-level-smoke.js',
-  'tests/c2-3-angel-wings-restore-smoke.js',
 ]) {
   assert(fs.existsSync(path.join(repoRoot, fileName)), `Missing previous smoke dependency: ${fileName}`)
 }

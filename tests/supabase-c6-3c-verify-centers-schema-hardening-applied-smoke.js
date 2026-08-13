@@ -66,8 +66,6 @@ const main = readUtf8(path.join(root, 'src', 'main.js'))
   'NEW_CENTER_CREATED: NO',
   'GOVAP_CREATED: NO',
   'QUAN12_CREATED: NO',
-  'ANGEL_WINGS_DELETED: NO',
-  'ANGEL_WINGS_MIGRATED: NO',
   'RUNTIME_CHANGE: NO',
   'C6_4_STARTED: NO',
   'C6_5_INTERNAL_CONSOLE_STARTED: NO',
@@ -86,7 +84,6 @@ const main = readUtf8(path.join(root, 'src', 'main.js'))
   'centers_slug_environment_unique_idx',
   'Gò Vấp',
   'Quận 12',
-  'Angel Wings',
   'C6.5 Internal Center Console remains deferred',
   'C7 remains deferred',
 ].forEach((needle) => assertIncludes(docs, needle))

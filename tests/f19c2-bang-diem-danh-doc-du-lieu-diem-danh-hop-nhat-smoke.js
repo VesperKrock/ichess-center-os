@@ -5,7 +5,7 @@ import {
   buildAttendanceBoardRows,
   renderAttendanceBoardModule,
 } from '../src/attendance-board-module.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import { buildAttendanceSharedTruthFixture, TEST_IMPORT_SOURCE_TAG } from './fixtures/attendance-shared-truth-fixture.js'
 import {
   createInitialBaselineAttendanceRecord,
   getAttendanceRecordsStorageKey,
@@ -21,15 +21,15 @@ function createLocalStorageMock() {
       return writeCount
     },
     getItem(key) {
-      return values.has(key) ? values.get(key) : null
+      return values.has(String(key)) ? values.get(String(key)) : null
     },
     setItem(key, value) {
       writeCount += 1
-      values.set(key, value)
+      values.set(String(key), value)
     },
     removeItem(key) {
       writeCount += 1
-      values.delete(key)
+      values.delete(String(key))
     },
   }
 }
@@ -44,7 +44,7 @@ assert(
   'Module 13 should load stored canonical attendance records',
 )
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const sessionReports = JSON.parse(JSON.stringify(dataset.sessionReports))
 const sessionReportsSnapshot = JSON.stringify(sessionReports)
 const baselineDate = '2026-06-19'
@@ -105,9 +105,9 @@ assert.equal(baselineAttendance.credits[0].sessionNumber, 5)
 const combinedRow = rows.find((row) =>
   row.attendanceSummary.byDate.get('2026-06-06')?.credits?.some((credit) => credit.sessionNumber === 8),
 )
-assert(combinedRow, 'Expected existing Angel Wings multi-credit row')
+assert(combinedRow, 'Expected existing imported multi-credit row')
 const combinedAttendance = combinedRow.attendanceSummary.byDate.get('2026-06-06')
-assert.equal(combinedAttendance.sourceTag, 'angel-wings-2026-06')
+assert.equal(combinedAttendance.sourceTag, TEST_IMPORT_SOURCE_TAG)
 assert.equal(combinedAttendance.isImportedAttendance, true)
 assert.equal(combinedAttendance.isCombinedCredit, true)
 assert.deepEqual(

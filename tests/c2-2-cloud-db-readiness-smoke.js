@@ -40,7 +40,7 @@ const permissionError = classifyCloudDbError({
 assert.equal(permissionError.category, 'cloud-permission-denied')
 assert.equal(
   getCloudDbReadinessMessage(permissionError),
-  'Không đọc được Cloud DB do quyền DreamHome/RLS. Kiểm tra GRANT authenticated, center_members và policy.',
+  'Không đọc được Cloud DB do quyền/RLS của center current center. Kiểm tra GRANT authenticated, center_members và policy.',
 )
 
 const blockedHtml = renderSettingsModule([], [], {}, null, {
@@ -51,10 +51,12 @@ const blockedHtml = renderSettingsModule([], [], {}, null, {
   readinessStatus: 'error',
   cloudCounts: { student: 99, teacher: 99, class_session: 99 },
   message: { detail: 'not ready' },
-})
-assert(blockedHtml.includes('Học viên —'))
-assert(blockedHtml.includes('data-cloud-db-action="push" disabled'))
-assert(blockedHtml.includes('data-cloud-db-action="pull" disabled'))
+  messageTone: 'error',
+}, { activeTab: 'center-info' })
+assert(blockedHtml.includes('settings-data-status-panel'))
+assert(blockedHtml.includes('Cần kiểm tra'))
+assert(blockedHtml.includes('Có lỗi đồng bộ'))
+assert(!blockedHtml.includes('data-cloud-db-action="push"'))
 assert(!blockedHtml.includes('[object Object]'))
 
 const readyHtml = renderSettingsModule([], [], {}, null, {
@@ -64,15 +66,9 @@ const readyHtml = renderSettingsModule([], [], {}, null, {
   role: 'owner',
   readinessStatus: 'ready',
   cloudCounts: { student: 2, teacher: 1, class_session: 3 },
-  localAngelWingsStatus: {
-    isReadyForCloudPush: true,
-    studentCount: 29,
-    classSessionCount: 4,
-    hasTeacher: true,
-  },
-})
-assert(readyHtml.includes('Học viên 2'))
-assert(!readyHtml.includes('data-cloud-db-action="push" disabled'))
-assert(!readyHtml.includes('data-cloud-db-action="pull" disabled'))
+}, { activeTab: 'center-info' })
+assert(readyHtml.includes('settings-data-status-panel'))
+assert(readyHtml.includes('Sẵn sàng'))
+assert(!readyHtml.includes('data-cloud-db-action="push"'))
 
 console.log('C2.2 Cloud DB readiness smoke passed')

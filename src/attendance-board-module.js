@@ -4,7 +4,6 @@
   query: '',
 }
 
-import { ANGEL_WINGS_SOURCE_MODULE, ANGEL_WINGS_SOURCE_TAG } from './attendance-board-angel-wings-data.js'
 import { computeAttendanceCycleState, getPaidCycleCountFromTuition } from './attendance-board-cycle.js'
 import {
   buildUnifiedAttendanceRecords,
@@ -350,14 +349,6 @@ export function removeDemoAttendanceReports(sessionReports = []) {
 
 export function getDemoAttendanceReportCount(sessionReports = []) {
   return sessionReports.filter(isDemoAttendanceReport).length
-}
-
-export function getAngelWingsReportCount(sessionReports = []) {
-  return sessionReports.filter(isAngelWingsReport).length
-}
-
-export function isAngelWingsReport(report) {
-  return Boolean(report?.sourceTag === ANGEL_WINGS_SOURCE_TAG || report?.sourceModule === ANGEL_WINGS_SOURCE_MODULE)
 }
 
 export function isDemoAttendanceReport(report) {
@@ -992,11 +983,11 @@ function renderDataLineagePanel() {
       <summary>Kiểm tra dây dữ liệu</summary>
       <div>
         <p><strong>Nguồn dữ liệu thật:</strong> tên, mã học viên, phụ huynh, số điện thoại và classSessionIds đọc từ Module Học viên; ca học/lớp đọc từ Cài đặt cơ sở; gói buổi và số buổi còn lại đọc từ Học phí.</p>
-        <p><strong>Ô ngày:</strong> số đã học đọc từ read-model điểm danh hợp nhất gồm Báo cáo buổi học/sessionReports và dữ liệu điểm danh canonical đã lưu. Ô có badge Angel Wings là dữ liệu nhập từ bảng Angel Wings 06/2026; demo cũ không được dùng trong real mode.</p>
+        <p><strong>Ô ngày:</strong> số đã học đọc từ read-model điểm danh hợp nhất gồm Báo cáo buổi học/sessionReports và dữ liệu điểm danh canonical đã lưu; demo cũ không được dùng trong real mode.</p>
         <ol>
           <li>Sửa ca học của một học viên trong Module Học viên, quay lại Bảng điểm danh để kiểm tra học viên xuất hiện theo filter.</li>
           <li>Sửa gói hoặc số buổi trong Module Học phí, quay lại Bảng điểm danh để kiểm tra mẫu số như 8/12/16/32 thay đổi đúng.</li>
-          <li>Xóa demo cũ, nạp Angel Wings, rồi filter từng ca để kiểm tra ô ngày, T học thử và các ô có dấu +.</li>
+          <li>Filter từng ca để kiểm tra ô ngày, T học thử và các ô có dấu +.</li>
         </ol>
       </div>
     </details>
@@ -1098,9 +1089,8 @@ function getStudentAttendanceSummary(studentId, reportLookup, tuition) {
     byDate,
     studiedCount,
     hasReportData: attendanceItems.length > 0,
-    hasAngelWingsData: attendanceItems.some(isAngelWingsAttendanceItem),
     hasBaselineData: attendanceItems.some(isInitialBaselineAttendanceItem),
-    hasRealData: attendanceItems.some((item) => !isAngelWingsAttendanceItem(item) && !isInitialBaselineAttendanceItem(item)),
+    hasRealData: attendanceItems.some((item) => !isInitialBaselineAttendanceItem(item)),
   }
 }
 
@@ -1280,10 +1270,6 @@ function shouldShowAttendanceReportDate(dateKey, monthValue) {
 }
 
 function getAttendanceSummarySourceLabel(attendanceSummary) {
-  if (attendanceSummary.hasBaselineData && attendanceSummary.hasAngelWingsData) {
-    return 'Dữ liệu nền + Angel Wings'
-  }
-
   if (attendanceSummary.hasBaselineData && attendanceSummary.hasRealData) {
     return 'Dữ liệu nền + Báo cáo buổi học'
   }
@@ -1292,22 +1278,10 @@ function getAttendanceSummarySourceLabel(attendanceSummary) {
     return 'Dữ liệu nền ban đầu'
   }
 
-  if (attendanceSummary.hasAngelWingsData && attendanceSummary.hasRealData) {
-    return 'Báo cáo buổi học + Angel Wings'
-  }
-
-  if (attendanceSummary.hasAngelWingsData) {
-    return 'Angel Wings'
-  }
-
   return 'Báo cáo buổi học'
 }
 
 function getAttendanceSourceLabel(attendance) {
-  if (isAngelWingsAttendanceItem(attendance)) {
-    return 'Angel Wings 06/2026'
-  }
-
   if (isInitialBaselineAttendanceItem(attendance)) {
     return 'Dữ liệu nền ban đầu'
   }
@@ -1317,10 +1291,6 @@ function getAttendanceSourceLabel(attendance) {
   }
 
   return 'Báo cáo buổi học'
-}
-
-function isAngelWingsAttendanceItem(item) {
-  return Boolean(item?.sourceTag === ANGEL_WINGS_SOURCE_TAG || item?.sourceModule === ANGEL_WINGS_SOURCE_MODULE)
 }
 
 function isInitialBaselineAttendanceItem(item) {

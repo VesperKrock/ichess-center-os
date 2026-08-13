@@ -141,9 +141,10 @@ const allowedWrite = await upsertScheduleSessionCloudEntity({
   },
 })
 assert.equal(allowedWrite.ok, true)
-assert.equal(mockSupabase.upsertedRecords.length, 1)
-assert.equal(mockSupabase.upsertedRecords[0].entity_type, 'schedule_session')
-assert.equal(mockSupabase.upsertedRecords[0].payload.id, scheduleSession.id)
+assert.equal(mockSupabase.rpcCalls.length, 1)
+assert.equal(mockSupabase.rpcCalls[0].name, 'c5_1_mutate_core_entity')
+assert.equal(mockSupabase.rpcCalls[0].params.p_entity_type, 'schedule_session')
+assert.equal(mockSupabase.rpcCalls[0].params.p_payload.id, scheduleSession.id)
 
 const realtimeEvents = []
 const realtimeStatuses = []
@@ -211,9 +212,12 @@ assert.equal(getScheduleSessionRealtimeRecord({ new: realtimeEvents[0] })?.entit
 const olderLocal = createScheduleSession({
   id: 'schedule-rt-001',
   title: 'Ban moi hon',
+  cloudVersion: 2,
   updatedAt: '2026-06-21T10:00:00.000Z',
 })
 const olderRemote = {
+  entity_version: 1,
+  updated_at: '2026-06-20T10:00:00.000Z',
   payload: createScheduleSession({
     id: 'schedule-rt-001',
     title: 'Ban cu',
@@ -225,8 +229,10 @@ assert.equal(skippedOlder.changed, false)
 assert.equal(skippedOlder.scheduleSessions[0].title, 'Ban moi hon')
 
 const mergeResult = mergeScheduleSessionRealtimePayload(
-  [createScheduleSession({ id: 'schedule-rt-001', title: 'Cu' })],
+  [createScheduleSession({ id: 'schedule-rt-001', title: 'Cu', cloudVersion: 1 })],
   {
+    entity_version: 2,
+    updated_at: '2026-06-21T11:00:00.000Z',
     payload: createScheduleSession({
       id: 'schedule-rt-001',
       title: 'Moi',
@@ -301,19 +307,23 @@ function createScheduleSession(overrides = {}) {
 
 function createMockSupabase() {
   const mock = {
-    upsertedRecords: [],
-    upsertOptions: null,
+    rpcCalls: [],
     channelName: '',
     postgresChangesConfig: null,
     realtimeHandler: null,
-    from(tableName) {
-      assert.equal(tableName, 'center_cloud_entities')
+    async rpc(name, params) {
+      mock.rpcCalls.push({ name, params })
       return {
-        upsert: async (records, options) => {
-          mock.upsertedRecords = records
-          mock.upsertOptions = options
-          return { error: null }
+        data: {
+          ok: true,
+          outcome_code: 'COMMITTED',
+          payload: params.p_payload,
+          entity_version: params.p_expected_version + 1,
+          updated_at: '2026-08-14T00:00:00.000Z',
+          deleted_at: null,
+          replayed: false,
         },
+        error: null,
       }
     },
     channel(channelName) {

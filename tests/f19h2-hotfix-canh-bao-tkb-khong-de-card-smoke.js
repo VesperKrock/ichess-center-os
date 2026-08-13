@@ -13,7 +13,7 @@ const sessions = [
   {
     id: 'schedule-hotfix-001',
     scheduleType: 'oneOff',
-    title: 'Angel Wings T4-T6 19:00-20:30',
+    title: 'Lịch QA T4-T6 19:00-20:30',
     date: '2026-06-10',
     occurrenceDate: '2026-06-10',
     startTime: '19:00',
@@ -28,7 +28,7 @@ const sessions = [
   {
     id: 'schedule-hotfix-002',
     scheduleType: 'oneOff',
-    title: 'Angel Wings T7-CN 10:30-12:00',
+    title: 'Lịch QA T7-CN 10:30-12:00',
     date: '2026-06-14',
     occurrenceDate: '2026-06-14',
     startTime: '10:30',

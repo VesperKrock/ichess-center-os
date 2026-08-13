@@ -13,7 +13,7 @@ const sessions = [
   {
     id: 'schedule-bell-001',
     scheduleType: 'oneOff',
-    title: 'Angel Wings T4-T6 19:00-20:30',
+    title: 'Lịch QA T4-T6 19:00-20:30',
     date: '2026-06-10',
     occurrenceDate: '2026-06-10',
     startTime: '19:00',

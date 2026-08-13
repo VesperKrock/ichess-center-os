@@ -14,7 +14,7 @@ import {
   saveAttendanceBaselineState,
   saveStoredAttendanceRecords,
 } from '../src/attendance-records.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import { buildAttendanceSharedTruthFixture } from './fixtures/attendance-shared-truth-fixture.js'
 
 function createLocalStorageMock() {
   const values = new Map()
@@ -22,13 +22,13 @@ function createLocalStorageMock() {
   return {
     values,
     getItem(key) {
-      return values.has(key) ? values.get(key) : null
+      return values.has(String(key)) ? values.get(String(key)) : null
     },
     setItem(key, value) {
-      values.set(key, value)
+      values.set(String(key), value)
     },
     removeItem(key) {
-      values.delete(key)
+      values.delete(String(key))
     },
   }
 }
@@ -159,7 +159,7 @@ storage.setItem('ichessCenterOS.sessionReports.dreamhome', JSON.stringify([{ id:
 assert.deepEqual(loadStoredAttendanceRecords('dreamhome'), [], 'Loading stored records must not migrate sessionReports')
 assert.equal(storage.values.has(recordsKey), false, 'Loading stored records must not backfill attendanceRecords')
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const sessionReports = JSON.parse(JSON.stringify(dataset.sessionReports))
 const sessionReportsSnapshot = JSON.stringify(sessionReports)
 const adapterRecords = buildAttendanceRecordsFromSessionReports(sessionReports)

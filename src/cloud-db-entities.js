@@ -2,6 +2,7 @@ export const CLOUD_ENTITY_TYPES = Object.freeze({
   STUDENT: 'student',
   TEACHER: 'teacher',
   CLASS_SESSION: 'class_session',
+  SCHEDULE_SESSION: 'schedule_session',
 })
 
 export const CLOUD_ENTITY_TYPE_VALUES = Object.freeze(Object.values(CLOUD_ENTITY_TYPES))
@@ -127,6 +128,10 @@ function sanitizeCloudScalar(value) {
 
 function shouldDropCloudPayloadField(key, value) {
   const normalizedKey = String(key || '').toLowerCase()
+
+  if (['cloudversion', 'cloudupdatedat', 'clouddeletedat'].includes(normalizedKey)) {
+    return true
+  }
 
   if (
     normalizedKey.includes('base64') ||

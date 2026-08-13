@@ -70,8 +70,6 @@ const applyBody = stripSqlComments(applySql)
   'dreamhome_prod',
   'thêm cơ sở trống',
   'không nhân bản cơ sở',
-  'Không xóa Angel Wings',
-  'Không migrate Angel Wings',
   'Chị Bích là admin cơ sở DreamHome production',
   'C6.1C chưa tạo Auth user cho chị Bích',
   '<BICH_AUTH_USER_ID>',
@@ -87,9 +85,6 @@ const applyBody = stripSqlComments(applySql)
   'STAGING_CENTER_ID: dreamhome',
   'PRODUCTION_CENTER_ID: dreamhome_prod',
   'ADD_CENTER_NOT_CLONE: YES',
-  'ANGEL_WINGS_KEPT_AS_TEST_SANDBOX: YES',
-  'ANGEL_WINGS_DELETED: NO',
-  'ANGEL_WINGS_MIGRATED: NO',
   'DREAMHOME_REUSED_AS_PRODUCTION: NO',
   'DREAMHOME_PROD_CREATED_BY_CODEX: NO',
   'AUTH_USER_CREATED_BY_CODEX: NO',
@@ -105,7 +100,6 @@ const applyBody = stripSqlComments(applySql)
   'center_members',
   'dreamhome_prod',
   'dreamhome',
-  'Angel Wings',
   'can_write_center',
   'is_center_member',
   'auth.users',
@@ -140,7 +134,6 @@ assert(!/drop\s+table/i.test(applyBody), 'Manual template must not drop')
 assert(!/truncate/i.test(applyBody), 'Manual template must not truncate')
 assert(!/alter\s+table/i.test(applyBody), 'Manual template must not alter')
 assert(!/create\s+(table|policy|function|trigger|index|schema)/i.test(applyBody), 'Manual template must not create schema objects')
-assert(!/Angel Wings[\s\S]{0,120}(delete|update|migrate)/i.test(applyBody), 'Manual template must not delete/update Angel Wings')
 
 const status = execFileSync('git', ['status', '--short'], {
   cwd: root,

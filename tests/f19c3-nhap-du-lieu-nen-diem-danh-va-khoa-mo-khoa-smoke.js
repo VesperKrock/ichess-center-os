@@ -5,7 +5,7 @@ import {
   buildAttendanceBoardRows,
   renderAttendanceBoardModule,
 } from '../src/attendance-board-module.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import { buildAttendanceSharedTruthFixture } from './fixtures/attendance-shared-truth-fixture.js'
 import {
   getAttendanceBaselineStateStorageKey,
   getAttendanceRecordsStorageKey,
@@ -25,13 +25,13 @@ function createLocalStorageMock() {
   return {
     values,
     getItem(key) {
-      return values.has(key) ? values.get(key) : null
+      return values.has(String(key)) ? values.get(String(key)) : null
     },
     setItem(key, value) {
-      values.set(key, value)
+      values.set(String(key), value)
     },
     removeItem(key) {
-      values.delete(key)
+      values.delete(String(key))
     },
   }
 }
@@ -39,7 +39,7 @@ function createLocalStorageMock() {
 const storage = createLocalStorageMock()
 globalThis.localStorage = storage
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const student = dataset.students[0]
 const recordsKey = getAttendanceRecordsStorageKey('dreamhome')
 const stateKey = getAttendanceBaselineStateStorageKey('dreamhome')

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { renderAttendanceBoardModule, parseClassSessionDayIndexes } from '../src/attendance-board-module.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import { buildAttendanceSharedTruthFixture } from './fixtures/attendance-shared-truth-fixture.js'
 import {
   buildSettingsClassSessionFromForm,
   createEmptySettingsClassSessionFormState,
@@ -37,9 +37,9 @@ const builtClassSession = buildSettingsClassSessionFromForm(
   null,
   [],
 )
-assert.deepEqual(builtClassSession.daysOfWeek, ['mon', 'wed', 'fri'])
-assert.equal(builtClassSession.daysLabel, 'T2-T4-T6')
-assert(builtClassSession.displayLabel.includes('T2-T4-T6'))
+assert.deepEqual(builtClassSession.daysOfWeek, ['mon', 'wed'])
+assert.equal(builtClassSession.daysLabel, 'T2-T4')
+assert(builtClassSession.displayLabel.includes('T2 - T4'))
 
 const normalizedSessions = normalizeClassSessions([
   { id: 'wed-fri', name: 'T4-T6', daysLabel: 'T4-T6', startTime: '19:00', endTime: '20:30' },
@@ -84,23 +84,23 @@ const htmlWithRealThursdayAttendance = renderAttendanceBoardModule(
 )
 assert(htmlWithRealThursdayAttendance.includes('<span>T5</span>'), 'Real attendance day must stay visible')
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const mainHtml = renderAttendanceBoardModule(
   dataset.students,
   dataset.classSessions,
   dataset.tuitionRecords,
   dataset.sessionReports,
   [],
-  { month: '2026-06', classSessionId: 'all', query: 'Đỗ Minh Tuyết' },
+  { month: '2026-06', classSessionId: 'all', query: 'Hoc vien QA bu hoc' },
   null,
   [],
 )
 assert(mainHtml.includes('data-attendance-cell-detail'))
-assert(mainHtml.includes('>3</span>') && mainHtml.includes('>4</span>'), 'Combined credits should render as plain chips')
-assert(!mainHtml.includes('(3)') && !mainHtml.includes('(4)'), 'Combined credits should not render parentheses in main table')
+assert(mainHtml.includes('>7</span>') && mainHtml.includes('>8</span>'), 'Combined credits should render as plain chips')
+assert(!mainHtml.includes('(7)') && !mainHtml.includes('(8)'), 'Combined credits should not render parentheses in main table')
 const mainTableHtml = mainHtml.match(/<table class="attendance-board-sheet">[\s\S]*?<\/table>/)?.[0] || ''
-assert(!mainTableHtml.includes('3+4'), 'Combined credits should not render plus display in main table')
-assert(!mainHtml.includes('ANGEL WINGS'), 'Cells should not render uppercase source text')
+assert(!mainTableHtml.includes('7+8'), 'Combined credits should not render plus display in main table')
+assert(!mainHtml.includes('qa-attendance-import'), 'Cells should not expose internal source identifiers')
 assert(mainHtml.includes('data-attendance-note-open'), 'Attendance note action should be available')
 
 const noteHtml = renderAttendanceBoardModule(
@@ -109,12 +109,12 @@ const noteHtml = renderAttendanceBoardModule(
   dataset.tuitionRecords,
   dataset.sessionReports,
   [],
-  { month: '2026-06', classSessionId: 'all', query: 'Đỗ Minh Tuyết' },
+  { month: '2026-06', classSessionId: 'all', query: 'Hoc vien QA bu hoc' },
   null,
   [
     {
       id: 'attendance-board-note-test',
-      studentId: dataset.students.find((item) => item.fullName === 'Đỗ Minh Tuyết').id,
+      studentId: dataset.students.find((item) => item.fullName === 'Hoc vien QA bu hoc').id,
       month: '2026-06',
       note: 'Phụ huynh báo bé nghỉ 1 buổi.',
       createdAt: '2026-06-17T00:00:00.000Z',
@@ -128,13 +128,13 @@ assert(noteHtml.includes('Sửa ghi chú'))
 const storage = new Map()
 globalThis.localStorage = {
   getItem(key) {
-    return storage.has(key) ? storage.get(key) : null
+    return storage.has(String(key)) ? storage.get(String(key)) : null
   },
   setItem(key, value) {
-    storage.set(key, value)
+    storage.set(String(key), value)
   },
   removeItem(key) {
-    storage.delete(key)
+    storage.delete(String(key))
   },
 }
 

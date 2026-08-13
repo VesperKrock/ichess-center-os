@@ -51,8 +51,6 @@ const main = readUtf8(mainPath)
   'INVENTORY_BADGE_CENTER_AWARE: YES',
   'PRODUCTION_EMPTY_BADGE_HIDDEN: YES',
   'SIGNED_IN_PRODUCTION_READS_DREAMHOME_CACHE: NO',
-  'ANGEL_WINGS_DELETED: NO',
-  'ANGEL_WINGS_MIGRATED: NO',
   'DREAMHOME_CACHE_DELETED: NO',
   'DREAMHOME_CACHE_MIGRATED: NO',
   'SQL_APPLIED_BY_CODEX: NO',
@@ -77,7 +75,6 @@ const main = readUtf8(mainPath)
   'không seed sample',
   'không được tính từ `.dreamhome`',
   'không xóa `.dreamhome`',
-  'không xóa hoặc migrate Angel Wings',
   'C6.2E checkpoint review',
 ].forEach((needle) => assertIncludes(docs, needle))
 

@@ -56,10 +56,11 @@ for (const term of [
   assert(doc.includes(term), `C4.5 doc missing term: ${term}`)
 }
 
-assert.deepEqual(CLOUD_BOOTSTRAP_ENTITY_TYPES, ['student', 'teacher', 'schedule_session'])
+assert.deepEqual(CLOUD_BOOTSTRAP_ENTITY_TYPES, ['student', 'teacher', 'class_session', 'schedule_session'])
 assert.deepEqual(createEmptyCloudBootstrapCounts(), {
   student: 0,
   teacher: 0,
+  class_session: 0,
   schedule_session: 0,
 })
 assert.equal(
@@ -93,14 +94,15 @@ assert.deepEqual(
   getCloudBootstrapSnapshotCounts({
     students: [{ id: 's1' }],
     teachers: [{ id: 't1' }],
+    classSessions: [{ id: 'c1' }],
     scheduleSessions: [{ id: 'sc1' }],
   }),
-  { student: 1, teacher: 1, schedule_session: 1 },
+  { student: 1, teacher: 1, class_session: 1, schedule_session: 1 },
 )
-assert.equal(hasCloudBootstrapSnapshotData({ students: [], teachers: [], scheduleSessions: [] }), false)
+assert.equal(hasCloudBootstrapSnapshotData({ students: [], teachers: [], classSessions: [], scheduleSessions: [] }), false)
 assert.equal(hasCloudBootstrapSnapshotData({ students: [{ id: 's1' }] }), true)
 
-assert(bootstrap.includes("CLOUD_BOOTSTRAP_ENTITY_TYPES = Object.freeze([\n  'student',\n  'teacher',\n  'schedule_session',\n])"))
+assert(bootstrap.includes("CLOUD_BOOTSTRAP_ENTITY_TYPES = Object.freeze([\n  'student',\n  'teacher',\n  'class_session',\n  'schedule_session',\n])"))
 assert(bootstrap.includes('canRunCloudBootstrap'))
 assert(bootstrap.includes("authStatus === 'signed-in'"))
 assert(bootstrap.includes("centerBinding?.status === 'bound'"))
@@ -119,15 +121,14 @@ assert(main.includes('pullCloudBootstrapCoreEntities(centerId)'))
 assert(main.includes('applyCloudBootstrapSnapshotToLocal(result.data)'))
 assert(main.includes('saveStoredStudents(students)'))
 assert(main.includes('saveStoredTeachers(teachers)'))
+assert(main.includes('saveStoredClassSessions(classSessions)'))
 assert(main.includes('saveStoredSchedule(scheduleSessions)'))
-assert(main.includes('Cloud chưa có dữ liệu cho center này. Đang dùng cache/staging local.'))
-assert(
-  main.includes('Không thể tải dữ liệu cloud. Đang dùng cache cục bộ.') ||
-    main.includes('Dữ liệu: Cache cục bộ (cloud lỗi, đang giữ local)') ||
-    main.includes('Dữ liệu: Cache cục bộ (cloud lỗi 400/schema, tạm dừng pull)'),
-)
+assert(main.includes('Dữ liệu: Cloud trống (nguồn chính)'))
+assert(main.includes('Dữ liệu: Không xác minh được cloud; cache chỉ để xem'))
+assert(main.includes("source: 'cache-projection-read-only'"))
 assert(main.includes('Dữ liệu: Cloud'))
-assert(main.includes('getCloudBootstrapStatusLabel(cloudBootstrapState)'))
+assert(main.includes('cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.CLOUD'))
+assert(bootstrap.includes('getCloudBootstrapStatusLabel'))
 
 const entityLiteralBlock = bootstrap.match(/CLOUD_BOOTSTRAP_ENTITY_TYPES[\s\S]*?\]\)/)?.[0] || ''
 for (const forbidden of [

@@ -233,7 +233,6 @@ function buildBackfillPreview({
     .slice(0, 8)
     .map((candidate) => candidate.title || candidate.classSessionId || candidate.id)
     .filter(Boolean)
-  const angelWingsSignal = hasAngelWingsSignal(candidateSource, sampleTitles)
   const warnings = []
 
   if (!hasVisibleSource) {
@@ -244,10 +243,6 @@ function buildBackfillPreview({
       `Local co ${scheduleSessions.length} schedule_session, preview chi lay ${candidateSource.length} card TKB dang render.`,
     )
   }
-  if (!angelWingsSignal) {
-    warnings.push('Khong thay Angel Wings trong sample; kiem tra lai nguon truoc khi apply.')
-  }
-
   return {
     centerId,
     center_id: centerId,
@@ -329,21 +324,6 @@ function createBlockedResult({
     reason,
     detail,
   }
-}
-
-function hasAngelWingsSignal(scheduleSessions, sampleTitles) {
-  const combined = [
-    ...sampleTitles,
-    ...scheduleSessions.flatMap((session) => [
-      session?.title,
-      session?.groupName,
-      session?.sourceTag,
-      session?.datasetId,
-      session?.importBatchId,
-    ]),
-  ].join(' ').toLowerCase()
-
-  return combined.includes('angel') || combined.includes('wings')
 }
 
 function normalizeRole(role) {

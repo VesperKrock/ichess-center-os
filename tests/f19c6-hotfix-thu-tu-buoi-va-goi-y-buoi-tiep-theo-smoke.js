@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 import { renderAttendanceBoardModule } from '../src/attendance-board-module.js'
-import { buildAngelWingsRealDataset } from '../src/attendance-board-angel-wings-data.js'
+import { buildAttendanceSharedTruthFixture } from './fixtures/attendance-shared-truth-fixture.js'
 import {
   buildUnifiedAttendanceRecords,
   getLastAttendanceCreditNumber,
@@ -22,13 +22,13 @@ function createLocalStorageMock() {
   return {
     values,
     getItem(key) {
-      return values.has(key) ? values.get(key) : null
+      return values.has(String(key)) ? values.get(String(key)) : null
     },
     setItem(key, value) {
-      values.set(key, value)
+      values.set(String(key), value)
     },
     removeItem(key) {
-      values.delete(key)
+      values.delete(String(key))
     },
   }
 }
@@ -164,7 +164,7 @@ const deleteResult = removeInitialBaselineAttendanceRecord({
 assert.equal(deleteResult.records.length, 0)
 assert.equal(JSON.stringify(sourceReports), sourceReportsSnapshot, 'Deleting baseline must not delete source reports')
 
-const dataset = buildAngelWingsRealDataset()
+const dataset = buildAttendanceSharedTruthFixture()
 const suggestionStudent = {
   ...dataset.students[0],
   id: nextFourStudentId,

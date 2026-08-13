@@ -150,7 +150,7 @@ export function isOnlineWriteAllowed(accessState, scope = {}) {
   }
 
   if (scope.entityType) {
-    return ['student', 'teacher', 'class_session'].includes(String(scope.entityType))
+    return ['student', 'teacher', 'class_session', 'schedule_session'].includes(String(scope.entityType))
   }
 
   return true

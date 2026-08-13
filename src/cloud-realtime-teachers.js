@@ -1,5 +1,9 @@
 import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
-import { upsertCloudEntities } from './cloud-db-sync.js'
+import {
+  getAuthoritativeCoreVersion,
+  mutateAuthoritativeCoreEntity,
+  projectAuthoritativeCoreRecord,
+} from './cloud-authoritative-core.js'
 import {
   NEEDS_MEMBERSHIP_SQL_PATCH,
   buildOnlineAccessState,
@@ -21,6 +25,7 @@ export async function upsertTeacherCloudEntity({
   teacher,
   userId = null,
   accessState,
+  idempotencyKey,
 } = {}) {
   const normalizedAccessState = buildOnlineAccessState(accessState)
 
@@ -44,12 +49,12 @@ export async function upsertTeacherCloudEntity({
     return normalizedTeacher
   }
 
-  return upsertCloudEntities({
+  return mutateAuthoritativeCoreEntity({
     supabase,
     centerId,
     entityType: TEACHER_REALTIME_ENTITY_TYPE,
-    items: [normalizedTeacher.teacher],
-    userId,
+    entity: normalizedTeacher.teacher,
+    idempotencyKey,
   })
 }
 
@@ -164,7 +169,9 @@ export function getTeacherRealtimeRecord(event = {}) {
 }
 
 export function mergeRealtimeTeacherIntoList(teachers = [], record = {}) {
-  const normalizedTeacher = normalizeRealtimeTeacherPayload(record.payload)
+  const normalizedTeacher = normalizeRealtimeTeacherPayload(
+    projectAuthoritativeCoreRecord(record) || record.payload,
+  )
 
   if (!normalizedTeacher.ok) {
     return {
@@ -176,7 +183,7 @@ export function mergeRealtimeTeacherIntoList(teachers = [], record = {}) {
   }
 
   const incomingTeacher = normalizedTeacher.teacher
-  const incomingUpdatedAt = getTimestamp(incomingTeacher.updatedAt)
+  const incomingVersion = getAuthoritativeCoreVersion(incomingTeacher)
   let changed = false
   let found = false
   const nextTeachers = (Array.isArray(teachers) ? teachers : []).map((teacher) => {
@@ -185,9 +192,9 @@ export function mergeRealtimeTeacherIntoList(teachers = [], record = {}) {
     }
 
     found = true
-    const currentUpdatedAt = getTimestamp(teacher.updatedAt)
+    const currentVersion = getAuthoritativeCoreVersion(teacher)
 
-    if (currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt < currentUpdatedAt) {
+    if (currentVersion && incomingVersion <= currentVersion) {
       return teacher
     }
 
@@ -283,9 +290,4 @@ function normalizeNullablePositiveNumber(value) {
 
   const numberValue = Number(value)
   return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : null
-}
-
-function getTimestamp(value) {
-  const timestamp = value ? new Date(value).getTime() : 0
-  return Number.isFinite(timestamp) ? timestamp : 0
 }

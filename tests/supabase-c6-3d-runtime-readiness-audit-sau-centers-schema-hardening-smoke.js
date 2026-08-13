@@ -58,8 +58,6 @@ const storage = readUtf8(path.join(root, 'src', 'storage.js'))
   'NEW_CENTER_CREATED: NO',
   'GOVAP_CREATED: NO',
   'QUAN12_CREATED: NO',
-  'ANGEL_WINGS_DELETED: NO',
-  'ANGEL_WINGS_MIGRATED: NO',
   'RUNTIME_CHANGE: NO',
   'SQL_APPLIED_IN_C6_3D: NO',
   'SUPABASE_ACTION_BY_CODEX: NOT RUN',

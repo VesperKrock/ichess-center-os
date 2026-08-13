@@ -32,8 +32,6 @@ const requiredTerms = [
   'center_members',
   'center_cloud_entities',
   'centerId',
-  'Angel Wings',
-  'angel-wings-staging',
   'DreamHome production empty center',
   'dreamhome-production',
   'owner',
@@ -102,7 +100,6 @@ const runtimeSources = ['src/main.js', 'src/cloud-db-sync.js', 'src/cloud-db-ent
   .join('\n')
 
 assert(!runtimeSources.includes('supabase.channel('), 'C3.0 must not add realtime runtime code.')
-assert(!runtimeSources.includes('angel-wings-staging'), 'C3.0 must not add staging center runtime code.')
 assert(!runtimeSources.includes('dreamhome-production'), 'C3.0 must not add production center runtime code.')
 
 console.log('C3.0 online collaboration architecture smoke passed')

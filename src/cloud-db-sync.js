@@ -21,10 +21,15 @@ import {
   canWriteEntity,
   getOnlineAccessMessage,
 } from './online-access-control.js'
+import {
+  isAuthoritativeCoreEntityType,
+  mutateAuthoritativeCoreEntity,
+  projectAuthoritativeCoreRecord,
+} from './cloud-authoritative-core.js'
 
 const CLOUD_ENTITY_SELECT_FIELDS =
-  'center_id, entity_type, local_id, payload, source_module, source_version, updated_at, deleted_at'
-const CLOUD_ENTITY_READINESS_SELECT_FIELDS = 'local_id, deleted_at, updated_at'
+  'center_id, entity_type, local_id, payload, source_module, source_version, entity_version, updated_at, deleted_at'
+const CLOUD_ENTITY_READINESS_SELECT_FIELDS = 'local_id, entity_version, deleted_at, updated_at'
 
 // F23.3E-P1E deny-only boundary: canonical CRM tables may never be represented
 // as generic center_cloud_entities records or shadow payload sources.
@@ -214,7 +219,9 @@ export async function listCloudEntityPayloads({
   return {
     ok: true,
     data: result.data
-      .map((record) => record.payload)
+      .map((record) => isAuthoritativeCoreEntityType(entityType)
+        ? projectAuthoritativeCoreRecord(record)
+        : record.payload)
       .filter((payload) => payload && typeof payload === 'object'),
   }
 }
@@ -246,7 +253,7 @@ export async function listScheduleSessionCloudPayloads({
   return {
     ok: true,
     data: (data || [])
-      .map((record) => record.payload)
+      .map((record) => projectAuthoritativeCoreRecord(record))
       .filter((payload) => payload && typeof payload === 'object'),
   }
 }
@@ -282,6 +289,27 @@ export async function upsertCloudEntities({
     return { ok: true, count: 0 }
   }
 
+  if (isAuthoritativeCoreEntityType(entityType)) {
+    const committed = []
+
+    for (const item of items) {
+      const result = await mutateAuthoritativeCoreEntity({
+        supabase,
+        centerId,
+        entityType,
+        entity: item,
+      })
+
+      if (!result.ok) {
+        return result
+      }
+
+      committed.push(result.entity)
+    }
+
+    return { ok: true, count: committed.length, data: committed }
+  }
+
   const { error } = await supabase
     .from('center_cloud_entities')
     .upsert(records, { onConflict: 'center_id,entity_type,local_id' })
@@ -302,6 +330,7 @@ export async function deleteCloudEntity({
   centerId = CURRENT_CENTER_ID,
   entityType,
   localId,
+  expectedVersion = 0,
 } = {}) {
   if (!supabase) {
     return { ok: false, error: 'Thiếu Supabase client.' }
@@ -315,6 +344,17 @@ export async function deleteCloudEntity({
 
   if (!normalizedLocalId) {
     return { ok: false, error: 'Thiếu local_id.' }
+  }
+
+  if (isAuthoritativeCoreEntityType(entityType)) {
+    return mutateAuthoritativeCoreEntity({
+      supabase,
+      centerId,
+      entityType,
+      localId: normalizedLocalId,
+      expectedVersion,
+      operation: 'DELETE',
+    })
   }
 
   const { error } = await supabase
@@ -542,6 +582,7 @@ export function createEmptyCloudEntityCounts() {
     [CLOUD_ENTITY_TYPES.STUDENT]: 0,
     [CLOUD_ENTITY_TYPES.TEACHER]: 0,
     [CLOUD_ENTITY_TYPES.CLASS_SESSION]: 0,
+    [CLOUD_ENTITY_TYPES.SCHEDULE_SESSION]: 0,
   }
 }
 
