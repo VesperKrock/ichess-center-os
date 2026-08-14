@@ -822,6 +822,7 @@ export function renderStaffModule({
   administrativeStorageHealthy = true,
   currentCenterId = '',
   notice = '',
+  syncState = {},
 } = {}) {
   const activeFilters = normalizeStaffFilters(filters)
   const filteredStaffMembers = getFilteredStaffMembers(staffMembers, departments, activeFilters)
@@ -838,9 +839,10 @@ export function renderStaffModule({
       <div class="staff-toolbar">
         <div>
           <h3>Nhân viên</h3>
-          <p>Hồ sơ nhân sự và phòng ban lưu local theo cơ sở. Liên kết giáo viên/tài khoản chỉ hiển thị read-only trong phase này.</p>
+          <p>Hồ sơ nhân sự và phòng ban dùng chung authoritative truth theo đúng cơ sở. Liên kết Giáo viên/tài khoản chỉ là reference tường minh.</p>
         </div>
         <div class="staff-toolbar-actions">
+          <button type="button" data-staff-action="refresh" ${syncState.isLoading || syncState.isSaving ? 'disabled' : ''}>Làm mới</button>
           <button type="button" data-staff-action="open-create">+ Thêm nhân viên</button>
           <button type="button" data-staff-action="open-departments">Phòng ban</button>
         </div>

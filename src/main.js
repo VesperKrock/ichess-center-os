@@ -52,6 +52,17 @@ import {
 } from './cloud-authoritative-finance.js'
 import { inspectAndQuarantineC54LegacyFinance } from './legacy-finance-quarantine.js'
 import {
+  buildC55StaffHrUpsertCommand,
+  canWriteC55StaffHrSharedTruth,
+  createC55StaffHrIdempotencyKey,
+  createC55StaffHrRetryFingerprint,
+  getC55StaffHrOutcomeMessage,
+  mutateC55StaffHrSharedTruth,
+  pullC55StaffHrSharedTruth,
+  recordC55StaffHrAccessAudit,
+} from './cloud-authoritative-staff-hr.js'
+import { inspectAndQuarantineC55LegacyStaffHr } from './legacy-staff-hr-quarantine.js'
+import {
   compressTransactionImage,
   validateTransactionImageFile,
 } from './image-compression.js'
@@ -70,18 +81,6 @@ import {
   getDeletedNotificationIds,
   getCurrentStorageCenterId,
   getDesktopModuleOrder,
-  getStoredCenterDepartments,
-  getStoredCenterStaffAdministrativeProfiles,
-  getStoredCenterStaffAdministrativeProfilesReadStatus,
-  getStoredCenterStaffDocuments,
-  getStoredCenterStaffDocumentsReadStatus,
-  getStoredCenterStaffAdministrativeAuditEvents,
-  getStoredCenterStaffAdministrativeAuditEventsReadStatus,
-  getStoredCenterStaffAdministrativeRetentionPolicy,
-  getStoredCenterStaffAdministrativeRetentionPolicyReadStatus,
-  getStoredCenterStaffAdministrativeDeletionRequests,
-  getStoredCenterStaffAdministrativeDeletionRequestsReadStatus,
-  getStoredCenterStaffMembers,
   getStoredInventory,
   getStoredInventoryMovements,
   getStoredInventoryRequests,
@@ -100,13 +99,6 @@ import {
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
   setCurrentStorageCenterId,
-  saveStoredCenterDepartments,
-  saveStoredCenterStaffAdministrativeProfiles,
-  saveStoredCenterStaffDocuments,
-  appendStoredCenterStaffAdministrativeAuditEvent,
-  saveStoredCenterStaffAdministrativeRetentionPolicy,
-  saveStoredCenterStaffAdministrativeDeletionRequests,
-  saveStoredCenterStaffMembers,
   saveStoredInventory,
   saveStoredInventoryMovements,
   saveStoredInventoryRequests,
@@ -400,7 +392,6 @@ import {
 import {
   STAFF_ADMINISTRATIVE_POLICY_STALE_MESSAGE,
   STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE,
-  buildStaffAdministrativeAuditEvent,
   buildStaffAdministrativeDeletionRequest,
   buildStaffAdministrativeRetentionPolicy,
   cancelStaffAdministrativeDeletionRequest,
@@ -686,14 +677,28 @@ let c54FinanceSharedTruthState = {
 let c54FinanceSyncRunId = 0
 const c54FinanceRetryCommands = new Map()
 const c54AttachmentRetryIntents = new WeakMap()
+let c55StaffHrSharedTruthState = {
+  centerId: '',
+  isLoading: false,
+  isSaving: false,
+  message: '',
+  messageTone: '',
+  lastLoadedAt: '',
+  legacyMigrationRequired: false,
+  legacyManifestKey: '',
+  legacySummary: null,
+}
+let c55StaffHrSyncRunId = 0
+const c55StaffHrRetryCommands = new Map()
+const c55StaffHrAccessAuditRetryKeys = new Map()
 let staffFilters = { ...initialStaffFilters }
-let staffMembers = getStoredCenterStaffMembers([])
-let staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
-let staffDocuments = getStoredCenterStaffDocuments([])
-let staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
-let staffAdministrativeRetentionPolicy = getStoredCenterStaffAdministrativeRetentionPolicy(null)
-let staffAdministrativeDeletionRequests = getStoredCenterStaffAdministrativeDeletionRequests([])
-let staffDepartments = getStoredCenterDepartments([])
+let staffMembers = []
+let staffAdministrativeProfiles = []
+let staffDocuments = []
+let staffAdministrativeAuditEvents = []
+let staffAdministrativeRetentionPolicy = null
+let staffAdministrativeDeletionRequests = []
+let staffDepartments = []
 let staffFormState = null
 let isStaffDepartmentPanelOpen = false
 let staffDepartmentFormState = null
@@ -1311,12 +1316,64 @@ function getCenterScopedNotificationsForRender() {
   return canRenderCenterScopedModuleBadges() ? notifications : []
 }
 
+function clearC55StaffHrTransientUi() {
+  openWindows
+    .filter((windowItem) => windowItem.type === 'staff-administrative-profile')
+    .forEach((windowItem) => clearStaffDocumentAttachmentRuntime(windowItem.id))
+  staffFilters = { ...initialStaffFilters }
+  staffFormState = null
+  isStaffDepartmentPanelOpen = false
+  staffDepartmentFormState = null
+  staffNotice = ''
+  isStaffSaving = false
+  isStaffDepartmentSaving = false
+  staffAccountDirectoryRunId += 1
+  staffAccountDirectoryState = createStaffAccountDirectoryState()
+  staffAccountLinkState = null
+  isStaffAccountLinkSaving = false
+  staffLifecycleState = null
+  isStaffLifecycleSaving = false
+  openWindows = openWindows.filter(
+    (windowItem) => windowItem.type !== 'staff-administrative-profile',
+  )
+  staffAdministrativeProfileWindowStates = new Map()
+  staffDocumentWindowStates = new Map()
+  staffAdministrativeGovernanceWindowStates = new Map()
+  staffDocumentAttachmentRequestTokens = new Map()
+  staffDocumentAttachmentViewerState = null
+  pendingStaffDocumentViewerReturnContext = null
+  isStaffAdministrativeProfileSaving = false
+  savingStaffDocumentWindowIds.clear()
+  uploadingStaffDocumentWindowIds.clear()
+  savingStaffAdministrativeGovernanceWindowIds.clear()
+  teacherStaffLinkState = null
+  isTeacherStaffLinkSaving = false
+}
+
+function resetC55StaffHrRuntimeForAccessBoundary(centerId = '') {
+  c55StaffHrSyncRunId += 1
+  c55StaffHrRetryCommands.clear()
+  c55StaffHrAccessAuditRetryKeys.clear()
+  clearC55StaffHrProjection()
+  clearC55StaffHrTransientUi()
+  c55StaffHrSharedTruthState = {
+    centerId,
+    isLoading: false,
+    isSaving: false,
+    message: '',
+    messageTone: '',
+    lastLoadedAt: '',
+    legacyMigrationRequired: false,
+    legacyManifestKey: '',
+    legacySummary: null,
+  }
+}
+
 function resetTransientStateForCenterSwitch() {
   studentFilters = { ...initialStudentFilters }
   teacherFilters = { ...initialTeacherFilters }
   parentConsultationFilters = { ...initialParentConsultationFilters }
   parentConsultations = []
-  staffFilters = { ...initialStaffFilters }
   settingsFilters = { ...initialSettingsFilters }
   settingsActiveTab = 'class-sessions'
   tuitionFilters = { ...initialTuitionFilters }
@@ -1356,33 +1413,7 @@ function resetTransientStateForCenterSwitch() {
     legacySnapshotKey: '',
     legacySummary: null,
   }
-  staffFormState = null
-  isStaffDepartmentPanelOpen = false
-  staffDepartmentFormState = null
-  staffNotice = ''
-  isStaffSaving = false
-  isStaffDepartmentSaving = false
-  staffAccountDirectoryRunId += 1
-  staffAccountDirectoryState = createStaffAccountDirectoryState()
-  staffAccountLinkState = null
-  isStaffAccountLinkSaving = false
-  staffLifecycleState = null
-  isStaffLifecycleSaving = false
-  openWindows = openWindows.filter(
-    (windowItem) => windowItem.type !== 'staff-administrative-profile',
-  )
-  staffAdministrativeProfileWindowStates = new Map()
-  staffDocumentWindowStates = new Map()
-  staffAdministrativeGovernanceWindowStates = new Map()
-  staffDocumentAttachmentRequestTokens = new Map()
-  staffDocumentAttachmentViewerState = null
-  pendingStaffDocumentViewerReturnContext = null
-  isStaffAdministrativeProfileSaving = false
-  savingStaffDocumentWindowIds.clear()
-  uploadingStaffDocumentWindowIds.clear()
-  savingStaffAdministrativeGovernanceWindowIds.clear()
-  teacherStaffLinkState = null
-  isTeacherStaffLinkSaving = false
+  resetC55StaffHrRuntimeForAccessBoundary(getCurrentResolvedCenterId())
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -1451,13 +1482,15 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   // account's center-scoped disk projection before this session completes an
   // exact-center authoritative pull.
   parentConsultations = []
-  staffMembers = getStoredCenterStaffMembers([])
-  staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
-  staffDocuments = getStoredCenterStaffDocuments([])
-  staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
-  staffAdministrativeRetentionPolicy = getStoredCenterStaffAdministrativeRetentionPolicy(null)
-  staffAdministrativeDeletionRequests = getStoredCenterStaffAdministrativeDeletionRequests([])
-  staffDepartments = getStoredCenterDepartments([])
+  // Staff/HR is a memory-only projection of exact-center server truth. Legacy
+  // browser keys are inventoried separately and never resurrected here.
+  staffMembers = []
+  staffAdministrativeProfiles = []
+  staffDocuments = []
+  staffAdministrativeAuditEvents = []
+  staffAdministrativeRetentionPolicy = null
+  staffAdministrativeDeletionRequests = []
+  staffDepartments = []
   scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
   scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
   sessionReports = getStoredSessionReports([])
@@ -1482,13 +1515,9 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
 }
 
 function refreshStaffDataFromStorage() {
-  staffMembers = getStoredCenterStaffMembers([])
-  staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
-  staffDocuments = getStoredCenterStaffDocuments([])
-  staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
-  staffAdministrativeRetentionPolicy = getStoredCenterStaffAdministrativeRetentionPolicy(null)
-  staffAdministrativeDeletionRequests = getStoredCenterStaffAdministrativeDeletionRequests([])
-  staffDepartments = getStoredCenterDepartments([])
+  // Retained as a compatibility call-site during C5.5. The active projection
+  // is memory-only and can change only through refreshC55StaffHrSharedTruth().
+  return isC55StaffHrProjectionHealthy()
 }
 
 function getStaffCurrentCenterId() {
@@ -1692,13 +1721,8 @@ function setStaffAdministrativeGovernanceWindowState(windowId, nextState) {
 }
 
 function getStaffAdministrativeGovernanceStorageContext(centerId = getCurrentStorageCenterId()) {
-  const readStatuses = [
-    getStoredCenterStaffAdministrativeAuditEventsReadStatus(),
-    getStoredCenterStaffAdministrativeRetentionPolicyReadStatus(),
-    getStoredCenterStaffAdministrativeDeletionRequestsReadStatus(),
-  ]
-  if (readStatuses.some((status) => !status.ok)) {
-    return { ok: false, reason: 'governance-storage-unhealthy' }
+  if (!isC55StaffHrProjectionHealthy(centerId)) {
+    return { ok: false, reason: 'authoritative-projection-unhealthy' }
   }
   if (
     staffAdministrativeRetentionPolicy &&
@@ -1738,33 +1762,80 @@ function recordStaffAdministrativeAuditEvent(access, payload = {}) {
     !access.actorUserId ||
     !access.actorMembershipId
   ) return false
-  const event = buildStaffAdministrativeAuditEvent({
-    centerId: access.centerId,
-    actorUserId: access.actorUserId,
-    actorMembershipId: access.actorMembershipId,
-    actorRole: access.role,
-    action: payload.action,
-    targetType: payload.targetType,
-    targetId: payload.targetId,
-    ['staffMemberId']: payload.staffMemberId,
-    administrativeProfileId: payload.administrativeProfileId,
-    documentId: payload.documentId,
-    attachmentId: payload.attachmentId,
-    outcome: payload.outcome || 'success',
-    reasonCode: payload.reasonCode,
-    noteSummary: payload.noteSummary,
-    requestId: payload.requestId,
-  })
-  const saved = appendStoredCenterStaffAdministrativeAuditEvent(event)
-  if (saved) {
-    staffAdministrativeAuditEvents = getStoredCenterStaffAdministrativeAuditEvents([])
+  // Durable mutation evidence is authored by the C5.5 RPC. Attachment
+  // governance already writes its own protected server audit. Never recreate
+  // either history in browser storage.
+  return Boolean(payload.action)
+}
+
+async function commitC55StaffHrAccessAudit(access, payload = {}) {
+  const centerId = String(access?.centerId || '').trim()
+  const action = String(payload.action || '').trim()
+  const staffMemberId = String(payload.staffMemberId || '').trim()
+  const administrativeProfileId = String(payload.administrativeProfileId || '').trim()
+  if (!centerId || !staffMemberId
+    || !['administrative-profile.open', 'administrative-profile.reveal-sensitive']
+      .includes(action)) {
+    return { ok: false, error: 'Yêu cầu audit truy cập Staff/HR không hợp lệ.' }
   }
-  return saved
+
+  const latestAccess = await getLatestStaffAdministrativeProfileAccessContext(centerId, action)
+  if (!latestAccess.ok || centerId !== getCurrentResolvedCenterId()) {
+    resetC55StaffHrRuntimeForAccessBoundary('')
+    render()
+    return { ok: false, error: latestAccess.error || 'Quyền Staff/HR đã thay đổi.' }
+  }
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (!readiness.ok || readiness.centerId !== centerId
+    || centerId !== getCurrentResolvedCenterId()) {
+    resetC55StaffHrRuntimeForAccessBoundary('')
+    render()
+    return { ok: false, error: readiness.error || 'Không xác minh được audit Staff/HR.' }
+  }
+
+  const intent = JSON.stringify({
+    centerId,
+    actorUserId: latestAccess.actorUserId,
+    action,
+    staffMemberId,
+    administrativeProfileId,
+    noteSummary: String(payload.noteSummary || '').trim(),
+  })
+  const retryKey = c55StaffHrAccessAuditRetryKeys.get(intent)
+    || createC55StaffHrIdempotencyKey()
+  c55StaffHrAccessAuditRetryKeys.set(intent, retryKey)
+  const result = await recordC55StaffHrAccessAudit({
+    supabase: readiness.supabase,
+    centerId,
+    action,
+    staffMemberId,
+    administrativeProfileId,
+    noteSummary: payload.noteSummary,
+    idempotencyKey: retryKey,
+  })
+  if (!result.ok || centerId !== getCurrentResolvedCenterId()
+    || latestAccess.actorUserId !== cloudStatus.user?.id) {
+    resetC55StaffHrRuntimeForAccessBoundary('')
+    render()
+    return {
+      ...result,
+      ok: false,
+      error: result.error || 'Quyền Staff/HR đã thay đổi khi ghi audit.',
+    }
+  }
+
+  c55StaffHrAccessAuditRetryKeys.delete(intent)
+  staffAdministrativeAuditEvents = [
+    result.auditEvent,
+    ...staffAdministrativeAuditEvents.filter((event) => event.id !== result.auditEvent.id),
+  ]
+  return result
 }
 
 function getStaffDocumentStorageContext(centerId = getCurrentStorageCenterId()) {
-  const readStatus = getStoredCenterStaffDocumentsReadStatus()
-  if (!readStatus.ok) return { ok: false, reason: readStatus.reason }
+  if (!isC55StaffHrProjectionHealthy(centerId)) {
+    return { ok: false, reason: 'authoritative-projection-unhealthy' }
+  }
   const relationshipIssues = getStaffDocumentRelationshipIssues(staffDocuments, {
     centerId,
     staffMembers,
@@ -1785,7 +1856,7 @@ function getStaffDocumentsForProfile(profile, staffMember, centerId) {
   )
 }
 
-function openStaffAdministrativeProfileWindow(staffMemberId) {
+async function openStaffAdministrativeProfileWindow(staffMemberId) {
   const access = getStaffAdministrativeProfileAccessContext('administrative-profile.view')
 
   if (!access.ok) {
@@ -1808,7 +1879,7 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
     staffMember.id,
     access.centerId,
   )
-  if (!getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok) {
+  if (!isC55StaffHrProjectionHealthy(access.centerId)) {
     staffNotice = 'Nhật ký quyền riêng tư cần được kiểm tra. Không mở dữ liệu hành chính.'
     render()
     return
@@ -1831,6 +1902,18 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
       windowItem.centerId === access.centerId &&
       windowItem.staffMemberId === staffMember.id,
   )
+
+  const accessAudit = await commitC55StaffHrAccessAudit(access, {
+    action: 'administrative-profile.open',
+    ['staffMemberId']: staffMember.id,
+    administrativeProfileId: profileLookup.profile?.id || '',
+    noteSummary: 'explicit-open',
+  })
+  if (!accessAudit.ok) {
+    staffNotice = accessAudit.error || 'Không thể ghi audit server. Không mở dữ liệu hành chính.'
+    render()
+    return
+  }
 
   staffFormState = null
   staffNotice = ''
@@ -1860,22 +1943,6 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
       )
     }
     focusWindow(existingWindow.id)
-    render()
-    if (moduleId === 'khach-hang-tu-van') {
-      void refreshC53CrmSharedTruth({ reason: 'module-reopen' })
-    }
-    return
-  }
-
-  if (!recordStaffAdministrativeAuditEvent(access, {
-    action: 'administrative-profile.open',
-    targetType: profileLookup.profile ? 'administrative-profile' : 'staff-member',
-    targetId: profileLookup.profile?.id || staffMember.id,
-    ['staffMemberId']: staffMember.id,
-    administrativeProfileId: profileLookup.profile?.id || '',
-    reasonCode: 'explicit-open',
-  })) {
-    staffNotice = 'Không thể ghi nhật ký quyền riêng tư. Không mở dữ liệu hành chính.'
     render()
     return
   }
@@ -1931,9 +1998,6 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
   )
   focusWindow(nextWindowId)
   render()
-  if (moduleId === 'khach-hang-tu-van') {
-    void refreshC53CrmSharedTruth({ reason: 'module-open' })
-  }
 }
 
 function startStaffAdministrativeProfileCreate(windowId) {
@@ -1947,8 +2011,7 @@ function startStaffAdministrativeProfileCreate(windowId) {
 
   refreshStaffDataFromStorage()
   if (
-    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
-    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+    !isC55StaffHrProjectionHealthy(access.centerId)
   ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
@@ -1998,8 +2061,7 @@ function startStaffAdministrativeProfileEdit(windowId) {
 
   refreshStaffDataFromStorage()
   if (
-    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
-    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+    !isC55StaffHrProjectionHealthy(access.centerId)
   ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
@@ -2180,8 +2242,7 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
 
   refreshStaffDataFromStorage()
   if (
-    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
-    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+    !isC55StaffHrProjectionHealthy(state.centerId)
   ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
@@ -2273,25 +2334,17 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
     return
   }
 
-  if (!saveStoredCenterStaffAdministrativeProfiles(nextProfiles)) {
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('administrative_profile', savedProfile),
+    { reason: state.mode === 'create' ? 'profile-create' : 'profile-update' },
+  )
+  if (!committed.ok) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
-      'Hệ thống đã dừng lưu vì collection hồ sơ cần được kiểm tra.',
+      committed.error || 'Không commit được hồ sơ hành chính lên server.',
     )
     return
   }
-  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
-    action: state.mode === 'create'
-      ? 'administrative-profile.create'
-      : 'administrative-profile.edit',
-    targetType: 'administrative-profile',
-    targetId: savedProfile.id,
-    ['staffMemberId']: state.staffMemberId,
-    administrativeProfileId: savedProfile.id,
-    reasonCode: 'explicit-save',
-    noteSummary: state.mode === 'create' ? 'profile-created' : 'profile-updated',
-  })
-  refreshStaffDataFromStorage()
   setStaffAdministrativeProfileWindowState(windowId, {
     mode: 'view',
     centerId: state.centerId,
@@ -2299,9 +2352,7 @@ async function handleStaffAdministrativeProfileSubmit(windowId, formElement) {
     profileId: savedProfile.id,
     values: null,
     errors: {},
-    message: auditSaved
-      ? 'Đã lưu hồ sơ hành chính.'
-      : 'Hồ sơ đã lưu nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    message: 'Đã commit hồ sơ hành chính và tải lại authoritative projection.',
     isSaving: false,
     revealedFields: new Set(),
   })
@@ -2319,7 +2370,7 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
     state.staffMemberId,
     state.centerId,
   )
-  if (!getStoredCenterStaffAdministrativeProfilesReadStatus().ok || !capturedLookup.profile) {
+  if (!isC55StaffHrProjectionHealthy(state.centerId) || !capturedLookup.profile) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
       'Không thể đánh dấu kiểm tra từ dữ liệu hiện tại.',
@@ -2360,8 +2411,7 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
 
   refreshStaffDataFromStorage()
   if (
-    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
-    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok
+    !isC55StaffHrProjectionHealthy(state.centerId)
   ) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
@@ -2415,23 +2465,17 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
   const nextProfiles = staffAdministrativeProfiles.map((profile) =>
     profile.id === reviewedProfile.id ? reviewedProfile : profile,
   )
-  if (!saveStoredCenterStaffAdministrativeProfiles(nextProfiles)) {
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('administrative_profile', reviewedProfile),
+    { reason: 'profile-review' },
+  )
+  if (!committed.ok) {
     setStaffAdministrativeProfileWindowMessage(
       windowId,
-      'Hệ thống đã dừng lưu vì collection hồ sơ cần được kiểm tra.',
+      committed.error || 'Không commit được trạng thái kiểm tra hồ sơ.',
     )
     return
   }
-  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
-    action: 'administrative-profile.edit',
-    targetType: 'administrative-profile',
-    targetId: reviewedProfile.id,
-    ['staffMemberId']: state.staffMemberId,
-    administrativeProfileId: reviewedProfile.id,
-    reasonCode: 'explicit-save',
-    noteSummary: 'completion-reviewed',
-  })
-  refreshStaffDataFromStorage()
   setStaffAdministrativeProfileWindowState(windowId, {
     mode: 'view',
     centerId: state.centerId,
@@ -2439,9 +2483,7 @@ async function markStaffAdministrativeProfileAsReviewed(windowId) {
     profileId: reviewedProfile.id,
     values: null,
     errors: {},
-    message: auditSaved
-      ? 'Đã đánh dấu hồ sơ được kiểm tra.'
-      : 'Hồ sơ đã cập nhật nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    message: 'Đã commit trạng thái kiểm tra và tải lại authoritative projection.',
     isSaving: false,
     revealedFields: new Set(),
   })
@@ -2507,16 +2549,13 @@ async function toggleStaffAdministrativeSensitiveField(
       `[data-staff-administrative-action="toggle-sensitive"][data-sensitive-field="${CSS.escape(fieldPath)}"]`,
     )
     if (!windowElement || !button) return
-    const auditSaved = recordStaffAdministrativeAuditEvent(auditAccess, {
+    const auditSaved = await commitC55StaffHrAccessAudit(auditAccess, {
       action: 'administrative-profile.reveal-sensitive',
-      targetType: state.profileId ? 'administrative-profile' : 'staff-member',
-      targetId: state.profileId || state.staffMemberId,
       ['staffMemberId']: state.staffMemberId,
       administrativeProfileId: state.profileId,
-      reasonCode: 'field-reveal',
       noteSummary: fieldPath,
     })
-    if (!auditSaved) return
+    if (!auditSaved.ok) return
     refreshStaffAdministrativeAuditResultsRegion(windowId)
   }
 
@@ -2612,8 +2651,8 @@ function getStaffDocumentWindowContext(
   if (refresh) refreshStaffDataFromStorage()
 
   const staffMember = getUniqueCurrentCenterStaffMember(windowItem.staffMemberId, access.centerId)
-  const profileReadStatus = getStoredCenterStaffAdministrativeProfilesReadStatus()
-  const lookup = profileReadStatus.ok
+  const profileProjectionHealthy = isC55StaffHrProjectionHealthy(access.centerId)
+  const lookup = profileProjectionHealthy
     ? resolveStaffAdministrativeProfileForStaff(
         staffAdministrativeProfiles,
         windowItem.staffMemberId,
@@ -3967,8 +4006,7 @@ async function getLatestStaffDocumentMutationContext(
   const context = getStaffDocumentWindowContext(windowId)
   if (
     !context?.storageContext.ok ||
-    !getStoredCenterStaffAdministrativeProfilesReadStatus().ok ||
-    !getStoredCenterStaffAdministrativeAuditEventsReadStatus().ok ||
+    !isC55StaffHrProjectionHealthy(capturedState.centerId) ||
     !context.lookup.profile ||
     context.lookup.profile.id !== capturedState.administrativeProfileId ||
     context.staffMember?.archivedAt
@@ -4064,8 +4102,7 @@ async function handleStaffDocumentSubmit(windowId, formElement) {
       centerId: capturedState.centerId,
       staffMembers,
       administrativeProfiles: staffAdministrativeProfiles,
-    }).length ||
-    !saveStoredCenterStaffDocuments(nextDocuments)
+    }).length
   ) {
     finishStaffDocumentMutationWithMessage(
       windowId,
@@ -4074,18 +4111,17 @@ async function handleStaffDocumentSubmit(windowId, formElement) {
     return
   }
 
-  const auditSaved = recordStaffAdministrativeAuditEvent(latest.access, {
-    action: capturedState.mode === 'create' ? 'staff-document.create' : 'staff-document.edit',
-    targetType: 'staff-document',
-    targetId: savedDocument.id,
-    ['staffMemberId']: capturedState.staffMemberId,
-    administrativeProfileId: capturedState.administrativeProfileId,
-    documentId: savedDocument.id,
-    reasonCode: 'explicit-save',
-    noteSummary: capturedState.mode === 'create' ? 'document-created' : 'document-updated',
-  })
-
-  refreshStaffDataFromStorage()
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_document', savedDocument),
+    { reason: capturedState.mode === 'create' ? 'document-create' : 'document-update' },
+  )
+  if (!committed.ok) {
+    finishStaffDocumentMutationWithMessage(
+      windowId,
+      committed.error || 'Không commit được metadata tài liệu lên server.',
+    )
+    return
+  }
   setStaffDocumentWindowState(windowId, {
     ...capturedState,
     mode: 'detail',
@@ -4095,9 +4131,7 @@ async function handleStaffDocumentSubmit(windowId, formElement) {
     expectedArchivedAt: '',
     values: null,
     errors: {},
-    message: auditSaved
-      ? 'Đã lưu metadata tài liệu.'
-      : 'Tài liệu đã lưu nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    message: 'Đã commit metadata tài liệu và tải lại authoritative projection.',
     isSaving: false,
   })
   savingStaffDocumentWindowIds.delete(windowId)
@@ -4160,35 +4194,27 @@ async function changeStaffDocumentArchiveState(windowId, documentId, action) {
     finishStaffDocumentMutationWithMessage(windowId, 'Không thể thay đổi trạng thái lưu trữ.')
     return
   }
-  const nextDocuments = staffDocuments.map((documentRecord) =>
-    documentRecord.id === changedDocument.id ? changedDocument : documentRecord,
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_document', changedDocument, {
+      auditAction: action === 'restore' ? 'staff-document.restore' : 'staff-document.archive',
+    }),
+    { reason: action === 'archive' ? 'document-archive' : 'document-restore' },
   )
-  if (!saveStoredCenterStaffDocuments(nextDocuments)) {
+  if (!committed.ok) {
     finishStaffDocumentMutationWithMessage(
       windowId,
-      'Hệ thống đã dừng lưu vì collection tài liệu cần được kiểm tra.',
+      committed.error || 'Không commit được trạng thái tài liệu.',
     )
     return
   }
-  const auditSaved = recordStaffAdministrativeAuditEvent(latest.access, {
-    action: action === 'archive' ? 'staff-document.archive' : 'staff-document.restore',
-    targetType: 'staff-document',
-    targetId: changedDocument.id,
-    ['staffMemberId']: state.staffMemberId,
-    administrativeProfileId: state.administrativeProfileId,
-    documentId: changedDocument.id,
-    reasonCode: action === 'archive' ? 'explicit-archive' : 'explicit-restore',
-    noteSummary: action === 'archive' ? 'document-archived' : 'document-restored',
-  })
-  refreshStaffDataFromStorage()
   setStaffDocumentWindowState(windowId, {
     ...state,
     mode: 'list',
     selectedDocumentId: '',
     isSaving: false,
-    message: auditSaved
-      ? (action === 'archive' ? 'Đã lưu trữ tài liệu.' : 'Đã khôi phục tài liệu.')
-      : 'Trạng thái tài liệu đã đổi nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    message: action === 'archive'
+      ? 'Đã commit lưu trữ tài liệu.'
+      : 'Đã commit khôi phục tài liệu.',
   })
   savingStaffDocumentWindowIds.delete(windowId)
   refreshStaffDocumentsSection(windowId)
@@ -4218,8 +4244,8 @@ function getStaffAdministrativeGovernanceWindowContext(
   if (refresh) refreshStaffDataFromStorage()
 
   const staffMember = getUniqueCurrentCenterStaffMember(windowItem.staffMemberId, access.centerId)
-  const profileReadStatus = getStoredCenterStaffAdministrativeProfilesReadStatus()
-  const lookup = profileReadStatus.ok
+  const profileProjectionHealthy = isC55StaffHrProjectionHealthy(access.centerId)
+  const lookup = profileProjectionHealthy
     ? resolveStaffAdministrativeProfileForStaff(
         staffAdministrativeProfiles,
         windowItem.staffMemberId,
@@ -4512,25 +4538,24 @@ async function handleStaffAdministrativeRetentionPolicySubmit(windowId) {
     latestPolicy,
     { centerId: capturedState.centerId, policyId },
   )
-  if (!saveStoredCenterStaffAdministrativeRetentionPolicy(savedPolicy)) {
-    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu chính sách từ collection hiện tại.')
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('retention_policy', {
+      ...savedPolicy,
+      staffMemberId: capturedState.staffMemberId,
+      administrativeProfileId: capturedState.administrativeProfileId,
+    }),
+    { reason: latestPolicy ? 'retention-policy-update' : 'retention-policy-create' },
+  )
+  if (!committed.ok) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      committed.error || 'Không commit được chính sách lưu trữ.',
+    )
     return
   }
-  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
-    action: 'retention-policy.update',
-    targetType: 'retention-policy',
-    targetId: savedPolicy.id,
-    ['staffMemberId']: capturedState.staffMemberId,
-    administrativeProfileId: capturedState.administrativeProfileId,
-    reasonCode: 'explicit-save',
-    noteSummary: latestPolicy ? 'policy-updated' : 'policy-created',
-  })
-  refreshStaffDataFromStorage()
   setStaffAdministrativeGovernanceMessage(
     windowId,
-    auditSaved
-      ? 'Đã cập nhật chính sách lưu trữ.'
-      : 'Chính sách đã lưu nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    'Đã commit chính sách lưu trữ và tải lại authoritative projection.',
   )
 }
 
@@ -4630,28 +4655,25 @@ async function handleStaffAdministrativeDeletionRequestSubmit(windowId) {
     getStaffAdministrativeDeletionRequestCollectionIssues(
       nextRequests,
       capturedState.centerId,
-    ).length ||
-    !saveStoredCenterStaffAdministrativeDeletionRequests(nextRequests)
+    ).length
   ) {
     setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu yêu cầu từ collection hiện tại.')
     return
   }
-  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
-    action: 'deletion-request.create',
-    targetType: 'deletion-request',
-    targetId: request.id,
-    ['staffMemberId']: request.staffMemberId,
-    administrativeProfileId: request.administrativeProfileId,
-    requestId: request.id,
-    reasonCode: 'explicit-request',
-    noteSummary: request.scope,
-  })
-  refreshStaffDataFromStorage()
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('deletion_request', request, { operation: 'CREATE' }),
+    { reason: 'deletion-request-create' },
+  )
+  if (!committed.ok) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      committed.error || 'Không commit được yêu cầu xóa dữ liệu.',
+    )
+    return
+  }
   setStaffAdministrativeGovernanceMessage(
     windowId,
-    auditSaved
-      ? 'Đã tạo yêu cầu xóa dữ liệu để Owner xem xét.'
-      : 'Yêu cầu đã tạo nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    'Đã commit yêu cầu xóa dữ liệu để Owner khác xem xét.',
   )
 }
 
@@ -4707,29 +4729,22 @@ async function cancelStaffAdministrativeDeletionRequestById(windowId, requestId)
     setStaffAdministrativeGovernanceMessage(windowId, 'Không thể hủy yêu cầu từ quyền hoặc trạng thái hiện tại.')
     return
   }
-  const nextRequests = staffAdministrativeDeletionRequests.map((request) =>
-    request.id === cancelledRequest.id ? cancelledRequest : request,
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('deletion_request', cancelledRequest, {
+      operation: 'CANCEL',
+    }),
+    { reason: 'deletion-request-cancel' },
   )
-  if (!saveStoredCenterStaffAdministrativeDeletionRequests(nextRequests)) {
-    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu trạng thái yêu cầu hiện tại.')
+  if (!committed.ok) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      committed.error || 'Không commit được trạng thái hủy yêu cầu.',
+    )
     return
   }
-  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
-    action: 'deletion-request.cancel',
-    targetType: 'deletion-request',
-    targetId: cancelledRequest.id,
-    ['staffMemberId']: cancelledRequest.staffMemberId,
-    administrativeProfileId: cancelledRequest.administrativeProfileId,
-    requestId: cancelledRequest.id,
-    reasonCode: 'explicit-cancel',
-    noteSummary: 'request-cancelled',
-  })
-  refreshStaffDataFromStorage()
   setStaffAdministrativeGovernanceMessage(
     windowId,
-    auditSaved
-      ? 'Đã hủy yêu cầu xóa dữ liệu.'
-      : 'Yêu cầu đã hủy nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    'Đã commit hủy yêu cầu xóa dữ liệu.',
   )
 }
 
@@ -4870,31 +4885,26 @@ async function reviewStaffAdministrativeDeletionRequestById(
     setStaffAdministrativeGovernanceMessage(windowId, result.error)
     return
   }
-  const nextRequests = staffAdministrativeDeletionRequests.map((request) =>
-    request.id === result.request.id ? result.request : request,
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('deletion_request', {
+      ...result.request,
+      reviewDecision: decision,
+      reviewNote: normalizedReviewNote,
+    }, { operation: 'REVIEW' }),
+    { reason: decision === 'approve' ? 'deletion-request-approve' : 'deletion-request-deny' },
   )
-  if (!saveStoredCenterStaffAdministrativeDeletionRequests(nextRequests)) {
-    setStaffAdministrativeGovernanceMessage(windowId, 'Không thể lưu trạng thái yêu cầu hiện tại.')
+  if (!committed.ok) {
+    setStaffAdministrativeGovernanceMessage(
+      windowId,
+      committed.error || 'Không commit được quyết định yêu cầu xóa.',
+    )
     return
   }
-  const auditSaved = recordStaffAdministrativeAuditEvent(access, {
-    action: decision === 'approve' ? 'deletion-request.approve' : 'deletion-request.deny',
-    targetType: 'deletion-request',
-    targetId: result.request.id,
-    ['staffMemberId']: result.request.staffMemberId,
-    administrativeProfileId: result.request.administrativeProfileId,
-    requestId: result.request.id,
-    reasonCode: decision === 'approve' ? 'owner-approval' : 'owner-denial',
-    noteSummary: decision === 'approve' ? 'backend-execution-pending' : 'request-denied',
-  })
-  refreshStaffDataFromStorage()
   setStaffAdministrativeGovernanceMessage(
     windowId,
-    auditSaved
-      ? decision === 'approve'
-        ? 'Đã phê duyệt yêu cầu. Chờ thực thi backend.'
-        : 'Đã từ chối yêu cầu xóa dữ liệu.'
-      : 'Yêu cầu đã chuyển trạng thái nhưng nhật ký quyền riêng tư chưa ghi được. Vui lòng dừng thao tác và kiểm tra storage.',
+    decision === 'approve'
+      ? 'Đã commit phê duyệt; chờ executor backend, chưa xóa dữ liệu.'
+      : 'Đã commit từ chối yêu cầu xóa dữ liệu.',
   )
 }
 
@@ -5381,11 +5391,14 @@ async function handleConfirmStaffAccountLink() {
     latestAvailableMembership,
     linkedAt,
   )
-  staffMembers = staffMembers.map((item) =>
-    item.id === savedStaffMember.id ? savedStaffMember : item,
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', savedStaffMember),
+    { reason: 'staff-account-link' },
   )
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  if (!committed.ok) {
+    finishStaffAccountLinkError(committed.error || 'Không commit được liên kết tài khoản.')
+    return
+  }
   staffAccountDirectoryState = createStaffAccountDirectoryState({
     status: 'loaded',
     centerId: expectedCenterId,
@@ -5394,8 +5407,10 @@ async function handleConfirmStaffAccountLink() {
   })
   staffAccountLinkState = null
   isStaffAccountLinkSaving = false
-  staffNotice = 'Đã liên kết tài khoản với hồ sơ nhân viên.'
-  syncStaffFormAccountLinkState(savedStaffMember)
+  staffNotice = 'Đã commit liên kết reference tài khoản; Auth/membership không bị thay đổi.'
+  syncStaffFormAccountLinkState(
+    staffMembers.find((item) => item.id === savedStaffMember.id) || savedStaffMember,
+  )
   render()
 }
 
@@ -5517,11 +5532,14 @@ async function handleUnlinkStaffAccount(staffId) {
 
   const updatedAt = new Date().toISOString()
   const savedStaffMember = unlinkStaffMemberFromAccount(latestStaffMember, updatedAt)
-  staffMembers = staffMembers.map((item) =>
-    item.id === savedStaffMember.id ? savedStaffMember : item,
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', savedStaffMember),
+    { reason: 'staff-account-unlink' },
   )
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  if (!committed.ok) {
+    finishStaffAccountUnlink(committed.error || 'Không commit được thao tác gỡ liên kết.')
+    return
+  }
   staffAccountDirectoryState = createStaffAccountDirectoryState({
     status: 'loaded',
     centerId: context.centerId,
@@ -5530,7 +5548,9 @@ async function handleUnlinkStaffAccount(staffId) {
   })
   isStaffAccountLinkSaving = false
   staffNotice = 'Đã gỡ liên kết tài khoản. Account, membership và role không thay đổi.'
-  syncStaffFormAccountLinkState(savedStaffMember)
+  syncStaffFormAccountLinkState(
+    staffMembers.find((item) => item.id === savedStaffMember.id) || savedStaffMember,
+  )
   syncStaffFormAccountSavingState(false)
   render()
 }
@@ -5660,7 +5680,7 @@ function collectStaffFormValues(formElement) {
   return values
 }
 
-function handleStaffFormSubmit(formElement) {
+async function handleStaffFormSubmit(formElement) {
   if (!staffFormState || isStaffSaving) {
     return
   }
@@ -5750,13 +5770,25 @@ function handleStaffFormSubmit(formElement) {
   }
 
   const savedStaffMember = buildStaffMemberFromForm(values, existingStaffMember, currentCenterId)
-  staffMembers = existingStaffMember
-    ? staffMembers.map((item) => (item.id === savedStaffMember.id ? savedStaffMember : item))
-    : [savedStaffMember, ...staffMembers]
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', savedStaffMember),
+    { reason: existingStaffMember ? 'staff-update' : 'staff-create' },
+  )
+  if (!committed.ok) {
+    isStaffSaving = false
+    staffFormState = {
+      ...staffFormState,
+      values,
+      isSaving: false,
+      message: committed.error || 'Không commit được hồ sơ nhân viên lên server.',
+    }
+    render()
+    return
+  }
   staffFormState = null
-  staffNotice = existingStaffMember ? 'Đã cập nhật hồ sơ nhân viên.' : 'Đã thêm hồ sơ nhân viên.'
+  staffNotice = existingStaffMember
+    ? 'Đã commit cập nhật hồ sơ nhân viên.'
+    : 'Đã commit hồ sơ nhân viên mới.'
   isStaffSaving = false
   render()
 }
@@ -5920,7 +5952,7 @@ function collectStaffLifecycleValues(formElement) {
   return values
 }
 
-function handleStaffLifecycleSubmit(formElement) {
+async function handleStaffLifecycleSubmit(formElement) {
   if (!staffLifecycleState || isStaffLifecycleSaving) {
     return
   }
@@ -6002,11 +6034,16 @@ function handleStaffLifecycleSubmit(formElement) {
   }
 
   const savedStaffMember = transition.staffMember
-  staffMembers = staffMembers.map((item) =>
-    item.id === savedStaffMember.id ? savedStaffMember : item,
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', savedStaffMember),
+    { reason: 'staff-lifecycle-transition' },
   )
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  if (!committed.ok) {
+    finishStaffLifecycleError(
+      committed.error || 'Không commit được trạng thái làm việc lên server.',
+    )
+    return
+  }
   const persistedStaffMember = staffMembers.find((item) => item.id === savedStaffMember.id) || savedStaffMember
 
   if (staffFormState?.staffId === persistedStaffMember.id) {
@@ -6069,7 +6106,7 @@ function focusFirstStaffLifecycleError() {
   focusElementWithoutScrolling(field)
 }
 
-function handleArchiveStaff(staffId) {
+async function handleArchiveStaff(staffId) {
   if (isStaffSaving) {
     return
   }
@@ -6106,9 +6143,17 @@ function handleArchiveStaff(staffId) {
   }
 
   isStaffSaving = true
-  staffMembers = staffMembers.map((item) => (item.id === staffId ? archiveStaffMember(item) : item))
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  const archivedStaffMember = archiveStaffMember(staffMember)
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', archivedStaffMember),
+    { reason: 'staff-archive' },
+  )
+  if (!committed.ok) {
+    isStaffSaving = false
+    staffNotice = committed.error || 'Không commit được trạng thái lưu trữ nhân viên.'
+    render()
+    return
+  }
   if (staffLifecycleState?.staffId === staffId) {
     staffLifecycleState = null
   }
@@ -6117,7 +6162,7 @@ function handleArchiveStaff(staffId) {
   render()
 }
 
-function handleRestoreStaff(staffId) {
+async function handleRestoreStaff(staffId) {
   if (isStaffSaving) {
     return
   }
@@ -6156,9 +6201,17 @@ function handleRestoreStaff(staffId) {
   }
 
   isStaffSaving = true
-  staffMembers = staffMembers.map((item) => (item.id === staffId ? restoreStaffMember(item) : item))
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  const restoredStaffMember = restoreStaffMember(staffMember)
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', restoredStaffMember),
+    { reason: 'staff-restore' },
+  )
+  if (!committed.ok) {
+    isStaffSaving = false
+    staffNotice = committed.error || 'Không commit được trạng thái khôi phục nhân viên.'
+    render()
+    return
+  }
   staffNotice = 'Đã khôi phục hồ sơ nhân viên.'
   isStaffSaving = false
   render()
@@ -6223,7 +6276,7 @@ function collectDepartmentFormValues(formElement) {
   return values
 }
 
-function handleDepartmentFormSubmit(formElement) {
+async function handleDepartmentFormSubmit(formElement) {
   if (!staffDepartmentFormState || isStaffDepartmentSaving) {
     return
   }
@@ -6279,18 +6332,28 @@ function handleDepartmentFormSubmit(formElement) {
   }
 
   const savedDepartment = buildDepartmentFromForm(values, existingDepartment, currentCenterId)
-  staffDepartments = existingDepartment
-    ? staffDepartments.map((item) => (item.id === savedDepartment.id ? savedDepartment : item))
-    : [savedDepartment, ...staffDepartments]
-  saveStoredCenterDepartments(staffDepartments)
-  refreshStaffDataFromStorage()
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('department', savedDepartment),
+    { reason: existingDepartment ? 'department-update' : 'department-create' },
+  )
+  if (!committed.ok) {
+    isStaffDepartmentSaving = false
+    staffDepartmentFormState = {
+      ...staffDepartmentFormState,
+      values,
+      isSaving: false,
+      message: committed.error || 'Không commit được phòng ban lên server.',
+    }
+    render()
+    return
+  }
   staffDepartmentFormState = null
   staffNotice = existingDepartment ? 'Đã cập nhật phòng ban.' : 'Đã thêm phòng ban.'
   isStaffDepartmentSaving = false
   render()
 }
 
-function handleArchiveDepartment(departmentId) {
+async function handleArchiveDepartment(departmentId) {
   if (isStaffDepartmentSaving) {
     return
   }
@@ -6314,15 +6377,22 @@ function handleArchiveDepartment(departmentId) {
   }
 
   isStaffDepartmentSaving = true
-  staffDepartments = staffDepartments.map((item) => (item.id === departmentId ? archiveDepartment(item) : item))
-  saveStoredCenterDepartments(staffDepartments)
-  refreshStaffDataFromStorage()
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('department', archiveDepartment(department)),
+    { reason: 'department-archive' },
+  )
+  if (!committed.ok) {
+    isStaffDepartmentSaving = false
+    staffNotice = committed.error || 'Không commit được trạng thái lưu trữ phòng ban.'
+    render()
+    return
+  }
   staffNotice = 'Đã lưu trữ phòng ban.'
   isStaffDepartmentSaving = false
   render()
 }
 
-function handleRestoreDepartment(departmentId) {
+async function handleRestoreDepartment(departmentId) {
   if (isStaffDepartmentSaving) {
     return
   }
@@ -6349,9 +6419,16 @@ function handleRestoreDepartment(departmentId) {
   }
 
   isStaffDepartmentSaving = true
-  staffDepartments = staffDepartments.map((item) => (item.id === departmentId ? restoredDepartment : item))
-  saveStoredCenterDepartments(staffDepartments)
-  refreshStaffDataFromStorage()
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('department', restoredDepartment),
+    { reason: 'department-restore' },
+  )
+  if (!committed.ok) {
+    isStaffDepartmentSaving = false
+    staffNotice = committed.error || 'Không commit được trạng thái khôi phục phòng ban.'
+    render()
+    return
+  }
   staffNotice = 'Đã khôi phục phòng ban.'
   isStaffDepartmentSaving = false
   render()
@@ -6494,7 +6571,7 @@ function canLinkTeacherToStaff(teacher, staffList, existingStaffId = '') {
   return ''
 }
 
-function handleLinkExistingStaffToTeacher(staffId) {
+async function handleLinkExistingStaffToTeacher(staffId) {
   if (!teacherStaffLinkState || isTeacherStaffLinkSaving) {
     return
   }
@@ -6557,25 +6634,33 @@ function handleLinkExistingStaffToTeacher(staffId) {
   }
 
   const now = new Date().toISOString()
-  staffMembers = staffMembers.map((staffMember) =>
-    staffMember.id === staffId
-      ? {
-          ...staffMember,
-          teacherId: teacher.id,
-          teacherLinkedAt: staffMember.teacherLinkedAt || now,
-          updatedAt: now,
-        }
-      : staffMember,
+  const savedStaffMember = {
+    ...targetStaff,
+    teacherId: teacher.id,
+    teacherLinkedAt: targetStaff.teacherLinkedAt || now,
+    updatedAt: now,
+  }
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', savedStaffMember),
+    { reason: 'teacher-reference-link' },
   )
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  if (!committed.ok) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = {
+      ...teacherStaffLinkState,
+      isSaving: false,
+      message: committed.error || 'Không commit được reference Giáo viên.',
+    }
+    render()
+    return
+  }
   teacherStaffLinkState = null
   staffNotice = 'Đã liên kết hồ sơ Giáo viên với Nhân viên.'
   isTeacherStaffLinkSaving = false
   render()
 }
 
-function handleCreateStaffFromTeacher(formElement) {
+async function handleCreateStaffFromTeacher(formElement) {
   if (!teacherStaffLinkState || isTeacherStaffLinkSaving) {
     return
   }
@@ -6633,16 +6718,28 @@ function handleCreateStaffFromTeacher(formElement) {
     updatedAt: now,
   }
 
-  staffMembers = [staffMember, ...staffMembers]
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', staffMember),
+    { reason: 'staff-create-with-teacher-reference' },
+  )
+  if (!committed.ok) {
+    isTeacherStaffLinkSaving = false
+    teacherStaffLinkState = {
+      ...teacherStaffLinkState,
+      values,
+      isSaving: false,
+      message: committed.error || 'Không commit được hồ sơ Staff/Teacher reference.',
+    }
+    render()
+    return
+  }
   teacherStaffLinkState = null
   staffNotice = 'Đã tạo hồ sơ nhân viên và liên kết giáo viên.'
   isTeacherStaffLinkSaving = false
   render()
 }
 
-function unlinkTeacherFromStaff(staffId, teacherId) {
+async function unlinkTeacherFromStaff(staffId, teacherId) {
   if (isTeacherStaffLinkSaving) {
     return
   }
@@ -6671,18 +6768,21 @@ function unlinkTeacherFromStaff(staffId, teacherId) {
   }
 
   const now = new Date().toISOString()
-  staffMembers = staffMembers.map((item) =>
-    item.id === staffId
-      ? {
-          ...item,
-          teacherId: '',
-          teacherLinkedAt: '',
-          updatedAt: now,
-        }
-      : item,
+  const savedStaffMember = {
+    ...staffMember,
+    teacherId: '',
+    teacherLinkedAt: '',
+    updatedAt: now,
+  }
+  const committed = await writeC55StaffHrCommand(
+    buildC55StaffHrUpsertCommand('staff_member', savedStaffMember),
+    { reason: 'teacher-reference-unlink' },
   )
-  saveStoredCenterStaffMembers(staffMembers)
-  refreshStaffDataFromStorage()
+  if (!committed.ok) {
+    staffNotice = committed.error || 'Không commit được thao tác gỡ reference Giáo viên.'
+    render()
+    return
+  }
   staffNotice = 'Đã gỡ liên kết hồ sơ Giáo viên và Nhân viên.'
   render()
 }
@@ -8603,6 +8703,7 @@ async function handleInternalOpenCenter(centerId) {
   await bootstrapC52TuitionRecordPackageCloudData(switchSyncId)
   if (switchSyncId === cloudUserSyncId) {
     await refreshC54FinanceSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
+    await refreshC55StaffHrSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
   }
   await startC52TuitionRealtimeSubscription(switchSyncId)
 }
@@ -10131,9 +10232,10 @@ function renderCurrentStaffModule() {
     lifecycleState: staffLifecycleState,
     administrativeProfiles: administrativeAccess.ok ? staffAdministrativeProfiles : [],
     administrativeAccessAllowed: administrativeAccess.ok,
-    administrativeStorageHealthy: getStoredCenterStaffAdministrativeProfilesReadStatus().ok,
+    administrativeStorageHealthy: isC55StaffHrProjectionHealthy(),
     currentCenterId: getCurrentStorageCenterId(),
     notice: staffNotice,
+    syncState: c55StaffHrSharedTruthState,
   })
 }
 
@@ -10158,9 +10260,8 @@ function renderWindowBody(windowItem) {
     const department = staffDepartments.find(
       (item) => item.id === staffMember?.departmentId,
     )
-    const storageStatus = getStoredCenterStaffAdministrativeProfilesReadStatus()
-    const auditStorageStatus = getStoredCenterStaffAdministrativeAuditEventsReadStatus()
-    const lookup = storageStatus.ok && auditStorageStatus.ok
+    const profileProjectionHealthy = isC55StaffHrProjectionHealthy(windowItem.centerId)
+    const lookup = profileProjectionHealthy
       ? resolveStaffAdministrativeProfileForStaff(
           staffAdministrativeProfiles,
           windowItem.staffMemberId,
@@ -10170,7 +10271,7 @@ function renderWindowBody(windowItem) {
           status: 'malformed',
           profile: null,
           candidates: [],
-          issues: [storageStatus.reason || auditStorageStatus.reason],
+          issues: ['authoritative-projection-unhealthy'],
         }
     let state = getStaffAdministrativeProfileWindowState(windowItem.id) || {
       mode: 'view',
@@ -11452,8 +11553,14 @@ function openModuleWindow(moduleId) {
     isWindowOverflowOpen = false
     isNotificationCenterOpen = false
     render()
+    if (moduleId === 'khach-hang-tu-van') {
+      void refreshC53CrmSharedTruth({ reason: 'module-reopen' })
+    }
     if (['thu-chi', 'so-quy', 'nhom-tai-chinh'].includes(moduleId)) {
       void refreshC54FinanceSharedTruth({ reason: 'module-reopen' })
+    }
+    if (moduleId === 'nhan-vien') {
+      void refreshC55StaffHrSharedTruth({ reason: 'module-reopen' })
     }
     return
   }
@@ -11488,8 +11595,14 @@ function openModuleWindow(moduleId) {
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
   render()
+  if (moduleId === 'khach-hang-tu-van') {
+    void refreshC53CrmSharedTruth({ reason: 'module-open' })
+  }
   if (['thu-chi', 'so-quy', 'nhom-tai-chinh'].includes(moduleId)) {
     void refreshC54FinanceSharedTruth({ reason: 'module-open' })
+  }
+  if (moduleId === 'nhan-vien') {
+    void refreshC55StaffHrSharedTruth({ reason: 'module-open' })
   }
 }
 
@@ -12881,6 +12994,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   const syncId = ++cloudUserSyncId
 
   if (!user) {
+    resetC55StaffHrRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
     stopScheduleSessionRealtimeSubscription()
@@ -12934,6 +13048,10 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   const previousUserId = cloudLastSyncedUserId
   const isNewUser = previousUserId !== user.id
   cloudLastSyncedUserId = user.id
+  // Withhold every prior Staff/HR projection and sensitive draft before this
+  // account's exact-center membership is resolved. Browser reuse must never
+  // inherit the previous account's in-memory HR state.
+  resetC55StaffHrRuntimeForAccessBoundary('')
 
   cloudStatus = {
     ...cloudStatus,
@@ -13082,6 +13200,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await bootstrapC52TuitionRecordPackageCloudData(syncId)
     if (syncId === cloudUserSyncId) {
       await refreshC54FinanceSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
+      await refreshC55StaffHrSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
     }
     await startC52TuitionRealtimeSubscription(syncId)
   }
@@ -14255,6 +14374,289 @@ async function writeC54FinanceCommand(command, {
 }
 
 function isC54RetryableFinanceFailure(result = {}) {
+  return !result?.outcome_code || [
+    'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
+    'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
+  ].includes(result.outcome_code)
+}
+
+function isC55StaffHrProjectionHealthy(centerId = getCurrentResolvedCenterId()) {
+  return Boolean(
+    centerId &&
+    c55StaffHrSharedTruthState.centerId === centerId &&
+    c55StaffHrSharedTruthState.lastLoadedAt &&
+    c55StaffHrSharedTruthState.messageTone !== 'error'
+  )
+}
+
+function clearC55StaffHrProjection() {
+  staffMembers = []
+  staffDepartments = []
+  staffAdministrativeProfiles = []
+  staffDocuments = []
+  staffAdministrativeRetentionPolicy = null
+  staffAdministrativeDeletionRequests = []
+  staffAdministrativeAuditEvents = []
+}
+
+async function refreshC55StaffHrSharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const runId = ++c55StaffHrSyncRunId
+  // A refresh is an authorization/currentness boundary, not permission to
+  // keep rendering the previous account/role's HR cache while the server is
+  // being consulted. The authoritative snapshot is replaced atomically only
+  // after every row validates.
+  clearC55StaffHrProjection()
+  if (reason !== 'after-server-commit') clearC55StaffHrTransientUi()
+  c55StaffHrSharedTruthState = {
+    ...c55StaffHrSharedTruthState,
+    centerId,
+    isLoading: true,
+    isSaving: reason === 'after-server-commit',
+    message: silent ? '' : 'Đang xác minh quyền và tải authoritative Staff/HR...',
+    messageTone: '',
+    lastLoadedAt: '',
+  }
+  render()
+  const legacy = await inspectAndQuarantineC55LegacyStaffHr({
+    storage: globalThis.localStorage,
+    centerId,
+  })
+
+  if (runId !== c55StaffHrSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getC55StaffHrOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!legacy.ok) {
+    clearC55StaffHrProjection()
+    c55StaffHrSharedTruthState = {
+      ...c55StaffHrSharedTruthState,
+      centerId,
+      isLoading: false,
+      isSaving: false,
+      message: legacy.error,
+      messageTone: 'error',
+      lastLoadedAt: '',
+      legacyMigrationRequired: true,
+    }
+    render()
+    return { ok: false, outcome_code: 'LEGACY_PRESERVATION_FAILED', error: legacy.error }
+  }
+
+  c55StaffHrSharedTruthState = {
+    ...c55StaffHrSharedTruthState,
+    centerId,
+    isLoading: true,
+    message: silent
+      ? c55StaffHrSharedTruthState.message
+      : 'Đang tải authoritative Staff/HR...',
+    messageTone: '',
+    legacyMigrationRequired: legacy.migrationRequired,
+    legacyManifestKey: legacy.manifestKey || '',
+    legacySummary: legacy.manifest?.sources || null,
+  }
+  if (!silent) render()
+
+  if (!canUseCoreCloudDb()) {
+    clearC55StaffHrProjection()
+    const error = 'Cần đăng nhập và có quyền HR tại đúng cơ sở để đọc authoritative Staff/HR.'
+    c55StaffHrSharedTruthState = {
+      ...c55StaffHrSharedTruthState,
+      isLoading: false,
+      isSaving: false,
+      message: error,
+      messageTone: 'error',
+      lastLoadedAt: '',
+    }
+    render()
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error }
+  }
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c55StaffHrSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getC55StaffHrOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!readiness.ok || readiness.centerId !== centerId) {
+    c55StaffHrSharedTruthState = {
+      ...c55StaffHrSharedTruthState,
+      isLoading: false,
+      isSaving: false,
+      message: readiness.error || getC55StaffHrOutcomeMessage('STAFF_HR_SHARED_TRUTH_READ_FAILED'),
+      messageTone: 'error',
+      lastLoadedAt: '',
+    }
+    render()
+    return readiness
+  }
+
+  const result = await pullC55StaffHrSharedTruth({ supabase: readiness.supabase, centerId })
+  if (runId !== c55StaffHrSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getC55StaffHrOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok) {
+    if (['CENTER_ACCESS_DENIED', 'NOT_AUTHENTICATED'].includes(result.outcome_code)) {
+      clearC55StaffHrProjection()
+    }
+    c55StaffHrSharedTruthState = {
+      ...c55StaffHrSharedTruthState,
+      isLoading: false,
+      isSaving: false,
+      message: result.error || getC55StaffHrOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+      lastLoadedAt: '',
+    }
+    render()
+    return result
+  }
+
+  // Atomic, exact-center, memory-only projection replacement. Empty server
+  // arrays are authoritative; legacy keys never participate in this view.
+  staffDepartments = result.departments
+  staffMembers = result.staffMembers
+  staffAdministrativeProfiles = result.administrativeProfiles
+  staffDocuments = result.documents
+  staffAdministrativeRetentionPolicy = result.retentionPolicy
+  staffAdministrativeDeletionRequests = result.deletionRequests
+  staffAdministrativeAuditEvents = result.auditEvents
+  c55StaffHrSharedTruthState = {
+    ...c55StaffHrSharedTruthState,
+    centerId,
+    isLoading: false,
+    isSaving: false,
+    message: reason === 'after-server-commit'
+      ? 'Staff/HR đã commit server và projection đã được làm mới.'
+      : `Đã tải authoritative Staff/HR (${staffMembers.length} nhân viên).${legacy.migrationRequired ? ' Legacy local được giữ nguyên; cần controlled migration.' : ''}`,
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  }
+  staffNotice = c55StaffHrSharedTruthState.message
+  render()
+  return result
+}
+
+async function writeC55StaffHrCommand(command, { reason = 'staff-hr-save' } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const access = canWriteC55StaffHrSharedTruth(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.canWrite) {
+    const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+    c55StaffHrSharedTruthState = {
+      ...c55StaffHrSharedTruthState,
+      centerId,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    staffNotice = result.error
+    render()
+    return result
+  }
+
+  const fingerprint = createC55StaffHrRetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const existingPending = c55StaffHrRetryCommands.get(retryScope)
+  const pending = existingPending || {
+    centerId,
+    command,
+    idempotencyKey: createC55StaffHrIdempotencyKey(),
+  }
+  c55StaffHrRetryCommands.set(retryScope, pending)
+  const runId = ++c55StaffHrSyncRunId
+  c55StaffHrSharedTruthState = {
+    ...c55StaffHrSharedTruthState,
+    centerId,
+    isSaving: true,
+    message: 'Đang commit authoritative Staff/HR...',
+    messageTone: '',
+  }
+  render()
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c55StaffHrSyncRunId || centerId !== getCurrentResolvedCenterId()
+    || !readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? {
+          ok: false,
+          outcome_code: 'CENTER_CONTEXT_CHANGED',
+          error: getC55StaffHrOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+        }
+      : readiness
+    if (runId === c55StaffHrSyncRunId) {
+      c55StaffHrSharedTruthState = {
+        ...c55StaffHrSharedTruthState,
+        isSaving: false,
+        message: result.error || getC55StaffHrOutcomeMessage('SERVER_COMMAND_FAILED'),
+        messageTone: 'error',
+      }
+      staffNotice = c55StaffHrSharedTruthState.message
+      render()
+    }
+    return result
+  }
+
+  const result = await mutateC55StaffHrSharedTruth({
+    supabase: readiness.supabase,
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== c55StaffHrSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Staff/HR đã commit tại cơ sở trước; view cơ sở hiện tại không nhận projection đó.'
+        : getC55StaffHrOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok && !isC55RetryableStaffHrFailure(result)) {
+    c55StaffHrRetryCommands.delete(retryScope)
+  }
+  if (!result.ok) {
+    c55StaffHrSharedTruthState = {
+      ...c55StaffHrSharedTruthState,
+      isSaving: false,
+      message: result.error || getC55StaffHrOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    staffNotice = c55StaffHrSharedTruthState.message
+    render()
+    return result
+  }
+
+  c55StaffHrSharedTruthState = { ...c55StaffHrSharedTruthState, isSaving: false }
+  const projection = await refreshC55StaffHrSharedTruth({
+    reason: 'after-server-commit',
+    silent: true,
+  })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Staff/HR đã commit server nhưng chưa tải lại được projection; không ghi local giả thành công.',
+    }
+  }
+  c55StaffHrRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reason }
+}
+
+function isC55RetryableStaffHrFailure(result = {}) {
   return !result?.outcome_code || [
     'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
     'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
@@ -16539,6 +16941,7 @@ async function initializeSupabaseAuth() {
     const user = await getCurrentSupabaseUser()
     await syncCloudUser(user, { reason: 'initial-get-user' })
   } catch (error) {
+    resetC55StaffHrRuntimeForAccessBoundary('')
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -16703,6 +17106,11 @@ function bindStaffActionButtons(root = document) {
         return
       }
 
+      if (action === 'refresh') {
+        void refreshC55StaffHrSharedTruth({ reason: 'manual-refresh' })
+        return
+      }
+
       if (action === 'open-create') {
         openCreateStaffForm()
         return
@@ -16714,7 +17122,7 @@ function bindStaffActionButtons(root = document) {
       }
 
       if (action === 'open-administrative-profile') {
-        openStaffAdministrativeProfileWindow(button.dataset.staffId)
+        void openStaffAdministrativeProfileWindow(button.dataset.staffId)
         return
       }
 
