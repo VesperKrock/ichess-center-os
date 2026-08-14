@@ -76,7 +76,6 @@ import {
   getStoredInventoryMovements,
   getStoredInventoryRequests,
   getStoredNotifications,
-  getStoredParentConsultations,
   getStoredSchedule,
   getStoredSessionReports,
   getStoredAttendanceAdvisoryNotes,
@@ -87,6 +86,7 @@ import {
   getStoredTuition,
   getViewMode,
   createCloudDbPullBackup,
+  clearStoredParentConsultations,
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
   setCurrentStorageCenterId,
@@ -105,7 +105,6 @@ import {
   saveStoredInventoryMovements,
   saveStoredInventoryRequests,
   saveStoredNotifications,
-  saveStoredParentConsultations,
   saveStoredSchedule,
   saveStoredSessionReports,
   saveStoredAttendanceAdvisoryNotes,
@@ -153,7 +152,6 @@ import {
 import { renderFinanceWorkspaceModule } from './finance-workspace-module.js'
 import { sampleInventoryItems } from './inventory-data.js'
 import { sampleInventoryRequests } from './inventory-request-data.js'
-import { sampleParentConsultations } from './parent-consultation-data.js'
 import {
   addCareLogToParentContact,
   addAppointmentToParentContact,
@@ -442,6 +440,19 @@ import {
 } from './cloud-authoritative-core.js'
 import { createOperationalCommandIdempotencyKey } from './cloud-authoritative-attendance-tuition.js'
 import {
+  buildC53AppendCareLogCommand,
+  buildC53ArchiveCaseCommand,
+  buildC53AssignCaseCommand,
+  buildC53CreateLeadCommand,
+  buildC53SaveCaseCommand,
+  buildC53UpsertAppointmentCommand,
+  canWriteC53CrmSharedTruth,
+  createC53CrmIdempotencyKey,
+  getC53CrmOutcomeMessage,
+  mutateC53CrmSharedTruth,
+  pullC53CrmSharedTruth,
+} from './cloud-authoritative-crm.js'
+import {
   NEEDS_SUPABASE_REALTIME_PATCH,
   mergeRealtimeStudentIntoList,
   subscribeToStudentCloudRealtime,
@@ -630,6 +641,7 @@ let nativeSelectInteractionUntil = 0
 let nativeSelectChangeRenderUntil = 0
 let pendingWindowFocusAfterRender = null
 cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
+clearStoredParentConsultations()
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents(sampleStudents)
 let classSessions = getStoredClassSessions(sampleClassSessions)
@@ -638,13 +650,24 @@ let teachers = getStoredTeachers(sampleTeachers)
 let teacherFormState = null
 let selectedTeacherId = null
 let parentConsultationFilters = { ...initialParentConsultationFilters }
-let parentConsultations = getStoredParentConsultations(sampleParentConsultations)
+let parentConsultations = []
 let parentConsultationFormState = null
 let skipNextParentContactScrollCapture = false
 let parentQuickNoteState = null
 let parentNoteHistoryContactId = null
 let parentContactDetailId = null
 let parentConvertPreviewState = null
+let c53CrmSharedTruthState = {
+  centerId: '',
+  isLoading: false,
+  isSaving: false,
+  message: '',
+  messageTone: '',
+  lastLoadedAt: '',
+  eligibleConsultants: [],
+}
+let c53CrmSyncRunId = 0
+const c53CrmRetryCommands = new Map()
 let staffFilters = { ...initialStaffFilters }
 let staffMembers = getStoredCenterStaffMembers([])
 let staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
@@ -1272,6 +1295,7 @@ function resetTransientStateForCenterSwitch() {
   studentFilters = { ...initialStudentFilters }
   teacherFilters = { ...initialTeacherFilters }
   parentConsultationFilters = { ...initialParentConsultationFilters }
+  parentConsultations = []
   staffFilters = { ...initialStaffFilters }
   settingsFilters = { ...initialSettingsFilters }
   settingsActiveTab = 'class-sessions'
@@ -1288,6 +1312,17 @@ function resetTransientStateForCenterSwitch() {
   parentNoteHistoryContactId = null
   parentContactDetailId = null
   parentConvertPreviewState = null
+  c53CrmSyncRunId += 1
+  c53CrmRetryCommands.clear()
+  c53CrmSharedTruthState = {
+    centerId: getCurrentResolvedCenterId(),
+    isLoading: false,
+    isSaving: false,
+    message: '',
+    messageTone: '',
+    lastLoadedAt: '',
+    eligibleConsultants: [],
+  }
   staffFormState = null
   isStaffDepartmentPanelOpen = false
   staffDepartmentFormState = null
@@ -1375,12 +1410,14 @@ function purgeZombieScheduleSessions({ persist = false, reason = 'schedule-clean
 
 function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
+  clearStoredParentConsultations()
   students = getStoredStudents(useSampleFallback ? sampleStudents : [])
   classSessions = getStoredClassSessions(useSampleFallback ? sampleClassSessions : [])
   teachers = getStoredTeachers(useSampleFallback ? sampleTeachers : [])
-  parentConsultations = getStoredParentConsultations(
-    useSampleFallback ? sampleParentConsultations : [],
-  )
+  // CRM authorization is user/role-scoped. Never render or retain another
+  // account's center-scoped disk projection before this session completes an
+  // exact-center authoritative pull.
+  parentConsultations = []
   staffMembers = getStoredCenterStaffMembers([])
   staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
   staffDocuments = getStoredCenterStaffDocuments([])
@@ -1791,6 +1828,9 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
     }
     focusWindow(existingWindow.id)
     render()
+    if (moduleId === 'khach-hang-tu-van') {
+      void refreshC53CrmSharedTruth({ reason: 'module-reopen' })
+    }
     return
   }
 
@@ -1858,6 +1898,9 @@ function openStaffAdministrativeProfileWindow(staffMemberId) {
   )
   focusWindow(nextWindowId)
   render()
+  if (moduleId === 'khach-hang-tu-van') {
+    void refreshC53CrmSharedTruth({ reason: 'module-open' })
+  }
 }
 
 function startStaffAdministrativeProfileCreate(windowId) {
@@ -10249,6 +10292,7 @@ function renderWindowBody(windowItem) {
       parentNoteHistoryContactId,
       parentContactDetailId,
       parentConvertPreviewState,
+      c53CrmSharedTruthState,
     )
   }
 
@@ -13824,6 +13868,233 @@ function buildScheduleSessionRuntimeContext({
     realtimeReady: true,
     explicitUserAction: true,
   }
+}
+
+async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const runId = ++c53CrmSyncRunId
+
+  if (!canUseCoreCloudDb()) {
+    parentConsultations = []
+    parentConsultationFormState = null
+    parentQuickNoteState = null
+    parentNoteHistoryContactId = null
+    parentContactDetailId = null
+    parentConvertPreviewState = null
+    notifications = syncAppNotifications(notifications)
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      centerId,
+      isLoading: false,
+      message: 'Cần đăng nhập và có active membership để đọc authoritative CRM.',
+      messageTone: 'error',
+    }
+    if (!silent) render()
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error: c53CrmSharedTruthState.message }
+  }
+
+  c53CrmSharedTruthState = {
+    ...c53CrmSharedTruthState,
+    centerId,
+    isLoading: true,
+    message: silent ? c53CrmSharedTruthState.message : 'Đang tải authoritative CRM...',
+    messageTone: '',
+  }
+  if (!silent) render()
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c53CrmSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!readiness.ok) {
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      isLoading: false,
+      message: readiness.error || getC53CrmOutcomeMessage('CRM_SHARED_TRUTH_READ_FAILED'),
+      messageTone: 'error',
+    }
+    render()
+    return readiness
+  }
+
+  const result = await pullC53CrmSharedTruth({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+  })
+  if (
+    runId !== c53CrmSyncRunId
+    || centerId !== getCurrentResolvedCenterId()
+    || readiness.centerId !== centerId
+  ) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    if (['CENTER_ACCESS_DENIED', 'CRM_READ_NOT_ACTIVE'].includes(result.outcome_code)) {
+      parentConsultations = []
+      parentConsultationFormState = null
+      parentQuickNoteState = null
+      parentNoteHistoryContactId = null
+      parentContactDetailId = null
+      parentConvertPreviewState = null
+      notifications = syncAppNotifications(notifications)
+    }
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      isLoading: false,
+      message: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  // An empty server response is authoritative. Never upload or merge the
+  // browser-local parentConsultations dataset into canonical CRM implicitly.
+  parentConsultations = result.records
+  notifications = syncAppNotifications(notifications)
+  c53CrmSharedTruthState = {
+    ...c53CrmSharedTruthState,
+    centerId,
+    isLoading: false,
+    message: reason === 'after-server-commit'
+      ? 'CRM đã commit server và projection hiện tại đã được làm mới.'
+      : `Đã tải authoritative CRM (${result.records.length} Case).`,
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+    eligibleConsultants: result.eligibleConsultants,
+  }
+  render()
+  return result
+}
+
+async function writeC53CrmCommand(command, { reason = 'crm-save' } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const access = canWriteC53CrmSharedTruth(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.canWrite) {
+    const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      centerId,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  const fingerprint = createC53CrmRetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = c53CrmRetryCommands.get(retryScope) || {
+    centerId,
+    command,
+    idempotencyKey: createC53CrmIdempotencyKey(),
+  }
+  c53CrmRetryCommands.set(retryScope, pending)
+  const runId = ++c53CrmSyncRunId
+  c53CrmSharedTruthState = {
+    ...c53CrmSharedTruthState,
+    centerId,
+    isSaving: true,
+    message: 'Đang commit authoritative CRM...',
+    messageTone: '',
+  }
+  render()
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (
+    runId !== c53CrmSyncRunId
+    || centerId !== getCurrentResolvedCenterId()
+    || !readiness.ok
+    || readiness.centerId !== centerId
+  ) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : readiness
+    if (runId === c53CrmSyncRunId) {
+      c53CrmSharedTruthState = {
+        ...c53CrmSharedTruthState,
+        isSaving: false,
+        message: result.error || getC53CrmOutcomeMessage('SERVER_COMMAND_FAILED'),
+        messageTone: 'error',
+      }
+      render()
+    }
+    return result
+  }
+
+  const result = await mutateC53CrmSharedTruth({
+    supabase: readiness.supabase,
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== c53CrmSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'CRM đã commit tại cơ sở trước; view cơ sở hiện tại không nhận projection đó.'
+        : getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+
+  if (!result.ok && !isC53RetryableCrmFailure(result)) {
+    c53CrmRetryCommands.delete(retryScope)
+  }
+  if (!result.ok) {
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      isSaving: false,
+      message: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  // Server commit is complete here. Local projection changes only after a
+  // second authoritative read succeeds.
+  c53CrmSharedTruthState = { ...c53CrmSharedTruthState, isSaving: false }
+  const projection = await refreshC53CrmSharedTruth({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'CRM đã commit server nhưng chưa tải lại được projection; không ghi local giả thành công.',
+    }
+  }
+  c53CrmRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reason }
+}
+
+function createC53CrmRetryFingerprint(command = {}) {
+  return JSON.stringify(normalizeC53CrmRetrySemantic(command))
+}
+
+function normalizeC53CrmRetrySemantic(value) {
+  if (Array.isArray(value)) return value.map(normalizeC53CrmRetrySemantic)
+  if (!value || typeof value !== 'object') return value
+  return Object.keys(value).sort().reduce((result, key) => {
+    if (['case_id', 'candidate_id', 'care_log_id', 'appointment_id', 'new_assignment_id'].includes(key)) {
+      return result
+    }
+    result[key] = normalizeC53CrmRetrySemantic(value[key])
+    return result
+  }, {})
+}
+
+function isC53RetryableCrmFailure(result = {}) {
+  return !result?.outcome_code || [
+    'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'CRM_COMMAND_FAILED',
+    'INVALID_SERVER_RESULT', 'CONCURRENT_CONFLICT',
+  ].includes(result.outcome_code)
 }
 
 async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSyncId) {
@@ -20671,6 +20942,10 @@ function bindEvents() {
     })
   })
 
+  document.querySelector('[data-parent-crm-action="refresh"]')?.addEventListener('click', () => {
+    void refreshC53CrmSharedTruth({ reason: 'manual-refresh' })
+  })
+
   document.querySelectorAll('[data-parent-note-history-contact-id]').forEach((button) => {
     button.addEventListener('click', () => {
       parentNoteHistoryContactId = button.dataset.parentNoteHistoryContactId
@@ -20969,7 +21244,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-parent-quick-note-action="save"]')?.addEventListener('click', () => {
+  document.querySelector('[data-parent-quick-note-action="save"]')?.addEventListener('click', async () => {
     if (!parentQuickNoteState) {
       return
     }
@@ -20996,11 +21271,26 @@ function bindEvents() {
     }
 
     const updatedContact = addQuickNoteToParentContact(existingContact, noteContent)
-    parentConsultations = parentConsultations.map((contact) =>
-      contact.id === updatedContact.id ? updatedContact : contact,
-    )
-    saveStoredParentConsultations(parentConsultations)
-    notifications = syncAppNotifications(notifications)
+    const careLog = updatedContact.careLogs?.find(
+      (candidate) => !(existingContact.careLogs || []).some((item) => item.id === candidate.id),
+    ) || updatedContact.careLogs?.[0]
+    let command
+    try {
+      command = buildC53AppendCareLogCommand(existingContact, careLog)
+    } catch (error) {
+      parentQuickNoteState = { ...parentQuickNoteState, error: String(error?.message || error) }
+      render()
+      return
+    }
+    const result = await writeC53CrmCommand(command, { reason: 'quick-care-note' })
+    if (!result.ok) {
+      parentQuickNoteState = {
+        ...parentQuickNoteState,
+        error: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+      }
+      render()
+      return
+    }
     parentQuickNoteState = null
     render()
   })
@@ -21220,7 +21510,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-parent-appointment-status-id]').forEach((control) => {
-    control.addEventListener('change', () => {
+    control.addEventListener('change', async () => {
       if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
         return
       }
@@ -21243,14 +21533,27 @@ function bindEvents() {
         control.dataset.parentAppointmentStatusId,
         control.value,
       )
-
-      parentConsultations = parentConsultations.map((contact) =>
-        contact.id === updatedContact.id ? updatedContact : contact,
+      const updatedAppointment = updatedContact.appointments?.find(
+        (appointment) => appointment.id === control.dataset.parentAppointmentStatusId,
       )
-      saveStoredParentConsultations(parentConsultations)
-    notifications = syncAppNotifications(notifications)
+      let command
+      try {
+        command = buildC53UpsertAppointmentCommand(existingContact, updatedAppointment)
+      } catch (error) {
+        c53CrmSharedTruthState = {
+          ...c53CrmSharedTruthState,
+          message: String(error?.message || error),
+          messageTone: 'error',
+        }
+        render()
+        return
+      }
+      const result = await writeC53CrmCommand(command, { reason: 'appointment-status' })
+      if (!result.ok) return
+      const refreshedContact = parentConsultations.find((contact) => contact.id === existingContact.id)
+      if (!refreshedContact) return
       parentConsultationFormState = {
-        ...createEditParentContactFormState(updatedContact),
+        ...createEditParentContactFormState(refreshedContact),
         activeStep: parentConsultationFormState.activeStep,
         scrollTop: parentConsultationFormState.scrollTop || 0,
       }
@@ -21325,16 +21628,27 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-parent-contact-action="delete"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const contact = parentConsultations.find((item) => item.id === button.dataset.contactId)
 
       if (!contact || !window.confirm('Bạn có chắc muốn xóa liên hệ này?')) {
         return
       }
 
-      parentConsultations = parentConsultations.filter((item) => item.id !== contact.id)
-      saveStoredParentConsultations(parentConsultations)
-    notifications = syncAppNotifications(notifications)
+      let command
+      try {
+        command = buildC53ArchiveCaseCommand(contact)
+      } catch (error) {
+        c53CrmSharedTruthState = {
+          ...c53CrmSharedTruthState,
+          message: String(error?.message || error),
+          messageTone: 'error',
+        }
+        render()
+        return
+      }
+      const result = await writeC53CrmCommand(command, { reason: 'archive-case' })
+      if (!result.ok) return
 
       if (parentConsultationFormState?.contactId === contact.id) {
         parentConsultationFormState = null
@@ -21364,7 +21678,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-parent-contact-action="save-form"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       if (!parentConsultationFormState) {
         return
       }
@@ -21396,21 +21710,77 @@ function bindEvents() {
         baseContact,
         parentConsultationFormState.enrollmentDraft,
       )
-
-      parentConsultations = existingContact
-        ? parentConsultations.map((contact) =>
-            contact.id === existingContact.id ? nextContact : contact,
-          )
-        : [nextContact, ...parentConsultations]
-
-      saveStoredParentConsultations(parentConsultations)
-    notifications = syncAppNotifications(notifications)
+      let command
+      try {
+        command = existingContact
+          ? buildC53SaveCaseCommand(nextContact, {
+              appointment: findChangedTrialAppointment(existingContact, nextContact),
+            })
+          : buildC53CreateLeadCommand(nextContact)
+      } catch (error) {
+        parentConsultationFormState = {
+          ...parentConsultationFormState,
+          errors: { ...parentConsultationFormState.errors, summary: String(error?.message || error) },
+        }
+        render()
+        return
+      }
+      const result = await writeC53CrmCommand(command, {
+        reason: existingContact ? 'save-case' : 'create-lead',
+      })
+      if (!result.ok) {
+        parentConsultationFormState = {
+          ...parentConsultationFormState,
+          errors: {
+            ...parentConsultationFormState.errors,
+            summary: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+          },
+        }
+        render()
+        return
+      }
+      const requestedConsultantId = String(nextContact.consultantId || '').trim()
+      const previousConsultantId = String(existingContact?.consultantId || '').trim()
+      if (requestedConsultantId && requestedConsultantId !== previousConsultantId) {
+        const refreshedContact = parentConsultations.find((contact) => contact.id === nextContact.id)
+        if (!refreshedContact) {
+          parentConsultationFormState = {
+            ...parentConsultationFormState,
+            errors: { ...parentConsultationFormState.errors, summary: 'Case đã commit nhưng chưa tìm thấy projection để gán consultant.' },
+          }
+          render()
+          return
+        }
+        let assignmentCommand
+        try {
+          assignmentCommand = buildC53AssignCaseCommand(refreshedContact, requestedConsultantId)
+        } catch (error) {
+          parentConsultationFormState = {
+            ...parentConsultationFormState,
+            errors: { ...parentConsultationFormState.errors, summary: String(error?.message || error) },
+          }
+          render()
+          return
+        }
+        const assignmentResult = await writeC53CrmCommand(assignmentCommand, { reason: 'assign-case' })
+        if (!assignmentResult.ok) {
+          parentConsultationFormState = {
+            ...parentConsultationFormState,
+            errors: {
+              ...parentConsultationFormState.errors,
+              summary: assignmentResult.error || getC53CrmOutcomeMessage(assignmentResult.outcome_code),
+            },
+          }
+          render()
+          return
+        }
+      }
       parentConsultationFormState = null
       render()
     })
   })
 
-  document.querySelector('[data-parent-care-log-action="add"]')?.addEventListener('click', () => {
+  document.querySelector('[data-parent-care-log-action="add"]')?.addEventListener('click', async () => {
     if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
       return
     }
@@ -21444,14 +21814,36 @@ function bindEvents() {
       students,
     )
     const updatedContact = addCareLogToParentContact(contactWithCurrentFormValues, draft)
-
-    parentConsultations = parentConsultations.map((contact) =>
-      contact.id === updatedContact.id ? updatedContact : contact,
-    )
-    saveStoredParentConsultations(parentConsultations)
-    notifications = syncAppNotifications(notifications)
+    const careLog = updatedContact.careLogs?.find(
+      (candidate) => !(existingContact.careLogs || []).some((item) => item.id === candidate.id),
+    ) || updatedContact.careLogs?.[0]
+    let command
+    try {
+      command = buildC53AppendCareLogCommand(existingContact, careLog)
+    } catch (error) {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        careLogDraft: { ...draft, errors: { content: String(error?.message || error) } },
+      }
+      render()
+      return
+    }
+    const result = await writeC53CrmCommand(command, { reason: 'append-care-log' })
+    if (!result.ok) {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        careLogDraft: {
+          ...draft,
+          errors: { content: result.error || getC53CrmOutcomeMessage(result.outcome_code) },
+        },
+      }
+      render()
+      return
+    }
+    const refreshedContact = parentConsultations.find((contact) => contact.id === existingContact.id)
+    if (!refreshedContact) return
     parentConsultationFormState = {
-      ...createEditParentContactFormState(updatedContact),
+      ...createEditParentContactFormState(refreshedContact),
       careLogDraft: createEmptyParentCareLogDraft(),
       activeStep: parentConsultationFormState.activeStep,
       scrollTop: parentConsultationFormState.scrollTop || 0,
@@ -21459,7 +21851,7 @@ function bindEvents() {
     render()
   })
 
-  document.querySelector('[data-parent-appointment-action="add"]')?.addEventListener('click', () => {
+  document.querySelector('[data-parent-appointment-action="add"]')?.addEventListener('click', async () => {
     if (!parentConsultationFormState || parentConsultationFormState.mode !== 'edit') {
       return
     }
@@ -21493,14 +21885,36 @@ function bindEvents() {
       students,
     )
     const updatedContact = addAppointmentToParentContact(contactWithCurrentFormValues, draft)
-
-    parentConsultations = parentConsultations.map((contact) =>
-      contact.id === updatedContact.id ? updatedContact : contact,
-    )
-    saveStoredParentConsultations(parentConsultations)
-    notifications = syncAppNotifications(notifications)
+    const appointment = updatedContact.appointments?.find(
+      (candidate) => !(existingContact.appointments || []).some((item) => item.id === candidate.id),
+    ) || updatedContact.appointments?.[0]
+    let command
+    try {
+      command = buildC53UpsertAppointmentCommand(existingContact, appointment)
+    } catch (error) {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        appointmentDraft: { ...draft, errors: { scheduledAt: String(error?.message || error) } },
+      }
+      render()
+      return
+    }
+    const result = await writeC53CrmCommand(command, { reason: 'create-appointment' })
+    if (!result.ok) {
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        appointmentDraft: {
+          ...draft,
+          errors: { scheduledAt: result.error || getC53CrmOutcomeMessage(result.outcome_code) },
+        },
+      }
+      render()
+      return
+    }
+    const refreshedContact = parentConsultations.find((contact) => contact.id === existingContact.id)
+    if (!refreshedContact) return
     parentConsultationFormState = {
-      ...createEditParentContactFormState(updatedContact),
+      ...createEditParentContactFormState(refreshedContact),
       appointmentDraft: createEmptyParentAppointmentDraft(),
       activeStep: parentConsultationFormState.activeStep,
       scrollTop: parentConsultationFormState.scrollTop || 0,
@@ -21509,11 +21923,11 @@ function bindEvents() {
   })
 
   document.querySelector('[data-parent-enrollment-action="save"]')?.addEventListener('click', () => {
-    saveParentEnrollmentDraft(false)
+    void saveParentEnrollmentDraft(false)
   })
 
   document.querySelector('[data-parent-enrollment-action="ready"]')?.addEventListener('click', () => {
-    saveParentEnrollmentDraft(true)
+    void saveParentEnrollmentDraft(true)
   })
 
   document.querySelector('[data-parent-enrollment-action="copy"]')?.addEventListener('click', async () => {
@@ -24585,7 +24999,7 @@ function openTuitionPackageForm(studentId) {
   render()
 }
 
-function saveParentEnrollmentDraft(markReady = false) {
+async function saveParentEnrollmentDraft(markReady = false) {
   if (!parentConsultationFormState) {
     return
   }
@@ -24644,13 +25058,34 @@ function saveParentEnrollmentDraft(markReady = false) {
         parentConsultationFormState.enrollmentDraft,
       )
 
-  parentConsultations = parentConsultations.map((contact) =>
-    contact.id === updatedContact.id ? updatedContact : contact,
-  )
-  saveStoredParentConsultations(parentConsultations)
-    notifications = syncAppNotifications(notifications)
+  let command
+  try {
+    command = buildC53SaveCaseCommand(updatedContact, {
+      appointment: findChangedTrialAppointment(existingContact, updatedContact),
+    })
+  } catch (error) {
+    parentConsultationFormState = {
+      ...parentConsultationFormState,
+      enrollmentMessage: String(error?.message || error),
+    }
+    render()
+    return
+  }
+  const result = await writeC53CrmCommand(command, {
+    reason: markReady ? 'mark-trial-ready' : 'save-enrollment-draft',
+  })
+  if (!result.ok) {
+    parentConsultationFormState = {
+      ...parentConsultationFormState,
+      enrollmentMessage: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+    }
+    render()
+    return
+  }
+  const refreshedContact = parentConsultations.find((contact) => contact.id === existingContact.id)
+  if (!refreshedContact) return
   parentConsultationFormState = {
-    ...createEditParentContactFormState(updatedContact),
+    ...createEditParentContactFormState(refreshedContact),
     activeStep: parentConsultationFormState.activeStep || 4,
     scrollTop: parentConsultationFormState.scrollTop || 0,
     enrollmentMessage: markReady
@@ -24658,6 +25093,41 @@ function saveParentEnrollmentDraft(markReady = false) {
       : 'Đã lưu thông tin học thử và cập nhật lịch hẹn nếu có ngày học thử.',
   }
   render()
+}
+
+function findChangedTrialAppointment(existingContact = {}, nextContact = {}) {
+  const nextAppointments = Array.isArray(nextContact.appointments) ? nextContact.appointments : []
+  const existingAppointments = Array.isArray(existingContact.appointments) ? existingContact.appointments : []
+  return nextAppointments.find((appointment) => {
+    if (appointment.sourceType !== 'trial-booking') return false
+    const existing = existingAppointments.find((item) =>
+      item.id === appointment.id
+      || (
+        item.sourceType === 'trial-booking'
+        && item.sourceDraftId
+        && item.sourceDraftId === appointment.sourceDraftId
+      )
+    )
+    return !existing || JSON.stringify({
+      appointmentType: existing.appointmentType,
+      scheduledAt: existing.scheduledAt,
+      channel: existing.channel,
+      location: existing.location,
+      status: existing.status,
+      note: existing.note,
+      sourceType: existing.sourceType,
+      sourceDraftId: existing.sourceDraftId,
+    }) !== JSON.stringify({
+      appointmentType: appointment.appointmentType,
+      scheduledAt: appointment.scheduledAt,
+      channel: appointment.channel,
+      location: appointment.location,
+      status: appointment.status,
+      note: appointment.note,
+      sourceType: appointment.sourceType,
+      sourceDraftId: appointment.sourceDraftId,
+    })
+  }) || null
 }
 
 function collectParentContactWizardValuesFromDOM(formState) {

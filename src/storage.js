@@ -1122,6 +1122,10 @@ export function getStoredParentConsultations(defaultContacts) {
   return normalizedDefaultContacts
 }
 
+export function clearStoredParentConsultations() {
+  localStorage.removeItem(PARENT_CONSULTATIONS_KEY)
+}
+
 export function saveStoredParentConsultations(contacts) {
   localStorage.setItem(
     PARENT_CONSULTATIONS_KEY,
@@ -2294,6 +2298,7 @@ function normalizeParentCareLogs(careLogs, contactTimestamps = {}) {
       const contactedAt = log.contactedAt ? normalizeDateTime(log.contactedAt) : normalizeDateTime(fallbackTime)
 
       return {
+        ...log,
         id: String(log.id || `care-log-${String(index + 1).padStart(3, '0')}`),
         contactedAt,
         channel: VALID_PARENT_CARE_LOG_CHANNELS.includes(log.channel) ? log.channel : 'other',
@@ -2320,6 +2325,7 @@ function normalizeParentAppointments(appointments) {
       const createdAt = appointment.createdAt ? normalizeDateTime(appointment.createdAt) : scheduledAt
 
       return {
+        ...appointment,
         id: String(appointment.id || `appointment-${String(index + 1).padStart(3, '0')}`),
         appointmentType: VALID_PARENT_APPOINTMENT_TYPES.includes(appointment.appointmentType)
           ? appointment.appointmentType
@@ -2372,6 +2378,8 @@ function normalizeParentEnrollmentDraft(enrollmentDraft, contact = {}) {
     : expectedStartDate
 
   return {
+    ...draft,
+    contactMethodProtected: Boolean(draft.contactMethodProtected),
     isReady: Boolean(draft.isReady),
     studentName: String(
       hasSavedDraft ? draft.studentName || '' : draft.studentName || contact.leadStudentName || contact.studentName || '',

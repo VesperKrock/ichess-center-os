@@ -162,6 +162,7 @@ const emptyParentContactValues = {
   lastNote: '',
   nextAction: '',
   customerStage: 'lead',
+  consultantId: '',
   consultantName: '',
   nextFollowUpAt: '',
   potentialLevel: '',
@@ -281,8 +282,10 @@ export function createEditParentContactFormState(contact) {
       nextAction: contact.nextAction || '',
       customerStage: deriveParentCustomerStage(contact),
       consultantName: contact.consultantName || contact.advisorName || contact.enrollmentDraft?.advisorName || '',
+      consultantId: contact.consultantId || '',
       nextFollowUpAt: contact.nextFollowUpAt || '',
       potentialLevel: contact.potentialLevel || '',
+      identityReadOnly: Boolean(contact.identityReadOnly),
     },
     careLogs: sortCareLogsNewestFirst(contact.careLogs ?? []),
     careLogDraft: createEmptyParentCareLogDraft(),
@@ -382,7 +385,7 @@ export function validateEnrollmentReadyDraft(draft) {
     errors.parentName = 'Cần có tên phụ huynh.'
   }
 
-  if (!String(draft.phone ?? '').trim()) {
+  if (!String(draft.phone ?? '').trim() && !draft.contactMethodProtected) {
     errors.phone = 'Cần có số điện thoại.'
   }
 
@@ -579,6 +582,7 @@ export function buildParentContactFromForm(values, existingContact = null, stude
       : []
 
   return {
+    ...(existingContact ?? {}),
     id: existingContact?.id || `contact-${Date.now()}`,
     contactType: values.contactType,
     parentName: String(values.parentName || '').trim(),
@@ -977,6 +981,7 @@ export function renderParentConsultationModule(
   noteHistoryContactId = null,
   detailContactId = null,
   convertPreviewState = null,
+  sharedTruthState = {},
 ) {
   const mergedContacts = mergeParentContactsWithStudents(contacts, students)
   const stats = getParentConsultationStats(mergedContacts)
@@ -995,10 +1000,24 @@ export function renderParentConsultationModule(
           ${renderStatCard('Cần follow-up', stats.callbacks, 'is-warning')}
           ${renderStatCard('Đã chuyển đổi', stats.converted, 'is-success')}
         </div>
-        <button class="parent-consultation-add-button" type="button" data-parent-contact-action="open-create">
-          + Thêm khách mới
-        </button>
+        <div class="parent-consultation-topbar-actions">
+          <button
+            type="button"
+            data-parent-crm-action="refresh"
+            ${sharedTruthState.isLoading || sharedTruthState.isSaving ? 'disabled' : ''}
+          >${sharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}</button>
+          <button
+            class="parent-consultation-add-button"
+            type="button"
+            data-parent-contact-action="open-create"
+            ${sharedTruthState.isSaving ? 'disabled' : ''}
+          >+ Thêm khách mới</button>
+        </div>
       </div>
+
+      ${sharedTruthState.message
+        ? `<div class="parent-contact-form-${sharedTruthState.messageTone === 'error' ? 'error' : 'message'}" data-parent-crm-sync-message>${escapeHtml(sharedTruthState.message)}</div>`
+        : ''}
 
       <section class="parent-consultation-list-section" aria-label="Bảng liên hệ phụ huynh và khách tư vấn mới">
         <div class="parent-consultation-list-header">
@@ -1006,7 +1025,7 @@ export function renderParentConsultationModule(
             <h3>Phụ huynh / Tư vấn</h3>
             <span>${filteredContacts.length}/${mergedContacts.length} liên hệ</span>
           </div>
-          <span class="parent-consultation-phase">F23.3B · CRM local-safe</span>
+          <span class="parent-consultation-phase">C5.3 · CRM authoritative${sharedTruthState.lastLoadedAt ? ` · ${escapeHtml(formatDateTime(sharedTruthState.lastLoadedAt, true))}` : ''}</span>
         </div>
 
         <div class="parent-consultation-toolbar">
@@ -1056,7 +1075,7 @@ export function renderParentConsultationModule(
         }
       </section>
       ${detailContact ? renderParentContactDetailPanel(detailContact) : ''}
-      ${formState ? renderParentContactForm(formState, students) : ''}
+      ${formState ? renderParentContactForm(formState, students, sharedTruthState.eligibleConsultants) : ''}
       ${noteHistoryContactId ? renderNoteHistoryModal(mergedContacts, noteHistoryContactId) : ''}
       ${quickNoteState ? renderQuickNoteModal(mergedContacts, quickNoteState) : ''}
       ${convertPreviewState ? renderParentConvertPreviewModal(mergedContacts, students, convertPreviewState) : ''}
@@ -1709,7 +1728,7 @@ function getContactNoteSubtitle(contact) {
     .join(' · ') || 'Liên hệ chưa có tên'
 }
 
-function renderParentContactForm(formState, students) {
+function renderParentContactForm(formState, students, eligibleConsultants = []) {
   const { values, errors } = formState
   const title = formState.mode === 'edit' ? 'Sửa khách hàng' : 'Thêm khách mới'
   const activeStep = getParentContactWizardStep(formState.activeStep)
@@ -1735,7 +1754,7 @@ function renderParentContactForm(formState, students) {
           data-parent-contact-form-scroll
           data-parent-contact-step="${activeStep}"
         >
-          ${renderParentContactWizardStep(activeStep, formState, students)}
+          ${renderParentContactWizardStep(activeStep, formState, students, eligibleConsultants)}
         </div>
         <div class="parent-contact-form-footer">
           <div class="parent-contact-step-nav">
@@ -1778,7 +1797,7 @@ function renderParentContactWizardIndicator(activeStep) {
   `
 }
 
-function renderParentContactWizardStep(activeStep, formState, students) {
+function renderParentContactWizardStep(activeStep, formState, students, eligibleConsultants = []) {
   const { values, errors } = formState
 
   if (activeStep === 1) {
@@ -1788,10 +1807,11 @@ function renderParentContactWizardStep(activeStep, formState, students) {
         <div class="parent-contact-form-grid">
           ${renderFormSelect('Stage khách hàng', 'customerStage', values.customerStage, parentCustomerStageLabels, errors.customerStage)}
           ${renderFormSelect('Loại liên hệ', 'contactType', values.contactType, parentContactTypeLabels, errors.contactType)}
-          ${renderFormInput('Tên phụ huynh/khách', 'parentName', values.parentName, errors.parentName)}
-          ${renderFormInput('Số điện thoại', 'phone', values.phone, errors.phone)}
-          ${renderFormInput('Số phụ', 'secondaryPhone', values.secondaryPhone)}
-          ${renderFormInput('Email', 'email', values.email, '', 'email')}
+          ${renderFormInput('Tên phụ huynh/khách', 'parentName', values.parentName, errors.parentName, 'text', values.identityReadOnly)}
+          ${renderFormInput('Số điện thoại', 'phone', values.phone, errors.phone, 'text', values.identityReadOnly)}
+          ${renderFormInput('Số phụ', 'secondaryPhone', values.secondaryPhone, '', 'text', values.identityReadOnly)}
+          ${renderFormInput('Email', 'email', values.email, '', 'email', values.identityReadOnly)}
+          ${values.identityReadOnly ? '<small>Identity Contact được canonical CRM bảo vệ; C5.3 không merge/ghi đè im lặng.</small>' : ''}
           ${renderFormInput('Khu vực', 'locationArea', values.locationArea)}
         </div>
       </section>
@@ -1826,7 +1846,7 @@ function renderParentContactWizardStep(activeStep, formState, students) {
         <div class="parent-contact-form-grid">
           ${renderFormSelect('Trạng thái', 'consultationStatus', values.consultationStatus, parentConsultationStatusLabels, errors.consultationStatus)}
           ${renderFormSelect('Nguồn', 'source', values.source, parentContactSourceLabels, errors.source)}
-          ${renderFormInput('Tư vấn phụ trách', 'consultantName', values.consultantName)}
+          ${renderConsultantAssignmentSelect(values.consultantId, eligibleConsultants)}
           ${renderFormInput('Ngày tư vấn', 'consultedAt', values.consultedAt, '', 'date')}
           ${renderFormInput('Ngày đăng ký', 'registeredAt', values.registeredAt, '', 'date')}
           ${renderFormInput('Lịch rảnh mong muốn', 'preferredSchedule', values.preferredSchedule)}
@@ -1873,7 +1893,7 @@ function renderEnrollmentSection(formState) {
         ${renderEnrollmentInput('Họ và tên học viên', 'studentName', draft.studentName, errors.studentName)}
         ${renderEnrollmentBirthYearInput(draft.studentBirthYear, errors.studentBirthYear)}
         ${renderEnrollmentInput('Tên phụ huynh', 'parentName', draft.parentName, errors.parentName)}
-        ${renderEnrollmentInput('Số điện thoại liên hệ', 'phone', draft.phone, errors.phone)}
+        ${renderEnrollmentInput('Số điện thoại liên hệ', 'phone', draft.phone, errors.phone, 'text', draft.contactMethodProtected)}
         ${renderEnrollmentSelect('Trình độ của bé hiện tại', 'childChessLevel', draft.childChessLevel, { '': 'Chưa chọn', ...childChessLevelLabels })}
         ${renderEnrollmentInput('Lịch rảnh khi đăng ký học', 'preferredSchedule', draft.preferredSchedule)}
         ${renderEnrollmentInput('Ngày học thử dự kiến', 'expectedTrialDate', draft.expectedTrialDate || draft.expectedStartDate, errors.expectedTrialDate, 'date')}
@@ -2025,7 +2045,7 @@ function renderFormErrorSummary(errors = {}) {
   `
 }
 
-function renderFormInput(label, field, value, error = '', type = 'text') {
+function renderFormInput(label, field, value, error = '', type = 'text', disabled = false) {
   return `
     <label class="${error ? 'has-error' : ''}">
       <span>${escapeHtml(label)}</span>
@@ -2033,6 +2053,7 @@ function renderFormInput(label, field, value, error = '', type = 'text') {
         type="${escapeAttribute(type)}"
         value="${escapeAttribute(value)}"
         data-parent-contact-field="${escapeAttribute(field)}"
+        ${disabled ? 'disabled' : ''}
       />
       ${error ? `<small>${escapeHtml(error)}</small>` : ''}
     </label>
@@ -2067,6 +2088,25 @@ function renderFormSelect(label, field, selectedValue, optionsByValue, error = '
         ${options}
       </select>
       ${error ? `<small>${escapeHtml(error)}</small>` : ''}
+    </label>
+  `
+}
+
+function renderConsultantAssignmentSelect(selectedUserId = '', eligibleConsultants = []) {
+  const normalizedSelected = String(selectedUserId || '')
+  const options = [
+    `<option value="" ${normalizedSelected ? 'disabled' : 'selected'}>Chưa gán canonical consultant</option>`,
+    ...(Array.isArray(eligibleConsultants) ? eligibleConsultants : []).map((consultant) => {
+      const userId = String(consultant?.userId || '')
+      const label = String(consultant?.label || userId)
+      return `<option value="${escapeAttribute(userId)}" ${normalizedSelected === userId ? 'selected' : ''}>${escapeHtml(label)}</option>`
+    }),
+  ].join('')
+  return `
+    <label>
+      <span>Tư vấn phụ trách (canonical assignment)</span>
+      <select data-parent-contact-field="consultantId">${options}</select>
+      <small>Chỉ active membership role consultant cùng cơ sở; C5.3 hỗ trợ gán/gán lại, chưa hỗ trợ bỏ gán.</small>
     </label>
   `
 }
@@ -2177,7 +2217,7 @@ function renderAppointmentTextarea(label, field, value, error = '') {
   `
 }
 
-function renderEnrollmentInput(label, field, value, error = '', type = 'text') {
+function renderEnrollmentInput(label, field, value, error = '', type = 'text', disabled = false) {
   return `
     <label class="${error ? 'has-error' : ''}">
       <span>${escapeHtml(label)}</span>
@@ -2185,6 +2225,7 @@ function renderEnrollmentInput(label, field, value, error = '', type = 'text') {
         type="${escapeAttribute(type)}"
         value="${escapeAttribute(value ?? '')}"
         data-parent-enrollment-field="${escapeAttribute(field)}"
+        ${disabled ? 'disabled' : ''}
       />
       ${error ? `<small>${escapeHtml(error)}</small>` : ''}
     </label>
@@ -2533,6 +2574,7 @@ function normalizeEnrollmentDraftForForm(draft = {}) {
   const expectedStartDate = String(draft.expectedStartDate || '')
 
   return {
+    contactMethodProtected: Boolean(draft.contactMethodProtected),
     ...emptyEnrollmentDraft,
     isReady: Boolean(draft.isReady),
     studentName: String(draft.studentName || ''),
