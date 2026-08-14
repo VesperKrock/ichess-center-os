@@ -289,7 +289,6 @@ import {
 } from './notification-center.js'
 import {
   initialAttendanceBoardFilters,
-  removeDemoAttendanceReports,
   renderAttendanceBoardModule,
 } from './attendance-board-module.js'
 import {
@@ -441,6 +440,7 @@ import {
   createCoreCommandIdempotencyKey,
   mutateAuthoritativeCoreEntity,
 } from './cloud-authoritative-core.js'
+import { createOperationalCommandIdempotencyKey } from './cloud-authoritative-attendance-tuition.js'
 import {
   NEEDS_SUPABASE_REALTIME_PATCH,
   mergeRealtimeStudentIntoList,
@@ -783,6 +783,7 @@ let c51AttendanceRealtimeSubscription = null
 let c51AttendanceRealtimeCenterId = ''
 let c51AttendanceCloudWriteRunId = 0
 let c51AttendanceAutoPullUserId = ''
+let c52AttendanceRetryCommands = new Map()
 let c52TuitionRealtimeSubscription = null
 let c52TuitionRealtimeCenterId = ''
 let c52TuitionCloudWriteRunId = 0
@@ -8452,6 +8453,9 @@ function resetCloudRuntimeStateForOwnerCenterSwitch() {
   cloudDbAutoPullUserId = ''
   c51AttendanceAutoPullUserId = ''
   c52TuitionAutoPullUserId = ''
+  c52AttendanceRetryCommands.clear()
+  c51AttendanceCloudWriteRunId += 1
+  c52TuitionCloudWriteRunId += 1
   cloudBootstrapRetryBlockedUntil = 0
   cloudBootstrapLastFailureSignature = ''
   transactionImageManagerState = null
@@ -12920,6 +12924,9 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     cloudDbAutoPullUserId = ''
     c51AttendanceAutoPullUserId = ''
     c52TuitionAutoPullUserId = ''
+    c52AttendanceRetryCommands.clear()
+    c51AttendanceCloudWriteRunId += 1
+    c52TuitionCloudWriteRunId += 1
     cloudLastSyncedUserId = ''
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
@@ -12988,6 +12995,9 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     cloudDbAutoPullUserId = ''
     c51AttendanceAutoPullUserId = ''
     c52TuitionAutoPullUserId = ''
+    c52AttendanceRetryCommands.clear()
+    c51AttendanceCloudWriteRunId += 1
+    c52TuitionCloudWriteRunId += 1
     cloudBootstrapRetryBlockedUntil = 0
     cloudBootstrapLastFailureSignature = ''
     isCenterProfilePopoverOpen = false
@@ -13021,6 +13031,9 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       cloudDbAutoPullUserId = ''
       c51AttendanceAutoPullUserId = ''
       c52TuitionAutoPullUserId = ''
+      c52AttendanceRetryCommands.clear()
+      c51AttendanceCloudWriteRunId += 1
+      c52TuitionCloudWriteRunId += 1
       cloudBootstrapRetryBlockedUntil = 0
       cloudBootstrapLastFailureSignature = ''
 
@@ -13834,14 +13847,12 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
     return
   }
 
-  if (!result.ok || result.empty) {
+  if (!result.ok) {
     cloudDbState = {
       ...cloudDbState,
       readinessStatus: readiness.ready === false ? cloudDbState.readinessStatus : 'ready',
-      message: result.ok
-        ? 'C5.1 realtime ready; attendance/session report cloud empty, giữ cache local.'
-        : result.error || 'C5.1 realtime degraded; giữ cache local.',
-      messageTone: result.ok ? '' : 'error',
+      message: result.error || 'C5.2 attendance/session report cloud degraded; cache chưa thay đổi.',
+      messageTone: 'error',
       lastUpdatedAt: new Date().toISOString(),
     }
     render()
@@ -13853,19 +13864,8 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
     baselineState: loadAttendanceBaselineState(getCurrentResolvedCenterId()),
     sessionReports,
     cloudRecords: result.records,
+    authoritativeSnapshot: true,
   })
-
-  if (!mergeResult.changed) {
-    cloudDbState = {
-      ...cloudDbState,
-      readinessStatus: 'ready',
-      message: 'C5.1 realtime ready; attendance/session report local đã mới nhất.',
-      messageTone: '',
-      lastUpdatedAt: new Date().toISOString(),
-    }
-    render()
-    return
-  }
 
   saveStoredAttendanceRecords(getCurrentResolvedCenterId(), mergeResult.attendanceRecords)
   saveAttendanceBaselineState(getCurrentResolvedCenterId(), mergeResult.baselineState)
@@ -13874,18 +13874,21 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: 'ready',
-    message: `Đã tải C5.1 attendance/session report từ cloud (${result.records.length} entity).`,
-    messageTone: 'success',
+    message: `Đã bootstrap C5.2 attendance/session report authoritative (${result.records.length} entity).`,
+    messageTone: result.records.length ? 'success' : '',
     lastUpdatedAt: new Date().toISOString(),
   }
   render()
 }
 
-async function writeC51AttendanceSessionReportThroughCloud({
+async function writeC52AttendanceSessionReportThroughCloud({
   attendanceRecords = [],
   baselineState = null,
   sessionReports: reportsToWrite = [],
-  reason = 'c5-1c-local-save',
+  previousAttendanceRecords = [],
+  replaceBaselineRecords = false,
+  idempotencyKey,
+  reason = 'c5-2-authoritative-save',
 } = {}) {
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
@@ -13905,7 +13908,27 @@ async function writeC51AttendanceSessionReportThroughCloud({
   }
 
   const runId = ++c51AttendanceCloudWriteRunId
-  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
+  const proposedCommand = {
+    fingerprint: createC52OperationalRetryFingerprint({
+      reason,
+      attendanceRecords,
+      baselineState,
+      sessionReports: reportsToWrite,
+      previousAttendanceRecords,
+      replaceBaselineRecords,
+    }),
+    centerId: getCurrentResolvedCenterId(),
+    attendanceRecords: cloneC52OperationalCommandValue(attendanceRecords),
+    baselineState: cloneC52OperationalCommandValue(baselineState),
+    sessionReports: cloneC52OperationalCommandValue(reportsToWrite),
+    previousAttendanceRecords: cloneC52OperationalCommandValue(previousAttendanceRecords),
+    replaceBaselineRecords: Boolean(replaceBaselineRecords),
+    idempotencyKey: idempotencyKey || createOperationalCommandIdempotencyKey(),
+  }
+  const retryScope = `${proposedCommand.centerId}|${proposedCommand.fingerprint}`
+  const command = c52AttendanceRetryCommands.get(retryScope) || proposedCommand
+  c52AttendanceRetryCommands.set(retryScope, command)
+  const readiness = await checkCloudDbReadiness(command.centerId)
 
   if (!readiness.ok) {
     if (runId === c51AttendanceCloudWriteRunId) {
@@ -13921,6 +13944,18 @@ async function writeC51AttendanceSessionReportThroughCloud({
     return readiness
   }
 
+  if (
+    runId !== c51AttendanceCloudWriteRunId
+    || readiness.centerId !== command.centerId
+    || getCurrentResolvedCenterId() !== command.centerId
+  ) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: 'Cơ sở đã thay đổi; lệnh cũ chưa được gửi lên server.',
+    }
+  }
+
   const writeAccessState = buildOnlineAccessState({
     isSupabaseConfigured: true,
     isSignedIn: Boolean(readiness.user),
@@ -13933,28 +13968,109 @@ async function writeC51AttendanceSessionReportThroughCloud({
   const result = await upsertC51AttendanceSessionReportCloudEntities({
     supabase: readiness.supabase,
     centerId: readiness.centerId,
-    attendanceRecords,
-    baselineState,
-    sessionReports: reportsToWrite,
+    attendanceRecords: command.attendanceRecords,
+    baselineState: command.baselineState,
+    sessionReports: command.sessionReports,
+    previousAttendanceRecords: command.previousAttendanceRecords,
+    replaceBaselineRecords: command.replaceBaselineRecords,
     userId: readiness.user?.id,
     accessState: writeAccessState,
+    idempotencyKey: command.idempotencyKey,
   })
 
-  if (runId !== c51AttendanceCloudWriteRunId) {
-    return result
+  if (
+    c52AttendanceRetryCommands.get(retryScope)?.idempotencyKey === command.idempotencyKey
+    && (result.ok || !isC52RetryableOperationalFailure(result))
+  ) {
+    c52AttendanceRetryCommands.delete(retryScope)
   }
+
+  if (
+    runId !== c51AttendanceCloudWriteRunId
+    || getCurrentResolvedCenterId() !== command.centerId
+  ) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Dữ liệu đã commit tại cơ sở trước; view hiện tại không bị thay đổi.'
+        : result.error || 'Cơ sở đã thay đổi; projection không bị thay đổi.',
+    }
+  }
+
+  let projection = null
+  if (result.ok && Array.isArray(result.records) && result.records.length) {
+    const mergeResult = mergeC51CloudRecordsIntoLocal({
+      attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+      baselineState: loadAttendanceBaselineState(getCurrentResolvedCenterId()),
+      sessionReports,
+      cloudRecords: result.records,
+    })
+    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), mergeResult.attendanceRecords)
+    saveAttendanceBaselineState(getCurrentResolvedCenterId(), mergeResult.baselineState)
+    sessionReports = mergeResult.sessionReports
+    saveStoredSessionReports(sessionReports)
+    projection = mergeResult
+  }
+
+  result.projection = projection
 
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
     message: result.ok
-      ? `Đã ghi cloud C5.1 (${reason}): ${result.count || 0} entity.`
-      : result.error || 'C5.1 realtime degraded; local đã được giữ.',
+      ? `Đã commit server C5.2 (${reason}): ${result.count || 0} entity.`
+      : result.error || 'C5.2 server write failed; projection chưa thay đổi.',
     messageTone: result.ok ? 'success' : 'error',
     lastUpdatedAt: new Date().toISOString(),
   }
   render()
   return result
+}
+
+function createC52OperationalRetryFingerprint(value = {}) {
+  return JSON.stringify(normalizeC52OperationalRetrySemantic(value))
+}
+
+function normalizeC52OperationalRetrySemantic(value, depth = 0) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeC52OperationalRetrySemantic(item, depth + 1))
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  return Object.keys(value)
+    .sort()
+    .reduce((result, key) => {
+      if (
+        ['updatedAt', 'createdAt', 'cloudUpdatedAt', 'cloudDeletedAt'].includes(key)
+        || key === 'auditLog'
+        || (depth > 2 && key === 'id')
+      ) {
+        return result
+      }
+
+      result[key] = normalizeC52OperationalRetrySemantic(value[key], depth + 1)
+      return result
+    }, {})
+}
+
+function cloneC52OperationalCommandValue(value) {
+  if (value === null || value === undefined) return value
+  return JSON.parse(JSON.stringify(value))
+}
+
+function isC52RetryableOperationalFailure(result = {}) {
+  return !result?.outcome_code || [
+    'CLIENT_NOT_READY',
+    'SERVER_COMMAND_FAILED',
+    'INVALID_SERVER_RESULT',
+    'CONCURRENT_CONFLICT',
+  ].includes(result.outcome_code)
 }
 
 async function startC51AttendanceRealtimeSubscription(syncId = cloudUserSyncId) {
@@ -14023,7 +14139,11 @@ function handleC51AttendanceRealtimeStatus(status) {
 }
 
 function handleC51AttendanceRealtimeRecord(record) {
-  if (!record || !C51_ATTENDANCE_REALTIME_ENTITY_TYPES.includes(record.entity_type)) {
+  if (
+    !record
+    || !C51_ATTENDANCE_REALTIME_ENTITY_TYPES.includes(record.entity_type)
+    || String(record.center_id || '') !== String(getCurrentResolvedCenterId())
+  ) {
     return
   }
 
@@ -14066,14 +14186,12 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
     return
   }
 
-  if (!result.ok || result.empty) {
+  if (!result.ok) {
     cloudDbState = {
       ...cloudDbState,
       readinessStatus: readiness.ready === false ? cloudDbState.readinessStatus : 'ready',
-      message: result.ok
-        ? 'C5.2C tuition cloud ready; cloud empty, giu cache Hoc phi local.'
-        : result.error || 'C5.2C tuition cloud degraded; giu cache Hoc phi local.',
-      messageTone: result.ok ? '' : 'error',
+      message: result.error || 'C5.2 tuition cloud degraded; projection chưa thay đổi.',
+      messageTone: 'error',
       lastUpdatedAt: new Date().toISOString(),
     }
     render()
@@ -14083,19 +14201,8 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
   const mergeResult = mergeC52TuitionCloudRecordsIntoLocal({
     tuitionRecords,
     cloudRecords: result.records,
+    authoritativeSnapshot: true,
   })
-
-  if (!mergeResult.changed) {
-    cloudDbState = {
-      ...cloudDbState,
-      readinessStatus: 'ready',
-      message: 'C5.2C tuition cloud ready; Hoc phi local da moi nhat.',
-      messageTone: '',
-      lastUpdatedAt: new Date().toISOString(),
-    }
-    render()
-    return
-  }
 
   tuitionRecords = mergeResult.tuitionRecords
   saveStoredTuition(tuitionRecords)
@@ -14103,8 +14210,8 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: 'ready',
-    message: `Da tai Hoc phi tu cloud (${result.records.length} tuition_record_package).`,
-    messageTone: 'success',
+    message: `Đã bootstrap Học phí authoritative (${result.records.length} tuition_record_package).`,
+    messageTone: result.records.length ? 'success' : '',
     lastUpdatedAt: new Date().toISOString(),
   }
   render()
@@ -14114,7 +14221,9 @@ async function writeC52TuitionRecordPackageThroughCloud(
   tuitionRecord,
   reason = 'tuition-local-save',
   auditContext = {},
+  idempotencyKey,
 ) {
+  const writeCenterId = getCurrentResolvedCenterId()
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
   })
@@ -14133,7 +14242,7 @@ async function writeC52TuitionRecordPackageThroughCloud(
   }
 
   const runId = ++c52TuitionCloudWriteRunId
-  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
+  const readiness = await checkCloudDbReadiness(writeCenterId)
 
   if (!readiness.ok) {
     if (runId === c52TuitionCloudWriteRunId) {
@@ -14147,6 +14256,18 @@ async function writeC52TuitionRecordPackageThroughCloud(
       render()
     }
     return readiness
+  }
+
+  if (
+    runId !== c52TuitionCloudWriteRunId
+    || readiness.centerId !== writeCenterId
+    || getCurrentResolvedCenterId() !== writeCenterId
+  ) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: 'Cơ sở đã thay đổi; lệnh Học phí cũ chưa được gửi lên server.',
+    }
   }
 
   const writeAccessState = buildOnlineAccessState({
@@ -14164,30 +14285,53 @@ async function writeC52TuitionRecordPackageThroughCloud(
     tuitionRecords: tuitionRecord ? [tuitionRecord] : [],
     userId: readiness.user?.id,
     accessState: writeAccessState,
+    idempotencyKey,
   })
 
+  if (
+    runId !== c52TuitionCloudWriteRunId
+    || getCurrentResolvedCenterId() !== writeCenterId
+  ) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Học phí đã commit tại cơ sở trước; view hiện tại không bị thay đổi.'
+        : result.error || 'Cơ sở đã thay đổi; projection Học phí không bị thay đổi.',
+    }
+  }
+
+  let projectionRecord = null
   if (result.ok && tuitionRecord) {
+    const mergeResult = mergeC52TuitionCloudRecordsIntoLocal({
+      tuitionRecords,
+      cloudRecords: result.records,
+    })
+    tuitionRecords = mergeResult.tuitionRecords
+    saveStoredTuition(tuitionRecords)
+    notifications = syncTuitionNotifications(notifications)
+    projectionRecord = tuitionRecords.find((record) => record.id === tuitionRecord.id) || null
+    result.projectionRecord = projectionRecord
+
     void writeC53TuitionAuditLogEntry({
       supabase: readiness.supabase,
       centerId: readiness.centerId,
       userId: readiness.user?.id,
       accessState: writeAccessState,
-      tuitionRecord,
+      tuitionRecord: projectionRecord || tuitionRecord,
       beforePayload: auditContext.beforePayload || null,
       reason,
     })
-  }
-
-  if (runId !== c52TuitionCloudWriteRunId) {
-    return result
   }
 
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
     message: result.ok
-      ? `Da ghi cloud Hoc phi (${reason}): ${result.count || 0} tuition_record_package.`
-      : result.error || 'C5.2C tuition cloud degraded; local da duoc giu.',
+      ? `Đã commit server Học phí (${reason}): ${result.count || 0} tuition_record_package.`
+      : result.error || 'C5.2 tuition server write failed; projection chưa thay đổi.',
     messageTone: result.ok ? 'success' : 'error',
     lastUpdatedAt: new Date().toISOString(),
   }
@@ -14395,6 +14539,10 @@ function handleC52TuitionRealtimeStatus(status) {
 }
 
 function handleC52TuitionRealtimeRecord(record) {
+  if (String(record?.center_id || '') !== String(getCurrentResolvedCenterId())) {
+    return
+  }
+
   const mergeResult = mergeC52TuitionCloudRecordsIntoLocal({
     tuitionRecords,
     cloudRecords: [record],
@@ -19220,6 +19368,8 @@ function bindEvents() {
       const totalSessions = button.dataset.tuitionPackageSuggestion
       tuitionFormState = {
         ...tuitionFormState,
+        commandIdempotencyKey: null,
+        pendingAuthoritativeRecord: null,
         values: {
           ...tuitionFormState.values,
           packageName: `Gói ${totalSessions} buổi`,
@@ -19291,11 +19441,11 @@ function bindEvents() {
     })
   })
 
-  const handleTuitionFormSave = (event, options = {}) => {
+  const handleTuitionFormSave = async (event, options = {}) => {
     event?.preventDefault?.()
     event?.stopPropagation?.()
 
-    if (!tuitionFormState) {
+    if (!tuitionFormState || tuitionFormState.isSaving) {
       return
     }
 
@@ -19351,9 +19501,12 @@ function bindEvents() {
       return
     }
 
+    const commandIdempotencyKey = tuitionFormState.commandIdempotencyKey
+      || createOperationalCommandIdempotencyKey()
     const normalizedValues = normalizeTuitionFormValues(tuitionFormState.values)
     const savedAt = new Date().toISOString()
-    const nextRecord = tuitionFormState.mode === 'renew' && currentRecord
+    const nextRecord = tuitionFormState.pendingAuthoritativeRecord
+      || (tuitionFormState.mode === 'renew' && currentRecord
       ? {
           ...createRenewedTuitionRecord(
             currentRecord,
@@ -19364,7 +19517,7 @@ function bindEvents() {
           updatedAt: savedAt,
         }
       : {
-          id: tuitionFormState.tuitionId || `tuition-${tuitionFormState.studentId}-${Date.now()}`,
+          id: tuitionFormState.tuitionId || `tuition-${tuitionFormState.studentId}-${commandIdempotencyKey}`,
           studentId: tuitionFormState.studentId,
           ...normalizedValues,
           paidAmount: currentRecord?.paidAmount ?? 0,
@@ -19372,23 +19525,45 @@ function bindEvents() {
           currentTermNumber: currentRecord?.currentTermNumber ?? 1,
           currentTermId:
             currentRecord?.currentTermId ??
-            `term-${tuitionFormState.tuitionId || tuitionFormState.studentId}-${Date.now()}`,
+            `term-${tuitionFormState.tuitionId || tuitionFormState.studentId}-${commandIdempotencyKey}`,
           startedAt: currentRecord?.startedAt ?? savedAt,
           termHistory: currentRecord?.termHistory ?? [],
           createdAt: currentRecord?.createdAt ?? savedAt,
           updatedAt: savedAt,
-        }
+        })
 
-    tuitionRecords = tuitionFormState.mode === 'edit' || tuitionFormState.mode === 'renew'
-      ? tuitionRecords.map((record) => (record.id === nextRecord.id ? nextRecord : record))
-      : [nextRecord, ...tuitionRecords]
-    saveStoredTuition(tuitionRecords)
-    notifications = syncTuitionNotifications(notifications)
+    tuitionFormState = {
+      ...tuitionFormState,
+      isSaving: true,
+      commandIdempotencyKey,
+      pendingAuthoritativeRecord: nextRecord,
+      errors: {},
+    }
+    render()
+    const result = await writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save', {
+      beforePayload: currentRecord ? { ...currentRecord } : null,
+    }, commandIdempotencyKey)
+    if (!result.ok) {
+      tuitionFormState = {
+        ...tuitionFormState,
+        isSaving: false,
+        errors: {
+          ...tuitionFormState?.errors,
+          form: result.error || 'Học phí chưa được lưu lên server.',
+        },
+      }
+      if (tuitionPeriodActionConfirmationState) {
+        tuitionPeriodActionConfirmationState = {
+          ...tuitionPeriodActionConfirmationState,
+          isSaving: false,
+          reasons: [result.error || 'Học phí chưa được lưu lên server.'],
+        }
+      }
+      render()
+      return
+    }
     tuitionFormState = null
     tuitionPeriodActionConfirmationState = null
-    void writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save', {
-      beforePayload: currentRecord ? { ...currentRecord } : null,
-    })
     render()
   }
 
@@ -19402,6 +19577,8 @@ function bindEvents() {
 
       tuitionFormState = {
         ...tuitionFormState,
+        commandIdempotencyKey: null,
+        pendingAuthoritativeRecord: null,
         values: {
           ...tuitionFormState.values,
           [fieldName]: control.value,
@@ -19466,7 +19643,7 @@ function bindEvents() {
       render()
 
       if (tuitionPeriodActionConfirmationState?.action === 'renew-create') {
-        handleTuitionFormSave(null, { confirmedRenew: true })
+        await handleTuitionFormSave(null, { confirmedRenew: true })
         return
       }
 
@@ -19949,17 +20126,17 @@ function bindEvents() {
     isAttendanceBaselineDetailsOpen = Boolean(event.currentTarget.open)
   })
 
-  document.querySelector('[data-attendance-baseline-action="start"]')?.addEventListener('click', () => {
+  document.querySelector('[data-attendance-baseline-action="start"]')?.addEventListener('click', async () => {
     const nextState = startAttendanceBaselineDraft(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
       byRole: 'admin',
       byName: 'Admin cơ sở',
       note: 'Bắt đầu nhập dữ liệu nền điểm danh.',
     })
-    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       baselineState: nextState,
       reason: 'baseline-start',
     })
+    if (!result.ok) return
     attendanceBaselineUndoSnapshot = null
     render()
   })
@@ -20023,7 +20200,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-attendance-baseline-action="save"]')?.addEventListener('click', () => {
+  document.querySelector('[data-attendance-baseline-action="save"]')?.addEventListener('click', async () => {
     if (!hasAttendanceBaselineDraftChanges()) {
       return
     }
@@ -20041,14 +20218,15 @@ function bindEvents() {
       byName: 'Admin cơ sở',
       note: 'Lưu thay đổi dữ liệu nền điểm danh.',
     })
-
-    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), draftRecords)
-    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const previousAttendanceRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       attendanceRecords: draftRecords.filter((record) => record.source === 'initialBaseline'),
       baselineState: nextState,
+      previousAttendanceRecords,
+      replaceBaselineRecords: true,
       reason: 'baseline-save',
     })
+    if (!result.ok) return
     clearAttendanceBaselineDraft()
     attendanceBaselineUndoSnapshot = null
     attendanceBoardDetailState = null
@@ -20070,7 +20248,7 @@ function bindEvents() {
     render()
   })
 
-  document.querySelector('[data-attendance-baseline-action="clear"]')?.addEventListener('click', () => {
+  document.querySelector('[data-attendance-baseline-action="clear"]')?.addEventListener('click', async () => {
     const currentState = loadAttendanceBaselineState(getCurrentResolvedCenterId())
 
     if (currentState.status === 'locked') {
@@ -20113,7 +20291,7 @@ function bindEvents() {
       return
     }
 
-    attendanceBaselineUndoSnapshot = {
+    const nextUndoSnapshot = {
       type: 'clear',
       records: storedRecords,
       state: storedState,
@@ -20121,19 +20299,21 @@ function bindEvents() {
       draftBaseRecords: attendanceBaselineDraftBaseRecords,
       draftState: attendanceBaselineDraftState,
     }
-    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), clearResult.records)
-    saveAttendanceBaselineState(getCurrentResolvedCenterId(), clearResult.state)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       attendanceRecords: clearResult.records.filter((record) => record.source === 'initialBaseline'),
       baselineState: clearResult.state,
+      previousAttendanceRecords: storedRecords,
+      replaceBaselineRecords: true,
       reason: 'baseline-clear',
     })
+    if (!result.ok) return
+    attendanceBaselineUndoSnapshot = nextUndoSnapshot
     clearAttendanceBaselineDraft()
     attendanceBoardDetailState = null
     render()
   })
 
-  document.querySelector('[data-attendance-baseline-action="undo"]')?.addEventListener('click', () => {
+  document.querySelector('[data-attendance-baseline-action="undo"]')?.addEventListener('click', async () => {
     if (!attendanceBaselineUndoSnapshot) {
       window.alert('Chưa có thao tác nào để hoàn tác.')
       return
@@ -20143,13 +20323,15 @@ function bindEvents() {
       restoreAttendanceBaselineDraftUndoSnapshot(attendanceBaselineUndoSnapshot)
     } else if (attendanceBaselineUndoSnapshot.type === 'clear') {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      saveStoredAttendanceRecords(getCurrentResolvedCenterId(), restored.records)
-      saveAttendanceBaselineState(getCurrentResolvedCenterId(), restored.state)
-      void writeC51AttendanceSessionReportThroughCloud({
+      const currentRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+      const result = await writeC52AttendanceSessionReportThroughCloud({
         attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
         baselineState: restored.state,
+        previousAttendanceRecords: currentRecords,
+        replaceBaselineRecords: true,
         reason: 'baseline-undo-clear',
       })
+      if (!result.ok) return
       attendanceBaselineDraftRecords = Array.isArray(attendanceBaselineUndoSnapshot.draftRecords)
         ? attendanceBaselineUndoSnapshot.draftRecords
         : null
@@ -20159,13 +20341,15 @@ function bindEvents() {
       attendanceBaselineDraftState = attendanceBaselineUndoSnapshot.draftState || null
     } else {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      saveStoredAttendanceRecords(getCurrentResolvedCenterId(), restored.records)
-      saveAttendanceBaselineState(getCurrentResolvedCenterId(), restored.state)
-      void writeC51AttendanceSessionReportThroughCloud({
+      const currentRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+      const result = await writeC52AttendanceSessionReportThroughCloud({
         attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
         baselineState: restored.state,
+        previousAttendanceRecords: currentRecords,
+        replaceBaselineRecords: true,
         reason: 'baseline-undo',
       })
+      if (!result.ok) return
     }
 
     attendanceBaselineUndoSnapshot = null
@@ -20173,7 +20357,7 @@ function bindEvents() {
     render()
   })
 
-  document.querySelector('[data-attendance-baseline-action="lock"]')?.addEventListener('click', () => {
+  document.querySelector('[data-attendance-baseline-action="lock"]')?.addEventListener('click', async () => {
     if (hasAttendanceBaselineDraftChanges()) {
       window.alert('Bạn còn thay đổi dữ liệu nền chưa lưu. Vui lòng lưu hoặc hủy thay đổi trước khi chốt dữ liệu nền.')
       return
@@ -20196,16 +20380,16 @@ function bindEvents() {
         ? 'Chốt dữ liệu nền điểm danh.'
         : 'Chốt dữ liệu nền khi chưa có bản ghi nền.',
     })
-    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       baselineState: nextState,
       reason: 'baseline-lock',
     })
+    if (!result.ok) return
     attendanceBaselineUndoSnapshot = null
     render()
   })
 
-  document.querySelector('[data-attendance-baseline-action="unlock"]')?.addEventListener('click', () => {
+  document.querySelector('[data-attendance-baseline-action="unlock"]')?.addEventListener('click', async () => {
     const confirmed = window.confirm(
       'Bạn chắc chắn muốn mở khóa dữ liệu điểm danh? Việc này có thể ảnh hưởng số buổi đã học, số buổi còn lại, học phí và bảng điểm danh.',
     )
@@ -20222,27 +20406,13 @@ function bindEvents() {
       reason: unlockReason,
       note: 'Mở khóa dữ liệu nền điểm danh.',
     })
-    saveAttendanceBaselineState(getCurrentResolvedCenterId(), nextState)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       baselineState: nextState,
       reason: 'baseline-unlock',
     })
+    if (!result.ok) return
     attendanceBaselineUndoSnapshot = null
     clearAttendanceBaselineDraft()
-    render()
-  })
-
-  document.querySelector('[data-attendance-board-demo-action="clear"]')?.addEventListener('click', () => {
-    const confirmed = window.confirm(
-      'Ch\u1ec9 x\u00f3a demo c\u0169 F15K.1/F15K.3, kh\u00f4ng x\u00f3a d\u1eef li\u1ec7u th\u1eadt. Ti\u1ebfp t\u1ee5c?',
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    sessionReports = removeDemoAttendanceReports(sessionReports)
-    saveStoredSessionReports(sessionReports)
     render()
   })
 
@@ -22908,7 +23078,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-admin-attendance-action]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       if (!scheduleAdminAttendanceState) {
         return
       }
@@ -22972,19 +23142,29 @@ function bindEvents() {
           return
         }
 
-        const result = upsertAdminAttendanceRecords({
+        const candidate = upsertAdminAttendanceRecords({
           records: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
           inputs,
           byName: 'Admin cơ sở',
         })
 
-        saveStoredAttendanceRecords(getCurrentResolvedCenterId(), result.records)
-        void writeC51AttendanceSessionReportThroughCloud({
-          attendanceRecords: result.savedRecords,
+        const result = await writeC52AttendanceSessionReportThroughCloud({
+          attendanceRecords: candidate.savedRecords,
           reason: 'admin-attendance-save',
         })
+        if (!result.ok) {
+          scheduleAdminAttendanceState = {
+            ...scheduleAdminAttendanceState,
+            error: result.error || 'Không lưu được điểm danh lên server.',
+            saveState: '',
+          }
+          render()
+          return
+        }
+        const committedRecords = result.projection?.attendanceRecords
+          || loadStoredAttendanceRecords(getCurrentResolvedCenterId())
         scheduleAdminAttendanceState = {
-          ...createScheduleAdminAttendanceState(occurrence, result.records),
+          ...createScheduleAdminAttendanceState(occurrence, committedRecords),
           saveState: 'saved',
         }
         render()
@@ -23015,7 +23195,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-schedule-action="save-attendance"]')?.addEventListener('click', () => {
+  document.querySelector('[data-schedule-action="save-attendance"]')?.addEventListener('click', async () => {
     if (!scheduleReportState || !sessionReportAttendanceState) {
       return
     }
@@ -23072,20 +23252,28 @@ function bindEvents() {
       byName: getScheduleAdminTeacherName(occurrence) || 'Giáo viên',
     })
 
-    sessionReports = existingReport
-      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
-      : [savedReport, ...sessionReports]
-
-    saveStoredSessionReports(sessionReports)
-    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), teacherAttendanceResult.records)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       attendanceRecords: teacherAttendanceResult.savedRecords,
       sessionReports: [savedReport],
       reason: 'teacher-session-report-attendance',
     })
+    if (!result.ok) {
+      sessionReportAttendanceState = {
+        ...sessionReportAttendanceState,
+        error: result.error || 'Báo cáo buổi học chưa được lưu lên server.',
+        saveState: '',
+      }
+      render()
+      return
+    }
+    const committedReport = findSessionReport(
+      sessionReports,
+      savedReport.sessionId,
+      savedReport.occurrenceDate,
+    ) || savedReport
     sessionReportAttendanceState = {
       ...sessionReportAttendanceState,
-      attendance: savedReport.attendance,
+      attendance: committedReport.attendance,
       error: '',
       saveState: 'saved',
       attendanceLockedByAdmin: false,
@@ -23136,7 +23324,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-session-guest-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-session-guest-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!scheduleReportState || !sessionReportAttendanceState || !sessionReportGuestFormState) {
@@ -23182,15 +23370,19 @@ function bindEvents() {
     )
     const savedReport = buildSessionReportFromAttendance(nextAttendanceState, existingReport)
 
-    sessionReports = existingReport
-      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
-      : [savedReport, ...sessionReports]
-
-    saveStoredSessionReports(sessionReports)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       sessionReports: [savedReport],
       reason: 'session-report-guest-add',
     })
+    if (!result.ok) {
+      sessionReportAttendanceState = {
+        ...sessionReportAttendanceState,
+        error: result.error || 'Khách học chưa được lưu lên server.',
+        saveState: '',
+      }
+      render()
+      return
+    }
     sessionReportAttendanceState = {
       ...nextAttendanceState,
       guestParticipants: savedReport.guestParticipants,
@@ -23200,7 +23392,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-session-guest-action="delete"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       if (!scheduleReportState || !sessionReportAttendanceState) {
         return
       }
@@ -23220,15 +23412,19 @@ function bindEvents() {
       )
       const savedReport = buildSessionReportFromAttendance(nextAttendanceState, existingReport)
 
-      sessionReports = existingReport
-        ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
-        : [savedReport, ...sessionReports]
-
-      saveStoredSessionReports(sessionReports)
-      void writeC51AttendanceSessionReportThroughCloud({
+      const result = await writeC52AttendanceSessionReportThroughCloud({
         sessionReports: [savedReport],
         reason: 'session-report-guest-delete',
       })
+      if (!result.ok) {
+        sessionReportAttendanceState = {
+          ...sessionReportAttendanceState,
+          error: result.error || 'Thay đổi khách học chưa được lưu lên server.',
+          saveState: '',
+        }
+        render()
+        return
+      }
       sessionReportAttendanceState = {
         ...nextAttendanceState,
         guestParticipants: savedReport.guestParticipants,
@@ -23273,7 +23469,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-session-learning-action="delete"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       if (!scheduleReportState || !sessionReportLearningState) {
         return
       }
@@ -23299,15 +23495,19 @@ function bindEvents() {
       )
       const savedReport = buildSessionReportFromLearningGroups(nextLearningState, existingReport)
 
-      sessionReports = existingReport
-        ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
-        : [savedReport, ...sessionReports]
-
-      saveStoredSessionReports(sessionReports)
-      void writeC51AttendanceSessionReportThroughCloud({
+      const result = await writeC52AttendanceSessionReportThroughCloud({
         sessionReports: [savedReport],
         reason: 'session-report-learning-delete',
       })
+      if (!result.ok) {
+        sessionReportLearningState = {
+          ...sessionReportLearningState,
+          error: result.error || 'Nội dung buổi học chưa được lưu lên server.',
+          saveState: '',
+        }
+        render()
+        return
+      }
       sessionReportLearningState = {
         ...nextLearningState,
         groups: savedReport.learningGroups,
@@ -23361,7 +23561,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-session-learning-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-session-learning-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!scheduleReportState || !sessionReportLearningState || !sessionReportLearningFormState) {
@@ -23432,15 +23632,19 @@ function bindEvents() {
     )
     const savedReport = buildSessionReportFromLearningGroups(nextLearningState, existingReport)
 
-    sessionReports = existingReport
-      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
-      : [savedReport, ...sessionReports]
-
-    saveStoredSessionReports(sessionReports)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       sessionReports: [savedReport],
       reason: 'session-report-learning-save',
     })
+    if (!result.ok) {
+      sessionReportLearningState = {
+        ...sessionReportLearningState,
+        error: result.error || 'Nội dung buổi học chưa được lưu lên server.',
+        saveState: '',
+      }
+      render()
+      return
+    }
     sessionReportLearningState = {
       ...nextLearningState,
       groups: savedReport.learningGroups,
@@ -23464,7 +23668,7 @@ function bindEvents() {
     render()
   })
 
-  document.querySelector('[data-session-report-action="save-extra"]')?.addEventListener('click', () => {
+  document.querySelector('[data-session-report-action="save-extra"]')?.addEventListener('click', async () => {
     if (!scheduleReportState || !sessionReportExtraState) {
       return
     }
@@ -23494,15 +23698,19 @@ function bindEvents() {
     )
     const savedReport = buildSessionReportFromExtraInfo(nextExtraState, existingReport)
 
-    sessionReports = existingReport
-      ? sessionReports.map((report) => (report.id === existingReport.id ? savedReport : report))
-      : [savedReport, ...sessionReports]
-
-    saveStoredSessionReports(sessionReports)
-    void writeC51AttendanceSessionReportThroughCloud({
+    const result = await writeC52AttendanceSessionReportThroughCloud({
       sessionReports: [savedReport],
       reason: 'session-report-extra-save',
     })
+    if (!result.ok) {
+      sessionReportExtraState = {
+        ...nextExtraState,
+        error: result.error || 'Thông tin báo cáo chưa được lưu lên server.',
+        saveState: '',
+      }
+      render()
+      return
+    }
     sessionReportExtraState = nextExtraState
     render()
   })
@@ -24927,26 +25135,41 @@ async function undoEmptyTuitionPeriodFromConfirmation() {
     return
   }
 
-  const restoredRecord = restorePreviousTuitionPeriod(
-    currentRecord,
-    eligibility.previousTerm,
-    new Date().toISOString(),
-  )
+  const commandIdempotencyKey = confirmation.commandIdempotencyKey
+    || createOperationalCommandIdempotencyKey()
+  const restoredRecord = confirmation.pendingAuthoritativeRecord
+    || restorePreviousTuitionPeriod(
+      currentRecord,
+      eligibility.previousTerm,
+      new Date().toISOString(),
+    )
+  tuitionPeriodActionConfirmationState = {
+    ...confirmation,
+    isSaving: true,
+    commandIdempotencyKey,
+    pendingAuthoritativeRecord: restoredRecord,
+    reasons: [],
+  }
+  render()
 
-  tuitionRecords = latestTuitionRecords.map((record) =>
-    record.id === restoredRecord.id ? restoredRecord : record,
-  )
-  saveStoredTuition(tuitionRecords)
-  notifications = syncTuitionNotifications(notifications)
+  const result = await writeC52TuitionRecordPackageThroughCloud(restoredRecord, 'tuition-package-save', {
+    beforePayload: currentRecord ? { ...currentRecord } : null,
+  }, commandIdempotencyKey)
+  if (!result.ok) {
+    tuitionPeriodActionConfirmationState = {
+      ...confirmation,
+      isSaving: false,
+      reasons: [result.error || 'Không thể hoàn tác kỳ học phí trên server.'],
+    }
+    render()
+    return
+  }
   tuitionFormState = null
   clearTuitionPaymentFormState()
   tuitionPeriodActionConfirmationState = null
   tuitionDetailState = restoredRecord.studentId
     ? { studentId: restoredRecord.studentId }
     : tuitionDetailState
-  void writeC52TuitionRecordPackageThroughCloud(restoredRecord, 'tuition-package-save', {
-    beforePayload: currentRecord ? { ...currentRecord } : null,
-  })
   render()
 }
 

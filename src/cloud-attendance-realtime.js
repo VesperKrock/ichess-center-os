@@ -20,6 +20,10 @@ import {
 } from './attendance-records.js'
 import { getStoredSessionReports } from './storage.js'
 import { buildOnlineAccessState, getOnlineAccessMessage } from './online-access-control.js'
+import {
+  getAuthoritativeAttendanceTuitionVersion,
+  mutateAuthoritativeAttendanceTuitionEntities,
+} from './cloud-authoritative-attendance-tuition.js'
 
 export const C51_ATTENDANCE_REALTIME_ENTITY_TYPES = Object.freeze([
   // C5.1C entity allowlist: attendance_record, attendance_baseline_state, session_report.
@@ -33,7 +37,7 @@ export const C51_ATTENDANCE_REALTIME_SOURCE_VERSION = 'c5-1c-guarded-realtime-v1
 
 const C51_WRITE_ROLES = new Set(['owner', 'qtv', 'center_admin'])
 const CLOUD_ENTITY_SELECT_FIELDS =
-  'center_id, entity_type, local_id, payload, source_module, source_version, updated_at, deleted_at'
+  'center_id, entity_type, local_id, payload, source_module, source_version, entity_version, updated_at, deleted_at'
 
 export function canWriteC51AttendanceEntity(accessState = {}) {
   const state = buildOnlineAccessState(accessState)
@@ -66,6 +70,7 @@ export async function pullC51AttendanceSessionReportCloudEntities({
     .select(CLOUD_ENTITY_SELECT_FIELDS)
     .eq('center_id', centerId)
     .in('entity_type', C51_ATTENDANCE_REALTIME_ENTITY_TYPES)
+    .is('deleted_at', null)
     .order('updated_at', { ascending: true })
 
   if (error) {
@@ -89,8 +94,11 @@ export async function upsertC51AttendanceSessionReportCloudEntities({
   attendanceRecords = [],
   baselineState = null,
   sessionReports = [],
+  previousAttendanceRecords = [],
+  replaceBaselineRecords = false,
   userId = null,
   accessState,
+  idempotencyKey,
 } = {}) {
   const access = canWriteC51AttendanceEntity(accessState)
 
@@ -107,46 +115,61 @@ export async function upsertC51AttendanceSessionReportCloudEntities({
     return { ok: false, error: 'Missing Supabase client.' }
   }
 
-  const records = []
+  const mutations = []
   const skipped = []
 
   for (const record of Array.isArray(attendanceRecords) ? attendanceRecords : []) {
     const result = buildAttendanceRecordCloudEntity({ centerId, record, userId })
-    pushBuildResult(records, skipped, result, record)
+    pushBuildResult(mutations, skipped, result, record)
   }
 
   if (baselineState && typeof baselineState === 'object') {
     const result = buildAttendanceBaselineStateCloudEntity({ centerId, state: baselineState, userId })
-    pushBuildResult(records, skipped, result, baselineState)
+    pushBuildResult(mutations, skipped, result, baselineState)
   }
 
   for (const report of Array.isArray(sessionReports) ? sessionReports : []) {
     const result = buildSessionReportCloudEntity({ centerId, report, userId })
-    pushBuildResult(records, skipped, result, report)
+    pushBuildResult(mutations, skipped, result, report)
   }
 
-  if (!records.length) {
-    return { ok: true, skipped: skipped.length > 0, count: 0, skippedItems: skipped }
+  if (replaceBaselineRecords) {
+    const desiredLocalIds = new Set(
+      (Array.isArray(attendanceRecords) ? attendanceRecords : [])
+        .filter((record) => record?.source === 'initialBaseline')
+        .map((record) => createAttendanceRecordCloudLocalId(record))
+        .filter(Boolean),
+    )
+
+    for (const previousRecord of Array.isArray(previousAttendanceRecords) ? previousAttendanceRecords : []) {
+      if (previousRecord?.source !== 'initialBaseline') continue
+      const localId = createAttendanceRecordCloudLocalId(previousRecord)
+      if (!localId || desiredLocalIds.has(localId)) continue
+      mutations.push({
+        entityType: ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE,
+        localId,
+        entity: previousRecord,
+        expectedVersion: getAuthoritativeAttendanceTuitionVersion(previousRecord),
+        operation: 'DELETE',
+      })
+    }
   }
 
-  const { error } = await supabase
-    .from('center_cloud_entities')
-    .upsert(records.map(prepareCloudRecordForUpsert), { onConflict: 'center_id,entity_type,local_id' })
-
-  if (error) {
+  if (skipped.length) {
     return {
       ok: false,
-      error: String(error?.message || error || 'Cannot upsert C5.1 attendance/session report cloud entities.'),
-      detail: error,
+      outcome_code: 'INVALID_PAYLOAD',
+      error: skipped[0].reason || 'Invalid C5.2 attendance/session report payload.',
       skippedItems: skipped,
     }
   }
 
-  return {
-    ok: true,
-    count: records.length,
-    skippedItems: skipped,
-  }
+  return mutateAuthoritativeAttendanceTuitionEntities({
+    supabase,
+    centerId,
+    mutations,
+    idempotencyKey,
+  })
 }
 
 export function subscribeToC51AttendanceSessionReportRealtime({
@@ -242,10 +265,14 @@ export function mergeC51CloudRecordsIntoLocal({
   baselineState = {},
   sessionReports = [],
   cloudRecords = [],
+  authoritativeSnapshot = false,
 } = {}) {
-  let nextAttendanceRecords = normalizeStoredAttendanceRecords(attendanceRecords)
-  let nextBaselineState = baselineState && typeof baselineState === 'object' ? { ...baselineState } : {}
-  let nextSessionReports = Array.isArray(sessionReports) ? [...sessionReports] : []
+  const previousAttendanceRecords = normalizeStoredAttendanceRecords(attendanceRecords)
+  const previousBaselineState = baselineState && typeof baselineState === 'object' ? { ...baselineState } : {}
+  const previousSessionReports = Array.isArray(sessionReports) ? [...sessionReports] : []
+  let nextAttendanceRecords = authoritativeSnapshot ? [] : previousAttendanceRecords
+  let nextBaselineState = authoritativeSnapshot ? {} : previousBaselineState
+  let nextSessionReports = authoritativeSnapshot ? [] : previousSessionReports
   const skipped = []
   const conflicts = []
   let changed = false
@@ -282,7 +309,17 @@ export function mergeC51CloudRecordsIntoLocal({
 
   return {
     ok: true,
-    changed,
+    changed: authoritativeSnapshot
+      ? JSON.stringify({
+          attendanceRecords: previousAttendanceRecords,
+          baselineState: previousBaselineState,
+          sessionReports: previousSessionReports,
+        }) !== JSON.stringify({
+          attendanceRecords: nextAttendanceRecords,
+          baselineState: nextBaselineState,
+          sessionReports: nextSessionReports,
+        })
+      : changed,
     attendanceRecords: nextAttendanceRecords,
     baselineState: nextBaselineState,
     sessionReports: nextSessionReports,
@@ -312,7 +349,12 @@ function mergeAttendanceRecordCloudRecord(records = [], cloudRecord = {}) {
     return createMergeResult(records, false, [{ entityType: cloudRecord.entity_type, reason: validation.error }])
   }
 
-  const incoming = validation.record
+  const incoming = {
+    ...validation.record,
+    cloudVersion: Number(cloudRecord.entity_version) || 0,
+    cloudUpdatedAt: String(cloudRecord.updated_at || ''),
+    cloudDeletedAt: String(cloudRecord.deleted_at || ''),
+  }
   const localId = cloudRecord.local_id || createAttendanceRecordCloudLocalId(incoming)
   const incomingUpdatedAt = getTimestamp(
     cloudRecord.updated_at || incoming.updatedAt || incoming.createdAt,
@@ -324,15 +366,25 @@ function mergeAttendanceRecordCloudRecord(records = [], cloudRecord = {}) {
     if (byIdIndex < 0) {
       return createMergeResult(currentRecords, false)
     }
+    const currentVersion = getAuthoritativeAttendanceTuitionVersion(currentRecords[byIdIndex])
+    const incomingVersion = getAuthoritativeAttendanceTuitionVersion(incoming)
+    if (currentVersion && incomingVersion && incomingVersion <= currentVersion) {
+      return createMergeResult(currentRecords, false)
+    }
 
     return createMergeResult(currentRecords.filter((_, index) => index !== byIdIndex), true)
   }
 
   if (byIdIndex >= 0) {
     const current = currentRecords[byIdIndex]
+    const currentVersion = getAuthoritativeAttendanceTuitionVersion(current)
+    const incomingVersion = getAuthoritativeAttendanceTuitionVersion(incoming)
     const currentUpdatedAt = getTimestamp(current.updatedAt || current.createdAt)
 
-    if (currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= currentUpdatedAt) {
+    if (
+      incomingVersion && currentVersion && incomingVersion <= currentVersion
+      || (!incomingVersion && currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= currentUpdatedAt)
+    ) {
       return createMergeResult(currentRecords, false)
     }
 
@@ -391,11 +443,21 @@ function mergeBaselineStateCloudRecord(state = {}, cloudRecord = {}) {
     }
   }
 
-  const incoming = validation.state
+  const incoming = {
+    ...validation.state,
+    cloudVersion: Number(cloudRecord.entity_version) || 0,
+    cloudUpdatedAt: String(cloudRecord.updated_at || ''),
+    cloudDeletedAt: String(cloudRecord.deleted_at || ''),
+  }
   const incomingUpdatedAt = getTimestamp(cloudRecord.updated_at || incoming.updatedAt || incoming.lastActionAt)
   const localUpdatedAt = getTimestamp(state?.updatedAt || state?.lastActionAt)
+  const currentVersion = getAuthoritativeAttendanceTuitionVersion(state)
+  const incomingVersion = getAuthoritativeAttendanceTuitionVersion(incoming)
 
-  if (localUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= localUpdatedAt) {
+  if (
+    incomingVersion && currentVersion && incomingVersion <= currentVersion
+    || (!incomingVersion && localUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= localUpdatedAt)
+  ) {
     return { state, changed: false, skipped: [] }
   }
 
@@ -418,7 +480,12 @@ function mergeSessionReportCloudRecord(reports = [], cloudRecord = {}) {
     }
   }
 
-  const incoming = validation.report
+  const incoming = {
+    ...validation.report,
+    cloudVersion: Number(cloudRecord.entity_version) || 0,
+    cloudUpdatedAt: String(cloudRecord.updated_at || ''),
+    cloudDeletedAt: String(cloudRecord.deleted_at || ''),
+  }
   const localId = cloudRecord.local_id || createSessionReportCloudLocalId(incoming)
   const incomingUpdatedAt = getTimestamp(cloudRecord.updated_at || incoming.updatedAt || incoming.createdAt)
   const currentReports = Array.isArray(reports) ? [...reports] : []
@@ -426,6 +493,11 @@ function mergeSessionReportCloudRecord(reports = [], cloudRecord = {}) {
 
   if (cloudRecord.isDeleted || cloudRecord.deleted_at || incoming.deletedAt) {
     if (byIdIndex < 0) {
+      return { reports: currentReports, changed: false, skipped: [] }
+    }
+    const currentVersion = getAuthoritativeAttendanceTuitionVersion(currentReports[byIdIndex])
+    const incomingVersion = getAuthoritativeAttendanceTuitionVersion(incoming)
+    if (currentVersion && incomingVersion && incomingVersion <= currentVersion) {
       return { reports: currentReports, changed: false, skipped: [] }
     }
 
@@ -438,9 +510,14 @@ function mergeSessionReportCloudRecord(reports = [], cloudRecord = {}) {
 
   if (byIdIndex >= 0) {
     const current = currentReports[byIdIndex]
+    const currentVersion = getAuthoritativeAttendanceTuitionVersion(current)
+    const incomingVersion = getAuthoritativeAttendanceTuitionVersion(incoming)
     const currentUpdatedAt = getTimestamp(current.updatedAt || current.createdAt)
 
-    if (currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= currentUpdatedAt) {
+    if (
+      incomingVersion && currentVersion && incomingVersion <= currentVersion
+      || (!incomingVersion && currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= currentUpdatedAt)
+    ) {
       return { reports: currentReports, changed: false, skipped: [] }
     }
 
@@ -462,7 +539,16 @@ function mergeSessionReportCloudRecord(reports = [], cloudRecord = {}) {
 
 function pushBuildResult(records, skipped, result, source) {
   if (result.ok) {
-    records.push(result.data)
+    records.push({
+      entityType: result.data.entity_type,
+      localId: result.data.local_id,
+      entity: {
+        ...result.data.payload,
+        cloudVersion: getAuthoritativeAttendanceTuitionVersion(source),
+      },
+      expectedVersion: getAuthoritativeAttendanceTuitionVersion(source),
+      operation: 'UPSERT',
+    })
     return
   }
 
@@ -470,18 +556,6 @@ function pushBuildResult(records, skipped, result, source) {
     id: source?.id || '',
     reason: result.error,
   })
-}
-
-function prepareCloudRecordForUpsert(record = {}) {
-  const payload = record.payload && typeof record.payload === 'object' ? record.payload : {}
-  const updatedAt = payload.updatedAt || payload.lastActionAt || payload.createdAt || new Date().toISOString()
-
-  return {
-    ...record,
-    source_version: C51_ATTENDANCE_REALTIME_SOURCE_VERSION,
-    updated_at: updatedAt,
-    deleted_at: payload.deletedAt || record.deleted_at || null,
-  }
 }
 
 function createRealtimeUnavailableResult(message, needsRealtimePatch, missingCenter) {

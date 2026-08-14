@@ -641,6 +641,9 @@ export function buildSessionReportFromLearningGroups(learningState, existingRepo
     suggestions: existingReport?.suggestions ?? '',
     createdAt: existingReport?.createdAt ?? now,
     updatedAt: now,
+    cloudVersion: existingReport?.cloudVersion ?? 0,
+    cloudUpdatedAt: existingReport?.cloudUpdatedAt ?? null,
+    cloudDeletedAt: existingReport?.cloudDeletedAt ?? null,
   }
 }
 
@@ -660,6 +663,9 @@ export function buildSessionReportFromExtraInfo(extraState, existingReport = nul
     suggestions: String(extraState?.values?.suggestions ?? '').trim(),
     createdAt: existingReport?.createdAt ?? now,
     updatedAt: now,
+    cloudVersion: existingReport?.cloudVersion ?? 0,
+    cloudUpdatedAt: existingReport?.cloudUpdatedAt ?? null,
+    cloudDeletedAt: existingReport?.cloudDeletedAt ?? null,
   }
 }
 
@@ -740,6 +746,9 @@ export function buildSessionReportFromAttendance(draft, existingReport = null) {
     suggestions: existingReport?.suggestions ?? '',
     createdAt: existingReport?.createdAt ?? now,
     updatedAt: now,
+    cloudVersion: existingReport?.cloudVersion ?? 0,
+    cloudUpdatedAt: existingReport?.cloudUpdatedAt ?? null,
+    cloudDeletedAt: existingReport?.cloudDeletedAt ?? null,
   }
 }
 

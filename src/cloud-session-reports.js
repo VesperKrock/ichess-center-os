@@ -141,6 +141,9 @@ export function validateAttendanceBaselineStateCloudPayload(state = {}) {
       note: String(state.note || ''),
       auditLog,
       updatedAt: normalizeNullableText(state.updatedAt || state.lastActionAt),
+      cloudVersion: normalizeCloudVersion(state.cloudVersion),
+      cloudUpdatedAt: normalizeNullableText(state.cloudUpdatedAt),
+      cloudDeletedAt: normalizeNullableText(state.cloudDeletedAt),
     },
   }
 }
@@ -223,6 +226,9 @@ export function validateSessionReportCloudPayload(report = {}) {
     demoBatchId: String(report.demoBatchId || ''),
     createdAt: normalizeNullableText(report.createdAt),
     updatedAt: normalizeNullableText(report.updatedAt || report.createdAt),
+    cloudVersion: normalizeCloudVersion(report.cloudVersion),
+    cloudUpdatedAt: normalizeNullableText(report.cloudUpdatedAt),
+    cloudDeletedAt: normalizeNullableText(report.cloudDeletedAt),
   }
 
   if (!hasMeaningfulSessionReportContent(normalizedReport)) {
@@ -483,6 +489,11 @@ function normalizeStringArray(value) {
 function normalizeNullableText(value) {
   const text = normalizeText(value)
   return text || null
+}
+
+function normalizeCloudVersion(value) {
+  const numberValue = Number(value)
+  return Number.isSafeInteger(numberValue) && numberValue > 0 ? numberValue : 0
 }
 
 function normalizeText(value) {

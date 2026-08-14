@@ -270,6 +270,10 @@ export function normalizeStoredAttendanceRecord(record) {
     lockedAt: normalizeNullableText(record.lockedAt),
     correctionReason: String(record.correctionReason || ''),
 
+    cloudVersion: normalizeCloudVersion(record.cloudVersion),
+    cloudUpdatedAt: normalizeNullableText(record.cloudUpdatedAt),
+    cloudDeletedAt: normalizeNullableText(record.cloudDeletedAt),
+
     raw: cloneJsonSafe(record.raw),
   }
 }
@@ -322,6 +326,9 @@ export function upsertAdminAttendanceRecords({
         id: existingRecord?.id || createAdminAttendanceRecordId(input),
         createdAt: existingRecord?.createdAt || input?.createdAt || at,
         createdBy: existingRecord?.createdBy || input?.createdBy || byName,
+        cloudVersion: existingRecord?.cloudVersion || 0,
+        cloudUpdatedAt: existingRecord?.cloudUpdatedAt || null,
+        cloudDeletedAt: existingRecord?.cloudDeletedAt || null,
         updatedAt: at,
         updatedBy: byName,
       })
@@ -381,6 +388,9 @@ export function upsertTeacherAttendanceRecords({
         id: existingRecord?.id || createTeacherAttendanceRecordId(input),
         createdAt: existingRecord?.createdAt || input?.createdAt || at,
         createdBy: existingRecord?.createdBy || input?.createdBy || byName,
+        cloudVersion: existingRecord?.cloudVersion || 0,
+        cloudUpdatedAt: existingRecord?.cloudUpdatedAt || null,
+        cloudDeletedAt: existingRecord?.cloudDeletedAt || null,
         updatedAt: at,
         updatedBy: byName,
       })
@@ -455,6 +465,9 @@ export function upsertInitialBaselineAttendanceRecord({
     id: existingRecord?.id || baselineRecord.id,
     createdAt: existingRecord?.createdAt || baselineRecord.createdAt,
     createdBy: existingRecord?.createdBy || baselineRecord.createdBy,
+    cloudVersion: existingRecord?.cloudVersion || 0,
+    cloudUpdatedAt: existingRecord?.cloudUpdatedAt || null,
+    cloudDeletedAt: existingRecord?.cloudDeletedAt || null,
   })
   const nextRecords = [
     record,
@@ -852,6 +865,9 @@ export function normalizeAttendanceBaselineState(state = {}) {
     auditLog: (Array.isArray(sourceState.auditLog) ? sourceState.auditLog : [])
       .map((entry) => normalizeAttendanceBaselineAuditEntry(entry))
       .filter(Boolean),
+    cloudVersion: normalizeCloudVersion(sourceState.cloudVersion),
+    cloudUpdatedAt: normalizeNullableText(sourceState.cloudUpdatedAt),
+    cloudDeletedAt: normalizeNullableText(sourceState.cloudDeletedAt),
   }
 }
 
@@ -1045,6 +1061,11 @@ function normalizeNullableInteger(value) {
 
   const numberValue = Number(value)
   return Number.isInteger(numberValue) ? numberValue : null
+}
+
+function normalizeCloudVersion(value) {
+  const numberValue = Number(value)
+  return Number.isSafeInteger(numberValue) && numberValue > 0 ? numberValue : 0
 }
 
 function normalizeRequiredText(value) {

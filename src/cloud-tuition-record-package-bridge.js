@@ -4,6 +4,10 @@ import {
   mergeTuitionRecordWithConflictGuard,
   normalizeConflictMarker,
 } from './cloud-conflict-markers.js'
+import {
+  getAuthoritativeAttendanceTuitionVersion,
+  mutateAuthoritativeAttendanceTuitionEntities,
+} from './cloud-authoritative-attendance-tuition.js'
 
 export const TUITION_RECORD_PACKAGE_ENTITY_TYPE = 'tuition_record_package'
 export const C52_TUITION_SOURCE_VERSION = 'c5-2c-tuition-record-package-v1'
@@ -12,7 +16,7 @@ export const C52_TEACHER_CONSULTANT_WRITE_HOLD =
 
 const C52_WRITE_ROLES = new Set(['owner', 'qtv', 'center_admin', 'admin'])
 const CLOUD_ENTITY_SELECT_FIELDS =
-  'center_id, entity_type, local_id, payload, source_module, source_version, updated_at, deleted_at'
+  'center_id, entity_type, local_id, payload, source_module, source_version, entity_version, updated_at, deleted_at'
 
 export function canWriteC52TuitionRecordPackageEntity(accessState = {}) {
   const state = buildOnlineAccessState(accessState)
@@ -69,6 +73,7 @@ export async function upsertC52TuitionRecordPackageCloudEntities({
   tuitionRecords = [],
   userId = null,
   accessState,
+  idempotencyKey,
 } = {}) {
   const access = canWriteC52TuitionRecordPackageEntity(accessState)
 
@@ -85,7 +90,7 @@ export async function upsertC52TuitionRecordPackageCloudEntities({
     return { ok: false, error: 'Missing Supabase client.' }
   }
 
-  const records = []
+  const mutations = []
   const skipped = []
 
   for (const tuitionRecord of Array.isArray(tuitionRecords) ? tuitionRecords : []) {
@@ -96,7 +101,16 @@ export async function upsertC52TuitionRecordPackageCloudEntities({
     })
 
     if (result.ok) {
-      records.push(prepareCloudRecordForUpsert(result.data))
+      mutations.push({
+        entityType: TUITION_RECORD_PACKAGE_ENTITY_TYPE,
+        localId: result.localId,
+        entity: {
+          ...result.data.payload,
+          cloudVersion: getAuthoritativeAttendanceTuitionVersion(tuitionRecord),
+        },
+        expectedVersion: getAuthoritativeAttendanceTuitionVersion(tuitionRecord),
+        operation: 'UPSERT',
+      })
     } else {
       skipped.push({
         id: String(tuitionRecord?.id || ''),
@@ -105,28 +119,21 @@ export async function upsertC52TuitionRecordPackageCloudEntities({
     }
   }
 
-  if (!records.length) {
-    return { ok: true, skipped: skipped.length > 0, count: 0, skippedItems: skipped }
-  }
-
-  const { error } = await supabase
-    .from('center_cloud_entities')
-    .upsert(records, { onConflict: 'center_id,entity_type,local_id' })
-
-  if (error) {
+  if (skipped.length) {
     return {
       ok: false,
-      error: String(error?.message || error || 'Cannot upsert tuition_record_package cloud entities.'),
-      detail: error,
+      outcome_code: 'INVALID_PAYLOAD',
+      error: skipped[0].reason || 'Invalid tuition_record_package payload.',
       skippedItems: skipped,
     }
   }
 
-  return {
-    ok: true,
-    count: records.length,
-    skippedItems: skipped,
-  }
+  return mutateAuthoritativeAttendanceTuitionEntities({
+    supabase,
+    centerId,
+    mutations,
+    idempotencyKey,
+  })
 }
 
 export function subscribeToC52TuitionRecordPackageRealtime({
@@ -220,8 +227,10 @@ export function getC52TuitionRealtimeRecord(event = {}, centerId = '') {
 export function mergeC52TuitionCloudRecordsIntoLocal({
   tuitionRecords = [],
   cloudRecords = [],
+  authoritativeSnapshot = false,
 } = {}) {
-  let nextTuitionRecords = normalizeTuitionRecordPackageList(tuitionRecords)
+  const previousTuitionRecords = normalizeTuitionRecordPackageList(tuitionRecords)
+  let nextTuitionRecords = authoritativeSnapshot ? [] : previousTuitionRecords
   const skipped = []
   const conflicts = []
   let changed = false
@@ -236,7 +245,9 @@ export function mergeC52TuitionCloudRecordsIntoLocal({
 
   return {
     ok: true,
-    changed,
+    changed: authoritativeSnapshot
+      ? JSON.stringify(previousTuitionRecords) !== JSON.stringify(nextTuitionRecords)
+      : changed,
     tuitionRecords: nextTuitionRecords,
     skipped,
     conflicts,
@@ -354,26 +365,50 @@ function mergeTuitionRecordPackageCloudRecord(tuitionRecords = [], cloudRecord =
     return createMergeResult(tuitionRecords, false, [{ entityType: cloudRecord.entity_type, reason: validation.error }])
   }
 
-  const incoming = validation.record
+  const incoming = {
+    ...validation.record,
+    cloudVersion: Number(cloudRecord.entity_version) || 0,
+    cloudUpdatedAt: String(cloudRecord.updated_at || ''),
+    cloudDeletedAt: String(cloudRecord.deleted_at || ''),
+  }
   const localId = cloudRecord.local_id || createTuitionRecordPackageLocalId(incoming)
   const currentRecords = normalizeTuitionRecordPackageList(tuitionRecords)
   const byLocalIdIndex = currentRecords.findIndex((record) => createTuitionRecordPackageLocalId(record) === localId)
   const incomingUpdatedAt = getTimestamp(cloudRecord.updated_at || incoming.updatedAt || incoming.createdAt)
 
   if (cloudRecord.isDeleted || cloudRecord.deleted_at || incoming.deletedAt) {
-    return createMergeResult(currentRecords, false, [{
-      entityType: cloudRecord.entity_type,
-      localId,
-      reason: 'Cloud soft delete observed; local tuition record preserved for safety.',
-    }])
+    if (byLocalIdIndex < 0) {
+      return createMergeResult(currentRecords, false)
+    }
+    const currentVersion = getAuthoritativeAttendanceTuitionVersion(currentRecords[byLocalIdIndex])
+    const incomingVersion = getAuthoritativeAttendanceTuitionVersion(incoming)
+    if (currentVersion && incomingVersion && incomingVersion <= currentVersion) {
+      return createMergeResult(currentRecords, false)
+    }
+
+    return createMergeResult(
+      currentRecords.filter((_, index) => index !== byLocalIdIndex),
+      true,
+    )
   }
 
   if (byLocalIdIndex >= 0) {
     const current = currentRecords[byLocalIdIndex]
+    const currentVersion = getAuthoritativeAttendanceTuitionVersion(current)
+    const incomingVersion = getAuthoritativeAttendanceTuitionVersion(incoming)
     const currentUpdatedAt = getTimestamp(current.updatedAt || current.createdAt)
 
-    if (currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= currentUpdatedAt) {
+    if (
+      incomingVersion && currentVersion && incomingVersion <= currentVersion
+      || (!incomingVersion && currentUpdatedAt && incomingUpdatedAt && incomingUpdatedAt <= currentUpdatedAt)
+    ) {
       return createMergeResult(currentRecords, false)
+    }
+
+    if (incomingVersion > 0) {
+      const nextRecords = [...currentRecords]
+      nextRecords[byLocalIdIndex] = incoming
+      return createMergeResult(nextRecords, JSON.stringify(current) !== JSON.stringify(incoming))
     }
 
     const guardedMerge = mergeTuitionRecordWithConflictGuard({
@@ -425,18 +460,6 @@ function normalizeTuitionPayments(payments) {
       note: String(payment.note || ''),
       createdAt: normalizeNullableText(payment.createdAt) || '',
     }))
-}
-
-function prepareCloudRecordForUpsert(record = {}) {
-  const payload = record.payload && typeof record.payload === 'object' ? record.payload : {}
-  const updatedAt = payload.updatedAt || payload.createdAt || new Date().toISOString()
-
-  return {
-    ...record,
-    source_version: C52_TUITION_SOURCE_VERSION,
-    updated_at: updatedAt,
-    deleted_at: payload.deletedAt || record.deleted_at || null,
-  }
 }
 
 function createRealtimeUnavailableResult(message, needsRealtimePatch, missingCenter) {
