@@ -52,6 +52,20 @@ import {
 } from './cloud-authoritative-finance.js'
 import { inspectAndQuarantineC54LegacyFinance } from './legacy-finance-quarantine.js'
 import {
+  buildC56ArchiveItemCommand,
+  buildC56CreateRequestCommand,
+  buildC56PostMovementCommand,
+  buildC56SaveItemCommand,
+  buildC56UpdateRequestStatusCommand,
+  canWriteC56InventorySharedTruth,
+  createC56InventoryIdempotencyKey,
+  createC56InventoryRetryFingerprint,
+  getC56InventoryOutcomeMessage,
+  mutateC56InventorySharedTruth,
+  pullC56InventorySharedTruth,
+} from './cloud-authoritative-inventory.js'
+import { inspectAndQuarantineC56LegacyInventory } from './legacy-inventory-quarantine.js'
+import {
   buildC55StaffHrUpsertCommand,
   canWriteC55StaffHrSharedTruth,
   createC55StaffHrIdempotencyKey,
@@ -81,9 +95,6 @@ import {
   getDeletedNotificationIds,
   getCurrentStorageCenterId,
   getDesktopModuleOrder,
-  getStoredInventory,
-  getStoredInventoryMovements,
-  getStoredInventoryRequests,
   getStoredNotifications,
   getStoredSchedule,
   getStoredSessionReports,
@@ -99,9 +110,6 @@ import {
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
   setCurrentStorageCenterId,
-  saveStoredInventory,
-  saveStoredInventoryMovements,
-  saveStoredInventoryRequests,
   saveStoredNotifications,
   saveStoredSchedule,
   saveStoredSessionReports,
@@ -146,8 +154,6 @@ import {
   validateCashflowForm,
 } from './cashflow-module.js'
 import { renderFinanceWorkspaceModule } from './finance-workspace-module.js'
-import { sampleInventoryItems } from './inventory-data.js'
-import { sampleInventoryRequests } from './inventory-request-data.js'
 import {
   addCareLogToParentContact,
   addAppointmentToParentContact,
@@ -170,7 +176,6 @@ import {
   validateParentContactForm,
 } from './parent-consultation-module.js'
 import {
-  applyInventoryMovementToItem,
   buildInventoryItemFromForm,
   buildInventoryMovementFromForm,
   buildInventoryRequestFromForm,
@@ -188,7 +193,6 @@ import {
   validateInventoryMovementForm,
   validateInventoryRequestForm,
   validateInventoryRequestStatusForm,
-  updateInventoryRequestStatus,
 } from './inventory-module.js'
 import { createSampleNotifications } from './notifications.js'
 import { sampleScheduleSessions } from './schedule-data.js'
@@ -691,6 +695,19 @@ let c55StaffHrSharedTruthState = {
 let c55StaffHrSyncRunId = 0
 const c55StaffHrRetryCommands = new Map()
 const c55StaffHrAccessAuditRetryKeys = new Map()
+let c56InventorySharedTruthState = {
+  centerId: '',
+  isLoading: false,
+  isSaving: false,
+  message: '',
+  messageTone: '',
+  lastLoadedAt: '',
+  legacyMigrationRequired: false,
+  legacyManifestKey: '',
+  legacySummary: null,
+}
+let c56InventorySyncRunId = 0
+const c56InventoryRetryCommands = new Map()
 let staffFilters = { ...initialStaffFilters }
 let staffMembers = []
 let staffAdministrativeProfiles = []
@@ -787,9 +804,11 @@ let cashbookSettings = createDefaultCashbookSettings(cashflowTransactions)
 let cashbookSettingsFormState = null
 let cashbookReconciliations = []
 let cashbookReconciliationFormState = null
-let inventoryItems = getStoredInventory(sampleInventoryItems)
-let inventoryMovements = getStoredInventoryMovements()
-let inventoryRequests = getStoredInventoryRequests(sampleInventoryRequests)
+// C5.6 projection is memory-only and starts empty. Legacy/sample browser data
+// is inventoried separately and can never bootstrap server authority.
+let inventoryItems = []
+let inventoryMovements = []
+let inventoryRequests = []
 notifications = syncAppNotifications(notifications)
 let activeNotificationDataCenterId = getCurrentStorageCenterId()
 let inventoryFilters = { ...initialInventoryFilters }
@@ -1369,6 +1388,33 @@ function resetC55StaffHrRuntimeForAccessBoundary(centerId = '') {
   }
 }
 
+function resetC56InventoryRuntimeForAccessBoundary(centerId = '') {
+  c56InventorySyncRunId += 1
+  c56InventoryRetryCommands.clear()
+  inventoryItems = []
+  inventoryMovements = []
+  inventoryRequests = []
+  inventoryFormState = null
+  inventoryMovementFormState = null
+  inventoryRequestFormState = null
+  inventoryRequestStatusFormState = null
+  selectedInventoryMovementId = null
+  selectedInventoryRequestId = null
+  isInventoryHistoryPanelOpen = false
+  isInventoryRequestsPanelOpen = false
+  c56InventorySharedTruthState = {
+    centerId,
+    isLoading: false,
+    isSaving: false,
+    message: '',
+    messageTone: '',
+    lastLoadedAt: '',
+    legacyMigrationRequired: false,
+    legacyManifestKey: '',
+    legacySummary: null,
+  }
+}
+
 function resetTransientStateForCenterSwitch() {
   studentFilters = { ...initialStudentFilters }
   teacherFilters = { ...initialTeacherFilters }
@@ -1414,6 +1460,7 @@ function resetTransientStateForCenterSwitch() {
     legacySummary: null,
   }
   resetC55StaffHrRuntimeForAccessBoundary(getCurrentResolvedCenterId())
+  resetC56InventoryRuntimeForAccessBoundary(getCurrentResolvedCenterId())
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -1502,9 +1549,9 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
   cashbookSettings = createDefaultCashbookSettings(cashflowTransactions)
   cashbookReconciliations = []
-  inventoryItems = getStoredInventory(useSampleFallback ? sampleInventoryItems : [])
-  inventoryMovements = getStoredInventoryMovements([])
-  inventoryRequests = getStoredInventoryRequests(useSampleFallback ? sampleInventoryRequests : [])
+  inventoryItems = []
+  inventoryMovements = []
+  inventoryRequests = []
   notifications = syncAppNotifications(
     getStoredNotifications(useSampleFallback ? createSampleNotifications() : []),
   )
@@ -8704,6 +8751,7 @@ async function handleInternalOpenCenter(centerId) {
   if (switchSyncId === cloudUserSyncId) {
     await refreshC54FinanceSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
     await refreshC55StaffHrSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
+    await refreshC56InventorySharedTruth({ reason: 'center-switch-bootstrap', silent: true })
   }
   await startC52TuitionRealtimeSubscription(switchSyncId)
 }
@@ -10569,6 +10617,7 @@ function renderWindowBody(windowItem) {
       selectedInventoryRequestId,
       inventoryRequestStatusFormState,
       students,
+      c56InventorySharedTruthState,
     )
   }
 
@@ -11562,6 +11611,9 @@ function openModuleWindow(moduleId) {
     if (moduleId === 'nhan-vien') {
       void refreshC55StaffHrSharedTruth({ reason: 'module-reopen' })
     }
+    if (moduleId === 'kho-hang') {
+      void refreshC56InventorySharedTruth({ reason: 'module-reopen' })
+    }
     return
   }
 
@@ -11603,6 +11655,9 @@ function openModuleWindow(moduleId) {
   }
   if (moduleId === 'nhan-vien') {
     void refreshC55StaffHrSharedTruth({ reason: 'module-open' })
+  }
+  if (moduleId === 'kho-hang') {
+    void refreshC56InventorySharedTruth({ reason: 'module-open' })
   }
 }
 
@@ -11654,6 +11709,7 @@ function openInventorySubwindow(view) {
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
   render()
+  void refreshC56InventorySharedTruth({ reason: 'movement-history-open' })
 }
 
 function openStudentDetailWindow(studentId) {
@@ -12995,6 +13051,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
 
   if (!user) {
     resetC55StaffHrRuntimeForAccessBoundary('')
+    resetC56InventoryRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
     stopScheduleSessionRealtimeSubscription()
@@ -13052,6 +13109,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   // account's exact-center membership is resolved. Browser reuse must never
   // inherit the previous account's in-memory HR state.
   resetC55StaffHrRuntimeForAccessBoundary('')
+  resetC56InventoryRuntimeForAccessBoundary('')
 
   cloudStatus = {
     ...cloudStatus,
@@ -13201,6 +13259,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     if (syncId === cloudUserSyncId) {
       await refreshC54FinanceSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
       await refreshC55StaffHrSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
+      await refreshC56InventorySharedTruth({ reason: 'signed-in-bootstrap', silent: true })
     }
     await startC52TuitionRealtimeSubscription(syncId)
   }
@@ -14374,6 +14433,223 @@ async function writeC54FinanceCommand(command, {
 }
 
 function isC54RetryableFinanceFailure(result = {}) {
+  return !result?.outcome_code || [
+    'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
+    'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
+  ].includes(result.outcome_code)
+}
+
+async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const runId = ++c56InventorySyncRunId
+  const legacy = await inspectAndQuarantineC56LegacyInventory({
+    storage: globalThis.localStorage,
+    centerId,
+  })
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!legacy.ok) {
+    inventoryItems = []
+    inventoryMovements = []
+    inventoryRequests = []
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      centerId,
+      isLoading: false,
+      isSaving: false,
+      message: legacy.error,
+      messageTone: 'error',
+      legacyMigrationRequired: true,
+    }
+    render()
+    return { ok: false, outcome_code: 'LEGACY_PRESERVATION_FAILED', error: legacy.error }
+  }
+
+  c56InventorySharedTruthState = {
+    ...c56InventorySharedTruthState,
+    centerId,
+    isLoading: true,
+    message: silent ? c56InventorySharedTruthState.message : 'Đang tải authoritative Inventory...',
+    messageTone: '',
+    legacyMigrationRequired: legacy.migrationRequired,
+    legacyManifestKey: legacy.manifestKey || '',
+    legacySummary: legacy.classifications || null,
+  }
+  if (!silent) render()
+
+  if (!canUseCoreCloudDb()) {
+    inventoryItems = []
+    inventoryMovements = []
+    inventoryRequests = []
+    const error = 'Cần đăng nhập và có active membership để đọc authoritative Inventory.'
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      isLoading: false,
+      message: error,
+      messageTone: 'error',
+    }
+    render()
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error }
+  }
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!readiness.ok || readiness.centerId !== centerId) {
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      isLoading: false,
+      message: readiness.error || getC56InventoryOutcomeMessage('INVENTORY_SHARED_TRUTH_READ_FAILED'),
+      messageTone: 'error',
+    }
+    render()
+    return readiness
+  }
+
+  const result = await pullC56InventorySharedTruth({ supabase: readiness.supabase, centerId })
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    if (['CENTER_ACCESS_DENIED', 'NOT_AUTHENTICATED'].includes(result.outcome_code)) {
+      inventoryItems = []
+      inventoryMovements = []
+      inventoryRequests = []
+    }
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      isLoading: false,
+      message: result.error || getC56InventoryOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  // Validate the complete snapshot first in the adapter. Only active catalog
+  // rows render; archived identities remain on server for movement history.
+  inventoryItems = result.items.filter((item) => !item.isArchived)
+  inventoryMovements = result.movements
+  inventoryRequests = result.requests
+  notifications = syncAppNotifications(notifications)
+  c56InventorySharedTruthState = {
+    ...c56InventorySharedTruthState,
+    centerId,
+    isLoading: false,
+    isSaving: false,
+    message: reason === 'after-server-commit'
+      ? 'Inventory đã commit server và projection đã được làm mới.'
+      : `Đã tải authoritative Inventory (${inventoryItems.length} vật tư, ${inventoryRequests.length} đề xuất).`,
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  }
+  render()
+  return result
+}
+
+async function writeC56InventoryCommand(command, { reason = 'inventory-save' } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const access = canWriteC56InventorySharedTruth(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.canWrite) {
+    const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      centerId,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  const fingerprint = createC56InventoryRetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = c56InventoryRetryCommands.get(retryScope) || {
+    centerId,
+    command,
+    idempotencyKey: createC56InventoryIdempotencyKey(),
+  }
+  c56InventoryRetryCommands.set(retryScope, pending)
+  const runId = ++c56InventorySyncRunId
+  c56InventorySharedTruthState = {
+    ...c56InventorySharedTruthState,
+    centerId,
+    isSaving: true,
+    message: 'Đang commit authoritative Inventory...',
+    messageTone: '',
+  }
+  render()
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()
+    || !readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : readiness
+    if (runId === c56InventorySyncRunId) {
+      c56InventorySharedTruthState = {
+        ...c56InventorySharedTruthState,
+        isSaving: false,
+        message: result.error || getC56InventoryOutcomeMessage('SERVER_COMMAND_FAILED'),
+        messageTone: 'error',
+      }
+      render()
+    }
+    return result
+  }
+
+  const result = await mutateC56InventorySharedTruth({
+    supabase: readiness.supabase,
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Inventory đã commit tại cơ sở trước; view cơ sở hiện tại không nhận projection đó.'
+        : getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok && !isC56RetryableInventoryFailure(result)) {
+    c56InventoryRetryCommands.delete(retryScope)
+  }
+  if (!result.ok) {
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      isSaving: false,
+      message: result.error || getC56InventoryOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  c56InventorySharedTruthState = { ...c56InventorySharedTruthState, isSaving: false }
+  const projection = await refreshC56InventorySharedTruth({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: getC56InventoryOutcomeMessage('COMMITTED_PROJECTION_REFRESH_FAILED'),
+    }
+  }
+  c56InventoryRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reason }
+}
+
+function isC56RetryableInventoryFailure(result = {}) {
   return !result?.outcome_code || [
     'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
     'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
@@ -16942,6 +17218,7 @@ async function initializeSupabaseAuth() {
     await syncCloudUser(user, { reason: 'initial-get-user' })
   } catch (error) {
     resetC55StaffHrRuntimeForAccessBoundary('')
+    resetC56InventoryRuntimeForAccessBoundary('')
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -18430,6 +18707,12 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-inventory-action="refresh-authoritative"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void refreshC56InventorySharedTruth({ reason: 'manual-refresh' })
+    })
+  })
+
   document.querySelectorAll('[data-inventory-movement-filter]').forEach((control) => {
     control.addEventListener('input', () => {
       const filterName = control.dataset.inventoryMovementFilter
@@ -18569,7 +18852,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-inventory-request-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-inventory-request-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!inventoryRequestFormState) {
@@ -18592,12 +18875,16 @@ function bindEvents() {
       null,
       inventoryRequests,
     )
-    inventoryRequests = [request, ...inventoryRequests]
-    saveStoredInventoryRequests(inventoryRequests)
-    notifications = syncAppNotifications(notifications)
+    const result = await writeC56InventoryCommand(buildC56CreateRequestCommand(request), {
+      reason: 'create-request',
+    })
+    if (!result.ok) return
     inventoryRequestFormState = null
-    selectedInventoryRequestId = request.id
-    inventoryRequestStatusFormState = createInventoryRequestStatusFormState(request)
+    selectedInventoryRequestId = String(result.entity_id || '')
+    const committedRequest = inventoryRequests.find((item) => item.id === selectedInventoryRequestId)
+    inventoryRequestStatusFormState = committedRequest
+      ? createInventoryRequestStatusFormState(committedRequest)
+      : null
     render()
   })
 
@@ -18656,7 +18943,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-inventory-request-status-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-inventory-request-status-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!inventoryRequestStatusFormState) {
@@ -18680,14 +18967,16 @@ function bindEvents() {
       return
     }
 
-    const updatedRequest = updateInventoryRequestStatus(request, inventoryRequestStatusFormState.values)
-    inventoryRequests = inventoryRequests.map((item) =>
-      item.id === updatedRequest.id ? updatedRequest : item,
+    const result = await writeC56InventoryCommand(
+      buildC56UpdateRequestStatusCommand(request, inventoryRequestStatusFormState.values),
+      { reason: 'update-request-status' },
     )
-    saveStoredInventoryRequests(inventoryRequests)
-    notifications = syncAppNotifications(notifications)
-    selectedInventoryRequestId = updatedRequest.id
-    inventoryRequestStatusFormState = createInventoryRequestStatusFormState(updatedRequest)
+    if (!result.ok) return
+    selectedInventoryRequestId = request.id
+    const committedRequest = inventoryRequests.find((item) => item.id === request.id)
+    inventoryRequestStatusFormState = committedRequest
+      ? createInventoryRequestStatusFormState(committedRequest)
+      : null
     render()
   })
 
@@ -18775,7 +19064,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-inventory-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-inventory-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!inventoryFormState) {
@@ -18795,17 +19084,15 @@ function bindEvents() {
 
     const existingItem = inventoryItems.find((item) => item.id === inventoryFormState.itemId)
     const nextItem = buildInventoryItemFromForm(inventoryFormState.values, existingItem)
-
-    inventoryItems =
-      inventoryFormState.mode === 'edit'
-        ? inventoryItems.map((item) => (item.id === nextItem.id ? nextItem : item))
-        : [nextItem, ...inventoryItems]
-    saveStoredInventory(inventoryItems)
+    const result = await writeC56InventoryCommand(buildC56SaveItemCommand(nextItem), {
+      reason: inventoryFormState.mode === 'edit' ? 'update-item' : 'create-item',
+    })
+    if (!result.ok) return
     inventoryFormState = null
     render()
   })
 
-  document.querySelector('[data-inventory-action="delete-item"]')?.addEventListener('click', () => {
+  document.querySelector('[data-inventory-action="delete-item"]')?.addEventListener('click', async () => {
     if (!inventoryFormState?.itemId) {
       return
     }
@@ -18814,8 +19101,12 @@ function bindEvents() {
       return
     }
 
-    inventoryItems = inventoryItems.filter((item) => item.id !== inventoryFormState.itemId)
-    saveStoredInventory(inventoryItems)
+    const item = inventoryItems.find((candidate) => candidate.id === inventoryFormState.itemId)
+    if (!item) return
+    const result = await writeC56InventoryCommand(buildC56ArchiveItemCommand(item), {
+      reason: 'archive-item',
+    })
+    if (!result.ok) return
     inventoryFormState = null
     render()
   })
@@ -18851,7 +19142,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-inventory-movement-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-inventory-movement-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!inventoryMovementFormState) {
@@ -18886,13 +19177,10 @@ function bindEvents() {
     }
 
     const movement = buildInventoryMovementFromForm(inventoryMovementFormState.values, item)
-    inventoryItems = inventoryItems.map((inventoryItem) =>
-      inventoryItem.id === item.id ? applyInventoryMovementToItem(inventoryItem, movement) : inventoryItem,
-    )
-    inventoryMovements = [movement, ...inventoryMovements]
-    saveStoredInventory(inventoryItems)
-    saveStoredInventoryMovements(inventoryMovements)
-    syncInventoryMovementToCashflow(movement, item)
+    const result = await writeC56InventoryCommand(buildC56PostMovementCommand(movement, item), {
+      reason: 'post-stock-movement',
+    })
+    if (!result.ok) return
     inventoryMovementFormState = null
     render()
   })

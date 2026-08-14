@@ -212,6 +212,7 @@ export function renderInventoryModule(
   selectedRequestId = null,
   requestStatusFormState = null,
   students = [],
+  sharedTruthState = {},
 ) {
   const activeFilters = { ...initialInventoryFilters, ...filters, stockAlert: 'all' }
   const activeMovementFilters = { ...initialInventoryMovementFilters, ...movementFilters }
@@ -238,6 +239,9 @@ export function renderInventoryModule(
           ${renderInventoryStat('Hết hàng', stats.outOfStockCount, 'danger')}
         </div>
         <div class="inventory-dashboard-actions">
+          <button type="button" data-inventory-action="refresh-authoritative" ${sharedTruthState.isLoading ? 'disabled' : ''}>
+            ${sharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}
+          </button>
           <button type="button" data-inventory-open-subwindow="movements">Mở lịch sử nhập/xuất</button>
           <button type="button" data-inventory-request-action="open-panel">Đề xuất vật tư</button>
           <button class="inventory-add-button" type="button" data-inventory-action="open-create">
@@ -245,6 +249,8 @@ export function renderInventoryModule(
           </button>
         </div>
       </div>
+
+      ${renderInventorySharedTruthNotice(sharedTruthState)}
 
       ${renderInventoryListSection(filteredItems, activeFilters, categories)}
       ${formState ? renderInventoryForm(formState, items) : ''}
@@ -874,10 +880,6 @@ export function validateInventoryMovementForm(values, items) {
     errors.movementDate = 'Ngày nhập/xuất không hợp lệ.'
   }
 
-  if (!String(values.handledBy ?? '').trim()) {
-    errors.handledBy = 'Người thực hiện không được để trống.'
-  }
-
   if (values.type === 'in' && costAmount === null) {
     errors.costAmount = 'Chi phí nhập kho cần là số không âm.'
   }
@@ -976,7 +978,15 @@ function renderInventoryForm(formState, items) {
           ${renderInventoryInputField('Tên vật tư / tài sản / sản phẩm', 'name', formState, 'text', 'Ví dụ: Bộ bàn cờ tiêu chuẩn')}
           ${renderInventorySelectField('Nhóm', 'category', formState, categories)}
           ${renderInventoryUnitField(formState, units)}
-          ${renderInventoryInputField('Số lượng tồn', 'quantity', formState, 'number', '0')}
+          ${
+            isEditMode
+              ? `<label class="inventory-field">
+                  <span>Số lượng tồn</span>
+                  <input type="number" value="${escapeAttribute(formState.values.quantity ?? '0')}" readonly />
+                  <small>Chỉ thay đổi bằng lệnh Nhập/Xuất kho có movement server.</small>
+                </label>`
+              : renderInventoryInputField('Số lượng tồn đầu kỳ', 'quantity', formState, 'number', '0')
+          }
           ${renderInventorySelectField('Tình trạng', 'condition', formState, conditions)}
           ${renderInventoryInputField('Định mức tối thiểu', 'lowStockThreshold', formState, 'number', '0')}
           ${renderInventoryInputField('Vị trí', 'location', formState, 'text', 'Tủ tài liệu lớp 1')}
@@ -1053,7 +1063,10 @@ function renderInventoryMovementForm(formState, items) {
           ${renderInventoryInputField('Số lượng', 'quantity', formState, 'number', '1', 'inventory-movement-field')}
           ${renderInventoryInputField('Ngày nhập/xuất', 'movementDate', formState, 'date', '', 'inventory-movement-field')}
           ${renderInventorySelectField('Lý do', 'reason', formState, inventoryMovementReasons, null, 'inventory-movement-field')}
-          ${renderInventoryInputField('Người thực hiện', 'handledBy', formState, 'text', 'Admin', 'inventory-movement-field')}
+          <div class="inventory-field">
+            <span>Người thực hiện</span>
+            <strong>Tài khoản đăng nhập hiện tại (server xác nhận)</strong>
+          </div>
           ${
             isInbound
               ? `
@@ -1495,7 +1508,6 @@ function renderInventoryRequestForm(formState, students = []) {
         <div class="inventory-form-grid">
           ${renderInventoryRequestInput('Họ & tên người đề xuất', 'requestedByName', formState, 'text', 'Người đề xuất')}
           ${renderInventoryRequestInput('Vai trò / bộ phận', 'requestedByRole', formState, 'text', 'Giáo viên, tư vấn, trợ giảng')}
-          ${renderInventoryRequestInput('Số điện thoại', 'requestedByPhone', formState, 'tel', '090...')}
           ${renderInventoryRequestInput('Họ & tên học viên được đề xuất', 'studentName', formState, 'text', 'Tên học viên / lớp')}
           ${renderInventoryRequestStudentSelect(formState, students)}
           ${renderInventoryRequestSelect('Mức ưu tiên', 'priority', formState, inventoryRequestPriorityOptions)}
@@ -1561,7 +1573,10 @@ function renderInventoryRequestDetail(request, statusFormState) {
         <form class="inventory-request-status-form" data-inventory-request-status-form>
           <div class="inventory-form-grid">
             ${renderInventoryRequestSelect('Trạng thái xử lý', 'status', formState, inventoryRequestStatuses.map((status) => [status, getInventoryRequestStatusLabel(status)]), 'inventory-request-status-field')}
-            ${renderInventoryRequestInput('Người xử lý', 'handledBy', formState, 'text', 'Admin', false, 'inventory-request-status-field')}
+            <div class="inventory-field">
+              <span>Người xử lý</span>
+              <strong>Tài khoản đăng nhập hiện tại (server xác nhận)</strong>
+            </div>
             <label class="inventory-field span-full">
               <span>Ghi chú xử lý</span>
               <textarea data-inventory-request-status-field="adminNote">${escapeHtml(formState.values.adminNote ?? '')}</textarea>
@@ -1626,6 +1641,25 @@ function getInventoryFormConditions(currentCondition = '') {
   }
 
   return Array.from(conditions)
+}
+
+function renderInventorySharedTruthNotice(state = {}) {
+  const message = String(state.message || '').trim()
+  const tone = state.messageTone === 'error'
+    ? 'error'
+    : state.messageTone === 'success'
+      ? 'success'
+      : 'info'
+  const legacy = state.legacyMigrationRequired
+    ? '<p><strong>Legacy Inventory:</strong> dữ liệu local thật/chưa chắc đã được giữ nguyên, cách ly và cần migration có xác nhận; không tự upload/merge.</p>'
+    : ''
+  if (!message && !legacy) return ''
+  return `
+    <aside class="inventory-shared-truth-notice is-${tone}" role="status">
+      ${message ? `<p>${escapeHtml(message)}</p>` : ''}
+      ${legacy}
+    </aside>
+  `
 }
 
 function getInventoryFormUnits(items = [], currentUnit = '') {
