@@ -34,8 +34,23 @@ import {
   isTransactionAttachmentRoleAllowed,
   listTransactionAttachmentsByMonth,
   listTransactionAttachmentsByTransactionCode,
-  updateTransactionAttachmentMetadata,
 } from './transaction-attachments.js'
+import {
+  buildC54ArchiveCategoryCommand,
+  buildC54CloseReconciliationCommand,
+  buildC54SaveCategoryCommand,
+  buildC54SaveSettingsCommand,
+  buildC54SaveTransactionCommand,
+  buildC54UpsertReconciliationCommand,
+  buildC54VoidTransactionCommand,
+  canWriteC54FinanceSharedTruth,
+  createC54FinanceIdempotencyKey,
+  createC54FinanceRetryFingerprint,
+  getC54FinanceOutcomeMessage,
+  mutateC54FinanceSharedTruth,
+  pullC54FinanceSharedTruth,
+} from './cloud-authoritative-finance.js'
+import { inspectAndQuarantineC54LegacyFinance } from './legacy-finance-quarantine.js'
 import {
   compressTransactionImage,
   validateTransactionImageFile,
@@ -55,11 +70,6 @@ import {
   getDeletedNotificationIds,
   getCurrentStorageCenterId,
   getDesktopModuleOrder,
-  getStoredCashflow,
-  getStoredCashflowCategories,
-  readStoredCashflow,
-  getStoredCashbookReconciliations,
-  getStoredCashbookSettings,
   getStoredCenterDepartments,
   getStoredCenterStaffAdministrativeProfiles,
   getStoredCenterStaffAdministrativeProfilesReadStatus,
@@ -90,10 +100,6 @@ import {
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
   setCurrentStorageCenterId,
-  saveStoredCashflow,
-  saveStoredCashflowCategories,
-  saveStoredCashbookReconciliations,
-  saveStoredCashbookSettings,
   saveStoredCenterDepartments,
   saveStoredCenterStaffAdministrativeProfiles,
   saveStoredCenterStaffDocuments,
@@ -116,11 +122,9 @@ import {
   saveViewMode,
 } from './storage.js'
 import { sampleClassSessions } from './class-session-data.js'
-import { sampleCashflowCategories, sampleCashflowTransactions } from './cashflow-data.js'
 import {
   buildCashbookReconciliationFromForm,
   buildCashbookSettingsFromForm,
-  closeCashbookReconciliation,
   createCashbookReconciliationFormState,
   createCashbookSettingsFormState,
   createDefaultCashbookSettings,
@@ -668,6 +672,20 @@ let c53CrmSharedTruthState = {
 }
 let c53CrmSyncRunId = 0
 const c53CrmRetryCommands = new Map()
+let c54FinanceSharedTruthState = {
+  centerId: '',
+  isLoading: false,
+  isSaving: false,
+  message: '',
+  messageTone: '',
+  lastLoadedAt: '',
+  legacyMigrationRequired: false,
+  legacySnapshotKey: '',
+  legacySummary: null,
+}
+let c54FinanceSyncRunId = 0
+const c54FinanceRetryCommands = new Map()
+const c54AttachmentRetryIntents = new WeakMap()
 let staffFilters = { ...initialStaffFilters }
 let staffMembers = getStoredCenterStaffMembers([])
 let staffAdministrativeProfiles = getStoredCenterStaffAdministrativeProfiles([])
@@ -744,8 +762,10 @@ let tuitionDetailState = null
 let tuitionRollbackPreviewState = null
 let tuitionCareNoteState = null
 let tuitionAdvisoryWindowState = null
-let cashflowTransactions = getStoredCashflow(sampleCashflowTransactions)
-let cashflowCategories = getStoredCashflowCategories(sampleCashflowCategories)
+// C5.4 never renders the legacy Finance keys as business authority. They are
+// inventoried/quarantined before the first exact-center authoritative pull.
+let cashflowTransactions = []
+let cashflowCategories = []
 let cashflowFilters = { ...initialCashflowFilters }
 let cashflowFormState = null
 let cashflowTransactionDetailState = null
@@ -758,9 +778,9 @@ let cashflowTransactionPrintState = {
 let isCashflowCategoryPanelOpen = false
 let cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
 let cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
-let cashbookSettings = getStoredCashbookSettings(createDefaultCashbookSettings(cashflowTransactions))
+let cashbookSettings = createDefaultCashbookSettings(cashflowTransactions)
 let cashbookSettingsFormState = null
-let cashbookReconciliations = getStoredCashbookReconciliations()
+let cashbookReconciliations = []
 let cashbookReconciliationFormState = null
 let inventoryItems = getStoredInventory(sampleInventoryItems)
 let inventoryMovements = getStoredInventoryMovements()
@@ -1323,6 +1343,19 @@ function resetTransientStateForCenterSwitch() {
     lastLoadedAt: '',
     eligibleConsultants: [],
   }
+  c54FinanceSyncRunId += 1
+  c54FinanceRetryCommands.clear()
+  c54FinanceSharedTruthState = {
+    centerId: getCurrentResolvedCenterId(),
+    isLoading: false,
+    isSaving: false,
+    message: '',
+    messageTone: '',
+    lastLoadedAt: '',
+    legacyMigrationRequired: false,
+    legacySnapshotKey: '',
+    legacySummary: null,
+  }
   staffFormState = null
   isStaffDepartmentPanelOpen = false
   staffDepartmentFormState = null
@@ -1431,11 +1464,11 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes([])
   attendanceBoardNotes = getStoredAttendanceBoardNotes([])
   tuitionRecords = getStoredTuition(useSampleFallback ? createSampleTuitionRecords(students) : [])
-  cashflowTransactions = getStoredCashflow(useSampleFallback ? sampleCashflowTransactions : [])
-  cashflowCategories = getStoredCashflowCategories(useSampleFallback ? sampleCashflowCategories : [])
+  cashflowTransactions = []
+  cashflowCategories = []
   cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
-  cashbookSettings = getStoredCashbookSettings(createDefaultCashbookSettings(cashflowTransactions))
-  cashbookReconciliations = getStoredCashbookReconciliations([])
+  cashbookSettings = createDefaultCashbookSettings(cashflowTransactions)
+  cashbookReconciliations = []
   inventoryItems = getStoredInventory(useSampleFallback ? sampleInventoryItems : [])
   inventoryMovements = getStoredInventoryMovements([])
   inventoryRequests = getStoredInventoryRequests(useSampleFallback ? sampleInventoryRequests : [])
@@ -8568,6 +8601,9 @@ async function handleInternalOpenCenter(centerId) {
   await bootstrapC51AttendanceSessionReportCloudData(switchSyncId)
   await startC51AttendanceRealtimeSubscription(switchSyncId)
   await bootstrapC52TuitionRecordPackageCloudData(switchSyncId)
+  if (switchSyncId === cloudUserSyncId) {
+    await refreshC54FinanceSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
+  }
   await startC52TuitionRealtimeSubscription(switchSyncId)
 }
 
@@ -10399,6 +10435,7 @@ function renderWindowBody(windowItem) {
       transactionImageManagerState,
       cloudGalleryState,
       cashflowTransactionDetailState,
+      c54FinanceSharedTruthState,
     )
   }
 
@@ -10410,6 +10447,7 @@ function renderWindowBody(windowItem) {
       cashbookSettingsFormState,
       cashbookReconciliations,
       cashbookReconciliationFormState,
+      c54FinanceSharedTruthState,
     )
   }
 
@@ -11414,6 +11452,9 @@ function openModuleWindow(moduleId) {
     isWindowOverflowOpen = false
     isNotificationCenterOpen = false
     render()
+    if (['thu-chi', 'so-quy', 'nhom-tai-chinh'].includes(moduleId)) {
+      void refreshC54FinanceSharedTruth({ reason: 'module-reopen' })
+    }
     return
   }
 
@@ -11447,6 +11488,9 @@ function openModuleWindow(moduleId) {
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
   render()
+  if (['thu-chi', 'so-quy', 'nhom-tai-chinh'].includes(moduleId)) {
+    void refreshC54FinanceSharedTruth({ reason: 'module-open' })
+  }
 }
 
 function openModuleWindowFromChildInteraction(moduleId) {
@@ -11729,10 +11773,7 @@ async function openCashflowSyncedTransactionDetail(transactionId, latestTransact
   }
 
   try {
-    const result = await listTransactionAttachmentsByTransactionCode({
-      centerId: currentCenterId,
-      transactionCode,
-    })
+    const result = { ok: true, data: transaction.attachments || [] }
 
     if (!isCashflowTransactionDetailRequestCurrent(hydrateToken, currentCenterId, transactionId)) {
       return
@@ -11790,12 +11831,13 @@ function isSyncedTuitionPaymentTransaction(transaction) {
   )
 }
 
-function getCashflowSampleFallbackForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
-  return isProductionCenter(centerId) ? [] : sampleCashflowTransactions
-}
-
 function readLatestCashflowTransactionsForCurrentCenter(centerId = getCurrentResolvedCenterId()) {
-  return readStoredCashflow(getCashflowSampleFallbackForCurrentCenter(centerId))
+  const normalizedCenterId = String(centerId || '').trim()
+  return normalizedCenterId
+    && normalizedCenterId === getCurrentResolvedCenterId()
+    && normalizedCenterId === c54FinanceSharedTruthState.centerId
+    ? cashflowTransactions
+    : []
 }
 
 function openTuitionPaymentForm(student, tuitionRecord) {
@@ -11891,10 +11933,7 @@ async function hydrateCashflowEditAttachment({ transactionId, centerId, hydrateT
   const transactionCode = getCashflowTransactionCodesForTransactions(latestCashflowTransactions)[transaction.id]
   const legacyAttachment = transaction.attachment || null
   const result = transactionCode
-    ? await listTransactionAttachmentsByTransactionCode({
-        centerId,
-        transactionCode,
-      })
+    ? { ok: true, data: transaction.attachments || [] }
     : { ok: true, data: [] }
 
   if (!result.ok) {
@@ -12539,121 +12578,9 @@ function openInventoryMovementForm(itemId) {
 }
 
 function syncInventoryMovementToCashflow(movement, item) {
-  if (movement?.type !== 'in' || Number(movement.costAmount || 0) <= 0) {
-    return
-  }
-
-  const hasSyncedTransaction = cashflowTransactions.some(
-    (transaction) =>
-      transaction.sourceModule === 'kho-hang' &&
-      transaction.sourceMovementId === movement.id,
-  )
-
-  if (hasSyncedTransaction) {
-    return
-  }
-
-  ensureInventoryCashflowCategory()
-
-  const unit = item?.unit ? ` ${item.unit}` : ''
-  const reasonText = movement.reason ? ` - ${movement.reason}` : ''
-  const noteText = movement.note ? ` - ${movement.note}` : ''
-  const transaction = {
-    id: `cashflow-from-inventory-${movement.id}`,
-    type: 'expense',
-    category: 'Mua vật tư / Kho hàng',
-    amount: Number(movement.costAmount || 0),
-    transactionDate: movement.movementDate,
-    method: movement.costMethod || 'Tiền mặt',
-    personName: movement.supplierName || movement.itemName || 'Kho hàng',
-    recordedBy: movement.handledBy || 'Admin',
-    note: `Nhập kho ${movement.quantity}${unit} ${movement.itemName}${reasonText}${noteText}`,
-    sourceModule: 'kho-hang',
-    sourceType: 'inventory-movement',
-    sourceMovementId: movement.id,
-    sourceItemId: movement.itemId,
-    createdAt: movement.createdAt || new Date().toISOString(),
-  }
-
-  cashflowTransactions = [transaction, ...cashflowTransactions]
-  saveStoredCashflow(cashflowTransactions)
-}
-
-function ensureTuitionCashflowCategory() {
-  const tuitionCategory = cashflowCategories.find((category) => category.name === 'Học phí')
-
-  if (tuitionCategory && !tuitionCategory.isArchived && tuitionCategory.type === 'income') {
-    return
-  }
-
-  if (tuitionCategory) {
-    cashflowCategories = cashflowCategories.map((category) =>
-      category.id === tuitionCategory.id
-        ? {
-            ...category,
-            type: category.type === 'expense' ? 'both' : category.type,
-            isArchived: false,
-            updatedAt: new Date().toISOString(),
-          }
-        : category,
-    )
-  } else {
-    const now = new Date().toISOString()
-    cashflowCategories = [
-      {
-        id: `cash-cat-hoc-phi-${Date.now()}`,
-        name: 'Học phí',
-        type: 'income',
-        isArchived: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      ...cashflowCategories,
-    ]
-  }
-
-  saveStoredCashflowCategories(cashflowCategories)
-}
-
-function ensureInventoryCashflowCategory() {
-  const categoryName = 'Mua vật tư / Kho hàng'
-  const inventoryCategory = cashflowCategories.find((category) => category.name === categoryName)
-
-  if (
-    inventoryCategory &&
-    !inventoryCategory.isArchived &&
-    (inventoryCategory.type === 'expense' || inventoryCategory.type === 'both')
-  ) {
-    return
-  }
-
-  if (inventoryCategory) {
-    cashflowCategories = cashflowCategories.map((category) =>
-      category.id === inventoryCategory.id
-        ? {
-            ...category,
-            type: category.type === 'income' ? 'both' : 'expense',
-            isArchived: false,
-            updatedAt: new Date().toISOString(),
-          }
-        : category,
-    )
-  } else {
-    const now = new Date().toISOString()
-    cashflowCategories = [
-      {
-        id: `cash-cat-inventory-${Date.now()}`,
-        name: categoryName,
-        type: 'expense',
-        isArchived: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      ...cashflowCategories,
-    ]
-  }
-
-  saveStoredCashflowCategories(cashflowCategories)
+  // Inventory is outside C5.4. Never manufacture a local-only financial row;
+  // an explicit cross-module server command is deferred to the Inventory wave.
+  return { ok: false, deferred: true, movementId: movement?.id || '', itemId: item?.id || '' }
 }
 
 function getCashflowMethodFromTuitionPayment(method) {
@@ -13153,6 +13080,9 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await bootstrapC51AttendanceSessionReportCloudData(syncId)
     await startC51AttendanceRealtimeSubscription(syncId)
     await bootstrapC52TuitionRecordPackageCloudData(syncId)
+    if (syncId === cloudUserSyncId) {
+      await refreshC54FinanceSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
+    }
     await startC52TuitionRealtimeSubscription(syncId)
   }
 }
@@ -14094,6 +14024,240 @@ function isC53RetryableCrmFailure(result = {}) {
   return !result?.outcome_code || [
     'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'CRM_COMMAND_FAILED',
     'INVALID_SERVER_RESULT', 'CONCURRENT_CONFLICT',
+  ].includes(result.outcome_code)
+}
+
+async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const runId = ++c54FinanceSyncRunId
+  const legacy = await inspectAndQuarantineC54LegacyFinance({
+    storage: globalThis.localStorage,
+    centerId,
+  })
+
+  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!legacy.ok) {
+    cashflowTransactions = []
+    cashflowCategories = []
+    cashbookSettings = createDefaultCashbookSettings([])
+    cashbookReconciliations = []
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      centerId,
+      isLoading: false,
+      isSaving: false,
+      message: legacy.error,
+      messageTone: 'error',
+      legacyMigrationRequired: true,
+    }
+    render()
+    return { ok: false, outcome_code: 'LEGACY_PRESERVATION_FAILED', error: legacy.error }
+  }
+
+  c54FinanceSharedTruthState = {
+    ...c54FinanceSharedTruthState,
+    centerId,
+    isLoading: true,
+    message: silent ? c54FinanceSharedTruthState.message : 'Đang tải authoritative Finance/Cashbook...',
+    messageTone: '',
+    legacyMigrationRequired: legacy.migrationRequired,
+    legacySnapshotKey: legacy.snapshotKey || '',
+    legacySummary: legacy.snapshot?.summary || null,
+  }
+  if (!silent) render()
+
+  if (!canUseCoreCloudDb()) {
+    cashflowTransactions = []
+    cashflowCategories = []
+    cashbookSettings = createDefaultCashbookSettings([])
+    cashbookReconciliations = []
+    const error = 'Cần đăng nhập và có active membership để đọc authoritative Finance/Cashbook.'
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      isLoading: false,
+      message: error,
+      messageTone: 'error',
+    }
+    render()
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error }
+  }
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!readiness.ok || readiness.centerId !== centerId) {
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      isLoading: false,
+      message: readiness.error || getC54FinanceOutcomeMessage('FINANCE_SHARED_TRUTH_READ_FAILED'),
+      messageTone: 'error',
+    }
+    render()
+    return readiness
+  }
+
+  const result = await pullC54FinanceSharedTruth({ supabase: readiness.supabase, centerId })
+  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    if (['CENTER_ACCESS_DENIED', 'NOT_AUTHENTICATED'].includes(result.outcome_code)) {
+      cashflowTransactions = []
+      cashflowCategories = []
+      cashbookSettings = createDefaultCashbookSettings([])
+      cashbookReconciliations = []
+    }
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      isLoading: false,
+      message: result.error || getC54FinanceOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  // Empty arrays are authoritative. Legacy keys remain quarantined and are
+  // never merged/uploaded into this projection implicitly.
+  cashflowTransactions = result.transactions
+  cashflowCategories = result.categories
+  cashbookSettings = result.settings || createDefaultCashbookSettings(result.transactions)
+  cashbookReconciliations = result.reconciliations
+  if (!cashbookSelectedDate || !/^\d{4}-\d{2}-\d{2}$/.test(cashbookSelectedDate)) {
+    cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
+  }
+  c54FinanceSharedTruthState = {
+    ...c54FinanceSharedTruthState,
+    centerId,
+    isLoading: false,
+    isSaving: false,
+    message: reason === 'after-server-commit'
+      ? 'Finance/Cashbook đã commit server và projection đã được làm mới.'
+      : `Đã tải authoritative Finance (${cashflowTransactions.length} giao dịch).`,
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  }
+  render()
+  return result
+}
+
+async function writeC54FinanceCommand(command, {
+  reason = 'finance-save',
+  attachmentIntent = '',
+} = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  const access = canWriteC54FinanceSharedTruth(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.canWrite) {
+    const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      centerId,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  const fingerprint = createC54FinanceRetryFingerprint(command, { attachmentIntent })
+  const retryScope = `${centerId}|${fingerprint}`
+  const existingPending = c54FinanceRetryCommands.get(retryScope)
+  const pending = existingPending || {
+    centerId,
+    command,
+    idempotencyKey: createC54FinanceIdempotencyKey(),
+  }
+  const commandContext = {
+    reusedPendingIntent: Boolean(existingPending),
+    effectiveAttachmentId: String(pending.command?.attachment_id || ''),
+  }
+  c54FinanceRetryCommands.set(retryScope, pending)
+  const runId = ++c54FinanceSyncRunId
+  c54FinanceSharedTruthState = {
+    ...c54FinanceSharedTruthState,
+    centerId,
+    isSaving: true,
+    message: 'Đang commit authoritative Finance/Cashbook...',
+    messageTone: '',
+  }
+  render()
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()
+    || !readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : readiness
+    if (runId === c54FinanceSyncRunId) {
+      c54FinanceSharedTruthState = {
+        ...c54FinanceSharedTruthState,
+        isSaving: false,
+        message: result.error || getC54FinanceOutcomeMessage('SERVER_COMMAND_FAILED'),
+        messageTone: 'error',
+      }
+      render()
+    }
+    return { ...result, ...commandContext }
+  }
+
+  const result = await mutateC54FinanceSharedTruth({
+    supabase: readiness.supabase,
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Finance đã commit tại cơ sở trước; view cơ sở hiện tại không nhận projection đó.'
+        : getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+      ...commandContext,
+    }
+  }
+  if (!result.ok && !isC54RetryableFinanceFailure(result)) c54FinanceRetryCommands.delete(retryScope)
+  if (!result.ok) {
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      isSaving: false,
+      message: result.error || getC54FinanceOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return { ...result, ...commandContext }
+  }
+
+  // The in-memory view changes only after both server commit and an exact-center
+  // authoritative read have succeeded.
+  c54FinanceSharedTruthState = { ...c54FinanceSharedTruthState, isSaving: false }
+  const projection = await refreshC54FinanceSharedTruth({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Finance đã commit server nhưng chưa tải lại được projection; không ghi local giả thành công.',
+      ...commandContext,
+    }
+  }
+  c54FinanceRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reason, ...commandContext }
+}
+
+function isC54RetryableFinanceFailure(result = {}) {
+  return !result?.outcome_code || [
+    'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
+    'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
   ].includes(result.outcome_code)
 }
 
@@ -16018,6 +16182,38 @@ async function deleteManagedTransactionAttachment(attachmentId) {
   }
   render()
 
+  const boundTransaction = cashflowTransactions.find((transaction) =>
+    Array.isArray(transaction.attachments)
+      && transaction.attachments.some((item) => item.id === attachment.id),
+  )
+  if (boundTransaction) {
+    const category = cashflowCategories.find((item) => item.id === boundTransaction.categoryId)
+    if (!category) {
+      transactionImageManagerState = {
+        ...transactionImageManagerState,
+        deletingAttachmentId: null,
+        message: 'Không resolve được danh mục authoritative; chưa gỡ chứng từ.',
+        messageTone: 'error',
+      }
+      render()
+      return
+    }
+    const result = await writeC54FinanceCommand(
+      buildC54SaveTransactionCommand(boundTransaction, {
+        category,
+        attachmentAction: 'UNBIND',
+      }),
+      { reason: 'finance-attachment-unbind' },
+    )
+    if (!result.ok) return
+    transactionImageManagerState = null
+    setCloudUploadMessage(
+      'Đã gỡ binding; file private được giữ lại, không silent-delete chứng từ tài chính.',
+      'success',
+    )
+    return
+  }
+
   const storageResult = await deleteTransactionImageObject(attachment.storagePath, centerId)
   const storageWasMissing =
     !storageResult.ok && isMissingStorageObjectError(storageResult.error)
@@ -16086,155 +16282,40 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
     return
   }
 
-  if (
-    cloudStatus.configStatus !== 'configured' ||
-    cloudStatus.authStatus !== 'signed-in'
-  ) {
-    setCloudUploadMessage(
-      'Vui lòng đăng nhập Supabase Cloud trước khi chèn ảnh giao dịch.',
-      'error',
-    )
+  const category = cashflowCategories.find((item) => item.id === transaction.categoryId)
+  if (!category) {
+    setCloudUploadMessage('Danh mục authoritative không còn khả dụng.', 'error')
     return
   }
-
-  if (cloudStatus.membershipStatus !== 'loaded' || !cloudStatus.role) {
-    setCloudUploadMessage('Tai khoan chua duoc cap quyen chung tu cho co so hien tai.', 'error')
-    return
-  }
-
-  const validation = validateTransactionImageFile(file)
-
-  if (!validation.ok) {
-    setCloudUploadMessage(validation.error, 'error')
-    return
-  }
-
-  cloudUploadingTransactionId = transactionId
-  if (transactionImageManagerState?.transaction.id === transactionId) {
-    transactionImageManagerState = {
-      ...transactionImageManagerState,
-      isUploading: true,
-      message: 'Đang nén và upload ảnh giao dịch...',
-      messageTone: '',
-    }
-  }
-  setCloudUploadMessage('Đang nén và upload ảnh giao dịch...', '')
-
-  const compressionResult = await compressTransactionImage(file)
-
-  if (!compressionResult.ok) {
-    cloudUploadingTransactionId = null
-    updateTransactionImageManagerUploadState(compressionResult.error, 'error')
-    setCloudUploadMessage(compressionResult.error, 'error')
-    return
-  }
-
-  const access = getCloudAttachmentAccessContext()
-
-  if (!access.ok) {
-    cloudUploadingTransactionId = null
-    updateTransactionImageManagerUploadState(access.error, 'error')
-    setCloudUploadMessage(access.error, 'error')
-    return
-  }
-
-  const transactionCode = getCashflowTransactionCodes()[transaction.id]
-  const existingResult = await listTransactionAttachmentsByTransactionCode({
-    centerId: access.centerId,
+  const centerId = getCurrentResolvedCenterId()
+  const transactionCode = transaction.transactionCode || getCashflowTransactionCodes()[transaction.id]
+  const uploadResult = await uploadStagedCashflowEvidence({
+    transaction,
     transactionCode,
+    file,
+    centerId,
   })
-
-  if (!existingResult.ok) {
-    cloudUploadingTransactionId = null
-    updateTransactionImageManagerUploadState(existingResult.error, 'error')
-    setCloudUploadMessage(existingResult.error, 'error')
+  if (!uploadResult.ok) {
+    setCloudUploadMessage(uploadResult.error, 'error')
     return
   }
-
-  let attachmentIndex = existingResult.data.length + 1
-  let fileName = ''
-  let storagePath = ''
-  let uploadResult = null
-
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    fileName = buildAttachmentFileName(transactionCode, attachmentIndex, 'jpg')
-    storagePath = buildTransactionImageStoragePath({
-      centerId: access.centerId,
-      dateInput: transaction.transactionDate,
-      fileName,
-    })
-    uploadResult = await uploadTransactionImageBlob({
-      centerId: access.centerId,
-      storagePath,
-      blob: compressionResult.data.blob,
-    })
-
-    if (uploadResult.ok || !isDuplicateStorageError(uploadResult.error)) {
-      break
+  const bindResult = await writeC54FinanceCommand(
+    buildC54SaveTransactionCommand(transaction, {
+      category,
+      attachmentAction: 'BIND',
+      attachmentId: uploadResult.attachment.metadataId || uploadResult.attachment.id,
+    }),
+    { reason: 'finance-attachment-bind' },
+  )
+  if (!bindResult.ok) {
+    if (!bindResult.committed) {
+      await cleanupCloudCashflowAttachment(uploadResult.attachment, centerId)
     }
-
-    attachmentIndex += 1
-  }
-
-  if (!uploadResult?.ok) {
-    cloudUploadingTransactionId = null
-    updateTransactionImageManagerUploadState(
-      uploadResult?.error || 'Không thể upload ảnh.',
-      'error',
-    )
-    setCloudUploadMessage(uploadResult?.error || 'Không thể upload ảnh.', 'error')
+    setCloudUploadMessage(bindResult.error, 'error')
     return
   }
-
-  const metadataResult = await createTransactionAttachmentMetadata({
-    centerId: access.centerId,
-    transactionCode,
-    transactionDate: transaction.transactionDate,
-    amount: transaction.amount,
-    cashflowType: transaction.type,
-    note: transaction.note,
-    originalName: file.name,
-    fileName,
-    mimeType: compressionResult.data.mimeType,
-    sizeBytes: compressionResult.data.sizeBytes,
-    storagePath,
-    uploadedByName: getUploaderDisplayName(
-      { uploadedBy: cloudStatus.user?.id },
-      cloudStatus.user,
-      cloudStatus.memberProfileMap,
-    ),
-  })
-
-  cloudUploadingTransactionId = null
-
-  if (!metadataResult.ok) {
-    updateTransactionImageManagerUploadState(
-      `Ảnh đã upload nhưng lưu metadata thất bại: ${metadataResult.error}`,
-      'error',
-    )
-    setCloudUploadMessage(
-      `Ảnh đã upload nhưng lưu metadata thất bại: ${metadataResult.error}`,
-      'error',
-    )
-    return
-  }
-
-  setCloudUploadMessage('Đã upload ảnh giao dịch lên Supabase Cloud.', 'success')
+  setCloudUploadMessage('Đã upload và bind ảnh vào giao dịch authoritative.', 'success')
   await loadCurrentMonthCloudAttachments()
-  if (cloudGalleryState) {
-    await loadCloudGalleryAttachments()
-  }
-  await refreshTransactionImageManager()
-
-  if (transactionImageManagerState?.transaction.id === transactionId) {
-    transactionImageManagerState = {
-      ...transactionImageManagerState,
-      isUploading: false,
-      message: 'Đã thêm ảnh giao dịch.',
-      messageTone: 'success',
-    }
-    render()
-  }
 }
 
 function updateTransactionImageManagerUploadState(message, tone) {
@@ -16252,6 +16333,16 @@ function updateTransactionImageManagerUploadState(message, tone) {
 
 function isDuplicateStorageError(error) {
   return /already exists|duplicate|resource exists|409/i.test(String(error ?? ''))
+}
+
+function getC54AttachmentRetryIntent(file) {
+  if (!file || (typeof file !== 'object' && typeof file !== 'function')) return ''
+  let intent = c54AttachmentRetryIntents.get(file)
+  if (!intent) {
+    intent = createC54FinanceIdempotencyKey()
+    c54AttachmentRetryIntents.set(file, intent)
+  }
+  return intent
 }
 
 async function uploadStagedCashflowEvidence({
@@ -18408,6 +18499,14 @@ function bindEvents() {
     render()
   })
 
+  document.querySelectorAll(
+    '[data-cashbook-action="refresh-authoritative"], [data-cashflow-action="refresh-authoritative"]',
+  ).forEach((button) => {
+    button.addEventListener('click', () => {
+      void refreshC54FinanceSharedTruth({ reason: 'manual-refresh' })
+    })
+  })
+
   document.querySelector('[data-cashbook-action="open-settings"]')?.addEventListener('click', () => {
     cashbookSettingsFormState = createCashbookSettingsFormState(cashbookSettings)
     render()
@@ -18440,7 +18539,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-cashbook-settings-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-cashbook-settings-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     if (!cashbookSettingsFormState) {
@@ -18458,11 +18557,26 @@ function bindEvents() {
       return
     }
 
-    cashbookSettings = buildCashbookSettingsFromForm(
+    const nextSettings = buildCashbookSettingsFromForm(
       cashbookSettingsFormState.values,
       cashbookSettings,
     )
-    saveStoredCashbookSettings(cashbookSettings)
+    let result
+    try {
+      result = await writeC54FinanceCommand(buildC54SaveSettingsCommand(nextSettings), {
+        reason: 'cashbook-settings-save',
+      })
+    } catch (error) {
+      result = { ok: false, error: String(error?.message || error) }
+    }
+    if (!result.ok) {
+      cashbookSettingsFormState = {
+        ...cashbookSettingsFormState,
+        errors: { ...cashbookSettingsFormState.errors, form: result.error },
+      }
+      render()
+      return
+    }
     cashbookSettingsFormState = null
     render()
   })
@@ -18484,7 +18598,7 @@ function bindEvents() {
     },
   )
 
-  document.querySelector('[data-cashbook-action="close-day"]')?.addEventListener('click', () => {
+  document.querySelector('[data-cashbook-action="close-day"]')?.addEventListener('click', async () => {
     const activeDate = getActiveCashbookDate()
     const currentReconciliation = cashbookReconciliations.find(
       (reconciliation) => reconciliation.date === activeDate,
@@ -18502,17 +18616,11 @@ function bindEvents() {
       return
     }
 
-    const closedReconciliation = closeCashbookReconciliation(
-      currentReconciliation,
-      currentReconciliation.checkedBy || 'Admin',
+    const result = await writeC54FinanceCommand(
+      buildC54CloseReconciliationCommand(currentReconciliation),
+      { reason: 'cashbook-reconciliation-close' },
     )
-    cashbookReconciliations = [
-      closedReconciliation,
-      ...cashbookReconciliations.filter(
-        (reconciliation) => reconciliation.date !== closedReconciliation.date,
-      ),
-    ]
-    saveStoredCashbookReconciliations(cashbookReconciliations)
+    if (!result.ok) return
     render()
   })
 
@@ -18554,7 +18662,7 @@ function bindEvents() {
 
   document.querySelector('[data-cashbook-reconciliation-form]')?.addEventListener(
     'submit',
-    (event) => {
+    async (event) => {
       event.preventDefault()
 
       if (!cashbookReconciliationFormState) {
@@ -18584,13 +18692,23 @@ function bindEvents() {
         existingReconciliation,
       )
 
-      cashbookReconciliations = [
-        nextReconciliation,
-        ...cashbookReconciliations.filter(
-          (reconciliation) => reconciliation.date !== nextReconciliation.date,
-        ),
-      ]
-      saveStoredCashbookReconciliations(cashbookReconciliations)
+      let result
+      try {
+        result = await writeC54FinanceCommand(
+          buildC54UpsertReconciliationCommand(nextReconciliation),
+          { reason: 'cashbook-reconciliation-save' },
+        )
+      } catch (error) {
+        result = { ok: false, error: String(error?.message || error) }
+      }
+      if (!result.ok) {
+        cashbookReconciliationFormState = {
+          ...cashbookReconciliationFormState,
+          errors: { ...cashbookReconciliationFormState.errors, form: result.error },
+        }
+        render()
+        return
+      }
       cashbookReconciliationFormState = null
       render()
     },
@@ -18916,7 +19034,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-cashflow-category-action="archive"]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const category = cashflowCategories.find(
         (item) => item.id === button.dataset.cashflowCategoryId,
       )
@@ -18925,16 +19043,11 @@ function bindEvents() {
         return
       }
 
-      cashflowCategories = cashflowCategories.map((item) =>
-        item.id === category.id
-          ? {
-              ...item,
-              isArchived: true,
-              updatedAt: new Date().toISOString(),
-            }
-          : item,
+      const result = await writeC54FinanceCommand(
+        buildC54ArchiveCategoryCommand(category),
+        { reason: 'finance-category-archive' },
       )
-      saveStoredCashflowCategories(cashflowCategories)
+      if (!result.ok) return
 
       if (cashflowFormState?.values.category === category.name && cashflowFormState.mode === 'create') {
         cashflowFormState = {
@@ -18953,7 +19066,7 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-cashflow-category-form]')?.addEventListener('submit', (event) => {
+  document.querySelector('[data-cashflow-category-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
     const errors = validateCashflowCategoryForm(
@@ -18974,41 +19087,26 @@ function bindEvents() {
     const existingCategory = cashflowCategories.find(
       (category) => category.id === cashflowCategoryFormState.categoryId,
     )
-    const oldCategoryName = existingCategory?.name
     const nextCategory = buildCashflowCategoryFromForm(
       cashflowCategoryFormState.values,
       existingCategory,
     )
-
-    cashflowCategories =
-      cashflowCategoryFormState.mode === 'edit'
-        ? cashflowCategories.map((category) =>
-            category.id === nextCategory.id ? nextCategory : category,
-          )
-        : [nextCategory, ...cashflowCategories]
-
-    if (oldCategoryName && oldCategoryName !== nextCategory.name) {
-      cashflowTransactions = cashflowTransactions.map((transaction) =>
-        transaction.category === oldCategoryName &&
-        !isSyncedTuitionPaymentTransaction(transaction)
-          ? {
-              ...transaction,
-              category: nextCategory.name,
-              updatedAt: new Date().toISOString(),
-            }
-          : transaction,
-      )
-      saveStoredCashflow(cashflowTransactions)
-
-      if (cashflowFilters.category === oldCategoryName) {
-        cashflowFilters = {
-          ...cashflowFilters,
-          category: nextCategory.name,
-        }
-      }
+    let result
+    try {
+      result = await writeC54FinanceCommand(buildC54SaveCategoryCommand(nextCategory), {
+        reason: 'finance-category-save',
+      })
+    } catch (error) {
+      result = { ok: false, error: String(error?.message || error) }
     }
-
-    saveStoredCashflowCategories(cashflowCategories)
+    if (!result.ok) {
+      cashflowCategoryFormState = {
+        ...cashflowCategoryFormState,
+        errors: { ...cashflowCategoryFormState.errors, form: result.error },
+      }
+      render()
+      return
+    }
     cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
     render()
   })
@@ -19209,130 +19307,82 @@ function bindEvents() {
       delete nextTransaction.attachment
     }
 
-    const previousCashflowTransactions = latestCashflowTransactions
-    let replacedCount = 0
-
-    cashflowTransactions =
-      cashflowFormState.mode === 'edit'
-        ? latestCashflowTransactions.map((transaction) =>
-            transaction.id === nextTransaction.id
-              ? (replacedCount += 1, nextTransaction)
-              : transaction,
-          )
-        : [nextTransaction, ...latestCashflowTransactions]
-
-    if (cashflowFormState.mode === 'edit' && replacedCount !== 1) {
-      cashflowTransactions = latestCashflowTransactions
-      if (uploadedAttachment) {
-        await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
-      }
+    const selectedCategory = cashflowCategories.find(
+      (category) => category.name === nextTransaction.category && !category.isArchived,
+    )
+    if (!selectedCategory) {
+      if (uploadedAttachment) await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
       cashflowFormState = createCashflowFormErrorState(
         cashflowFormState,
-        'Không thể cập nhật đúng một giao dịch. Vui lòng mở lại giao dịch và thử lại.',
+        'Danh mục authoritative không còn khả dụng. Hãy Làm mới và chọn lại.',
         formValues,
       )
       render()
       return
     }
 
+    const attachmentAction = uploadedAttachment
+      ? 'BIND'
+      : attachmentDraft.mode === 'remove-existing'
+        ? 'UNBIND'
+        : 'KEEP'
+    let authoritativeResult
     try {
-      saveStoredCashflow(cashflowTransactions)
-    } catch {
-      cashflowTransactions = previousCashflowTransactions
-      if (uploadedAttachment) {
+      authoritativeResult = await writeC54FinanceCommand(
+        buildC54SaveTransactionCommand(nextTransaction, {
+          category: selectedCategory,
+          attachmentAction,
+          attachmentId: uploadedAttachment?.metadataId || uploadedAttachment?.id || '',
+        }),
+        {
+          reason: 'finance-transaction-save',
+          attachmentIntent: getC54AttachmentRetryIntent(stagedFile),
+        },
+      )
+    } catch (error) {
+      authoritativeResult = { ok: false, error: String(error?.message || error) }
+    }
+    const uploadedAttachmentId = String(
+      uploadedAttachment?.metadataId || uploadedAttachment?.id || '',
+    )
+    const supersededRetryUpload = Boolean(
+      uploadedAttachmentId
+      && authoritativeResult.effectiveAttachmentId
+      && uploadedAttachmentId !== authoritativeResult.effectiveAttachmentId,
+    )
+    if (supersededRetryUpload) {
+      await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
+    }
+    if (!authoritativeResult.ok) {
+      if (uploadedAttachment && !authoritativeResult.committed && !supersededRetryUpload) {
         await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
       }
-      cashflowFormState = {
-        ...cashflowFormState,
-        isSaving: false,
-        values: formValues,
-        errors: {
-          ...cashflowFormState.errors,
-          attachment: 'Không lưu được giao dịch. Ảnh có thể làm đầy bộ nhớ local.',
-        },
-      }
+      cashflowFormState = createCashflowFormErrorState(
+        cashflowFormState,
+        authoritativeResult.error || 'Giao dịch chưa được commit server.',
+        formValues,
+      )
       render()
       return
     }
 
-    if (
-      cashflowFormState.mode === 'edit' &&
-      uploadedAttachment &&
-      attachmentDraft.existingAttachment?.storagePath
-    ) {
-      const cleanupResult = await cleanupCloudCashflowAttachment(
-        attachmentDraft.existingAttachment,
-        currentCenterId,
-      )
-
-      if (!cleanupResult.ok) {
-        setCloudUploadMessage(
-          `Giao dịch đã lưu, nhưng chưa dọn được ảnh cũ: ${cleanupResult.error}`,
-          'error',
-        )
-      }
-    }
-
-    if (
-      cashflowFormState.mode === 'edit' &&
-      attachmentDraft.mode === 'remove-existing' &&
-      attachmentDraft.existingAttachment?.storagePath
-    ) {
-      const cleanupResult = await cleanupCloudCashflowAttachment(
-        attachmentDraft.existingAttachment,
-        currentCenterId,
-      )
-
-      if (!cleanupResult.ok) {
-        setCloudUploadMessage(
-          `Giao dịch đã gỡ chứng từ, nhưng chưa dọn được ảnh cloud: ${cleanupResult.error}`,
-          'error',
-        )
-      }
-    }
-
-    if (
-      cashflowFormState.mode === 'edit' &&
-      isKeepExistingCashflowAttachmentDraft(attachmentDraft) &&
-      attachmentDraft.source === 'cloud' &&
-      attachmentDraft.existingAttachment?.metadataId
-    ) {
-      const metadataUpdateResult = await updateTransactionAttachmentMetadata(
-        attachmentDraft.existingAttachment.metadataId,
-        {
-          centerId: currentCenterId,
-          transactionCode,
-          transactionDate: nextTransaction.transactionDate,
-          amount: nextTransaction.amount,
-          cashflowType: nextTransaction.type,
-          note: nextTransaction.note,
-        },
-      )
-
-      if (!metadataUpdateResult.ok) {
-        setCloudUploadMessage(
-          `Giao dịch đã lưu, nhưng chưa đồng bộ được metadata chứng từ: ${metadataUpdateResult.error}`,
-          'error',
-        )
-      } else {
-        await loadCurrentMonthCloudAttachments()
-      }
-    }
-
     if (uploadedAttachment) {
-      setCloudUploadMessage('Đã lưu giao dịch kèm chứng từ.', 'success')
+      setCloudUploadMessage('Đã commit giao dịch và bind chứng từ authoritative.', 'success')
       await loadCurrentMonthCloudAttachments()
     } else if (attachmentDraft.mode === 'remove-existing') {
-      await loadCurrentMonthCloudAttachments()
+      setCloudUploadMessage(
+        'Đã gỡ binding khỏi giao dịch; file private được giữ lại phục vụ audit/migration.',
+        'success',
+      )
     }
-
     clearCashflowAttachmentDraft()
     render()
+    return
   })
 
   document.querySelector('[data-cashflow-action="delete-transaction"]')?.addEventListener(
     'click',
-    () => {
+    async () => {
       if (!cashflowFormState?.transactionId) {
         return
       }
@@ -19357,11 +19407,19 @@ function bindEvents() {
         return
       }
 
-      // Prototype 3B allows hard delete. A later audit phase can switch this to soft delete.
-      cashflowTransactions = cashflowTransactions.filter(
-        (transaction) => transaction.id !== cashflowFormState.transactionId,
+      const result = await writeC54FinanceCommand(
+        buildC54VoidTransactionCommand(transaction),
+        { reason: 'finance-transaction-void' },
       )
-      saveStoredCashflow(cashflowTransactions)
+      if (!result.ok) {
+        cashflowFormState = createCashflowFormErrorState(
+          cashflowFormState,
+          result.error || 'Không thể void giao dịch.',
+          cashflowFormState.values,
+        )
+        render()
+        return
+      }
       clearCashflowAttachmentDraft()
       render()
     },
@@ -20077,14 +20135,6 @@ function bindEvents() {
         transaction.sourcePaymentId === sourcePaymentId,
     )
 
-    if (existingPaymentTransaction) {
-      cashflowTransactions = latestCashflowTransactions
-      tuitionRecords = latestTuitionRecords
-      clearTuitionPaymentFormState()
-      render()
-      return
-    }
-
     if (
       stagedFile &&
       (
@@ -20106,7 +20156,6 @@ function bindEvents() {
     }
 
     const savedAt = new Date().toISOString()
-    ensureTuitionCashflowCategory()
     const nextTransaction = {
       id: `cashflow-from-tuition-${sourcePaymentId}`,
       type: 'income',
@@ -20127,6 +20176,38 @@ function bindEvents() {
       sourcePeriodId: periodId,
       createdAt: savedAt,
       updatedAt: savedAt,
+    }
+    if (existingPaymentTransaction) {
+      const replayMatches = [
+        ['type', nextTransaction.type],
+        ['category', nextTransaction.category],
+        ['amount', nextTransaction.amount],
+        ['transactionDate', nextTransaction.transactionDate],
+        ['method', nextTransaction.method],
+        ['personName', nextTransaction.personName],
+        ['recordedBy', nextTransaction.recordedBy],
+        ['note', nextTransaction.note],
+        ['sourceTuitionId', nextTransaction.sourceTuitionId],
+        ['sourceStudentId', nextTransaction.sourceStudentId],
+        ['sourceParentId', nextTransaction.sourceParentId],
+        ['sourcePeriodId', nextTransaction.sourcePeriodId],
+      ].every(([key, value]) => String(existingPaymentTransaction[key] ?? '') === String(value ?? ''))
+      if (!replayMatches) {
+        tuitionPaymentFormState = {
+          ...tuitionPaymentFormState,
+          errors: {
+            ...tuitionPaymentFormState.errors,
+            form: 'Payment/source này đã commit với nội dung khác; hãy mở lại form thanh toán.',
+          },
+        }
+        render()
+        return
+      }
+      cashflowTransactions = latestCashflowTransactions
+      tuitionRecords = latestTuitionRecords
+      clearTuitionPaymentFormState()
+      render()
+      return
     }
     const projectedTransactions = [nextTransaction, ...latestCashflowTransactions]
     const transactionCode = getCashflowTransactionCodesForTransactions(projectedTransactions)[nextTransaction.id]
@@ -20174,10 +20255,54 @@ function bindEvents() {
       nextTransaction.attachment = uploadedAttachment
     }
 
+    const tuitionCategory = cashflowCategories.find(
+      (category) => category.name === nextTransaction.category
+        && !category.isArchived
+        && ['income', 'both'].includes(category.type),
+    )
+    if (!tuitionCategory) {
+      if (uploadedAttachment) await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        isSaving: false,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          form: 'Danh mục Học phí authoritative không khả dụng; hãy Làm mới Finance.',
+        },
+      }
+      render()
+      return
+    }
+
+    let financeResult
     try {
-      saveStoredCashflow([nextTransaction, ...latestCashflowTransactions])
-    } catch {
-      if (uploadedAttachment) {
+      financeResult = await writeC54FinanceCommand(
+        buildC54SaveTransactionCommand(nextTransaction, {
+          category: tuitionCategory,
+          attachmentAction: uploadedAttachment ? 'BIND' : 'KEEP',
+          attachmentId: uploadedAttachment?.metadataId || uploadedAttachment?.id || '',
+        }),
+        {
+          reason: 'tuition-payment-finance-commit',
+          attachmentIntent: getC54AttachmentRetryIntent(stagedFile),
+        },
+      )
+    } catch (error) {
+      financeResult = { ok: false, error: String(error?.message || error) }
+    }
+    const uploadedAttachmentId = String(
+      uploadedAttachment?.metadataId || uploadedAttachment?.id || '',
+    )
+    const supersededRetryUpload = Boolean(
+      uploadedAttachmentId
+      && financeResult.effectiveAttachmentId
+      && uploadedAttachmentId !== financeResult.effectiveAttachmentId,
+    )
+    if (supersededRetryUpload) {
+      await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
+    }
+    if (!financeResult.ok) {
+      if (uploadedAttachment && !financeResult.committed && !supersededRetryUpload) {
         await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
       }
       tuitionPaymentFormState = {
@@ -20185,21 +20310,19 @@ function bindEvents() {
         isSaving: false,
         errors: {
           ...tuitionPaymentFormState.errors,
-          form: 'Không lưu được giao dịch Thu chi cho thanh toán học phí.',
+          form: financeResult.error || 'Thanh toán chưa được commit vào authoritative Finance.',
         },
       }
       render()
       return
     }
 
-    cashflowTransactions = [nextTransaction, ...latestCashflowTransactions]
     tuitionRecords = latestTuitionRecords
-    if (uploadedAttachment) {
-      await loadCurrentMonthCloudAttachments()
-    }
+    if (uploadedAttachment) await loadCurrentMonthCloudAttachments()
     notifications = syncTuitionNotifications(notifications)
     clearTuitionPaymentFormState()
     render()
+    return
   })
 
   document.querySelectorAll('[data-student-filter]').forEach((control) => {

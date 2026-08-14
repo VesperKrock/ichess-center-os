@@ -2,7 +2,7 @@ import { CURRENT_CENTER_ID, getCurrentCenterMembership, getCurrentSupabaseUser }
 import { getSupabaseClient } from './supabase-client.js'
 
 export const TRANSACTION_IMAGES_BUCKET = 'transaction-images'
-const TRANSACTION_ATTACHMENT_ALLOWED_ROLES = new Set(['owner', 'center_admin'])
+const TRANSACTION_ATTACHMENT_ALLOWED_ROLES = new Set(['owner', 'admin', 'center_admin', 'qtv'])
 const attachmentColumns =
   'id, center_id, transaction_code, transaction_date, month_key, amount, cashflow_type, note, original_name, file_name, mime_type, size_bytes, storage_bucket, storage_path, uploaded_by, uploaded_by_name, created_at'
 const legacyAttachmentColumns =

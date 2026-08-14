@@ -141,6 +141,7 @@ export function renderCashbookModule(
   settingsFormState = null,
   reconciliations = [],
   reconciliationFormState = null,
+  financeSharedTruthState = {},
 ) {
   const activeDate = isValidDate(selectedDate) ? selectedDate : getDefaultCashbookDate(transactions)
   const activeSettings = {
@@ -169,9 +170,12 @@ export function renderCashbookModule(
             />
           </label>
           <button type="button" data-cashbook-action="today">Hôm nay</button>
+          <button type="button" data-cashbook-action="refresh-authoritative" ${financeSharedTruthState.isLoading || financeSharedTruthState.isSaving ? 'disabled' : ''}>${financeSharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}</button>
           <button type="button" data-cashbook-action="open-settings">Thiết lập số dư</button>
         </div>
       </div>
+
+      ${renderFinanceSharedTruthNotice(financeSharedTruthState)}
 
       ${renderCashbookSettingsSummary(activeSettings, activeDate)}
 
@@ -208,6 +212,15 @@ export function renderCashbookModule(
       }
     </section>
   `
+}
+
+function renderFinanceSharedTruthNotice(state = {}) {
+  const message = String(state.message || '').trim()
+  const migrationWarning = state.legacyMigrationRequired
+    ? ' Legacy local đã được quarantine đúng cơ sở; cần migration có preview + xác nhận, chưa nhập vào server.'
+    : ''
+  if (!message && !migrationWarning) return ''
+  return `<p class="finance-shared-truth-notice is-${escapeAttribute(state.messageTone || 'info')}" role="status">${escapeHtml(`${message}${migrationWarning}`.trim())}</p>`
 }
 
 export function getCashbookBalanceStats(transactions, selectedDate, settings) {

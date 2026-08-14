@@ -15150,6 +15150,28 @@ h3 {
   color: #c8f6d4;
 }
 
+.finance-shared-truth-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #9fb3c8;
+  border-radius: 8px;
+  background: #edf5ff;
+  color: #243b53;
+  font-size: 13px;
+}
+
+.finance-shared-truth-notice.is-error {
+  border-color: #d99a9a;
+  background: #fff1f1;
+  color: #8a1c1c;
+}
+
+.finance-shared-truth-notice.is-success {
+  border-color: #8fc7a0;
+  background: #eefaf1;
+  color: #1d6633;
+}
+
 .cashflow-cloud-auth-note button {
   flex: 0 0 auto;
   border: 1px solid rgba(118, 164, 231, 0.38);

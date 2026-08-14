@@ -170,6 +170,7 @@ export function renderCashflowModule(
   imageManagerState = null,
   cloudGalleryState = null,
   transactionDetailState = null,
+  financeSharedTruthState = {},
 ) {
   const activeFilters = { ...initialCashflowFilters, ...filters }
   const filteredTransactions = getFilteredCashflowTransactions(transactions, activeFilters)
@@ -193,6 +194,14 @@ export function renderCashflowModule(
             title="Xuất theo bộ lọc hiện tại"
           >
             Tải CSV
+          </button>
+          <button
+            class="cashflow-category-button"
+            type="button"
+            data-cashflow-action="refresh-authoritative"
+            ${financeSharedTruthState.isLoading || financeSharedTruthState.isSaving ? 'disabled' : ''}
+          >
+            ${financeSharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}
           </button>
           <button class="cashflow-category-button" type="button" data-cashflow-action="open-categories">
             Danh mục
@@ -235,6 +244,7 @@ export function renderCashflowModule(
       </div>
 
       ${cloudStatusHtml}
+      ${renderFinanceSharedTruthNotice(financeSharedTruthState)}
       ${periodLabel ? `<p class="cashflow-period-label">Kỳ: ${escapeHtml(periodLabel)}</p>` : ''}
       <div class="cashflow-stats" aria-label="Tổng hợp thu chi theo bộ lọc hiện tại">
         ${renderStatChip('Tổng thu', formatMoney(stats.totalIncome), 'income')}
@@ -283,6 +293,15 @@ export function renderCashflowModule(
       ${transactionDetailState ? renderCashflowTransactionDetail(transactionDetailState) : ''}
     </section>
   `
+}
+
+function renderFinanceSharedTruthNotice(state = {}) {
+  const message = String(state.message || '').trim()
+  const migrationWarning = state.legacyMigrationRequired
+    ? ' Legacy local đã được quarantine đúng cơ sở; cần migration có preview + xác nhận, chưa nhập vào server.'
+    : ''
+  if (!message && !migrationWarning) return ''
+  return `<p class="finance-shared-truth-notice is-${escapeAttribute(state.messageTone || 'info')}" role="status">${escapeHtml(`${message}${migrationWarning}`.trim())}</p>`
 }
 
 export function filterCloudGalleryAttachments(
