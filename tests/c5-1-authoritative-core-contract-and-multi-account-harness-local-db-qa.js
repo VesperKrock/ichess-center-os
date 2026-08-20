@@ -467,8 +467,9 @@ try {
     center_id: ids.center, entity_type: 'attendance_record', local_id: `regression-${suffix}`,
     payload: { id: `regression-${suffix}` }, source_version: 'c5.1-regression-only',
   })
-  assert.equal(nonCoreWriteError, null, `Existing intended admin non-core write regressed: ${nonCoreWriteError?.message}`)
-  console.log('C5_1_RLS_DIRECT_CORE_DENY_NONCORE_REGRESSION: PASS')
+  assert(nonCoreWriteError, 'C5.2 authoritative Attendance must deny direct table writes')
+  assert.equal(nonCoreWriteError.code, '42501')
+  console.log('C5_1_RLS_DIRECT_CORE_AND_C5_2_ATTENDANCE_DENY: PASS')
 
   const anonResponse = await fetch(`${localStatus.API_URL}/rest/v1/rpc/c5_1_mutate_core_entity`, {
     method: 'POST',

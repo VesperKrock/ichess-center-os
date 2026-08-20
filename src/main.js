@@ -430,7 +430,10 @@ import {
 import {
   checkCloudDbReadiness,
   createEmptyCloudEntityCounts,
+  getCloudDbContext,
   getCloudEntityCounts,
+  listCloudEntityPayloads,
+  listScheduleSessionCloudPayloads,
   pullCloudBootstrapCoreEntities,
   pullCoreEntitiesFromCloud,
   pushLocalCoreEntitiesToCloud,
@@ -448,6 +451,10 @@ import {
   createCoreCommandIdempotencyKey,
   mutateAuthoritativeCoreEntity,
 } from './cloud-authoritative-core.js'
+import {
+  prepareAuthoritativeCoreFormCommand,
+  runAuthoritativeCoreSave,
+} from './core-save-recovery.js'
 import { createOperationalCommandIdempotencyKey } from './cloud-authoritative-attendance-tuition.js'
 import {
   buildC53AppendCareLogCommand,
@@ -13742,13 +13749,117 @@ function upsertCommittedCoreProjection(items, entity) {
   return source.map((item, index) => index === existingIndex ? { ...item, ...entity } : item)
 }
 
-async function commitStudentProjection(student, reason, idempotencyKey) {
-  const result = await writeStudentThroughCloud(student, reason, idempotencyKey)
+async function getAuthoritativeCoreCommandContext(entityType, requestedCenterId) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = String(requestedCenterId || centerContext.centerId || '').trim()
+  if (!centerContext.ok || !centerId || centerContext.centerId !== centerId) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: 'Cơ sở hiện tại đã thay đổi. Dữ liệu chưa được lưu.',
+    }
+  }
 
+  // Do not decide command authorization from the UI's cached membership.
+  // The exact-center membership below is read again immediately before RPC.
+  const context = await getCloudDbContext(centerId)
+  if (!context.ok || context.centerId !== centerId) return context
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(context.user),
+    user: context.user,
+    centerId: context.centerId,
+    membership: context.membership,
+    role: context.membership?.role,
+    cloudReady: true,
+  })
+  if (!canWriteEntity(accessState, entityType)) {
+    return {
+      ok: false,
+      outcome_code: 'WRITE_ROLE_REQUIRED',
+      error: 'Vai trò hiện tại chỉ được xem, không được sửa dữ liệu dùng chung.',
+    }
+  }
+
+  return { ...context, ready: true, accessState }
+}
+
+async function refreshAuthoritativeCoreProjectionAfterCommit(entityType, centerId, committedEntity) {
+  const context = await getCloudDbContext(centerId)
+  if (!context.ok || context.centerId !== centerId) return context
+
+  const result = entityType === CLOUD_ENTITY_TYPES.SCHEDULE_SESSION
+    ? await listScheduleSessionCloudPayloads({ supabase: context.supabase, centerId })
+    : await listCloudEntityPayloads({ supabase: context.supabase, centerId, entityType })
   if (!result.ok) return result
 
-  students = upsertCommittedCoreProjection(students, result.entity)
-  saveStoredStudents(students)
+  const projection = Array.isArray(result.data) ? result.data : []
+  const committedId = String(committedEntity?.id || '').trim()
+  if (committedId && !projection.some((item) => String(item?.id || '') === committedId)) {
+    return {
+      ok: false,
+      outcome_code: 'COMMITTED_ENTITY_NOT_VISIBLE',
+      error: 'Server đã commit nhưng snapshot làm mới chưa chứa bản ghi vừa lưu.',
+    }
+  }
+
+  const latestCenterContext = getCurrentCanonicalCenterContext()
+  if (!latestCenterContext.ok || latestCenterContext.centerId !== centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Cơ sở đã thay đổi sau khi server commit.' }
+  }
+
+  if (entityType === CLOUD_ENTITY_TYPES.STUDENT) {
+    students = projection
+    saveStoredStudents(students)
+  } else if (entityType === CLOUD_ENTITY_TYPES.CLASS_SESSION) {
+    classSessions = projection
+    saveStoredClassSessions(classSessions)
+  } else if (entityType === CLOUD_ENTITY_TYPES.SCHEDULE_SESSION) {
+    scheduleSessions = projection.filter((item) => !item?.isDeleted)
+    saveStoredSchedule(scheduleSessions)
+  }
+
+  return { ok: true, centerId, entityType, data: projection }
+}
+
+function applyAuthoritativeCoreSaveUiResult(result) {
+  const technicalMessage = result.committed
+    ? result.technicalRefreshError
+    : result.technicalError
+  if (technicalMessage) {
+    console.warn('[C5.1 core save recovery]', result.outcome_code, technicalMessage)
+  }
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: result.refreshOk ? 'ready' : 'error',
+    message: result.userMessage || result.error || '',
+    messageTone: result.refreshOk ? 'success' : result.committed ? 'warning' : 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  if (result.committed && !result.refreshOk) {
+    window.alert(result.userMessage)
+  }
+  render()
+}
+
+async function commitStudentProjection(student, reason, idempotencyKey) {
+  const commandCenterId = getCurrentCanonicalCenterContext().centerId
+  const result = await runAuthoritativeCoreSave({
+    entityLabel: 'Học viên',
+    executeCommand: () => writeStudentThroughCloud(student, reason, idempotencyKey, commandCenterId),
+    isContextCurrent: () => getCurrentCanonicalCenterContext().centerId === commandCenterId,
+    installCommittedEntity: (entity) => {
+      students = upsertCommittedCoreProjection(students, entity)
+      saveStoredStudents(students)
+    },
+    refreshProjection: (commandResult) => refreshAuthoritativeCoreProjectionAfterCommit(
+      CLOUD_ENTITY_TYPES.STUDENT,
+      commandCenterId,
+      commandResult.entity,
+    ),
+  })
+  applyAuthoritativeCoreSaveUiResult(result)
   return result
 }
 
@@ -13762,17 +13873,16 @@ async function commitTeacherProjection(teacher, reason, idempotencyKey) {
   return result
 }
 
-async function writeClassSessionThroughCloud(classSession, reason = 'class-session-save', idempotencyKey) {
-  const accessState = buildCurrentOnlineAccessState({
-    cloudReady: cloudDbState.readinessStatus === 'ready',
-  })
-
-  if (!canWriteEntity(accessState, CLOUD_ENTITY_TYPES.CLASS_SESSION)) {
-    return { ok: false, skipped: true, error: getOnlineAccessMessage(accessState) }
-  }
-
-  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
-
+async function writeClassSessionThroughCloud(
+  classSession,
+  reason = 'class-session-save',
+  idempotencyKey,
+  commandCenterId = getCurrentCanonicalCenterContext().centerId,
+) {
+  const readiness = await getAuthoritativeCoreCommandContext(
+    CLOUD_ENTITY_TYPES.CLASS_SESSION,
+    commandCenterId,
+  )
   if (!readiness.ok) return readiness
 
   const result = await mutateAuthoritativeCoreEntity({
@@ -13782,110 +13892,90 @@ async function writeClassSessionThroughCloud(classSession, reason = 'class-sessi
     entity: classSession,
     idempotencyKey,
   })
-
-  cloudDbState = {
-    ...cloudDbState,
-    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
-    message: result.ok
-      ? `Đã lưu cloud Ca học (${reason}).`
-      : result.error || 'Chưa thể lưu Ca học lên server.',
-    messageTone: result.ok ? 'success' : 'error',
-    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
-  }
-  render()
-  return result
+  return { ...result, commandCenterId: readiness.centerId, reason }
 }
 
 async function commitClassSessionProjection(classSession, reason, idempotencyKey) {
-  const result = await writeClassSessionThroughCloud(classSession, reason, idempotencyKey)
-
-  if (!result.ok) return result
-
-  classSessions = upsertCommittedCoreProjection(classSessions, result.entity)
-  saveStoredClassSessions(classSessions)
+  const commandCenterId = getCurrentCanonicalCenterContext().centerId
+  const result = await runAuthoritativeCoreSave({
+    entityLabel: 'Ca học / Lớp',
+    executeCommand: () => writeClassSessionThroughCloud(
+      classSession,
+      reason,
+      idempotencyKey,
+      commandCenterId,
+    ),
+    isContextCurrent: () => getCurrentCanonicalCenterContext().centerId === commandCenterId,
+    installCommittedEntity: (entity) => {
+      classSessions = upsertCommittedCoreProjection(classSessions, entity)
+      saveStoredClassSessions(classSessions)
+    },
+    refreshProjection: (commandResult) => refreshAuthoritativeCoreProjectionAfterCommit(
+      CLOUD_ENTITY_TYPES.CLASS_SESSION,
+      commandCenterId,
+      commandResult.entity,
+    ),
+  })
+  applyAuthoritativeCoreSaveUiResult(result)
   return result
 }
 
 async function commitScheduleSessionProjection(scheduleSession, reason, idempotencyKey) {
-  const result = await writeScheduleSessionThroughCloud(scheduleSession, reason, idempotencyKey)
-
-  if (!result.ok) return result
-
-  if (result.entity?.isDeleted) {
-    scheduleSessions = scheduleSessions.filter((item) => item.id !== result.entity.id)
-  } else {
-    scheduleSessions = upsertCommittedCoreProjection(scheduleSessions, result.entity)
-  }
-  saveStoredSchedule(scheduleSessions)
+  const commandCenterId = getCurrentCanonicalCenterContext().centerId
+  const result = await runAuthoritativeCoreSave({
+    entityLabel: 'Ca dạy / Buổi học',
+    executeCommand: () => writeScheduleSessionThroughCloud(
+      scheduleSession,
+      reason,
+      idempotencyKey,
+      commandCenterId,
+    ),
+    isContextCurrent: () => getCurrentCanonicalCenterContext().centerId === commandCenterId,
+    installCommittedEntity: (entity) => {
+      if (entity?.isDeleted) {
+        scheduleSessions = scheduleSessions.filter((item) => item.id !== entity.id)
+      } else {
+        scheduleSessions = upsertCommittedCoreProjection(scheduleSessions, entity)
+      }
+      saveStoredSchedule(scheduleSessions)
+    },
+    refreshProjection: (commandResult) => refreshAuthoritativeCoreProjectionAfterCommit(
+      CLOUD_ENTITY_TYPES.SCHEDULE_SESSION,
+      commandCenterId,
+      commandResult.entity,
+    ),
+  })
+  applyAuthoritativeCoreSaveUiResult(result)
   return result
 }
 
-async function writeStudentThroughCloud(student, reason = 'student-save', idempotencyKey) {
-  const accessState = buildCurrentOnlineAccessState({
-    cloudReady: cloudDbState.readinessStatus === 'ready',
-  })
-
-  if (!canWriteEntity(accessState, CLOUD_ENTITY_TYPES.STUDENT)) {
-    if (cloudStatus.authStatus === 'signed-in') {
-      cloudDbState = {
-        ...cloudDbState,
-        message: getOnlineAccessMessage(accessState),
-        messageTone: 'error',
-      }
-    }
-    return { ok: false, skipped: true, error: getOnlineAccessMessage(accessState) }
-  }
-
+async function writeStudentThroughCloud(
+  student,
+  reason = 'student-save',
+  idempotencyKey,
+  commandCenterId = getCurrentCanonicalCenterContext().centerId,
+) {
   const runId = ++studentCloudWriteRunId
-  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
+  const readiness = await getAuthoritativeCoreCommandContext(
+    CLOUD_ENTITY_TYPES.STUDENT,
+    commandCenterId,
+  )
+  if (!readiness.ok) return readiness
 
-  if (!readiness.ok) {
-    if (runId === studentCloudWriteRunId) {
-      cloudDbState = {
-        ...cloudDbState,
-        readinessStatus: 'error',
-        message: readiness.error,
-        messageTone: 'error',
-        lastUpdatedAt: new Date().toISOString(),
-      }
-      render()
-    }
-    return readiness
-  }
-
-  const writeAccessState = buildOnlineAccessState({
-    isSupabaseConfigured: true,
-    isSignedIn: Boolean(readiness.user),
-    user: readiness.user,
-    centerId: readiness.centerId,
-    membership: readiness.membership,
-    role: readiness.membership?.role,
-    cloudReady: readiness.ready !== false,
-  })
   const result = await upsertStudentCloudEntity({
     supabase: readiness.supabase,
     centerId: readiness.centerId,
     student,
     userId: readiness.user?.id,
-    accessState: writeAccessState,
+    accessState: readiness.accessState,
     idempotencyKey,
   })
-
-  if (runId !== studentCloudWriteRunId) {
-    return result
+  return {
+    ...result,
+    commandCenterId: readiness.centerId,
+    reason,
+    superseded: runId !== studentCloudWriteRunId,
   }
-
-  cloudDbState = {
-    ...cloudDbState,
-    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
-    message: result.ok
-      ? `Da luu cloud Hoc vien (${reason}).`
-      : result.error || 'Chua the dong bo cloud Hoc vien.',
-    messageTone: result.ok ? 'success' : 'error',
-    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
-  }
-  render()
-  return result
 }
 
 async function startStudentRealtimeSubscription(syncId = cloudUserSyncId) {
@@ -14136,66 +14226,25 @@ function handleTeacherRealtimeRecord(record) {
   render()
 }
 
-async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'schedule-save', idempotencyKey) {
-  const accessState = buildCurrentOnlineAccessState({
-    cloudReady: cloudDbState.readinessStatus === 'ready',
-  })
-  const localPreview = buildScheduleSessionBridgePreview(
-    scheduleSession ? [scheduleSession] : [],
-    buildScheduleSessionRuntimeContext({
-      accessState,
-      cloudReady: cloudDbState.readinessStatus === 'ready',
-    }),
-  )
-
-  if (!localPreview.readiness.readyForRuntimeWrite) {
-    if (cloudStatus.authStatus === 'signed-in') {
-      cloudDbState = {
-        ...cloudDbState,
-        message: 'Chua the dong bo lich len cloud.',
-        messageTone: 'error',
-      }
-    }
-    return {
-      ok: false,
-      skipped: true,
-      error: localPreview.readiness.blockers[0] || 'Chua the dong bo lich len cloud.',
-      readiness: localPreview.readiness,
-    }
-  }
-
+async function writeScheduleSessionThroughCloud(
+  scheduleSession,
+  reason = 'schedule-save',
+  idempotencyKey,
+  commandCenterId = getCurrentCanonicalCenterContext().centerId,
+) {
   const runId = ++scheduleSessionCloudWriteRunId
-  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
+  const readiness = await getAuthoritativeCoreCommandContext(
+    CLOUD_ENTITY_TYPES.SCHEDULE_SESSION,
+    commandCenterId,
+  )
+  if (!readiness.ok) return readiness
 
-  if (!readiness.ok) {
-    if (runId === scheduleSessionCloudWriteRunId) {
-      cloudDbState = {
-        ...cloudDbState,
-        readinessStatus: 'error',
-        message: readiness.error,
-        messageTone: 'error',
-        lastUpdatedAt: new Date().toISOString(),
-      }
-      render()
-    }
-    return readiness
-  }
-
-  const writeAccessState = buildOnlineAccessState({
-    isSupabaseConfigured: true,
-    isSignedIn: Boolean(readiness.user),
-    user: readiness.user,
-    centerId: readiness.centerId,
-    membership: readiness.membership,
-    role: readiness.membership?.role,
-    cloudReady: readiness.ready !== false,
-  })
   const preview = buildScheduleSessionBridgePreview(
     scheduleSession ? [scheduleSession] : [],
     buildScheduleSessionRuntimeContext({
-      accessState: writeAccessState,
+      accessState: readiness.accessState,
       centerId: readiness.centerId,
-      cloudReady: readiness.ready !== false,
+      cloudReady: true,
       signedIn: Boolean(readiness.user),
       membershipReady: Boolean(readiness.membership),
     }),
@@ -14205,11 +14254,11 @@ async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'sched
     centerId: readiness.centerId,
     scheduleSession,
     userId: readiness.user?.id,
-    accessState: writeAccessState,
+    accessState: readiness.accessState,
     readiness: {
       ...preview.readiness,
       dryRunPreview: preview.dryRun,
-      cloudReady: readiness.ready !== false,
+      cloudReady: true,
       signedIn: Boolean(readiness.user),
       membershipReady: Boolean(readiness.membership),
       membershipSqlReady: true,
@@ -14218,22 +14267,12 @@ async function writeScheduleSessionThroughCloud(scheduleSession, reason = 'sched
     },
     idempotencyKey,
   })
-
-  if (runId !== scheduleSessionCloudWriteRunId) {
-    return result
+  return {
+    ...result,
+    commandCenterId: readiness.centerId,
+    reason,
+    superseded: runId !== scheduleSessionCloudWriteRunId,
   }
-
-  cloudDbState = {
-    ...cloudDbState,
-    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
-    message: result.ok
-      ? `Da luu cloud TKB (${reason}).`
-      : 'Chua the dong bo lich len cloud.',
-    messageTone: result.ok ? 'success' : 'error',
-    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
-  }
-  render()
-  return result
 }
 
 async function startScheduleSessionRealtimeSubscription(syncId = cloudUserSyncId) {
@@ -14653,7 +14692,7 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     return { ok: false, outcome_code: 'CLIENT_NOT_READY', error }
   }
 
-  const readiness = await checkCloudDbReadiness(centerId)
+  const readiness = await getCloudDbContext(centerId)
   if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()) {
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
@@ -14719,7 +14758,7 @@ async function writeC54FinanceCommand(command, {
 } = {}) {
   const centerId = getCurrentResolvedCenterId()
   const access = canWriteC54FinanceSharedTruth(buildCurrentOnlineAccessState({
-    cloudReady: cloudDbState.readinessStatus === 'ready',
+    cloudReady: true,
   }))
   if (!access.canWrite) {
     const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
@@ -14757,7 +14796,7 @@ async function writeC54FinanceCommand(command, {
   }
   render()
 
-  const readiness = await checkCloudDbReadiness(centerId)
+  const readiness = await getCloudDbContext(centerId)
   if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()
     || !readiness.ok || readiness.centerId !== centerId) {
     const result = readiness.ok
@@ -16534,8 +16573,8 @@ async function refreshCloudDbReadiness({ showLoading = false } = {}) {
       readinessStatus: 'blocked',
       cloudCounts: null,
       message: cloudStatus.membershipStatus === 'loaded'
-        ? `Không đọc được Cloud DB do quyền/RLS của center ${getCurrentResolvedCenterId()}. Kiểm tra center_members và policy.`
-        : `User hiện tại chưa có membership center_members với center_id = ${getCurrentResolvedCenterId()}.`,
+        ? `Không xác minh được quyền đọc dữ liệu của cơ sở ${getCurrentResolvedCenterId()}.`
+        : `Tài khoản hiện tại chưa có quyền hoạt động tại cơ sở ${getCurrentResolvedCenterId()}.`,
       messageTone: 'error',
     }
     if (showLoading) {
@@ -16550,7 +16589,7 @@ async function refreshCloudDbReadiness({ showLoading = false } = {}) {
       isLoading: true,
       readinessStatus: 'checking',
       cloudCounts: null,
-      message: 'Đang kiểm tra Cloud DB C2.2 readiness...',
+      message: 'Đang kiểm tra kết nối dữ liệu trung tâm...',
       messageTone: '',
     }
     render()
@@ -16612,7 +16651,7 @@ async function refreshCloudDbCounts() {
     isLoading: false,
     readinessStatus: result.ok ? 'ready' : 'error',
     cloudCounts: result.ok ? result.counts : null,
-    message: result.ok ? 'Đã làm mới số liệu Cloud DB C2.' : result.error,
+    message: result.ok ? 'Đã làm mới số liệu dữ liệu trung tâm.' : result.error,
     messageTone: result.ok ? 'success' : 'error',
     lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
   }
@@ -22447,13 +22486,14 @@ function bindEvents() {
             (item) => item.id === settingsClassSessionFormState.classSessionId,
           )
         : null
-      const commandIdempotencyKey = settingsClassSessionFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
-      const commandLocalId = settingsClassSessionFormState.commandLocalId || `class-${Date.now()}`
-      settingsClassSessionFormState = {
-        ...settingsClassSessionFormState,
-        commandIdempotencyKey,
-        commandLocalId,
-      }
+      const command = prepareAuthoritativeCoreFormCommand({
+        formState: settingsClassSessionFormState,
+        formValues: settingsClassSessionFormState.values,
+        localIdPrefix: 'class',
+        createIdempotencyKey: createCoreCommandIdempotencyKey,
+      })
+      const { commandIdempotencyKey, commandLocalId, commandCreatedAt } = command
+      settingsClassSessionFormState = command.formState
       const builtClassSession = buildSettingsClassSessionFromForm(
         settingsClassSessionFormState.values,
         existingClassSession,
@@ -22461,7 +22501,7 @@ function bindEvents() {
       )
       const nextClassSession = existingClassSession
         ? builtClassSession
-        : { ...builtClassSession, id: commandLocalId }
+        : { ...builtClassSession, id: commandLocalId, createdAt: commandCreatedAt }
 
       const result = await commitClassSessionProjection(
         nextClassSession,
@@ -26018,9 +26058,14 @@ function bindEvents() {
     }
 
     let savedScheduleSession = null
-    const commandIdempotencyKey = scheduleFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
-    const commandLocalId = scheduleFormState.commandLocalId || `schedule-${Date.now()}`
-    scheduleFormState = { ...scheduleFormState, commandIdempotencyKey, commandLocalId }
+    const command = prepareAuthoritativeCoreFormCommand({
+      formState: scheduleFormState,
+      formValues,
+      localIdPrefix: 'schedule',
+      createIdempotencyKey: createCoreCommandIdempotencyKey,
+    })
+    const { commandIdempotencyKey, commandLocalId, commandCreatedAt } = command
+    scheduleFormState = command.formState
 
     if (scheduleFormState.mode === 'edit') {
       const existingSession = scheduleSessions.find(
@@ -26047,7 +26092,7 @@ function bindEvents() {
       savedScheduleSession = updatedSession
     } else {
       const createdSession = buildScheduleSessionFromForm(formValues, null, teachers, classSessions)
-      savedScheduleSession = { ...createdSession, id: commandLocalId }
+      savedScheduleSession = { ...createdSession, id: commandLocalId, createdAt: commandCreatedAt }
     }
 
     const result = await commitScheduleSessionProjection(
@@ -26531,9 +26576,14 @@ function bindEvents() {
     }
 
     let savedStudent = null
-    const commandIdempotencyKey = studentFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
-    const commandLocalId = studentFormState.commandLocalId || `stu-${Date.now()}`
-    studentFormState = { ...studentFormState, commandIdempotencyKey, commandLocalId }
+    const command = prepareAuthoritativeCoreFormCommand({
+      formState: studentFormState,
+      formValues: studentFormState.values,
+      localIdPrefix: 'stu',
+      createIdempotencyKey: createCoreCommandIdempotencyKey,
+    })
+    const { commandIdempotencyKey, commandLocalId, commandCreatedAt } = command
+    studentFormState = command.formState
 
     if (studentFormState.mode === 'edit') {
       const existingStudent = students.find((student) => student.id === studentFormState.studentId)
@@ -26541,7 +26591,7 @@ function bindEvents() {
       savedStudent = updatedStudent
     } else {
       const newStudent = buildStudentFromForm(studentFormState.values)
-      savedStudent = { ...newStudent, id: commandLocalId }
+      savedStudent = { ...newStudent, id: commandLocalId, createdAt: commandCreatedAt }
     }
 
     const result = await commitStudentProjection(

@@ -105,15 +105,16 @@ export async function getCloudDbContext(centerId = CURRENT_CENTER_ID) {
     }
 
     if (!membership?.role) {
+      const detail = {
+        category: 'missing-membership',
+        status: 403,
+        target: 'center_members',
+        centerId,
+      }
       return {
         ok: false,
-        error: `User hiện tại chưa có membership center_members với center_id = ${centerId}.`,
-        detail: {
-          category: 'missing-membership',
-          status: 403,
-          target: 'center_members',
-          centerId,
-        },
+        error: getCloudDbReadinessMessage(detail),
+        detail,
       }
     }
 
@@ -198,10 +199,11 @@ export async function listCloudEntities({ supabase, centerId = CURRENT_CENTER_ID
     .order('updated_at', { ascending: true })
 
   if (error) {
+    const detail = classifyCloudDbError(error, 'center_cloud_entities')
     return {
       ok: false,
-      error: getCloudDbErrorMessage(error),
-      detail: classifyCloudDbError(error, 'center_cloud_entities'),
+      error: getCloudDbReadinessMessage({ ...detail, centerId }),
+      detail,
     }
   }
 
@@ -269,10 +271,11 @@ export async function listScheduleSessionCloudPayloads({
     .order('updated_at', { ascending: true })
 
   if (error) {
+    const detail = classifyCloudDbError(error, 'center_cloud_entities')
     return {
       ok: false,
-      error: getCloudDbErrorMessage(error),
-      detail: classifyCloudDbError(error, 'center_cloud_entities'),
+      error: getCloudDbReadinessMessage({ ...detail, centerId }),
+      detail,
     }
   }
 
@@ -513,7 +516,7 @@ export async function pushLocalCoreEntitiesToCloud({
 
 export async function pullCoreEntitiesFromCloud(centerId = CURRENT_CENTER_ID) {
   try {
-    const context = await checkCloudDbReadiness(centerId)
+    const context = await getCloudDbContext(centerId)
 
     if (!context.ok) {
       return context
@@ -562,7 +565,7 @@ export async function pullCoreEntitiesFromCloud(centerId = CURRENT_CENTER_ID) {
 
 export async function pullCloudBootstrapCoreEntities(centerId = CURRENT_CENTER_ID) {
   try {
-    const context = await checkCloudDbReadiness(centerId)
+    const context = await getCloudDbContext(centerId)
 
     if (!context.ok) {
       return context
@@ -632,7 +635,7 @@ export function createEmptyCloudEntityCounts() {
 }
 
 export function getCloudDbErrorMessage(error) {
-  return String(error?.message || error || 'Không thể thao tác Cloud DB C2.')
+  return String(error?.message || error || 'Không thể thao tác dữ liệu trung tâm.')
 }
 
 export function classifyCloudDbError(error, target = 'center_cloud_entities') {
@@ -712,24 +715,24 @@ export function getCloudDbReadinessMessage(detail = {}) {
   const centerId = detail.centerId || 'current center'
 
   if (detail.category === 'schema-not-ready') {
-    return 'Chưa chạy SQL C1/C2.2 hoặc bảng center_cloud_entities chưa sẵn sàng.'
+    return 'Dữ liệu trung tâm chưa sẵn sàng cho phiên bản ứng dụng hiện tại.'
   }
 
   if (detail.category === 'membership-read-denied') {
-    return `Không đọc được quyền từ center_members. Kiểm tra GRANT/RLS và membership center_id = ${centerId}.`
+    return `Không xác minh được quyền tại cơ sở ${centerId}.`
   }
 
   if (detail.category === 'missing-membership') {
-    return `User hiện tại chưa có membership center_members với center_id = ${centerId}.`
+    return `Tài khoản hiện tại chưa có quyền hoạt động tại cơ sở ${centerId}.`
   }
 
   if (detail.category === 'cloud-permission-denied') {
-    return `Không đọc được Cloud DB do quyền/RLS của center ${centerId}. Kiểm tra GRANT authenticated, center_members và policy.`
+    return `Không đọc được dữ liệu của cơ sở ${centerId}.`
   }
 
   if (detail.category === 'signed-out') {
     return 'Vui lòng đăng nhập Supabase trước khi dùng Cloud DB.'
   }
 
-  return 'Không thể kiểm tra Cloud DB C2.2 readiness.'
+  return 'Không thể kết nối dữ liệu trung tâm.'
 }

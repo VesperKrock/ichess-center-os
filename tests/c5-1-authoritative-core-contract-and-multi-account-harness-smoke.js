@@ -143,16 +143,29 @@ for (const [source, label] of [
 }
 
 for (const [name, saveMarker, nextName] of [
-  ['async function commitStudentProjection', 'saveStoredStudents(students)', 'async function commitTeacherProjection'],
   ['async function commitTeacherProjection', 'saveStoredTeachers(teachers)', 'async function writeClassSessionThroughCloud'],
-  ['async function commitClassSessionProjection', 'saveStoredClassSessions(classSessions)', 'async function commitScheduleSessionProjection'],
-  ['async function commitScheduleSessionProjection', 'saveStoredSchedule(scheduleSessions)', 'async function writeStudentThroughCloud'],
 ]) {
   const block = functionSlice(content.main, name, nextName)
   const awaitAt = block.indexOf('await write')
   const successAt = block.indexOf('if (!result.ok) return result')
   const saveAt = block.indexOf(saveMarker)
   assert(awaitAt >= 0 && successAt > awaitAt && saveAt > successAt, `${name} must commit cloud before cache`)
+}
+const recovery = read('src/core-save-recovery.js')
+const recoveryCommandAt = recovery.indexOf('commandResult = await executeCommand?.()')
+const recoveryGuardAt = recovery.indexOf('if (!commandResult?.ok)')
+const recoveryInstallAt = recovery.indexOf('await installCommittedEntity?.(commandResult.entity, commandResult)')
+assert(
+  recoveryCommandAt >= 0 && recoveryGuardAt > recoveryCommandAt && recoveryInstallAt > recoveryGuardAt,
+  'Core save recovery must confirm the server command before installing cache',
+)
+for (const [name, saveMarker, nextName] of [
+  ['async function commitStudentProjection', 'saveStoredStudents(students)', 'async function commitTeacherProjection'],
+  ['async function commitClassSessionProjection', 'saveStoredClassSessions(classSessions)', 'async function commitScheduleSessionProjection'],
+  ['async function commitScheduleSessionProjection', 'saveStoredSchedule(scheduleSessions)', 'async function writeStudentThroughCloud'],
+]) {
+  const block = functionSlice(content.main, name, nextName)
+  includesAll(block, ['runAuthoritativeCoreSave', 'executeCommand:', saveMarker], `${name} recovery ordering`)
 }
 const bootstrapBlock = functionSlice(content.main, 'function applyCloudBootstrapSnapshotToLocal', 'async function refreshCloudDbReadiness')
 includesAll(bootstrapBlock, [
@@ -196,7 +209,7 @@ includesAll(content.qa, [
   'C5_1_OWNER_CENTER_SWITCH_ISOLATION: PASS',
   'C5_1_REALTIME_CROSS_CENTER_ISOLATION: PASS',
   'C5_1_MEMBERSHIP_CURRENTNESS_READ_WRITE: PASS',
-  'C5_1_RLS_DIRECT_CORE_DENY_NONCORE_REGRESSION: PASS',
+  'C5_1_RLS_DIRECT_CORE_AND_C5_2_ATTENDANCE_DENY: PASS',
   'C5_1_ACL_POSTGREST_POLICY_CATALOG: PASS',
   'C5_1_CLOUD_FAILURE_NO_FALSE_LOCAL_SUCCESS: PASS',
   'C5_1_REALTIME_STUDENT_TEACHER_SCHEDULE: PASS',
