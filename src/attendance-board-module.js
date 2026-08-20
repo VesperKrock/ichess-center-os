@@ -50,6 +50,7 @@ export function renderAttendanceBoardModule(
   draftChangeCount = 0,
   baselineStateOverride = null,
   isBaselineDetailsOpen = false,
+  calendarNotesSharedTruthState = {},
 ) {
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
@@ -110,11 +111,26 @@ export function renderAttendanceBoardModule(
         </div>
       </div>
 
+      ${renderOperationalNotesSharedTruthStatus(calendarNotesSharedTruthState)}
       ${renderAttendanceBaselinePanel(storedAttendanceRecords, baselineState, baselineUndoAvailable, draftChangeCount, isBaselineDetailsOpen)}
       ${renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState, normalizedFilters)}
       ${renderAttendanceDetailModal(detailState, filteredRows, classSessions)}
       ${renderAttendanceNoteModal(noteFormState, filteredRows, normalizedFilters)}
     </section>
+  `
+}
+
+function renderOperationalNotesSharedTruthStatus(state = {}) {
+  const message = String(state.message || '').trim()
+  const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
+  const migrationWarning = state.legacyMigrationRequired
+    ? ' Legacy Calendar/Notes đang được giữ nguyên, không tự nhập server.'
+    : ''
+  return `
+    <div class="c57-shared-truth-notice is-${escapeAttribute(tone)}" role="status">
+      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Ghi chú Bảng điểm danh dùng authoritative server truth.')}</span>
+      <button type="button" data-c57-calendar-notes-refresh ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
+    </div>
   `
 }
 

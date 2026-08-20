@@ -312,7 +312,7 @@ for (const marker of [
   assert(main.includes(marker), `Missing main integration marker: ${marker}`)
 }
 
-const saveFlow = getBetween(main, 'const saveCenterCalendarItemFromForm = (event) => {', 'const saveCenterCalendarTagFromForm = (event) => {')
+const saveFlow = getBetween(main, 'const saveCenterCalendarItemFromForm = async (event) => {', 'const saveCenterCalendarTagFromForm = async (event) => {')
 assert(saveFlow.includes('detectCenterCalendarConflicts'), 'Conflict check must run in save flow.')
 assert(saveFlow.includes('conflictResult.hasHard || conflictResult.hasSoft'), 'Only hard/soft conflicts should open panel.')
 assert(saveFlow.includes('createCenterCalendarItemConflictState'), 'Save flow must preserve form state in conflict panel.')

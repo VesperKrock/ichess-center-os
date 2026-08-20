@@ -15,7 +15,6 @@ const CENTER_SCOPED_COLLECTIONS = Object.freeze([
   'tuition',
   'schedule',
   'sessionReports',
-  'attendanceAdvisoryNotes',
 ])
 
 export function cleanupLegacyDatasetLocalResidue(storage = globalThis.localStorage, centerId = '') {

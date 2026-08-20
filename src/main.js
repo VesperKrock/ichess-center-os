@@ -66,6 +66,21 @@ import {
 } from './cloud-authoritative-inventory.js'
 import { inspectAndQuarantineC56LegacyInventory } from './legacy-inventory-quarantine.js'
 import {
+  buildC57ArchiveCalendarItemCommand,
+  buildC57SaveCalendarItemCommand,
+  buildC57SaveCalendarTagCommand,
+  buildC57SetCalendarTagActiveCommand,
+  buildC57UpsertAdvisoryNoteCommand,
+  buildC57UpsertBoardNoteCommand,
+  canWriteC57SharedTruth,
+  createC57IdempotencyKey,
+  createC57RetryFingerprint,
+  getC57OutcomeMessage,
+  mutateC57CalendarNotesSharedTruth,
+  pullC57CalendarNotesSharedTruth,
+} from './cloud-authoritative-calendar-notes.js'
+import { inspectAndQuarantineC57LegacyState } from './legacy-calendar-notes-quarantine.js'
+import {
   buildC55StaffHrUpsertCommand,
   canWriteC55StaffHrSharedTruth,
   createC55StaffHrIdempotencyKey,
@@ -98,8 +113,6 @@ import {
   getStoredNotifications,
   getStoredSchedule,
   getStoredSessionReports,
-  getStoredAttendanceAdvisoryNotes,
-  getStoredAttendanceBoardNotes,
   getStoredClassSessions,
   getStoredStudents,
   getStoredTeachers,
@@ -113,8 +126,6 @@ import {
   saveStoredNotifications,
   saveStoredSchedule,
   saveStoredSessionReports,
-  saveStoredAttendanceAdvisoryNotes,
-  saveStoredAttendanceBoardNotes,
   saveStoredClassSessions,
   saveStoredStudents,
   saveStoredTeachers,
@@ -196,12 +207,9 @@ import {
 } from './inventory-module.js'
 import { createSampleNotifications } from './notifications.js'
 import { sampleScheduleSessions } from './schedule-data.js'
-import { loadStoredCenterCalendarItems, loadStoredCenterCalendarTags } from './center-calendar-data.js'
 import {
   getCenterCalendarItemById,
   getCenterCalendarTagById,
-  saveStoredCenterCalendarItems,
-  saveStoredCenterCalendarTags,
 } from './center-calendar-data.js'
 import {
   detectCenterCalendarConflicts,
@@ -708,6 +716,19 @@ let c56InventorySharedTruthState = {
 }
 let c56InventorySyncRunId = 0
 const c56InventoryRetryCommands = new Map()
+let c57CalendarNotesSharedTruthState = {
+  centerId: '',
+  isLoading: false,
+  isSaving: false,
+  message: '',
+  messageTone: '',
+  lastLoadedAt: '',
+  legacyMigrationRequired: false,
+  legacyManifestKey: '',
+  legacySummary: null,
+}
+let c57CalendarNotesSyncRunId = 0
+const c57CalendarNotesRetryCommands = new Map()
 let staffFilters = { ...initialStaffFilters }
 let staffMembers = []
 let staffAdministrativeProfiles = []
@@ -744,8 +765,10 @@ let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
 scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'initial-load' })
 let sessionReports = getStoredSessionReports()
-let attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes()
-let attendanceBoardNotes = getStoredAttendanceBoardNotes()
+let centerCalendarItems = []
+let centerCalendarTags = []
+let attendanceAdvisoryNotes = []
+let attendanceBoardNotes = []
 let attendanceBaselineUndoSnapshot = null
 let attendanceBaselineDraftRecords = null
 let attendanceBaselineDraftBaseRecords = null
@@ -1080,8 +1103,8 @@ function createCurrentSchedulePrintSnapshot() {
     weekStartDate: scheduleWeekStartDate,
     sessions: scheduleSessions,
     classSessions,
-    centerCalendarItems: loadStoredCenterCalendarItems(centerId),
-    centerCalendarTags: loadStoredCenterCalendarTags(centerId),
+    centerCalendarItems,
+    centerCalendarTags,
     teachers,
     activityFilters: scheduleCalendarFilters,
     createdAt: new Date().toISOString(),
@@ -1415,6 +1438,33 @@ function resetC56InventoryRuntimeForAccessBoundary(centerId = '') {
   }
 }
 
+function clearC57CalendarNotesProjection() {
+  centerCalendarItems = []
+  centerCalendarTags = []
+  attendanceAdvisoryNotes = []
+  attendanceBoardNotes = []
+}
+
+function resetC57CalendarNotesRuntimeForAccessBoundary(centerId = '') {
+  c57CalendarNotesSyncRunId += 1
+  c57CalendarNotesRetryCommands.clear()
+  clearC57CalendarNotesProjection()
+  scheduleCalendarItemState = null
+  scheduleCalendarTagState = null
+  attendanceBoardNoteFormState = null
+  c57CalendarNotesSharedTruthState = {
+    centerId,
+    isLoading: false,
+    isSaving: false,
+    message: '',
+    messageTone: '',
+    lastLoadedAt: '',
+    legacyMigrationRequired: false,
+    legacyManifestKey: '',
+    legacySummary: null,
+  }
+}
+
 function resetTransientStateForCenterSwitch() {
   studentFilters = { ...initialStudentFilters }
   teacherFilters = { ...initialTeacherFilters }
@@ -1461,6 +1511,7 @@ function resetTransientStateForCenterSwitch() {
   }
   resetC55StaffHrRuntimeForAccessBoundary(getCurrentResolvedCenterId())
   resetC56InventoryRuntimeForAccessBoundary(getCurrentResolvedCenterId())
+  resetC57CalendarNotesRuntimeForAccessBoundary('')
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -1541,8 +1592,10 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
   scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
   sessionReports = getStoredSessionReports([])
-  attendanceAdvisoryNotes = getStoredAttendanceAdvisoryNotes([])
-  attendanceBoardNotes = getStoredAttendanceBoardNotes([])
+  centerCalendarItems = []
+  centerCalendarTags = []
+  attendanceAdvisoryNotes = []
+  attendanceBoardNotes = []
   tuitionRecords = getStoredTuition(useSampleFallback ? createSampleTuitionRecords(students) : [])
   cashflowTransactions = []
   cashflowCategories = []
@@ -8752,6 +8805,7 @@ async function handleInternalOpenCenter(centerId) {
     await refreshC54FinanceSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
     await refreshC55StaffHrSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
     await refreshC56InventorySharedTruth({ reason: 'center-switch-bootstrap', silent: true })
+    await refreshC57CalendarNotesSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
   }
   await startC52TuitionRealtimeSubscription(switchSyncId)
 }
@@ -10523,9 +10577,10 @@ function renderWindowBody(windowItem) {
         attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
         centerCalendarFilters: scheduleCalendarFilters,
         centerCalendarItemState: scheduleCalendarItemState,
-        centerCalendarItems: loadStoredCenterCalendarItems(getCurrentResolvedCenterId()),
-        centerCalendarTags: loadStoredCenterCalendarTags(getCurrentResolvedCenterId()),
+        centerCalendarItems,
+        centerCalendarTags,
         centerCalendarTagState: scheduleCalendarTagState,
+        calendarNotesSharedTruthState: c57CalendarNotesSharedTruthState,
         classSessions,
       },
     )
@@ -10552,6 +10607,7 @@ function renderWindowBody(windowItem) {
       cashflowTransactions,
       getCurrentResolvedCenterId(),
       tuitionPeriodActionConfirmationState,
+      c57CalendarNotesSharedTruthState,
     )
   }
 
@@ -10672,6 +10728,7 @@ function renderWindowBody(windowItem) {
       getAttendanceBaselineDraftChangeCount(),
       getAttendanceBaselineDraftState(),
       isAttendanceBaselineDetailsOpen,
+      c57CalendarNotesSharedTruthState,
     )
   }
 
@@ -11614,6 +11671,9 @@ function openModuleWindow(moduleId) {
     if (moduleId === 'kho-hang') {
       void refreshC56InventorySharedTruth({ reason: 'module-reopen' })
     }
+    if (['thoi-khoa-bieu', 'hoc-phi', 'bang-diem-danh'].includes(moduleId)) {
+      void refreshC57CalendarNotesSharedTruth({ reason: 'module-reopen' })
+    }
     return
   }
 
@@ -11658,6 +11718,9 @@ function openModuleWindow(moduleId) {
   }
   if (moduleId === 'kho-hang') {
     void refreshC56InventorySharedTruth({ reason: 'module-open' })
+  }
+  if (['thoi-khoa-bieu', 'hoc-phi', 'bang-diem-danh'].includes(moduleId)) {
+    void refreshC57CalendarNotesSharedTruth({ reason: 'module-open' })
   }
 }
 
@@ -13052,6 +13115,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   if (!user) {
     resetC55StaffHrRuntimeForAccessBoundary('')
     resetC56InventoryRuntimeForAccessBoundary('')
+    resetC57CalendarNotesRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
     stopScheduleSessionRealtimeSubscription()
@@ -13110,6 +13174,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   // inherit the previous account's in-memory HR state.
   resetC55StaffHrRuntimeForAccessBoundary('')
   resetC56InventoryRuntimeForAccessBoundary('')
+  resetC57CalendarNotesRuntimeForAccessBoundary('')
 
   cloudStatus = {
     ...cloudStatus,
@@ -13260,6 +13325,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       await refreshC54FinanceSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
       await refreshC55StaffHrSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
       await refreshC56InventorySharedTruth({ reason: 'signed-in-bootstrap', silent: true })
+      await refreshC57CalendarNotesSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
     }
     await startC52TuitionRealtimeSubscription(syncId)
   }
@@ -14654,6 +14720,260 @@ function isC56RetryableInventoryFailure(result = {}) {
     'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
     'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
   ].includes(result.outcome_code)
+}
+
+function getCurrentC57AuthoritativeCenterId() {
+  const binding = resolveAppCenterBinding(cloudStatus)
+  const centerId = String(binding?.currentCenterId || '').trim()
+  return cloudStatus.authStatus === 'signed-in'
+    && cloudStatus.membershipStatus === 'loaded'
+    && binding?.status === 'bound'
+    && centerId.length <= 160
+    && /^[A-Za-z0-9_-]+$/.test(centerId)
+    ? centerId
+    : ''
+}
+
+async function refreshC57CalendarNotesSharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerId = getCurrentC57AuthoritativeCenterId()
+  const runId = ++c57CalendarNotesSyncRunId
+  if (!centerId) {
+    clearC57CalendarNotesProjection()
+    const result = { ok: false, outcome_code: 'INVALID_CENTER', error: getC57OutcomeMessage('INVALID_CENTER') }
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      centerId: '', isLoading: false, isSaving: false,
+      message: result.error, messageTone: 'error', lastLoadedAt: '',
+    }
+    render()
+    return result
+  }
+
+  // Withhold the prior projection immediately. Legacy inspection hashes may be
+  // asynchronous, so no old-center/stale truth remains renderable during it.
+  clearC57CalendarNotesProjection()
+  c57CalendarNotesSharedTruthState = {
+    ...c57CalendarNotesSharedTruthState,
+    centerId,
+    isLoading: true,
+    isSaving: false,
+    message: silent ? '' : 'Đang tải authoritative Calendar/Operational Notes...',
+    messageTone: '',
+    lastLoadedAt: '',
+    legacyMigrationRequired: false,
+    legacyManifestKey: '',
+    legacySummary: null,
+  }
+  if (!silent) render()
+
+  const legacy = await inspectAndQuarantineC57LegacyState({
+    storage: globalThis.localStorage,
+    centerId,
+  })
+  if (runId !== c57CalendarNotesSyncRunId || centerId !== getCurrentC57AuthoritativeCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC57OutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!legacy.ok) {
+    clearC57CalendarNotesProjection()
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      centerId, isLoading: false, isSaving: false,
+      message: legacy.error, messageTone: 'error', lastLoadedAt: '',
+      legacyMigrationRequired: true,
+    }
+    render()
+    return { ok: false, outcome_code: 'LEGACY_PRESERVATION_FAILED', error: legacy.error }
+  }
+
+  c57CalendarNotesSharedTruthState = {
+    ...c57CalendarNotesSharedTruthState,
+    legacyMigrationRequired: legacy.migrationRequired,
+    legacyManifestKey: legacy.manifestKey || '',
+    legacySummary: legacy.classifications || null,
+  }
+
+  if (!canUseCoreCloudDb()) {
+    const result = { ok: false, outcome_code: 'CLIENT_NOT_READY', error: getC57OutcomeMessage('CLIENT_NOT_READY') }
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      isLoading: false, message: result.error, messageTone: 'error', lastLoadedAt: '',
+    }
+    render()
+    return result
+  }
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c57CalendarNotesSyncRunId || centerId !== getCurrentC57AuthoritativeCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC57OutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC57OutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : readiness
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      isLoading: false,
+      message: result.error || getC57OutcomeMessage('SHARED_TRUTH_READ_FAILED'),
+      messageTone: 'error', lastLoadedAt: '',
+    }
+    render()
+    return result
+  }
+
+  const result = await pullC57CalendarNotesSharedTruth({ supabase: readiness.supabase, centerId })
+  if (runId !== c57CalendarNotesSyncRunId || centerId !== getCurrentC57AuthoritativeCenterId()) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC57OutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      isLoading: false,
+      message: result.error || getC57OutcomeMessage(result.outcome_code),
+      messageTone: 'error', lastLoadedAt: '',
+    }
+    render()
+    return result
+  }
+
+  centerCalendarItems = result.calendarItems.filter((item) => !item.isArchived)
+  centerCalendarTags = result.calendarTags
+  attendanceAdvisoryNotes = result.advisoryNotes
+  attendanceBoardNotes = result.boardNotes
+  c57CalendarNotesSharedTruthState = {
+    ...c57CalendarNotesSharedTruthState,
+    centerId,
+    isLoading: false,
+    isSaving: false,
+    message: reason === 'after-server-commit'
+      ? 'Calendar/Operational Notes đã commit server và projection đã làm mới.'
+      : `Đã tải authoritative Calendar/Notes (${centerCalendarItems.length} hoạt động, ${attendanceAdvisoryNotes.length + attendanceBoardNotes.length} ghi chú).`,
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  }
+  render()
+  return result
+}
+
+async function writeC57CalendarNotesCommand(command, { reason = 'c5.7-save' } = {}) {
+  const centerId = getCurrentC57AuthoritativeCenterId()
+  if (!centerId) {
+    clearC57CalendarNotesProjection()
+    const result = { ok: false, outcome_code: 'INVALID_CENTER', error: getC57OutcomeMessage('INVALID_CENTER') }
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      centerId: '', isSaving: false, message: result.error, messageTone: 'error', lastLoadedAt: '',
+    }
+    render()
+    return result
+  }
+  const access = canWriteC57SharedTruth(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.canWrite) {
+    const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      centerId, isSaving: false, message: result.error, messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  const fingerprint = createC57RetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = c57CalendarNotesRetryCommands.get(retryScope) || {
+    centerId,
+    command,
+    idempotencyKey: createC57IdempotencyKey(),
+  }
+  c57CalendarNotesRetryCommands.set(retryScope, pending)
+  const runId = ++c57CalendarNotesSyncRunId
+  c57CalendarNotesSharedTruthState = {
+    ...c57CalendarNotesSharedTruthState,
+    centerId, isSaving: true, message: 'Đang commit authoritative Calendar/Notes...', messageTone: '',
+  }
+  render()
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== c57CalendarNotesSyncRunId || centerId !== getCurrentC57AuthoritativeCenterId()
+    || !readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC57OutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : readiness
+    if (runId === c57CalendarNotesSyncRunId) {
+      if (isC57AccessBoundaryFailure(result)) clearC57CalendarNotesProjection()
+      c57CalendarNotesSharedTruthState = {
+        ...c57CalendarNotesSharedTruthState,
+        isSaving: false,
+        message: result.error || getC57OutcomeMessage('SERVER_COMMAND_FAILED'),
+        messageTone: 'error',
+        lastLoadedAt: isC57AccessBoundaryFailure(result)
+          ? ''
+          : c57CalendarNotesSharedTruthState.lastLoadedAt,
+      }
+      render()
+    }
+    return result
+  }
+
+  const result = await mutateC57CalendarNotesSharedTruth({
+    supabase: readiness.supabase,
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== c57CalendarNotesSyncRunId || centerId !== getCurrentC57AuthoritativeCenterId()) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Đã commit ở cơ sở trước; view hiện tại không nhận projection đó.'
+        : getC57OutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok && !isC57RetryableFailure(result)) c57CalendarNotesRetryCommands.delete(retryScope)
+  if (!result.ok) {
+    if (isC57AccessBoundaryFailure(result)) clearC57CalendarNotesProjection()
+    c57CalendarNotesSharedTruthState = {
+      ...c57CalendarNotesSharedTruthState,
+      isSaving: false,
+      message: result.error || getC57OutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+      lastLoadedAt: isC57AccessBoundaryFailure(result)
+        ? ''
+        : c57CalendarNotesSharedTruthState.lastLoadedAt,
+    }
+    render()
+    return result
+  }
+
+  c57CalendarNotesSharedTruthState = { ...c57CalendarNotesSharedTruthState, isSaving: false }
+  const projection = await refreshC57CalendarNotesSharedTruth({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: getC57OutcomeMessage('COMMITTED_PROJECTION_REFRESH_FAILED'),
+    }
+  }
+  c57CalendarNotesRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reason }
+}
+
+function isC57RetryableFailure(result = {}) {
+  return !result?.outcome_code || [
+    'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
+    'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
+  ].includes(result.outcome_code)
+}
+
+function isC57AccessBoundaryFailure(result = {}) {
+  return ['NOT_AUTHENTICATED', 'INVALID_CENTER', 'CENTER_ACCESS_DENIED', 'CENTER_CONTEXT_CHANGED']
+    .includes(result?.outcome_code)
 }
 
 function isC55StaffHrProjectionHealthy(centerId = getCurrentResolvedCenterId()) {
@@ -17219,6 +17539,7 @@ async function initializeSupabaseAuth() {
   } catch (error) {
     resetC55StaffHrRuntimeForAccessBoundary('')
     resetC56InventoryRuntimeForAccessBoundary('')
+    resetC57CalendarNotesRuntimeForAccessBoundary('')
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -18117,8 +18438,8 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-tuition-advisory-action="save"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      withTuitionViewportLock(() => {
+    button.addEventListener('click', async (event) => {
+      await withTuitionViewportLock(async () => {
         const studentId = button.dataset.studentId
         const monthKey = button.dataset.monthKey
         const careStatus =
@@ -18127,25 +18448,19 @@ function bindEvents() {
         const note =
           document.querySelector(`[data-tuition-advisory-note="${studentId}"]`)?.value || ''
         const identity = `${studentId}:${monthKey}`
+        const existingNote = attendanceAdvisoryNotes.find(
+          (item) => `${item.studentId}:${item.monthKey}` === identity,
+        )
         const nextNote = {
-          id: `advisory-note-${studentId}-${monthKey}`,
+          ...existingNote,
           studentId,
           monthKey,
           careStatus,
           note: note.trim(),
-          updatedAt: new Date().toISOString(),
         }
-        const hasExistingNote = attendanceAdvisoryNotes.some(
-          (item) => `${item.studentId}:${item.monthKey}` === identity,
-        )
-
-        attendanceAdvisoryNotes = hasExistingNote
-          ? attendanceAdvisoryNotes.map((item) =>
-              `${item.studentId}:${item.monthKey}` === identity ? nextNote : item,
-            )
-          : [...attendanceAdvisoryNotes, nextNote]
-        saveStoredAttendanceAdvisoryNotes(attendanceAdvisoryNotes)
-        render()
+        await writeC57CalendarNotesCommand(buildC57UpsertAdvisoryNoteCommand(nextNote), {
+          reason: 'attendance-advisory-note-save',
+        })
       }, event)
     })
   })
@@ -18710,6 +19025,12 @@ function bindEvents() {
   document.querySelectorAll('[data-inventory-action="refresh-authoritative"]').forEach((button) => {
     button.addEventListener('click', () => {
       void refreshC56InventorySharedTruth({ reason: 'manual-refresh' })
+    })
+  })
+
+  document.querySelectorAll('[data-c57-calendar-notes-refresh]').forEach((button) => {
+    button.addEventListener('click', () => {
+      void refreshC57CalendarNotesSharedTruth({ reason: 'manual-refresh' })
     })
   })
 
@@ -20260,8 +20581,13 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-tuition-action="open-advisory-window"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      withTuitionViewportLock(() => {
+    button.addEventListener('click', async (event) => {
+      await withTuitionViewportLock(async () => {
+        const refresh = await refreshC57CalendarNotesSharedTruth({
+          reason: 'attendance-advisory-surface-open',
+          silent: true,
+        })
+        if (!refresh.ok) return
         tuitionAdvisoryWindowState = { isOpen: true }
         tuitionFormState = null
         clearTuitionPaymentFormState()
@@ -21150,15 +21476,23 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-attendance-note-open]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const studentId = button.dataset.studentId || ''
+      const month = attendanceBoardFilters.month
+      const refresh = await refreshC57CalendarNotesSharedTruth({
+        reason: 'attendance-board-note-surface-open',
+        silent: true,
+      })
+      if (!refresh.ok) return
       const existingNote = attendanceBoardNotes.find(
-        (note) => note.studentId === studentId && note.month === attendanceBoardFilters.month,
+        (note) => note.studentId === studentId && note.month === month,
       )
       attendanceBoardNoteFormState = {
         studentId,
-        month: attendanceBoardFilters.month,
+        month,
         note: existingNote?.note || '',
+        noteId: existingNote?.id || '',
+        baseVersion: Number(existingNote?.cloudVersion) || 0,
       }
       render()
     })
@@ -21182,34 +21516,30 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-attendance-note-save]')?.addEventListener('click', () => {
+  document.querySelector('[data-attendance-note-save]')?.addEventListener('click', async () => {
     if (!attendanceBoardNoteFormState) {
       return
     }
 
-    const now = new Date().toISOString()
     const noteIdentity = `${attendanceBoardNoteFormState.studentId}:${attendanceBoardNoteFormState.month}`
     const existingNote = attendanceBoardNotes.find(
       (note) => `${note.studentId}:${note.month}` === noteIdentity,
     )
     const nextNote = {
-      id:
-        existingNote?.id ||
-        `attendance-board-note-${attendanceBoardNoteFormState.studentId}-${attendanceBoardNoteFormState.month}`,
+      ...existingNote,
+      id: attendanceBoardNoteFormState.noteId || '',
+      cloudVersion: Number(attendanceBoardNoteFormState.baseVersion) || 0,
       studentId: attendanceBoardNoteFormState.studentId,
       month: attendanceBoardNoteFormState.month,
       note: String(attendanceBoardNoteFormState.note || '').trim(),
-      createdAt: existingNote?.createdAt || now,
-      updatedAt: now,
     }
-
-    attendanceBoardNotes = [
-      nextNote,
-      ...attendanceBoardNotes.filter((note) => `${note.studentId}:${note.month}` !== noteIdentity),
-    ]
-    saveStoredAttendanceBoardNotes(attendanceBoardNotes)
-    attendanceBoardNoteFormState = null
-    render()
+    const result = await writeC57CalendarNotesCommand(buildC57UpsertBoardNoteCommand(nextNote), {
+      reason: 'attendance-board-note-save',
+    })
+    if (result.ok) {
+      attendanceBoardNoteFormState = null
+      render()
+    }
   })
 
   document.querySelector('[data-attendance-baseline-details]')?.addEventListener('toggle', (event) => {
@@ -23095,14 +23425,12 @@ function bindEvents() {
     sessionReportGuestFormState = null
   }
 
-  const getCurrentCenterCalendarItems = () =>
-    loadStoredCenterCalendarItems(getCurrentResolvedCenterId())
+  const getCurrentCenterCalendarItems = () => centerCalendarItems
 
   const getCurrentCenterCalendarItem = (itemId) =>
     getCenterCalendarItemById(getCurrentCenterCalendarItems(), itemId)
 
-  const getCurrentCenterCalendarTags = () =>
-    loadStoredCenterCalendarTags(getCurrentResolvedCenterId())
+  const getCurrentCenterCalendarTags = () => centerCalendarTags
 
   const getCurrentCenterCalendarTag = (tagId) =>
     getCenterCalendarTagById(getCurrentCenterCalendarTags(), tagId)
@@ -23151,8 +23479,8 @@ function bindEvents() {
   }
 
   const resolveCurrentCenterCalendarSeriesMaster = (masterId) => {
-    const centerId = getCurrentResolvedCenterId()
-    const latestItems = loadStoredCenterCalendarItems(centerId)
+    const centerId = getCurrentC57AuthoritativeCenterId()
+    const latestItems = centerCalendarItems
     const masterItem = getCenterCalendarItemById(latestItems, masterId)
 
     if (!masterItem || masterItem.centerId !== centerId || !isWeeklyRecurringCenterCalendarItem(masterItem)) {
@@ -23354,16 +23682,18 @@ function bindEvents() {
     }
   }
 
-  const persistCenterCalendarItem = (centerId, nextItem, existingItem = null) => {
-    const latestItems = loadStoredCenterCalendarItems(centerId)
-    const nextItems = existingItem
-      ? latestItems.map((item) => (item.id === existingItem.id ? nextItem : item))
-      : [nextItem, ...latestItems]
-
-    saveStoredCenterCalendarItems(centerId, nextItems)
+  const persistCenterCalendarItem = async (centerId, nextItem, existingItem = null) => {
+    if (!centerId || centerId !== getCurrentC57AuthoritativeCenterId()) {
+      return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC57OutcomeMessage('CENTER_CONTEXT_CHANGED') }
+    }
+    return writeC57CalendarNotesCommand(buildC57SaveCalendarItemCommand({
+      ...nextItem,
+      id: existingItem?.id || nextItem.id,
+      cloudVersion: Number(nextItem.cloudVersion) || 0,
+    }), { reason: existingItem ? 'calendar-item-update' : 'calendar-item-create' })
   }
 
-  const saveCenterCalendarItemFromForm = (event) => {
+  const saveCenterCalendarItemFromForm = async (event) => {
     event?.preventDefault?.()
 
     if (!scheduleCalendarItemState || !['create', 'edit'].includes(scheduleCalendarItemState.mode)) {
@@ -23383,9 +23713,11 @@ function bindEvents() {
       return
     }
 
-    const centerId = getCurrentResolvedCenterId()
-    const latestItems = loadStoredCenterCalendarItems(centerId)
-    const latestTags = loadStoredCenterCalendarTags(centerId)
+    const centerId = getCurrentC57AuthoritativeCenterId()
+    const baseVersion = Number(scheduleCalendarItemState.baseVersion) || 0
+    const baseCenterId = String(scheduleCalendarItemState.baseCenterId || '')
+    const latestItems = centerCalendarItems
+    const latestTags = centerCalendarTags
     const existingItem = scheduleCalendarItemState.mode === 'edit'
       ? getCenterCalendarItemById(latestItems, scheduleCalendarItemState.itemId)
       : null
@@ -23393,6 +23725,9 @@ function bindEvents() {
     const existingTag = existingItem?.tagId ? getCenterCalendarTagById(latestTags, existingItem.tagId) : null
     const canUseSelectedTag = !formValues.tagId || selectedTag?.isActive || selectedTag?.id === existingTag?.id
     const itemErrors = canUseSelectedTag ? {} : { tagId: 'Nhãn đã lưu trữ không thể gắn mới.' }
+    if (scheduleCalendarItemState.mode === 'edit' && (!baseCenterId || baseCenterId !== centerId || baseVersion < 1)) {
+      itemErrors.form = 'Context/version lúc mở form không còn hợp lệ; hãy đóng và mở lại.'
+    }
 
     if (Object.keys(itemErrors).length) {
       scheduleCalendarItemState = {
@@ -23416,6 +23751,7 @@ function bindEvents() {
       render()
       return
     }
+    nextItem.cloudVersion = baseVersion
 
     const seriesRange = isWeeklyRecurringCenterCalendarItem(nextItem)
       ? getCenterCalendarSeriesRange(nextItem)
@@ -23449,6 +23785,8 @@ function bindEvents() {
       scheduleCalendarItemState = createCenterCalendarItemConflictState({
         previousState: {
           ...scheduleCalendarItemState,
+          baseVersion,
+          baseCenterId,
           values: formValues,
           errors: {},
         },
@@ -23459,25 +23797,39 @@ function bindEvents() {
       return
     }
 
-    persistCenterCalendarItem(centerId, nextItem, existingItem)
-    scheduleCalendarItemState = null
-    render()
+    const result = await persistCenterCalendarItem(centerId, nextItem, existingItem)
+    if (result.ok) {
+      scheduleCalendarItemState = null
+      render()
+    } else {
+      scheduleCalendarItemState = {
+        ...scheduleCalendarItemState,
+        values: formValues,
+        errors: { form: result.error || getC57OutcomeMessage(result.outcome_code) },
+      }
+      render()
+    }
   }
 
-  const saveCenterCalendarTagFromForm = (event) => {
+  const saveCenterCalendarTagFromForm = async (event) => {
     event?.preventDefault?.()
 
     if (!scheduleCalendarTagState || !['create', 'edit'].includes(scheduleCalendarTagState.mode)) {
       return
     }
 
-    const centerId = getCurrentResolvedCenterId()
+    const centerId = getCurrentC57AuthoritativeCenterId()
+    const baseVersion = Number(scheduleCalendarTagState.baseVersion) || 0
+    const baseCenterId = String(scheduleCalendarTagState.baseCenterId || '')
     const formValues = getCenterCalendarTagFormValuesFromDom()
-    const latestTags = loadStoredCenterCalendarTags(centerId)
+    const latestTags = centerCalendarTags
     const existingTag = scheduleCalendarTagState.mode === 'edit'
       ? getCenterCalendarTagById(latestTags, scheduleCalendarTagState.tagId)
       : null
     const errors = validateCenterCalendarTagForm(formValues, latestTags, existingTag?.id || '')
+    if (scheduleCalendarTagState.mode === 'edit' && (!baseCenterId || baseCenterId !== centerId || baseVersion < 1)) {
+      errors.form = 'Context/version lúc mở form không còn hợp lệ; hãy đóng và mở lại.'
+    }
 
     if (Object.keys(errors).length) {
       scheduleCalendarTagState = {
@@ -23501,12 +23853,20 @@ function bindEvents() {
       return
     }
 
-    const nextTags = existingTag
-      ? latestTags.map((tag) => (tag.id === existingTag.id ? nextTag : tag))
-      : [nextTag, ...latestTags]
-
-    saveStoredCenterCalendarTags(centerId, nextTags)
-    scheduleCalendarTagState = createCenterCalendarTagManagerState()
+    const result = await writeC57CalendarNotesCommand(buildC57SaveCalendarTagCommand({
+      ...nextTag,
+      id: existingTag?.id || nextTag.id,
+      cloudVersion: baseVersion,
+    }), { reason: existingTag ? 'calendar-tag-update' : 'calendar-tag-create' })
+    if (result.ok) {
+      scheduleCalendarTagState = createCenterCalendarTagManagerState()
+    } else {
+      scheduleCalendarTagState = {
+        ...scheduleCalendarTagState,
+        values: formValues,
+        errors: { form: result.error || getC57OutcomeMessage(result.outcome_code) },
+      }
+    }
     render()
   }
 
@@ -23834,7 +24194,7 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-center-calendar-tag-action]').forEach((button) => {
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', async (event) => {
       const action = button.dataset.centerCalendarTagAction
 
       if (action === 'open-manager') {
@@ -23898,14 +24258,13 @@ function bindEvents() {
       }
 
       if (action === 'save') {
-        saveCenterCalendarTagFromForm(event)
+        await saveCenterCalendarTagFromForm(event)
         return
       }
 
       if (action === 'archive' || action === 'restore') {
-        const centerId = getCurrentResolvedCenterId()
         const tagId = button.dataset.centerCalendarTagId
-        const latestTags = loadStoredCenterCalendarTags(centerId)
+        const latestTags = centerCalendarTags
         const targetTag = getCenterCalendarTagById(latestTags, tagId)
 
         if (action === 'restore' && targetTag) {
@@ -23927,20 +24286,24 @@ function bindEvents() {
           }
         }
 
-        const nextTags = latestTags.map((tag) =>
-          tag.id === tagId
-            ? { ...tag, isActive: action === 'restore', updatedAt: new Date().toISOString() }
-            : tag,
+        if (!targetTag) return
+        const result = await writeC57CalendarNotesCommand(
+          buildC57SetCalendarTagActiveCommand(targetTag, action === 'restore'),
+          { reason: `calendar-tag-${action}` },
         )
-        saveStoredCenterCalendarTags(centerId, nextTags)
-        scheduleCalendarTagState = createCenterCalendarTagManagerState()
+        scheduleCalendarTagState = result.ok
+          ? createCenterCalendarTagManagerState()
+          : {
+              ...createCenterCalendarTagManagerState(),
+              errors: { form: result.error || getC57OutcomeMessage(result.outcome_code) },
+            }
         render()
       }
     })
   })
 
   document.querySelectorAll('[data-center-calendar-action]').forEach((button) => {
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', async (event) => {
       const action = button.dataset.centerCalendarAction
 
       if (action === 'open-create') {
@@ -23964,6 +24327,8 @@ function bindEvents() {
         scheduleCalendarItemState = {
           mode: scheduleCalendarItemState.previousMode || 'create',
           itemId: scheduleCalendarItemState.itemId || null,
+          baseVersion: Number(scheduleCalendarItemState.baseVersion) || 0,
+          baseCenterId: String(scheduleCalendarItemState.baseCenterId || ''),
           isSeriesEdit: Boolean(scheduleCalendarItemState.isSeriesEdit),
           openedFromOccurrenceDate: scheduleCalendarItemState.openedFromOccurrenceDate || '',
           values: {
@@ -23980,7 +24345,7 @@ function bindEvents() {
           return
         }
 
-        const centerId = getCurrentResolvedCenterId()
+        const centerId = getCurrentC57AuthoritativeCenterId()
         const pendingItem = scheduleCalendarItemState.pendingItem
 
         if (pendingItem.centerId && pendingItem.centerId !== centerId) {
@@ -23992,7 +24357,7 @@ function bindEvents() {
           return
         }
 
-        const latestItems = loadStoredCenterCalendarItems(centerId)
+        const latestItems = centerCalendarItems
         const existingItem = scheduleCalendarItemState.previousMode === 'edit'
           ? getCenterCalendarItemById(latestItems, scheduleCalendarItemState.itemId)
           : null
@@ -24006,26 +24371,37 @@ function bindEvents() {
           return
         }
 
-        persistCenterCalendarItem(centerId, pendingItem, existingItem)
-        scheduleCalendarItemState = null
+        const result = await persistCenterCalendarItem(centerId, pendingItem, existingItem)
+        if (result.ok) {
+          scheduleCalendarItemState = null
+        } else {
+          scheduleCalendarItemState = {
+            ...scheduleCalendarItemState,
+            errors: { form: result.error || getC57OutcomeMessage(result.outcome_code) },
+          }
+        }
         render()
         return
       }
 
       if (action === 'save') {
-        saveCenterCalendarItemFromForm(event)
+        await saveCenterCalendarItemFromForm(event)
         return
       }
 
       if (action === 'delete') {
-        const centerId = getCurrentResolvedCenterId()
         const itemId = button.dataset.centerCalendarItemId
-        const latestItems = loadStoredCenterCalendarItems(centerId)
-        saveStoredCenterCalendarItems(
-          centerId,
-          latestItems.filter((item) => item.id !== itemId),
-        )
-        scheduleCalendarItemState = null
+        const item = scheduleCalendarItemState?.mode === 'delete'
+          && scheduleCalendarItemState.item?.id === itemId
+          ? scheduleCalendarItemState.item
+          : null
+        if (!item) return
+        const result = await writeC57CalendarNotesCommand(buildC57ArchiveCalendarItemCommand(item), {
+          reason: 'calendar-item-archive',
+        })
+        scheduleCalendarItemState = result.ok
+          ? null
+          : { ...scheduleCalendarItemState, errors: { form: result.error || getC57OutcomeMessage(result.outcome_code) } }
         render()
         return
       }
@@ -24136,9 +24512,11 @@ function bindEvents() {
       }
 
       if (action === 'delete-series') {
-        const { centerId, latestItems, masterItem } = resolveCurrentCenterCalendarSeriesMaster(
-          button.dataset.centerCalendarMasterId,
-        )
+        const requestedMasterId = button.dataset.centerCalendarMasterId
+        const masterItem = scheduleCalendarItemState?.mode === 'seriesDelete'
+          && scheduleCalendarItemState.item?.id === requestedMasterId
+          ? scheduleCalendarItemState.item
+          : null
 
         if (!masterItem) {
           scheduleCalendarItemState = {
@@ -24149,11 +24527,12 @@ function bindEvents() {
           return
         }
 
-        saveStoredCenterCalendarItems(
-          centerId,
-          latestItems.filter((item) => item.id !== masterItem.id),
-        )
-        scheduleCalendarItemState = null
+        const result = await writeC57CalendarNotesCommand(buildC57ArchiveCalendarItemCommand(masterItem), {
+          reason: 'calendar-series-archive',
+        })
+        scheduleCalendarItemState = result.ok
+          ? null
+          : { ...scheduleCalendarItemState, errors: { form: result.error || getC57OutcomeMessage(result.outcome_code) } }
         render()
         return
       }
@@ -27113,8 +27492,12 @@ function withTuitionViewportLock(action, event) {
   const target = event?.currentTarget || event?.target || null
   const viewportState = captureTuitionViewportState(target instanceof HTMLElement ? target : null)
 
-  action()
+  const result = action()
+  if (result && typeof result.finally === 'function') {
+    return result.finally(() => restoreTuitionViewportStateAfterRender(viewportState))
+  }
   restoreTuitionViewportStateAfterRender(viewportState)
+  return result
 }
 
 function updateClock() {

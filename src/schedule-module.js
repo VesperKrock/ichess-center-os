@@ -192,6 +192,7 @@ export function renderScheduleModule(
   const centerCalendarTagState = deadlineOptions.centerCalendarTagState || null
   const centerCalendarTags = normalizeCenterCalendarTags(deadlineOptions.centerCalendarTags)
   const centerCalendarFilters = normalizeCenterCalendarFilters(deadlineOptions.centerCalendarFilters)
+  const calendarNotesSharedTruthState = deadlineOptions.calendarNotesSharedTruthState || {}
   const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
   const weekRangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
   const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
@@ -237,6 +238,7 @@ export function renderScheduleModule(
           <strong class="schedule-week-label">${escapeHtml(formatWeekRange(normalizedWeekStart))}</strong>
         </div>
       </div>
+      ${renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState)}
       ${renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)}
       ${renderCenterCalendarLegend(centerCalendarTags, weekCenterCalendarItems)}
       ${
@@ -284,6 +286,20 @@ export function renderScheduleModule(
           : ''
       }
     </section>
+  `
+}
+
+function renderCalendarNotesSharedTruthStatus(state = {}) {
+  const message = String(state.message || '').trim()
+  const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
+  const migrationWarning = state.legacyMigrationRequired
+    ? ' Legacy Calendar/Notes đang được giữ nguyên để migration có kiểm soát; không tự nhập lên server.'
+    : ''
+  return `
+    <div class="c57-shared-truth-notice is-${escapeAttribute(tone)}" role="status">
+      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Calendar tùy chỉnh dùng authoritative server truth theo đúng cơ sở.')}</span>
+      <button type="button" data-c57-calendar-notes-refresh ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
+    </div>
   `
 }
 
@@ -1063,6 +1079,8 @@ export function createCenterCalendarTagManagerState(overrides = {}) {
   return {
     mode: 'list',
     tagId: null,
+    baseVersion: 0,
+    baseCenterId: '',
     values: {
       label: '',
       colorKey: 'gray',
@@ -1082,6 +1100,8 @@ export function createEditCenterCalendarTagFormState(tag) {
   return createCenterCalendarTagManagerState({
     mode: 'edit',
     tagId: tag?.id || null,
+    baseVersion: Number(tag?.cloudVersion) || 0,
+    baseCenterId: String(tag?.centerId || ''),
     values: {
       label: tag?.label || '',
       colorKey: getCenterCalendarPresetByColorKey(tag?.colorKey, tag?.defaultItemType || 'other').key,
@@ -1412,6 +1432,8 @@ export function createEmptyCenterCalendarItemFormState(date = getCurrentSchedule
   return {
     mode: 'create',
     itemId: null,
+    baseVersion: 0,
+    baseCenterId: '',
     values: {
       itemType: 'meeting',
       title: '',
@@ -1490,6 +1512,8 @@ export function createCenterCalendarItemConflictState({
     mode: 'conflict',
     previousMode: previousState?.mode || 'create',
     itemId: previousState?.itemId || pendingItem?.id || null,
+    baseVersion: Number(previousState?.baseVersion) || 0,
+    baseCenterId: String(previousState?.baseCenterId || pendingItem?.centerId || ''),
     values: {
       ...(previousState?.values ?? {}),
     },
@@ -1505,6 +1529,8 @@ export function createEditCenterCalendarItemFormState(item) {
   return {
     mode: 'edit',
     itemId: item?.id || null,
+    baseVersion: Number(item?.cloudVersion) || 0,
+    baseCenterId: String(item?.centerId || ''),
     values: {
       itemType: item?.itemType || 'meeting',
       title: item?.title || '',

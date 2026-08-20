@@ -189,6 +189,7 @@ export function renderTuitionModule(
   cashflowTransactions = [],
   centerId = '',
   periodActionConfirmationState = null,
+  calendarNotesSharedTruthState = {},
 ) {
   const rows = buildTuitionRows(students, tuitionRecords, attendanceRecords, cashflowTransactions)
   const visibleRows = filterTuitionRows(rows, filters)
@@ -233,6 +234,7 @@ export function renderTuitionModule(
   return `
     <section class="tuition-module ${hasPanel ? 'form-open' : ''}" data-tuition-scroll-region="module">
       <div class="tuition-module-content" data-tuition-scroll-region="content">
+        ${renderOperationalNotesSharedTruthStatus(calendarNotesSharedTruthState)}
         <div class="tuition-overview">
           <div class="tuition-filter-row">
             <label>
@@ -307,6 +309,20 @@ export function renderTuitionModule(
       ${hasAdvisoryWindow ? renderAttendanceAdvisoryWindow(advisoryRows, advisoryMonthKey) : ''}
       ${periodActionConfirmationState ? renderTuitionPeriodActionConfirmation(periodActionConfirmationState) : ''}
     </section>
+  `
+}
+
+function renderOperationalNotesSharedTruthStatus(state = {}) {
+  const message = String(state.message || '').trim()
+  const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
+  const migrationWarning = state.legacyMigrationRequired
+    ? ' Legacy note đang được quarantine, chưa nhập server.'
+    : ''
+  return `
+    <div class="c57-shared-truth-notice is-${escapeHtml(tone)}" role="status">
+      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Ghi chú chăm sóc thủ công dùng authoritative server truth.')}</span>
+      <button type="button" data-c57-calendar-notes-refresh ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
+    </div>
   `
 }
 
