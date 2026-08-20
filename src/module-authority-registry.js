@@ -1,5 +1,5 @@
 export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
-  entry('hoc-vien', ['C5.1 Core Student'], [], ['core']),
+  entry('hoc-vien', ['C5.1 Core Student'], ['C5.1 Teacher/Class references'], ['core-student']),
   entry('khach-hang-tu-van', ['C5.3 CRM'], ['C5.1 Student reference'], ['core', 'crm']),
   entry('giao-vien', ['C5.1 Core Teacher'], ['C5.1 Schedule', 'C5.2 Session Report', 'C5.5 Staff link'], ['core', 'attendance', 'staff']),
   entry('nhan-vien', ['C5.5 Staff/HR'], ['C5.1 Teacher/Schedule', 'C5.2 Attendance/Session Report'], ['staff', 'core', 'attendance']),

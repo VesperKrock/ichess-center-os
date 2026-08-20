@@ -8855,9 +8855,6 @@ async function handleInternalOpenCenter(centerId) {
   await bootstrapC52TuitionRecordPackageCloudData(switchSyncId)
   if (switchSyncId === cloudUserSyncId) {
     await refreshC54FinanceSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
-    await refreshC55StaffHrSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
-    await refreshC56InventorySharedTruth({ reason: 'center-switch-bootstrap', silent: true })
-    await refreshC57CalendarNotesSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
   }
   await startC52TuitionRealtimeSubscription(switchSyncId)
 }
@@ -10373,7 +10370,7 @@ function createModuleRefreshState(overrides = {}) {
     status: 'idle',
     centerId: '',
     upstreams: [],
-    message: 'Chưa xác minh authoritative data cho lần mở này.',
+    message: 'Chưa tải dữ liệu mới nhất cho lần mở này.',
     lastFreshAt: '',
     ...overrides,
   }
@@ -10403,7 +10400,7 @@ function renderModuleRefreshControl(windowItem) {
       type="button"
       data-module-authoritative-refresh="${escapeAttribute(windowItem.moduleId)}"
       ${state.status === 'loading' ? 'disabled' : ''}
-      aria-label="Làm mới authoritative data của ${escapeAttribute(getWindowHeaderTitle(windowItem))}"
+      aria-label="Làm mới dữ liệu của ${escapeAttribute(getWindowHeaderTitle(windowItem))}"
     >${state.status === 'loading' ? 'Đang tải…' : 'Làm mới'}</button>
   `
 }
@@ -10413,9 +10410,9 @@ function renderModuleRefreshNotice(windowItem) {
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = state.status === 'fresh' ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
   const label = state.status === 'fresh'
-    ? `Authoritative data đã xác minh${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
+    ? `Dữ liệu đã được cập nhật${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
     : state.status === 'loading'
-      ? 'Đang tải đúng authoritative upstream của module; projection cũ chưa được coi là fresh.'
+      ? 'Đang tải dữ liệu mới nhất của chức năng này.'
       : state.message
   return `<p class="module-authoritative-refresh-notice ${tone}" role="status">${escapeHtml(label)}</p>`
 }
@@ -10627,8 +10624,8 @@ function renderWindowBody(windowItem) {
   if (isBusinessModule(moduleItem.id) && !getCurrentCanonicalCenterContext().ok) {
     return `
       <section class="module-center-context-blocked" role="status">
-        <h3>Chưa xác định active center</h3>
-        <p>Dữ liệu business bị ẩn để projection cũ hoặc fallback DreamHome không thể giả danh authoritative truth.</p>
+        <h3>Chưa xác định cơ sở đang hoạt động</h3>
+        <p>Dữ liệu cũ đang được ẩn để tránh hiển thị nhầm thông tin của cơ sở khác.</p>
       </section>
     `
   }
@@ -10832,7 +10829,7 @@ function renderWindowBody(windowItem) {
           name: centerInfo.centerName,
           code: centerInfo.centerId,
           environment: cloudStatus.configStatus === 'configured' ? 'Vận hành chính' : 'Vận hành nội bộ',
-          status: centerInfo.ok ? 'Đang hoạt động' : 'Chưa xác định active center',
+          status: centerInfo.ok ? 'Đang hoạt động' : 'Chưa xác định cơ sở đang hoạt động',
         },
       },
     )
@@ -11778,9 +11775,9 @@ function renderNotificationRefreshNotice() {
   const state = notificationRefreshState
   const tone = state.status === 'fresh' ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
   const message = state.status === 'fresh'
-    ? `Candidate đã dựng lại từ authoritative upstream${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
+    ? `Thông báo đã được cập nhật từ dữ liệu mới nhất${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
     : state.status === 'loading'
-      ? 'Đang tải authoritative upstream; candidate cũ chưa được coi là fresh.'
+      ? 'Đang cập nhật thông báo; kết quả cũ có thể chưa phải bản mới nhất.'
       : state.message
   return `<p class="notification-refresh-notice ${tone}" role="status">${escapeHtml(message)}</p>`
 }
@@ -11858,8 +11855,8 @@ function resetModuleRefreshStateForOpen(moduleId) {
   moduleRefreshStates.set(moduleId, createModuleRefreshState({
     centerId: context.centerId,
     message: context.ok
-      ? 'Open/reopen yêu cầu authoritative pull mới; projection trước đó không còn được coi là fresh.'
-      : 'Không có active canonical center; business projection bị ẩn.',
+      ? 'Đang chờ tải dữ liệu mới nhất của cơ sở hiện tại.'
+      : 'Chưa xác định được cơ sở đang hoạt động; dữ liệu cũ được ẩn để tránh nhầm lẫn.',
   }))
 }
 
@@ -11876,7 +11873,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     const result = {
       ok: false,
       outcome_code: 'INVALID_CENTER_CONTEXT',
-      error: 'Không có active canonical center; authoritative refresh bị từ chối.',
+      error: 'Chưa xác định được cơ sở đang hoạt động; chưa thể làm mới dữ liệu.',
     }
     moduleRefreshStates.set(moduleId, createModuleRefreshState({
       status: 'failed',
@@ -11891,7 +11888,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     status: 'loading',
     centerId: centerContext.centerId,
     upstreams,
-    message: 'Đang tải authoritative upstream...',
+    message: 'Đang tải dữ liệu mới nhất...',
   }))
   render()
 
@@ -11921,7 +11918,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
       status: 'failed',
       centerId: centerContext.centerId,
       upstreams,
-      message: `Làm mới thất bại ở ${failures.map((item) => item.upstream).join(', ')}; dữ liệu đang hiển thị (nếu có) là projection chưa xác minh, không phải fresh.`,
+      message: 'Không thể làm mới dữ liệu lúc này. Thông tin đang hiển thị có thể chưa phải bản mới nhất. Vui lòng thử lại.',
     }))
     render()
     return { ok: false, outcome_code: 'MODULE_REFRESH_FAILED', results, failures }
@@ -11933,7 +11930,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     status: 'fresh',
     centerId: centerContext.centerId,
     upstreams,
-    message: 'Authoritative refresh hoàn tất.',
+    message: 'Đã tải dữ liệu mới nhất.',
     lastFreshAt,
   }))
   render()
@@ -11961,6 +11958,11 @@ async function refreshAuthoritativeUpstream(upstream, reason) {
 
 async function runAuthoritativeUpstreamRefresh(upstream, reason) {
   switch (upstream) {
+    case 'core-student': {
+      const centerContext = getCurrentCanonicalCenterContext()
+      if (!centerContext.ok) return { ok: false, outcome_code: 'INVALID_CENTER_CONTEXT' }
+      return refreshStudentModuleCoreProjection(centerContext.centerId)
+    }
     case 'core':
       return bootstrapCoreCloudDataForCurrentCenter(cloudUserSyncId, { force: true })
     case 'attendance':
@@ -11995,7 +11997,7 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
     upstreams,
     message: centerContext.ok
       ? 'Đang tải nguồn tạo thông báo...'
-      : 'Không có active canonical center; chưa thể làm mới thông báo.',
+      : 'Chưa xác định được cơ sở đang hoạt động; chưa thể làm mới thông báo.',
   })
   render()
   if (!centerContext.ok) return { ok: false, outcome_code: 'INVALID_CENTER_CONTEXT' }
@@ -12019,8 +12021,8 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
     centerId: centerContext.centerId,
     upstreams,
     message: failures.length
-      ? 'Một hoặc nhiều nguồn thông báo chưa xác minh; candidate cũ không được coi là fresh.'
-      : 'Candidate thông báo đã được dựng lại từ authoritative upstream.',
+      ? 'Một hoặc nhiều nguồn dữ liệu chưa tải được; thông báo cũ có thể chưa đầy đủ.'
+      : 'Thông báo đã được cập nhật từ dữ liệu mới nhất.',
     lastFreshAt: failures.length ? '' : new Date().toISOString(),
   })
   render()
@@ -13625,9 +13627,6 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await bootstrapC52TuitionRecordPackageCloudData(syncId)
     if (syncId === cloudUserSyncId) {
       await refreshC54FinanceSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
-      await refreshC55StaffHrSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
-      await refreshC56InventorySharedTruth({ reason: 'signed-in-bootstrap', silent: true })
-      await refreshC57CalendarNotesSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
     }
     await startC52TuitionRealtimeSubscription(syncId)
   }
@@ -13821,6 +13820,54 @@ async function refreshAuthoritativeCoreProjectionAfterCommit(entityType, centerI
   }
 
   return { ok: true, centerId, entityType, data: projection }
+}
+
+async function refreshStudentModuleCoreProjection(centerId) {
+  const context = await getCloudDbContext(centerId)
+  if (!context.ok || context.centerId !== centerId) return context
+
+  // The Student view consumes Teacher/Class references, but not Schedule.
+  // Validate all three exact-center snapshots before replacing any projection.
+  const [studentResult, teacherResult, classResult] = await Promise.all([
+    listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.STUDENT,
+    }),
+    listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.TEACHER,
+    }),
+    listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.CLASS_SESSION,
+    }),
+  ])
+  const failedResult = [studentResult, teacherResult, classResult].find((result) => !result.ok)
+  if (failedResult) return failedResult
+
+  const latestCenterContext = getCurrentCanonicalCenterContext()
+  if (!latestCenterContext.ok || latestCenterContext.centerId !== centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Cơ sở đã thay đổi trong lúc làm mới dữ liệu.' }
+  }
+
+  students = studentResult.data
+  teachers = teacherResult.data
+  classSessions = classResult.data
+  saveStoredStudents(students)
+  saveStoredTeachers(teachers)
+  saveStoredClassSessions(classSessions)
+  return {
+    ok: true,
+    centerId,
+    data: {
+      students,
+      teachers,
+      classSessions,
+    },
+  }
 }
 
 function applyAuthoritativeCoreSaveUiResult(result) {
@@ -18717,8 +18764,8 @@ function bindEvents() {
       notificationRefreshState = createModuleRefreshState({
         centerId: context.centerId,
         message: context.ok
-          ? 'Notification Center yêu cầu authoritative pull mới; candidate trước đó chưa được coi là fresh.'
-          : 'Không có active canonical center; candidate business bị ẩn.',
+          ? 'Đang chờ tải thông báo mới nhất của cơ sở hiện tại.'
+          : 'Chưa xác định được cơ sở đang hoạt động; thông báo cũ được ẩn để tránh nhầm lẫn.',
       })
     }
     isStartMenuOpen = false

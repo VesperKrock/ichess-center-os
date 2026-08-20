@@ -60,6 +60,7 @@ assert.deepEqual(getModuleRefreshUpstreams('bao-cao'), ['core', 'attendance', 'f
 assert.deepEqual(getModuleRefreshUpstreams('cai-dat-co-so'), ['core', 'tuition'])
 assert.deepEqual(getModuleRefreshUpstreams('bang-diem-danh'), ['core', 'attendance', 'tuition', 'calendar-notes'])
 assert.deepEqual(getModuleRefreshUpstreams('nhom-tai-chinh'), ['finance'])
+assert.deepEqual(getModuleRefreshUpstreams('hoc-vien'), ['core-student'])
 assert.deepEqual(getModuleRefreshUpstreams('dang-cap-nhat'), [])
 
 assert.equal(assertNoBrowserBusinessAuthority().ok, true)
@@ -90,7 +91,7 @@ for (const token of [
   "reason: 'module-reopen'",
   "reason: 'manual-refresh'",
   'data-module-authoritative-refresh',
-  'projection chưa xác minh, không phải fresh',
+  'Thông tin đang hiển thị có thể chưa phải bản mới nhất',
   'getCurrentCanonicalCenterContext()',
   'module-center-context-blocked',
   'refreshNotificationAuthoritativeUpstreams',
@@ -208,10 +209,17 @@ assert.equal(
   'C1C9EACF39548E977CB2C09165CA6AC9DFCD156C4A3EACD4C1951F92933F8167',
 )
 const migrationStatus = spawnSync(
-  'git', ['status', '--porcelain', '--untracked-files=no', '--', 'supabase/migrations'],
+  'git', ['status', '--porcelain', '--untracked-files=all', '--', 'supabase/migrations'],
   { cwd: root, encoding: 'utf8' },
 )
 assert.equal(migrationStatus.status, 0)
-assert.equal(migrationStatus.stdout.trim(), '', 'Inherited migrations must remain byte-immutable')
+const allowedAdditiveMigration = 'supabase/migrations/202608210001_c5_1_dreamhome_schedule_identity_normalization.sql'
+const changedMigrationPaths = migrationStatus.stdout.trim().split(/\r?\n/)
+  .filter(Boolean)
+  .map((line) => line.slice(3).replaceAll('\\', '/'))
+assert(
+  changedMigrationPaths.every((path) => path === allowedAdditiveMigration),
+  `Inherited migrations must remain byte-immutable: ${changedMigrationPaths.join(', ')}`,
+)
 
 console.log('C5_CLOSEOUT_DERIVED_CONVERGENCE_SMOKE: PASS')
