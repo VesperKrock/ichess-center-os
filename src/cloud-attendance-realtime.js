@@ -81,11 +81,47 @@ export async function pullC51AttendanceSessionReportCloudEntities({
     }
   }
 
+  if (!Array.isArray(data)) {
+    return { ok: false, outcome_code: 'INVALID_SERVER_RESULT', error: 'Attendance authoritative snapshot không phải array.' }
+  }
+  const invalidRecord = data.find((record) => !isValidC51AuthoritativeSnapshotRecord(record, centerId))
+  if (invalidRecord) {
+    return {
+      ok: false,
+      outcome_code: 'INVALID_SERVER_RESULT',
+      error: 'Attendance authoritative snapshot chứa row sai center/type/version/payload; không áp dụng partial truth.',
+    }
+  }
+
   return {
     ok: true,
-    records: Array.isArray(data) ? data : [],
-    empty: !Array.isArray(data) || data.length === 0,
+    records: data,
+    empty: data.length === 0,
   }
+}
+
+function isValidC51AuthoritativeSnapshotRecord(record, centerId) {
+  if (
+    !record
+    || String(record.center_id || '') !== String(centerId || '')
+    || !C51_ATTENDANCE_REALTIME_ENTITY_TYPES.includes(record.entity_type)
+    || !String(record.local_id || '').trim()
+    || !Number.isSafeInteger(Number(record.entity_version))
+    || Number(record.entity_version) < 1
+  ) return false
+
+  if (record.entity_type === ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE) {
+    const validation = validateAttendanceRecordCloudPayload(record.payload)
+    return validation.ok
+      && record.local_id === createAttendanceRecordCloudLocalId(validation.record)
+  }
+  if (record.entity_type === ATTENDANCE_BASELINE_STATE_CLOUD_ENTITY_TYPE) {
+    return validateAttendanceBaselineStateCloudPayload(record.payload).ok
+      && record.local_id === createAttendanceBaselineStateCloudLocalId(centerId)
+  }
+  const validation = validateSessionReportCloudPayload(record.payload)
+  return validation.ok
+    && record.local_id === createSessionReportCloudLocalId(validation.report)
 }
 
 export async function upsertC51AttendanceSessionReportCloudEntities({

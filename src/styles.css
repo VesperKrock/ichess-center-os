@@ -1632,6 +1632,48 @@ h3 {
   align-items: center;
 }
 
+.module-authoritative-refresh {
+  margin-left: auto;
+  min-height: 30px;
+  padding: 5px 10px;
+  border-color: rgba(116, 166, 255, 0.34);
+  color: #e8f1fb;
+  background: rgba(47, 105, 190, 0.18);
+  font-weight: 800;
+}
+
+.module-authoritative-refresh-notice,
+.notification-refresh-notice {
+  margin: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #d5deea;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.78rem;
+}
+
+.module-authoritative-refresh-notice.is-fresh,
+.notification-refresh-notice.is-fresh {
+  color: #a9ebc2;
+  background: rgba(35, 145, 85, 0.12);
+}
+
+.module-authoritative-refresh-notice.is-unfresh,
+.notification-refresh-notice.is-unfresh {
+  color: #ffd39c;
+  background: rgba(196, 112, 25, 0.12);
+}
+
+.module-center-context-blocked {
+  max-width: 680px;
+  margin: 24px;
+  padding: 18px;
+  border: 1px solid rgba(234, 159, 75, 0.38);
+  border-radius: 8px;
+  color: #f3e5d3;
+  background: rgba(157, 85, 19, 0.13);
+}
+
 .desktop-window.is-staff-administrative-profile > .window-body {
   display: flex;
   min-height: 0;

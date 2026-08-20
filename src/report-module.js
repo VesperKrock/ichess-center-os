@@ -17,13 +17,13 @@ export const initialReportDraft = {
   dailyTasks: '',
   dailyIssues: '',
   operationNote: '',
-  ownerName: 'Admin DreamHome',
+  ownerName: '',
   pendingTasks: {},
   otherPendingTasks: '',
 }
 
 const DATA_SOURCE_NOTE =
-  'Dữ liệu báo cáo được tổng hợp từ dữ liệu hiện có của cơ sở. Một số nguồn nghiệp vụ sẽ được nối tiếp ở các phase sau.'
+  'Dữ liệu hiển thị là derived view từ Học viên, Điểm danh và Tài chính authoritative của đúng active center.'
 
 export function createInitialReportState(now = new Date()) {
   const today = toDateKey(now)
@@ -46,6 +46,7 @@ export function renderReportModule({
   attendanceRecords = [],
   selectedBarDetail = null,
   sourceTransactionsState = null,
+  centerInfo = null,
 } = {}) {
   const activeFilters = normalizeReportFilters(filters)
   const activeDraft = { ...initialReportDraft, ...draft }
@@ -55,9 +56,10 @@ export function renderReportModule({
     cashflowTransactions,
     attendanceRecords,
   })
+  const activeCenter = normalizeReportCenterInfo(centerInfo)
 
   return `
-    <section class="report-module" aria-label="Báo cáo vận hành cơ sở">
+    <section class="report-module" aria-label="Báo cáo vận hành cơ sở ${escapeAttribute(activeCenter.displayName)}">
       <div class="report-filters" aria-label="Bộ lọc ngày và tuần">
         <label>
           <span>Ngày báo cáo</span>
@@ -176,6 +178,7 @@ export function buildReportDownloadText({
   students = [],
   cashflowTransactions = [],
   attendanceRecords = [],
+  centerInfo = null,
 } = {}) {
   const activeDraft = { ...initialReportDraft, ...draft }
   const data = buildReportData({
@@ -184,12 +187,14 @@ export function buildReportDownloadText({
     cashflowTransactions,
     attendanceRecords,
   })
+  const activeCenter = normalizeReportCenterInfo(centerInfo)
 
   return [
-    'Báo cáo vận hành cơ sở DreamHome',
+    `Báo cáo vận hành cơ sở ${activeCenter.displayName}`,
+    `Mã cơ sở: ${activeCenter.codeLabel}`,
     `Ngày báo cáo: ${data.reportDateLabel}`,
     `Tuần đang xem: ${data.weekLabel}`,
-    'Nguồn dữ liệu: local/cloud/cache hiện có; fallback rõ khi thiếu dữ liệu.',
+    'Nguồn dữ liệu: derived từ authoritative upstream của đúng active center.',
     '',
     'Báo cáo ngày',
     `Công việc ngày: ${activeDraft.dailyTasks || 'Chưa nhập công việc ngày.'}`,
@@ -224,7 +229,7 @@ export function buildReportDownloadText({
     'Nguồn dữ liệu',
     data.dataSourceNote,
     data.attendanceSummary.hasAttendanceData
-      ? 'Điểm danh tuần có dữ liệu local/cache để tổng hợp.'
+      ? 'Điểm danh tuần được tổng hợp từ attendance authoritative projection.'
       : 'Chưa có đủ dữ liệu điểm danh trong tuần này để tính chính xác học/vắng/nghỉ.',
   ].join('\n')
 }
@@ -235,6 +240,7 @@ export function buildReportPrintHtml({
   students = [],
   cashflowTransactions = [],
   attendanceRecords = [],
+  centerInfo = null,
 } = {}) {
   const activeDraft = { ...initialReportDraft, ...draft }
   const data = buildReportData({
@@ -243,12 +249,13 @@ export function buildReportPrintHtml({
     cashflowTransactions,
     attendanceRecords,
   })
+  const activeCenter = normalizeReportCenterInfo(centerInfo)
 
   return `<!doctype html>
     <html lang="vi">
       <head>
         <meta charset="utf-8" />
-        <title>Báo cáo cơ sở DreamHome</title>
+        <title>Báo cáo cơ sở ${escapeHtml(activeCenter.displayName)}</title>
         <style>
           body { margin: 24px; color: #111827; font-family: Arial, sans-serif; }
           h1 { margin: 0 0 8px; font-size: 22px; }
@@ -261,7 +268,8 @@ export function buildReportPrintHtml({
         </style>
       </head>
       <body>
-        <h1>Báo cáo cơ sở DreamHome</h1>
+        <h1>Báo cáo cơ sở ${escapeHtml(activeCenter.displayName)}</h1>
+        <p>Mã cơ sở: ${escapeHtml(activeCenter.codeLabel)}</p>
         <p>Ngày báo cáo: ${escapeHtml(data.reportDateLabel)}</p>
         <p>Tuần đang xem: ${escapeHtml(data.weekLabel)}</p>
         <h2>Báo cáo ngày</h2>
@@ -297,13 +305,14 @@ export function buildReportPrintHtml({
         <p>Đi học: ${data.attendanceSummary.presentCount.toLocaleString('vi-VN')}</p>
         <p>Vắng/nghỉ: ${data.attendanceSummary.absentCount.toLocaleString('vi-VN')}</p>
         <p>Tổng: ${data.attendanceSummary.totalCount.toLocaleString('vi-VN')}</p>
-        <p class="muted">${escapeHtml(data.attendanceSummary.hasAttendanceData ? 'Nguồn: dữ liệu điểm danh local/cache.' : 'Chưa có đủ dữ liệu điểm danh trong tuần này.')}</p>
+        <p class="muted">${escapeHtml(data.attendanceSummary.hasAttendanceData ? 'Nguồn: attendance authoritative projection của active center.' : 'Chưa có đủ dữ liệu điểm danh trong tuần này.')}</p>
       </body>
     </html>`
 }
 
-export function getReportDownloadFilename(reportDate = getTodayDate()) {
-  return `bao-cao-co-so-dreamhome-${String(reportDate || getTodayDate())}.txt`
+export function getReportDownloadFilename(reportDate = getTodayDate(), centerInfo = null) {
+  const activeCenter = normalizeReportCenterInfo(centerInfo)
+  return `bao-cao-co-so-${slugifyFilenamePart(activeCenter.codeLabel)}-${String(reportDate || getTodayDate())}.txt`
 }
 
 function renderDailyReport(data, draft) {
@@ -334,7 +343,7 @@ function renderDailyReport(data, draft) {
           <input
             type="text"
             value="${escapeAttribute(draft.ownerName)}"
-            placeholder="Admin DreamHome"
+            placeholder="Người phụ trách"
             data-report-draft-field="ownerName"
           />
         </label>
@@ -661,7 +670,7 @@ function renderReportBarButton(week, type, axisMax) {
       data-report-bar-label="${escapeAttribute(label)}"
       data-report-bar-week="${escapeAttribute(week.weekLabel)}"
       data-report-bar-value="${value}"
-      data-report-bar-source="Dữ liệu thu/chi local/cache trong tuần đang xem"
+      data-report-bar-source="Tài chính authoritative projection trong tuần đang xem"
       aria-label="${escapeAttribute(title)}"
     ></button>
   `
@@ -676,7 +685,7 @@ function renderReportBarDetail(detail) {
     <section class="report-bar-detail" aria-label="Chi tiết cột thu chi">
       <strong>Chi tiết cột</strong>
       <p>${escapeHtml(detail.label)} · Tuần ${escapeHtml(detail.weekLabel)} · ${escapeHtml(formatMoney(detail.value))}</p>
-      <small>Nguồn: ${escapeHtml(detail.source || 'Dữ liệu thu/chi local/cache.')}</small>
+      <small>Nguồn: ${escapeHtml(detail.source || 'Tài chính authoritative projection.')}</small>
     </section>
   `
 }
@@ -906,6 +915,24 @@ function normalizeText(value) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+}
+
+function normalizeReportCenterInfo(centerInfo = null) {
+  const code = String(centerInfo?.centerId || centerInfo?.code || '').trim()
+  const name = String(centerInfo?.centerName || centerInfo?.name || '').trim()
+  const isResolved = centerInfo?.ok === true && /^[A-Za-z0-9_-]{1,160}$/.test(code)
+  return {
+    displayName: isResolved ? (name || code) : 'chưa xác định',
+    codeLabel: isResolved ? code : 'chưa-xác-định',
+  }
+}
+
+function slugifyFilenamePart(value) {
+  const slug = normalizeText(value)
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug || 'chua-xac-dinh'
 }
 
 function escapeAttribute(value) {

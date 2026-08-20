@@ -254,7 +254,7 @@ function renderCenterInfoPanel(centerInfo, cloudDbPanelState) {
       </div>
       <p class="settings-product-note">Thông tin pháp lý/địa chỉ chi tiết sẽ được owner cập nhật sau nếu cần.</p>
       ${renderCenterAppearancePanel()}
-      ${renderCloudDbPanel(cloudDbPanelState)}
+      ${renderCloudDbPanel(cloudDbPanelState, centerInfo)}
     </section>
   `
 }
@@ -367,9 +367,10 @@ function renderInfoItem(label, value) {
 }
 
 function buildCenterInfo(centerInfo = {}) {
+  const resolved = centerInfo.ok === true && /^[A-Za-z0-9_-]{1,160}$/.test(String(centerInfo.code || '').trim())
   return {
-    name: centerInfo.name || 'DreamHome',
-    code: centerInfo.code || 'dreamhome',
+    name: resolved ? (centerInfo.name || centerInfo.code) : 'Chưa xác định',
+    code: resolved ? centerInfo.code : 'Chưa xác định',
     environment: centerInfo.environment || 'Vận hành chính',
     status: centerInfo.status || 'Đang hoạt động',
     address: centerInfo.address || '',
@@ -505,7 +506,7 @@ function renderEmptyClassSessionRow(totalClassSessions = 0) {
   `
 }
 
-function renderCloudDbPanel(state = null) {
+function renderCloudDbPanel(state = null, centerInfo = {}) {
   const panelState = {
     configStatus: 'missing-config',
     authStatus: 'signed-out',
@@ -552,7 +553,7 @@ function renderCloudDbPanel(state = null) {
       <div class="settings-data-status-grid">
         <span>Dữ liệu cloud: <strong>${dataLabel}</strong></span>
         <span>Đồng bộ: <strong>${syncLabel}</strong></span>
-        <span>Cơ sở: <strong>DreamHome</strong></span>
+        <span>Cơ sở: <strong>${escapeHtml(centerInfo.name || centerInfo.code || 'Chưa xác định')}</strong></span>
       </div>
       ${
         message

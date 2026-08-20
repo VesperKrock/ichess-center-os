@@ -1,7 +1,7 @@
 export const notificationSourceLabels = {
   'hoc-vien': 'Học viên',
   'hoc-phi': 'Học phí',
-  'phu-huynh-tu-van': 'Phụ huynh / Tư vấn',
+  'khach-hang-tu-van': 'Phụ huynh / Tư vấn',
   'kho-hang': 'Kho hàng',
   'giao-vien': 'Giáo viên',
   'thoi-khoa-bieu': 'Thời khóa biểu',
@@ -133,8 +133,8 @@ export function buildParentFollowupNotificationCandidates(parentConsultations) {
 
       return {
         dedupeKey: `parent-followup:${contact.id}:${contact.consultationStatus}:${nextAction}`,
-        sourceModule: 'phu-huynh-tu-van',
-        sourceLabel: notificationSourceLabels['phu-huynh-tu-van'],
+        sourceModule: 'khach-hang-tu-van',
+        sourceLabel: notificationSourceLabels['khach-hang-tu-van'],
         type: 'parent-followup',
         severity: contact.consultationStatus === 'waitingResponse' ? 'warning' : 'info',
         title: `Cần follow-up: ${contact.parentName || contact.name || 'Phụ huynh'}`,

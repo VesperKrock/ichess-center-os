@@ -3,7 +3,7 @@ export const modules = [
     id: 'hoc-vien',
     name: 'Học viên',
     shortDescription: 'Quản lý hồ sơ học viên và theo dõi trạng thái học tập tại cơ sở.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Xem danh sách học viên',
       'Tìm kiếm học viên',
@@ -22,12 +22,12 @@ export const modules = [
     id: 'khach-hang-tu-van',
     name: 'Phụ huynh / Tư vấn',
     shortDescription: 'Theo dõi danh sách phụ huynh, khách tư vấn và trạng thái chăm sóc ban đầu.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Xem danh sách phụ huynh và khách tư vấn',
       'Tìm kiếm theo tên, SĐT, học viên hoặc nhu cầu',
       'Lọc theo loại liên hệ, trạng thái chăm sóc và nguồn',
-      'Chuẩn bị nền cho CRUD ở phase sau',
+      'Tạo, cập nhật và theo dõi liên hệ trên shared truth',
     ],
     plannedData: [
       'Tên phụ huynh / khách tư vấn',
@@ -42,7 +42,7 @@ export const modules = [
     id: 'giao-vien',
     name: 'Giáo viên',
     shortDescription: 'Theo dõi danh sách giáo viên, liên hệ, trạng thái và hình thức hợp tác.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Xem danh sách giáo viên',
       'Tìm kiếm giáo viên',
@@ -61,7 +61,7 @@ export const modules = [
     id: 'nhan-vien',
     name: 'Nhân viên',
     shortDescription: 'Theo dõi chấm công, địa điểm dạy và tổng buổi hoạt động của nhân sự/giáo viên.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Bảng chấm công',
       'Tổng buổi theo ca dạy',
@@ -78,8 +78,8 @@ export const modules = [
   {
     id: 'thoi-khoa-bieu',
     name: 'Thời khóa biểu',
-    shortDescription: 'Chuẩn bị màn hình xem lịch dạy, lịch làm và lịch trực tại cơ sở.',
-    status: 'planned',
+    shortDescription: 'Xem lịch dạy, lịch làm và lịch trực tại cơ sở từ Schedule/Class authoritative.',
+    status: 'active',
     plannedFeatures: [
       'Xem lịch dạy',
       'Xem lịch làm/lịch trực',
@@ -97,7 +97,7 @@ export const modules = [
     id: 'hoc-phi',
     name: 'Học phí',
     shortDescription: 'Theo dõi học phí, gói học, số buổi và tình trạng thanh toán.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Theo dõi gói học/khóa học',
       'Theo dõi số buổi',
@@ -116,12 +116,12 @@ export const modules = [
     id: 'nhom-tai-chinh',
     name: 'Nhóm Tài chính',
     shortDescription: 'Wrapper UI an toàn cho Sổ quỹ và Thu chi; Sổ quỹ đặt trước Thu chi, không merge logic.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Tổng quan tài chính nhẹ',
       'Lối vào Sổ quỹ',
       'Lối vào Thu chi',
-      'Ghi chú dashboard nâng cao cho phase sau',
+      'Tổng hợp derived từ Sổ quỹ và Thu chi',
     ],
     plannedData: [
       'Không tạo storage mới',
@@ -134,7 +134,7 @@ export const modules = [
     id: 'thu-chi',
     name: 'Thu chi',
     shortDescription: 'Ghi nhận khoản thu, khoản chi và tổng hợp giao dịch theo ngày.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Ghi nhận khoản thu',
       'Ghi nhận khoản chi',
@@ -151,7 +151,7 @@ export const modules = [
     id: 'so-quy',
     name: 'Sổ quỹ',
     shortDescription: 'Theo dõi số dư quỹ, lịch sử đối soát và trạng thái chốt sổ nhẹ theo ngày.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Xem tổng thu theo ngày',
       'Xem tổng chi theo ngày',
@@ -176,7 +176,7 @@ export const modules = [
     id: 'kho-hang',
     name: 'Kho hàng',
     shortDescription: 'Theo dõi vật tư, tài sản và tồn kho của cơ sở.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Xem danh sách vật tư / tài sản',
       'Nhập kho',
@@ -194,7 +194,7 @@ export const modules = [
     id: 'bao-cao',
     name: 'Báo cáo',
     shortDescription: 'Tổng hợp báo cáo ngày, báo cáo tuần, thu chi và học/vắng/nghỉ từ dữ liệu hiện có.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Báo cáo ngày',
       'Báo cáo tuần',
@@ -212,8 +212,8 @@ export const modules = [
   {
     id: 'cai-dat-co-so',
     name: 'Cài đặt cơ sở',
-    shortDescription: 'Chuẩn bị cấu hình thông tin cơ sở và các dữ liệu nền cho vận hành.',
-    status: 'in-progress',
+    shortDescription: 'Hiển thị canonical center và các dữ liệu nền vận hành từ authoritative upstream.',
+    status: 'active',
     plannedFeatures: [
       'Thông tin cơ sở',
       'Quản lý ca học / lớp',
@@ -233,7 +233,7 @@ export const modules = [
     id: 'bang-diem-danh',
     name: 'Bảng điểm danh',
     shortDescription: 'Tự động tổng hợp bảng điểm danh theo tháng từ học viên, ca học/lớp và báo cáo buổi học.',
-    status: 'in-progress',
+    status: 'active',
     plannedFeatures: [
       'Xem bảng điểm danh theo tháng',
       'Lọc theo ca học / lớp',

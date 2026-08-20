@@ -419,6 +419,14 @@ export function getStoredNotifications(defaultNotifications) {
     const storedNotifications = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY))
 
     if (Array.isArray(storedNotifications)) {
+      const nonFixtureNotifications = storedNotifications.filter(
+        (notification) => !isExactDemoNotification(notification),
+      )
+      if (nonFixtureNotifications.length !== storedNotifications.length) {
+        const normalizedNotifications = normalizeNotifications(nonFixtureNotifications)
+        saveStoredNotifications(normalizedNotifications)
+        return normalizedNotifications
+      }
       const savedVersion = localStorage.getItem(NOTIFICATIONS_VERSION_KEY)
 
       if (
@@ -1109,28 +1117,24 @@ export function getStoredParentConsultations(defaultContacts) {
     const storedContacts = JSON.parse(localStorage.getItem(PARENT_CONSULTATIONS_KEY))
 
     if (Array.isArray(storedContacts)) {
-      const normalizedContacts = normalizeParentConsultations(storedContacts)
-      saveStoredParentConsultations(normalizedContacts)
-      return normalizedContacts
+      return normalizeParentConsultations(storedContacts)
     }
   } catch {
-    localStorage.removeItem(PARENT_CONSULTATIONS_KEY)
+    // C5 closeout: malformed or uncertain CRM bytes remain preserved in-place.
   }
 
-  const normalizedDefaultContacts = normalizeParentConsultations(defaultContacts)
-  saveStoredParentConsultations(normalizedDefaultContacts)
-  return normalizedDefaultContacts
+  return normalizeParentConsultations(defaultContacts)
 }
 
 export function clearStoredParentConsultations() {
-  localStorage.removeItem(PARENT_CONSULTATIONS_KEY)
+  // Deprecated non-destructive compatibility shim. Legacy CRM is quarantined,
+  // never silently uploaded and never silently deleted.
+  return false
 }
 
-export function saveStoredParentConsultations(contacts) {
-  localStorage.setItem(
-    PARENT_CONSULTATIONS_KEY,
-    JSON.stringify(normalizeParentConsultations(contacts)),
-  )
+export function saveStoredParentConsultations() {
+  // CRM authority moved to the server in C5.3. Browser writes are forbidden.
+  return false
 }
 
 export function getStoredCashflow(defaultTransactions) {
@@ -1364,7 +1368,7 @@ function normalizeStudents(students) {
               createdAt: student.updatedAt
                 ? new Date(student.updatedAt).toISOString()
                 : new Date().toISOString(),
-              author: 'Admin DreamHome',
+              author: 'Legacy local (chưa xác định)',
               content: legacyNote,
               tags: [],
             },
@@ -1659,6 +1663,7 @@ function normalizeNotificationSourceModule(sourceModule) {
     inventory: 'kho-hang',
     schedule: 'thoi-khoa-bieu',
     report: 'he-thong',
+    'phu-huynh-tu-van': 'khach-hang-tu-van',
   }
   const normalizedSourceModule = String(sourceModule || 'he-thong')
 
@@ -1669,7 +1674,7 @@ function getNotificationSourceLabel(sourceModule) {
   const sourceLabels = {
     'hoc-vien': 'Há»c viĂªn',
     'hoc-phi': 'Há»c phĂ­',
-    'phu-huynh-tu-van': 'Phá»¥ huynh / TÆ° váº¥n',
+    'khach-hang-tu-van': 'Phá»¥ huynh / TÆ° váº¥n',
     'kho-hang': 'Kho hĂ ng',
     'giao-vien': 'GiĂ¡o viĂªn',
     'thoi-khoa-bieu': 'Thá»i khĂ³a biá»ƒu',
@@ -1815,6 +1820,21 @@ function normalizeTeachers(teachers) {
         updatedAt: teacher.updatedAt ? normalizeDateTime(teacher.updatedAt) : now,
       }
     })
+}
+
+function isExactDemoNotification(notification) {
+  const markers = {
+    'notif-001': ['system', 'Notification Center đã sẵn sàng'],
+    'notif-002': ['tuition', 'Mẫu cảnh báo học phí'],
+    'notif-003': ['student', 'Mẫu ghi chú học viên'],
+    'notif-004': ['system', 'Đã lưu trạng thái thông báo'],
+  }
+  const marker = markers[String(notification?.id || '')]
+  return Boolean(
+    marker
+    && String(notification?.type || '') === marker[0]
+    && String(notification?.title || '') === marker[1],
+  )
 }
 
 export function normalizeCenterStaffMembers(staffMembers) {
@@ -2434,7 +2454,7 @@ function normalizeCashflowTransactions(transactions) {
       transactionDate: transaction.transactionDate ? String(transaction.transactionDate) : '',
       method: String(transaction.method || 'KhĂ¡c'),
       personName: String(transaction.personName || ''),
-      recordedBy: String(transaction.recordedBy || 'Admin DreamHome'),
+      recordedBy: String(transaction.recordedBy || 'Legacy local (chưa xác định)'),
       note: String(transaction.note || ''),
       sourceModule: String(transaction.sourceModule || 'manual'),
       sourceType: String(transaction.sourceType || ''),

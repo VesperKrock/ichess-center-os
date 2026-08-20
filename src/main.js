@@ -3,6 +3,10 @@ import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import { modules } from './modules.js'
+import {
+  getModuleRefreshUpstreams,
+  isBusinessModule,
+} from './module-authority-registry.js'
 import { createInitialCloudStatus } from './cloud-status.js'
 import {
   getCurrentSupabaseUser,
@@ -17,7 +21,6 @@ import {
   approveAndExecuteCanonicalConversion,
   crmConversionBridgeErrorMessage,
   getStoredConversionEnvelope,
-  listLegacyStudentProjections,
   listVerifiedTotpFactors,
   prepareCanonicalConversion,
   refreshCanonicalConversion,
@@ -119,7 +122,6 @@ import {
   getStoredTuition,
   getViewMode,
   createCloudDbPullBackup,
-  clearStoredParentConsultations,
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
   setCurrentStorageCenterId,
@@ -132,7 +134,10 @@ import {
   saveStoredTuition,
   saveViewMode,
 } from './storage.js'
-import { sampleClassSessions } from './class-session-data.js'
+import {
+  inspectAndQuarantineC53LegacyCrm,
+  preserveC5CloseoutLegacyCoreAttendance,
+} from './legacy-closeout-preservation.js'
 import {
   buildCashbookReconciliationFromForm,
   buildCashbookSettingsFromForm,
@@ -205,8 +210,6 @@ import {
   validateInventoryRequestForm,
   validateInventoryRequestStatusForm,
 } from './inventory-module.js'
-import { createSampleNotifications } from './notifications.js'
-import { sampleScheduleSessions } from './schedule-data.js'
 import {
   getCenterCalendarItemById,
   getCenterCalendarTagById,
@@ -511,8 +514,6 @@ import {
   normalizeOnlineRole,
 } from './online-access-control.js'
 import { cleanupLegacyDatasetLocalResidue } from './legacy-dataset-cleanup.js'
-import { sampleStudents } from './student-data.js'
-import { sampleTeachers } from './teacher-data.js'
 import {
   buildTeacherFromForm,
   createEditTeacherFormState,
@@ -521,7 +522,6 @@ import {
   renderTeacherModule,
   validateTeacherForm,
 } from './teacher-module.js'
-import { createSampleTuitionRecords } from './tuition-data.js'
 import {
   emptyCareNoteDraft,
   getStudentCareNotesWindowTitle,
@@ -633,6 +633,11 @@ let notificationPanelPosition = { right: 12, bottom: 56 }
 let openWindows = []
 let nextWindowNumber = 1
 let topZIndex = 20
+const moduleRefreshRunIds = new Map()
+const authoritativeRefreshInFlight = new Map()
+let notificationRefreshRunId = 0
+const moduleRefreshStates = new Map()
+let notificationRefreshState = createModuleRefreshState()
 let desktopModuleOrder = getDesktopModuleOrder(modules.map((moduleItem) => moduleItem.id))
 let shortcutDragState = null
 let suppressNextModuleClick = false
@@ -647,13 +652,16 @@ let textEditingFieldPointerUntil = 0
 let nativeSelectInteractionUntil = 0
 let nativeSelectChangeRenderUntil = 0
 let pendingWindowFocusAfterRender = null
+let legacyCloseoutPreservationState = preserveC5CloseoutLegacyCoreAttendance({
+  storage: globalThis.localStorage,
+  centerId: getCurrentStorageCenterId(),
+})
 cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
-clearStoredParentConsultations()
 let studentFilters = { ...initialStudentFilters }
-let students = getStoredStudents(sampleStudents)
-let classSessions = getStoredClassSessions(sampleClassSessions)
+let students = getStoredStudents([])
+let classSessions = getStoredClassSessions([])
 let teacherFilters = { ...initialTeacherFilters }
-let teachers = getStoredTeachers(sampleTeachers)
+let teachers = getStoredTeachers([])
 let teacherFormState = null
 let selectedTeacherId = null
 let parentConsultationFilters = { ...initialParentConsultationFilters }
@@ -672,6 +680,9 @@ let c53CrmSharedTruthState = {
   messageTone: '',
   lastLoadedAt: '',
   eligibleConsultants: [],
+  legacyMigrationRequired: false,
+  legacyManifestKey: '',
+  legacySummary: null,
 }
 let c53CrmSyncRunId = 0
 const c53CrmRetryCommands = new Map()
@@ -762,7 +773,7 @@ const uploadingStaffDocumentWindowIds = new Set()
 const savingStaffAdministrativeGovernanceWindowIds = new Set()
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
-let scheduleSessions = getStoredSchedule(sampleScheduleSessions)
+let scheduleSessions = getStoredSchedule([])
 scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'initial-load' })
 let sessionReports = getStoredSessionReports()
 let centerCalendarItems = []
@@ -787,8 +798,8 @@ let sessionReportExtraState = null
 let isSessionReportExtraExpanded = false
 let sessionReportGuestFormState = null
 let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
-let tuitionRecords = getStoredTuition(createSampleTuitionRecords(students))
-let notifications = getStoredNotifications(createSampleNotifications())
+let tuitionRecords = getStoredTuition([])
+let notifications = getStoredNotifications([])
 let deletedNotificationIds = getDeletedNotificationIds()
 let notificationFilters = { sourceModule: 'all', readState: 'unread' }
 let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
@@ -979,10 +990,29 @@ function getCurrentResolvedCenterId() {
   return binding.currentCenterId || getCurrentStorageCenterId()
 }
 
+function getCurrentCanonicalCenterContext() {
+  const binding = resolveAppCenterBinding(cloudStatus)
+  const centerId = String(binding.currentCenterId || '').trim()
+  const centerName = String(binding.centerName || '').trim()
+  const ok = cloudStatus.authStatus === 'signed-in'
+    && cloudStatus.membershipStatus === 'loaded'
+    && binding.status === 'bound'
+    && centerId.length <= 160
+    && /^[A-Za-z0-9_-]+$/.test(centerId)
+
+  return {
+    ok,
+    centerId: ok ? centerId : '',
+    centerName: ok ? (centerName || centerId) : '',
+    role: ok ? String(binding.role || cloudStatus.role || '') : '',
+  }
+}
+
 function getStudentsWithCanonicalProjections() {
-  const projections = listLegacyStudentProjections(getCurrentResolvedCenterId())
-  const localCanonicalIds = new Set(students.map((student) => student.canonicalId).filter(Boolean))
-  return [...students, ...projections.filter((projection) => !localCanonicalIds.has(projection.canonicalId))]
+  // C5 closeout: the Student business list is exclusively the C5.1
+  // authoritative projection. P4B session envelopes remain bridge-status
+  // cache only while that phase is frozen; they cannot add Student rows.
+  return students
 }
 
 function parseCanonicalReviewDecision(value) {
@@ -1351,7 +1381,7 @@ function canRenderCenterScopedModuleBadges() {
       storageCenterId === binding.currentCenterId
   }
 
-  return activeLocalDataCenterId === storageCenterId && activeNotificationDataCenterId === storageCenterId
+  return false
 }
 
 function getCenterScopedNotificationsForRender() {
@@ -1466,6 +1496,11 @@ function resetC57CalendarNotesRuntimeForAccessBoundary(centerId = '') {
 }
 
 function resetTransientStateForCenterSwitch() {
+  moduleRefreshRunIds.clear()
+  authoritativeRefreshInFlight.clear()
+  notificationRefreshRunId += 1
+  moduleRefreshStates.clear()
+  notificationRefreshState = createModuleRefreshState()
   studentFilters = { ...initialStudentFilters }
   teacherFilters = { ...initialTeacherFilters }
   parentConsultationFilters = { ...initialParentConsultationFilters }
@@ -1495,6 +1530,9 @@ function resetTransientStateForCenterSwitch() {
     messageTone: '',
     lastLoadedAt: '',
     eligibleConsultants: [],
+    legacyMigrationRequired: false,
+    legacyManifestKey: '',
+    legacySummary: null,
   }
   c54FinanceSyncRunId += 1
   c54FinanceRetryCommands.clear()
@@ -1543,6 +1581,7 @@ function resetTransientStateForCenterSwitch() {
   }
   reportTransactionDrilldownState = null
   reportTransactionDrilldownToken += 1
+  reportState = createInitialReportState()
   cashbookSettingsFormState = null
   cashbookReconciliationFormState = null
   inventoryFormState = null
@@ -1570,12 +1609,12 @@ function purgeZombieScheduleSessions({ persist = false, reason = 'schedule-clean
   return scheduleSessions
 }
 
-function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
+function reloadLocalDataForResolvedCenter() {
+  ensureC5CloseoutLegacyCoreAttendancePreserved()
   cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
-  clearStoredParentConsultations()
-  students = getStoredStudents(useSampleFallback ? sampleStudents : [])
-  classSessions = getStoredClassSessions(useSampleFallback ? sampleClassSessions : [])
-  teachers = getStoredTeachers(useSampleFallback ? sampleTeachers : [])
+  students = getStoredStudents([])
+  classSessions = getStoredClassSessions([])
+  teachers = getStoredTeachers([])
   // CRM authorization is user/role-scoped. Never render or retain another
   // account's center-scoped disk projection before this session completes an
   // exact-center authoritative pull.
@@ -1589,14 +1628,14 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   staffAdministrativeRetentionPolicy = null
   staffAdministrativeDeletionRequests = []
   staffDepartments = []
-  scheduleSessions = getStoredSchedule(useSampleFallback ? sampleScheduleSessions : [])
+  scheduleSessions = getStoredSchedule([])
   scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
   sessionReports = getStoredSessionReports([])
   centerCalendarItems = []
   centerCalendarTags = []
   attendanceAdvisoryNotes = []
   attendanceBoardNotes = []
-  tuitionRecords = getStoredTuition(useSampleFallback ? createSampleTuitionRecords(students) : [])
+  tuitionRecords = getStoredTuition([])
   cashflowTransactions = []
   cashflowCategories = []
   cashbookSelectedDate = getDefaultCashbookDate(cashflowTransactions)
@@ -1605,13 +1644,19 @@ function reloadLocalDataForResolvedCenter({ useSampleFallback = false } = {}) {
   inventoryItems = []
   inventoryMovements = []
   inventoryRequests = []
-  notifications = syncAppNotifications(
-    getStoredNotifications(useSampleFallback ? createSampleNotifications() : []),
-  )
+  notifications = syncAppNotifications(getStoredNotifications([]))
   deletedNotificationIds = getDeletedNotificationIds()
   activeLocalDataCenterId = getCurrentStorageCenterId()
   activeNotificationDataCenterId = getCurrentStorageCenterId()
   resetTransientStateForCenterSwitch()
+}
+
+function ensureC5CloseoutLegacyCoreAttendancePreserved() {
+  legacyCloseoutPreservationState = preserveC5CloseoutLegacyCoreAttendance({
+    storage: globalThis.localStorage,
+    centerId: getCurrentStorageCenterId(),
+  })
+  return legacyCloseoutPreservationState
 }
 
 function refreshStaffDataFromStorage() {
@@ -7398,7 +7443,7 @@ function renderInternalCenterConsoleSkeleton(centerBinding) {
           </div>
           <div>
             <dt>Cơ sở hiện tại</dt>
-            <dd>${escapeHtml(centerBinding.centerName || 'DreamHome')}</dd>
+            <dd>${escapeHtml(centerBinding.centerName || centerBinding.currentCenterId || 'Chưa xác định')}</dd>
           </div>
           <div>
             <dt>Mã cơ sở hiện tại</dt>
@@ -8766,7 +8811,7 @@ async function handleInternalOpenCenter(centerId) {
   })
   resetCloudRuntimeStateForOwnerCenterSwitch()
   setCurrentStorageCenterId(normalizedCenterId)
-  reloadLocalDataForResolvedCenter({ useSampleFallback: false })
+  reloadLocalDataForResolvedCenter()
   cloudStatus = {
     ...cloudStatus,
     centerId: normalizedCenterId,
@@ -10205,7 +10250,7 @@ function renderDashboard() {
 
   return `
     <section class="dashboard" aria-labelledby="dashboard-title">
-      <h1 class="sr-only" id="dashboard-title">Desktop DreamHome</h1>
+      <h1 class="sr-only" id="dashboard-title">Desktop iChess Center OS</h1>
       <div class="desktop-surface">
         <div class="center-brand-slot designer-theme-hook" data-designer-hook="center-brand" aria-hidden="true">
           <span class="center-logo-slot designer-image-slot"></span>
@@ -10261,6 +10306,7 @@ function renderModuleWindow(windowItem) {
         <span class="module-window-hero-slot designer-image-slot" aria-hidden="true"></span>
         <h2 id="${windowItem.id}-title">${escapeHtml(headerTitle)}</h2>
         <div class="window-controls">
+          ${renderModuleRefreshControl(windowItem)}
           ${renderModuleNotificationBell(windowItem)}
           <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${escapeAttribute(headerTitle)}">-</button>
           <button type="button" data-window-action="maximize" data-window-id="${windowItem.id}" aria-label="Phóng to hoặc khôi phục ${escapeAttribute(headerTitle)}">□</button>
@@ -10268,6 +10314,7 @@ function renderModuleWindow(windowItem) {
         </div>
       </div>
       <div class="window-body">
+        ${renderModuleRefreshNotice(windowItem)}
         ${renderWindowBody(windowItem)}
       </div>
     </section>
@@ -10312,6 +10359,65 @@ function renderModuleNotificationBell(windowItem) {
       </div>
     </details>
   `
+}
+
+function createModuleRefreshState(overrides = {}) {
+  return {
+    status: 'idle',
+    centerId: '',
+    upstreams: [],
+    message: 'Chưa xác minh authoritative data cho lần mở này.',
+    lastFreshAt: '',
+    ...overrides,
+  }
+}
+
+function isPrimaryBusinessModuleWindow(windowItem) {
+  return Boolean(
+    windowItem
+    && !windowItem.type
+    && modules.some((item) => item.id === windowItem.moduleId)
+    && isBusinessModule(windowItem.moduleId),
+  )
+}
+
+function getModuleRefreshState(moduleId) {
+  const state = moduleRefreshStates.get(moduleId)
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  return state?.centerId === centerId ? state : createModuleRefreshState({ centerId })
+}
+
+function renderModuleRefreshControl(windowItem) {
+  if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
+  const state = getModuleRefreshState(windowItem.moduleId)
+  return `
+    <button
+      class="module-authoritative-refresh"
+      type="button"
+      data-module-authoritative-refresh="${escapeAttribute(windowItem.moduleId)}"
+      ${state.status === 'loading' ? 'disabled' : ''}
+      aria-label="Làm mới authoritative data của ${escapeAttribute(getWindowHeaderTitle(windowItem))}"
+    >${state.status === 'loading' ? 'Đang tải…' : 'Làm mới'}</button>
+  `
+}
+
+function renderModuleRefreshNotice(windowItem) {
+  if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
+  const state = getModuleRefreshState(windowItem.moduleId)
+  const tone = state.status === 'fresh' ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
+  const label = state.status === 'fresh'
+    ? `Authoritative data đã xác minh${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
+    : state.status === 'loading'
+      ? 'Đang tải đúng authoritative upstream của module; projection cũ chưa được coi là fresh.'
+      : state.message
+  return `<p class="module-authoritative-refresh-notice ${tone}" role="status">${escapeHtml(label)}</p>`
+}
+
+function formatRefreshTime(value) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
 }
 
 function renderCurrentStaffModule() {
@@ -10511,6 +10617,15 @@ function renderWindowBody(windowItem) {
     return ''
   }
 
+  if (isBusinessModule(moduleItem.id) && !getCurrentCanonicalCenterContext().ok) {
+    return `
+      <section class="module-center-context-blocked" role="status">
+        <h3>Chưa xác định active center</h3>
+        <p>Dữ liệu business bị ẩn để projection cũ hoặc fallback DreamHome không thể giả danh authoritative truth.</p>
+      </section>
+    `
+  }
+
   if (moduleItem.id === 'hoc-vien') {
     return renderStudentModule(
       getStudentsWithCanonicalProjections(),
@@ -10678,6 +10793,7 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'bao-cao') {
+    const centerInfo = getCurrentCanonicalCenterContext()
     return renderReportModule({
       filters: reportState.filters,
       draft: reportState.draft,
@@ -10689,10 +10805,12 @@ function renderWindowBody(windowItem) {
         storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
       }),
       sourceTransactionsState: reportTransactionDrilldownState,
+      centerInfo,
     })
   }
 
   if (moduleItem.id === 'cai-dat-co-so') {
+    const centerInfo = getCurrentCanonicalCenterContext()
     return renderSettingsModule(
       classSessions,
       students,
@@ -10703,10 +10821,11 @@ function renderWindowBody(windowItem) {
         activeTab: settingsActiveTab,
         tuitionRecords,
         centerInfo: {
-          name: 'DreamHome',
-          code: getCurrentResolvedCenterId(),
+          ok: centerInfo.ok,
+          name: centerInfo.centerName,
+          code: centerInfo.centerId,
           environment: cloudStatus.configStatus === 'configured' ? 'Vận hành chính' : 'Vận hành nội bộ',
-          status: 'Đang hoạt động',
+          status: centerInfo.ok ? 'Đang hoạt động' : 'Chưa xác định active center',
         },
       },
     )
@@ -10863,7 +10982,7 @@ async function saveTuitionCareNote() {
       id: `tuition-note-${studentId}-${Date.now()}`,
       createdAt: now,
       updatedAt: now,
-      author: 'Admin DreamHome',
+      author: cloudStatus.user?.email || 'Người dùng hiện tại',
       content: noteContent,
       tags: tag ? [tag] : ['Học phí'],
       sourceModule: 'tuition',
@@ -10904,14 +11023,16 @@ function renderPlannedList(title, items) {
 }
 
 function getTaskbarCenterProfileState() {
-  const binding = resolveAppCenterBinding(cloudStatus)
-  const centerName = binding.centerName || cloudStatus.centerName || 'DreamHome'
-  const centerId = binding.currentCenterId || cloudStatus.centerId || getCurrentResolvedCenterId()
-  const role = cloudStatus.role || binding.role || ''
-  const dataLabel = cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.CLOUD ||
-    cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.EMPTY
-      ? 'Cloud'
-      : 'Cache chỉ xem'
+  const context = getCurrentCanonicalCenterContext()
+  const centerName = context.ok ? context.centerName : 'Chưa xác định'
+  const centerId = context.ok ? context.centerId : ''
+  const role = context.ok ? context.role : ''
+  const dataLabel = !context.ok
+    ? 'Chưa xác minh'
+    : cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.CLOUD ||
+      cloudBootstrapState.status === CLOUD_BOOTSTRAP_STATUS.EMPTY
+        ? 'Cloud'
+        : 'Cache chỉ xem'
 
   return {
     centerName,
@@ -11288,6 +11409,13 @@ function renderNotificationCenterV15J(unreadCount) {
         <div class="notification-center-actions">
           <button
             type="button"
+            data-notification-action="refresh-authoritative"
+            ${notificationRefreshState.status === 'loading' ? 'disabled' : ''}
+          >
+            ${notificationRefreshState.status === 'loading' ? 'Đang tải…' : 'Làm mới'}
+          </button>
+          <button
+            type="button"
             data-notification-action="mark-all-read"
             ${unreadVisibleCount ? '' : 'disabled'}
           >
@@ -11357,6 +11485,13 @@ function renderNotificationCenterHotfix(unreadCount) {
         <div class="notification-center-actions">
           <button
             type="button"
+            data-notification-action="refresh-authoritative"
+            ${notificationRefreshState.status === 'loading' ? 'disabled' : ''}
+          >
+            ${notificationRefreshState.status === 'loading' ? 'Đang tải…' : 'Làm mới'}
+          </button>
+          <button
+            type="button"
             data-notification-action="mark-all-read"
             ${unreadVisibleCount ? '' : 'disabled'}
           >
@@ -11364,6 +11499,7 @@ function renderNotificationCenterHotfix(unreadCount) {
           </button>
         </div>
       </div>
+      ${renderNotificationRefreshNotice()}
       <div class="notification-center-filters is-status-only" aria-label="Lọc thông báo">
         <label>
           <span>Trạng thái</span>
@@ -11631,6 +11767,17 @@ function renderStartMenu() {
   `
 }
 
+function renderNotificationRefreshNotice() {
+  const state = notificationRefreshState
+  const tone = state.status === 'fresh' ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
+  const message = state.status === 'fresh'
+    ? `Candidate đã dựng lại từ authoritative upstream${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
+    : state.status === 'loading'
+      ? 'Đang tải authoritative upstream; candidate cũ chưa được coi là fresh.'
+      : state.message
+  return `<p class="notification-refresh-notice ${tone}" role="status">${escapeHtml(message)}</p>`
+}
+
 const moduleLauncherSelector = [
   '.module-button[data-module-launcher][data-module-id]',
   '.start-menu-module[data-module-launcher][data-module-id]',
@@ -11658,22 +11805,9 @@ function openModuleWindow(moduleId) {
     isStartMenuOpen = false
     isWindowOverflowOpen = false
     isNotificationCenterOpen = false
+    resetModuleRefreshStateForOpen(moduleId)
     render()
-    if (moduleId === 'khach-hang-tu-van') {
-      void refreshC53CrmSharedTruth({ reason: 'module-reopen' })
-    }
-    if (['thu-chi', 'so-quy', 'nhom-tai-chinh'].includes(moduleId)) {
-      void refreshC54FinanceSharedTruth({ reason: 'module-reopen' })
-    }
-    if (moduleId === 'nhan-vien') {
-      void refreshC55StaffHrSharedTruth({ reason: 'module-reopen' })
-    }
-    if (moduleId === 'kho-hang') {
-      void refreshC56InventorySharedTruth({ reason: 'module-reopen' })
-    }
-    if (['thoi-khoa-bieu', 'hoc-phi', 'bang-diem-danh'].includes(moduleId)) {
-      void refreshC57CalendarNotesSharedTruth({ reason: 'module-reopen' })
-    }
+    void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-reopen' })
     return
   }
 
@@ -11706,22 +11840,184 @@ function openModuleWindow(moduleId) {
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
+  resetModuleRefreshStateForOpen(moduleId)
   render()
-  if (moduleId === 'khach-hang-tu-van') {
-    void refreshC53CrmSharedTruth({ reason: 'module-open' })
+  void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-open' })
+}
+
+function resetModuleRefreshStateForOpen(moduleId) {
+  if (!isBusinessModule(moduleId)) return
+  const context = getCurrentCanonicalCenterContext()
+  moduleRefreshStates.set(moduleId, createModuleRefreshState({
+    centerId: context.centerId,
+    message: context.ok
+      ? 'Open/reopen yêu cầu authoritative pull mới; projection trước đó không còn được coi là fresh.'
+      : 'Không có active canonical center; business projection bị ẩn.',
+  }))
+}
+
+async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-refresh' } = {}) {
+  const upstreams = getModuleRefreshUpstreams(moduleId)
+  if (!isBusinessModule(moduleId) || !upstreams.length) {
+    return { ok: true, skipped: true, upstreams: [] }
   }
-  if (['thu-chi', 'so-quy', 'nhom-tai-chinh'].includes(moduleId)) {
-    void refreshC54FinanceSharedTruth({ reason: 'module-open' })
+
+  const centerContext = getCurrentCanonicalCenterContext()
+  const refreshId = (moduleRefreshRunIds.get(moduleId) || 0) + 1
+  moduleRefreshRunIds.set(moduleId, refreshId)
+  if (!centerContext.ok) {
+    const result = {
+      ok: false,
+      outcome_code: 'INVALID_CENTER_CONTEXT',
+      error: 'Không có active canonical center; authoritative refresh bị từ chối.',
+    }
+    moduleRefreshStates.set(moduleId, createModuleRefreshState({
+      status: 'failed',
+      upstreams,
+      message: result.error,
+    }))
+    render()
+    return result
   }
-  if (moduleId === 'nhan-vien') {
-    void refreshC55StaffHrSharedTruth({ reason: 'module-open' })
+
+  moduleRefreshStates.set(moduleId, createModuleRefreshState({
+    status: 'loading',
+    centerId: centerContext.centerId,
+    upstreams,
+    message: 'Đang tải authoritative upstream...',
+  }))
+  render()
+
+  const results = await Promise.all(upstreams.map(async (upstream) => {
+    try {
+      const result = await refreshAuthoritativeUpstream(upstream, `${moduleId}:${reason}`)
+      return { upstream, ...(result || { ok: false, outcome_code: 'NO_REFRESH_RESULT' }) }
+    } catch (error) {
+      return { upstream, ok: false, outcome_code: 'REFRESH_THROWN', error: String(error?.message || error) }
+    }
+  }))
+
+  const latestContext = getCurrentCanonicalCenterContext()
+  const currentState = moduleRefreshStates.get(moduleId)
+  if (
+    refreshId !== moduleRefreshRunIds.get(moduleId)
+    || !latestContext.ok
+    || latestContext.centerId !== centerContext.centerId
+    || currentState?.centerId !== centerContext.centerId
+  ) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', results }
   }
-  if (moduleId === 'kho-hang') {
-    void refreshC56InventorySharedTruth({ reason: 'module-open' })
+
+  const failures = results.filter((result) => !result.ok)
+  if (failures.length) {
+    moduleRefreshStates.set(moduleId, createModuleRefreshState({
+      status: 'failed',
+      centerId: centerContext.centerId,
+      upstreams,
+      message: `Làm mới thất bại ở ${failures.map((item) => item.upstream).join(', ')}; dữ liệu đang hiển thị (nếu có) là projection chưa xác minh, không phải fresh.`,
+    }))
+    render()
+    return { ok: false, outcome_code: 'MODULE_REFRESH_FAILED', results, failures }
   }
-  if (['thoi-khoa-bieu', 'hoc-phi', 'bang-diem-danh'].includes(moduleId)) {
-    void refreshC57CalendarNotesSharedTruth({ reason: 'module-open' })
+
+  notifications = syncAppNotifications(notifications)
+  const lastFreshAt = new Date().toISOString()
+  moduleRefreshStates.set(moduleId, createModuleRefreshState({
+    status: 'fresh',
+    centerId: centerContext.centerId,
+    upstreams,
+    message: 'Authoritative refresh hoàn tất.',
+    lastFreshAt,
+  }))
+  render()
+  return { ok: true, centerId: centerContext.centerId, upstreams, results, lastFreshAt }
+}
+
+async function refreshAuthoritativeUpstream(upstream, reason) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  if (!centerContext.ok) {
+    return { ok: false, outcome_code: 'INVALID_CENTER_CONTEXT' }
   }
+  const refreshKey = `${centerContext.centerId}:${upstream}`
+  const existingRefresh = authoritativeRefreshInFlight.get(refreshKey)
+  if (existingRefresh) return existingRefresh
+
+  const refreshPromise = runAuthoritativeUpstreamRefresh(upstream, reason)
+    .finally(() => {
+      if (authoritativeRefreshInFlight.get(refreshKey) === refreshPromise) {
+        authoritativeRefreshInFlight.delete(refreshKey)
+      }
+    })
+  authoritativeRefreshInFlight.set(refreshKey, refreshPromise)
+  return refreshPromise
+}
+
+async function runAuthoritativeUpstreamRefresh(upstream, reason) {
+  switch (upstream) {
+    case 'core':
+      return bootstrapCoreCloudDataForCurrentCenter(cloudUserSyncId, { force: true })
+    case 'attendance':
+      return bootstrapC51AttendanceSessionReportCloudData(cloudUserSyncId, { force: true })
+    case 'tuition':
+      return bootstrapC52TuitionRecordPackageCloudData(cloudUserSyncId, { force: true })
+    case 'crm':
+      return refreshC53CrmSharedTruth({ reason, silent: true })
+    case 'finance':
+      // Coordinator parity with the accepted C5.4 entry points:
+      // refreshC54FinanceSharedTruth({ reason: 'module-open' })
+      // refreshC54FinanceSharedTruth({ reason: 'module-reopen' })
+      return refreshC54FinanceSharedTruth({ reason, silent: true })
+    case 'staff':
+      return refreshC55StaffHrSharedTruth({ reason, silent: true })
+    case 'inventory':
+      return refreshC56InventorySharedTruth({ reason, silent: true })
+    case 'calendar-notes':
+      return refreshC57CalendarNotesSharedTruth({ reason, silent: true })
+    default:
+      return { ok: false, outcome_code: 'UNKNOWN_UPSTREAM', error: `Unknown upstream: ${upstream}` }
+  }
+}
+
+async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-open') {
+  const upstreams = ['core', 'crm', 'tuition', 'inventory']
+  const centerContext = getCurrentCanonicalCenterContext()
+  const refreshId = ++notificationRefreshRunId
+  notificationRefreshState = createModuleRefreshState({
+    status: centerContext.ok ? 'loading' : 'failed',
+    centerId: centerContext.centerId,
+    upstreams,
+    message: centerContext.ok
+      ? 'Đang tải nguồn tạo thông báo...'
+      : 'Không có active canonical center; chưa thể làm mới thông báo.',
+  })
+  render()
+  if (!centerContext.ok) return { ok: false, outcome_code: 'INVALID_CENTER_CONTEXT' }
+
+  const results = await Promise.all(upstreams.map(async (upstream) => {
+    try {
+      return { upstream, ...(await refreshAuthoritativeUpstream(upstream, reason)) }
+    } catch (error) {
+      return { upstream, ok: false, error: String(error?.message || error) }
+    }
+  }))
+  const latestContext = getCurrentCanonicalCenterContext()
+  if (refreshId !== notificationRefreshRunId || latestContext.centerId !== centerContext.centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', results }
+  }
+
+  const failures = results.filter((result) => !result.ok)
+  notifications = syncAppNotifications(notifications)
+  notificationRefreshState = createModuleRefreshState({
+    status: failures.length ? 'failed' : 'fresh',
+    centerId: centerContext.centerId,
+    upstreams,
+    message: failures.length
+      ? 'Một hoặc nhiều nguồn thông báo chưa xác minh; candidate cũ không được coi là fresh.'
+      : 'Candidate thông báo đã được dựng lại từ authoritative upstream.',
+    lastFreshAt: failures.length ? '' : new Date().toISOString(),
+  })
+  render()
+  return { ok: failures.length === 0, results, failures }
 }
 
 function openModuleWindowFromChildInteraction(moduleId) {
@@ -13050,6 +13346,7 @@ function showDesktop() {
 
 function getStatusLabel(status) {
   const statusLabels = {
+    active: 'Đang vận hành',
     placeholder: 'Khung trống',
     planned: 'Đã lên kế hoạch',
     'in-progress': 'Đang triển khai',
@@ -13225,9 +13522,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
 
     if (resolvedMembership.ok) {
       setCurrentStorageCenterId(resolvedMembership.centerId)
-      reloadLocalDataForResolvedCenter({
-        useSampleFallback: !isProductionCenter(resolvedMembership.centerId),
-      })
+      reloadLocalDataForResolvedCenter()
     } else {
       stopStudentRealtimeSubscription()
       stopTeacherRealtimeSubscription()
@@ -14045,85 +14340,115 @@ function buildScheduleSessionRuntimeContext({
 }
 
 async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
-  const centerId = getCurrentResolvedCenterId()
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
   const runId = ++c53CrmSyncRunId
 
-  if (!canUseCoreCloudDb()) {
-    parentConsultations = []
-    parentConsultationFormState = null
-    parentQuickNoteState = null
-    parentNoteHistoryContactId = null
-    parentContactDetailId = null
-    parentConvertPreviewState = null
-    notifications = syncAppNotifications(notifications)
+  // Refresh is an authorization/currentness boundary. Nothing from the old
+  // account or center remains renderable during legacy inspection/network I/O.
+  parentConsultations = []
+  parentConsultationFormState = null
+  parentQuickNoteState = null
+  parentNoteHistoryContactId = null
+  parentContactDetailId = null
+  parentConvertPreviewState = null
+  notifications = syncAppNotifications(notifications)
+  c53CrmSharedTruthState = {
+    ...c53CrmSharedTruthState,
+    centerId,
+    isLoading: Boolean(centerId),
+    isSaving: false,
+    message: centerId && !silent ? 'Đang inventory legacy và tải authoritative CRM...' : '',
+    messageTone: '',
+    lastLoadedAt: '',
+    eligibleConsultants: [],
+    legacyMigrationRequired: false,
+    legacyManifestKey: '',
+    legacySummary: null,
+  }
+  render()
+
+  if (!centerContext.ok || !canUseCoreCloudDb()) {
+    const error = 'Cần đăng nhập và có active membership tại đúng cơ sở để đọc authoritative CRM.'
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
-      centerId,
       isLoading: false,
-      message: 'Cần đăng nhập và có active membership để đọc authoritative CRM.',
+      message: error,
       messageTone: 'error',
+      lastLoadedAt: '',
     }
-    if (!silent) render()
-    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error: c53CrmSharedTruthState.message }
+    render()
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error }
+  }
+
+  const legacy = inspectAndQuarantineC53LegacyCrm({
+    storage: globalThis.localStorage,
+    centerId,
+  })
+  if (runId !== c53CrmSyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!legacy.ok) {
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      isLoading: false,
+      message: legacy.error,
+      messageTone: 'error',
+      lastLoadedAt: '',
+      legacyMigrationRequired: true,
+    }
+    render()
+    return { ...legacy, outcome_code: legacy.outcome_code || 'LEGACY_PRESERVATION_FAILED' }
   }
 
   c53CrmSharedTruthState = {
     ...c53CrmSharedTruthState,
-    centerId,
     isLoading: true,
-    message: silent ? c53CrmSharedTruthState.message : 'Đang tải authoritative CRM...',
+    message: silent ? '' : 'Đang tải authoritative CRM...',
     messageTone: '',
+    legacyMigrationRequired: legacy.migrationRequired,
+    legacyManifestKey: legacy.manifestKey,
+    legacySummary: legacy.source,
   }
   if (!silent) render()
 
   const readiness = await checkCloudDbReadiness(centerId)
-  if (runId !== c53CrmSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+  if (runId !== c53CrmSyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
-  if (!readiness.ok) {
+  if (!readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : readiness
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
       isLoading: false,
-      message: readiness.error || getC53CrmOutcomeMessage('CRM_SHARED_TRUTH_READ_FAILED'),
+      message: result.error || getC53CrmOutcomeMessage('CRM_SHARED_TRUTH_READ_FAILED'),
       messageTone: 'error',
-    }
-    render()
-    return readiness
-  }
-
-  const result = await pullC53CrmSharedTruth({
-    supabase: readiness.supabase,
-    centerId: readiness.centerId,
-  })
-  if (
-    runId !== c53CrmSyncRunId
-    || centerId !== getCurrentResolvedCenterId()
-    || readiness.centerId !== centerId
-  ) {
-    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
-  }
-  if (!result.ok) {
-    if (['CENTER_ACCESS_DENIED', 'CRM_READ_NOT_ACTIVE'].includes(result.outcome_code)) {
-      parentConsultations = []
-      parentConsultationFormState = null
-      parentQuickNoteState = null
-      parentNoteHistoryContactId = null
-      parentContactDetailId = null
-      parentConvertPreviewState = null
-      notifications = syncAppNotifications(notifications)
-    }
-    c53CrmSharedTruthState = {
-      ...c53CrmSharedTruthState,
-      isLoading: false,
-      message: result.error || getC53CrmOutcomeMessage(result.outcome_code),
-      messageTone: 'error',
+      lastLoadedAt: '',
     }
     render()
     return result
   }
 
-  // An empty server response is authoritative. Never upload or merge the
-  // browser-local parentConsultations dataset into canonical CRM implicitly.
+  const result = await pullC53CrmSharedTruth({ supabase: readiness.supabase, centerId })
+  if (runId !== c53CrmSyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      isLoading: false,
+      message: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+      lastLoadedAt: '',
+    }
+    render()
+    return result
+  }
+
+  // Empty server is authoritative. The legacy key stays recoverable and
+  // quarantined; it is never uploaded, unioned, or removed here.
   parentConsultations = result.records
   notifications = syncAppNotifications(notifications)
   c53CrmSharedTruthState = {
@@ -15259,16 +15584,24 @@ function isC55RetryableStaffHrFailure(result = {}) {
   ].includes(result.outcome_code)
 }
 
-async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSyncId) {
-  if (!canUseCoreCloudDb() || c51AttendanceAutoPullUserId === cloudStatus.user?.id) {
-    return
+async function bootstrapC51AttendanceSessionReportCloudData(
+  syncId = cloudUserSyncId,
+  { force = false } = {},
+) {
+  if (!canUseCoreCloudDb() || (!force && c51AttendanceAutoPullUserId === cloudStatus.user?.id)) {
+    return { ok: false, skipped: true, outcome_code: 'CLIENT_NOT_READY' }
   }
+
+  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
+  if (!preservation.ok) return preservation
 
   c51AttendanceAutoPullUserId = cloudStatus.user?.id || ''
   const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId || !readiness.ok) {
-    return
+    return readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Center context đã thay đổi.' }
+      : readiness
   }
 
   const result = await pullC51AttendanceSessionReportCloudEntities({
@@ -15277,7 +15610,7 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
   })
 
   if (syncId !== cloudUserSyncId) {
-    return
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Center context đã thay đổi.' }
   }
 
   if (!result.ok) {
@@ -15289,7 +15622,7 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
       lastUpdatedAt: new Date().toISOString(),
     }
     render()
-    return
+    return result
   }
 
   const mergeResult = mergeC51CloudRecordsIntoLocal({
@@ -15312,6 +15645,7 @@ async function bootstrapC51AttendanceSessionReportCloudData(syncId = cloudUserSy
     lastUpdatedAt: new Date().toISOString(),
   }
   render()
+  return { ...result, ok: true, projection: mergeResult }
 }
 
 async function writeC52AttendanceSessionReportThroughCloud({
@@ -15357,6 +15691,18 @@ async function writeC52AttendanceSessionReportThroughCloud({
     previousAttendanceRecords: cloneC52OperationalCommandValue(previousAttendanceRecords),
     replaceBaselineRecords: Boolean(replaceBaselineRecords),
     idempotencyKey: idempotencyKey || createOperationalCommandIdempotencyKey(),
+  }
+
+  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
+  if (!preservation.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: preservation.error,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return preservation
   }
   const retryScope = `${proposedCommand.centerId}|${proposedCommand.fingerprint}`
   const command = c52AttendanceRetryCommands.get(retryScope) || proposedCommand
@@ -15598,16 +15944,24 @@ function handleC51AttendanceRealtimeRecord(record) {
   render()
 }
 
-async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncId) {
-  if (!canUseCoreCloudDb() || c52TuitionAutoPullUserId === cloudStatus.user?.id) {
-    return
+async function bootstrapC52TuitionRecordPackageCloudData(
+  syncId = cloudUserSyncId,
+  { force = false } = {},
+) {
+  if (!canUseCoreCloudDb() || (!force && c52TuitionAutoPullUserId === cloudStatus.user?.id)) {
+    return { ok: false, skipped: true, outcome_code: 'CLIENT_NOT_READY' }
   }
+
+  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
+  if (!preservation.ok) return preservation
 
   c52TuitionAutoPullUserId = cloudStatus.user?.id || ''
   const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
 
   if (syncId !== cloudUserSyncId || !readiness.ok) {
-    return
+    return readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Center context đã thay đổi.' }
+      : readiness
   }
 
   const result = await pullC52TuitionRecordPackageCloudEntities({
@@ -15616,7 +15970,7 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
   })
 
   if (syncId !== cloudUserSyncId) {
-    return
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Center context đã thay đổi.' }
   }
 
   if (!result.ok) {
@@ -15628,7 +15982,7 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
       lastUpdatedAt: new Date().toISOString(),
     }
     render()
-    return
+    return result
   }
 
   const mergeResult = mergeC52TuitionCloudRecordsIntoLocal({
@@ -15648,6 +16002,7 @@ async function bootstrapC52TuitionRecordPackageCloudData(syncId = cloudUserSyncI
     lastUpdatedAt: new Date().toISOString(),
   }
   render()
+  return { ...result, ok: true, projection: mergeResult }
 }
 
 async function writeC52TuitionRecordPackageThroughCloud(
@@ -15689,6 +16044,18 @@ async function writeC52TuitionRecordPackageThroughCloud(
       render()
     }
     return readiness
+  }
+
+  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
+  if (!preservation.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: preservation.error,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return preservation
   }
 
   if (
@@ -16072,6 +16439,16 @@ function isCoreCloudSnapshotEmpty(snapshot = {}) {
 }
 
 function applyCoreCloudSnapshotToLocal(snapshot) {
+  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
+  if (!preservation.ok) {
+    return {
+      ok: false,
+      error: preservation.error,
+      reason: preservation.outcome_code,
+      backupKey: null,
+      counts: getCoreCloudSnapshotCounts({ students, teachers, classSessions }),
+    }
+  }
   const backupResult = createCloudDbPullBackup(window.localStorage)
 
   if (backupResult && typeof backupResult === 'object' && backupResult.ok === false) {
@@ -16103,6 +16480,16 @@ function applyCoreCloudSnapshotToLocal(snapshot) {
 }
 
 function applyCloudBootstrapSnapshotToLocal(snapshot) {
+  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
+  if (!preservation.ok) {
+    return {
+      ok: false,
+      error: preservation.error,
+      reason: preservation.outcome_code,
+      backupKey: null,
+      counts: getCloudBootstrapSnapshotCounts({ students, teachers, classSessions, scheduleSessions }),
+    }
+  }
   const backupResult = createCloudDbPullBackup(window.localStorage)
 
   if (backupResult && typeof backupResult === 'object' && backupResult.ok === false) {
@@ -16321,7 +16708,7 @@ async function pullCloudDbSnapshotToLocal() {
 
   if (isCoreCloudSnapshotEmpty(result.data)) {
     if (isProductionCenter(readiness.centerId)) {
-      reloadLocalDataForResolvedCenter({ useSampleFallback: false })
+      reloadLocalDataForResolvedCenter()
       cloudDbState = {
         ...cloudDbState,
         isLoading: false,
@@ -16372,15 +16759,21 @@ async function pullCloudDbSnapshotToLocal() {
   render()
 }
 
-async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) {
+async function bootstrapCoreCloudDataForCurrentCenter(
+  syncId = cloudUserSyncId,
+  { force = false } = {},
+) {
   const context = getCurrentCloudBootstrapContext()
   const now = Date.now()
 
-  if (!canRunCloudBootstrap(context) || cloudDbAutoPullUserId === cloudStatus.user?.id) {
-    return
+  if (!canRunCloudBootstrap(context) || (!force && cloudDbAutoPullUserId === cloudStatus.user?.id)) {
+    return { ok: false, skipped: true, outcome_code: 'CLIENT_NOT_READY' }
   }
 
-  if (cloudBootstrapRetryBlockedUntil > now) {
+  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
+  if (!preservation.ok) return preservation
+
+  if (!force && cloudBootstrapRetryBlockedUntil > now) {
     cloudBootstrapState = {
       ...cloudBootstrapState,
       status:
@@ -16390,13 +16783,13 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
       source: cloudBootstrapState.source || 'local-cache',
       message: cloudBootstrapState.message || 'Cloud pull đang tạm dừng; cache chỉ để xem, không xác nhận business truth.',
     }
-    return
+    return { ok: false, outcome_code: 'REFRESH_RETRY_BLOCKED', error: cloudBootstrapState.message }
   }
 
   cloudDbAutoPullUserId = cloudStatus.user?.id || ''
   const hasUsableLocalCache = hasCloudBootstrapSnapshotData({ students, teachers, scheduleSessions })
 
-  if (!hasUsableLocalCache) {
+  if (!hasUsableLocalCache || force) {
     cloudBootstrapState = {
       ...cloudBootstrapState,
       status: CLOUD_BOOTSTRAP_STATUS.LOADING,
@@ -16425,7 +16818,7 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
   const result = await pullCloudBootstrapCoreEntities(centerId)
 
   if (syncId !== cloudUserSyncId) {
-    return
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Center context đã thay đổi.' }
   }
 
   if (!result.ok) {
@@ -16458,7 +16851,7 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
       lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
     }
     render()
-    return
+    return result
   }
 
   const counts = result.counts || getCloudBootstrapSnapshotCounts(result.data)
@@ -16484,7 +16877,7 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
       lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
     }
     render()
-    return
+    return appliedSnapshot
   }
 
   cloudBootstrapState = {
@@ -16505,6 +16898,7 @@ async function bootstrapCoreCloudDataForCurrentCenter(syncId = cloudUserSyncId) 
     lastUpdatedAt: cloudBootstrapState.lastUpdatedAt,
   }
   render()
+  return { ...result, ok: true, projection: appliedSnapshot }
 }
 
 async function autoPullCoreCloudSnapshot(syncId = cloudUserSyncId) {
@@ -16548,7 +16942,7 @@ async function autoPullCoreCloudSnapshot(syncId = cloudUserSyncId) {
 
   if (isCoreCloudSnapshotEmpty(result.data)) {
     if (isProductionCenter(readiness.centerId)) {
-      reloadLocalDataForResolvedCenter({ useSampleFallback: false })
+      reloadLocalDataForResolvedCenter()
       cloudDbState = {
         ...cloudDbState,
         isLoading: false,
@@ -18279,10 +18673,22 @@ function bindEvents() {
   document.querySelector('[data-action="toggle-notifications"]')?.addEventListener('click', (event) => {
     notificationPanelPosition = getNotificationPanelPosition(event.currentTarget)
     isNotificationCenterOpen = !isNotificationCenterOpen
+    if (isNotificationCenterOpen) {
+      const context = getCurrentCanonicalCenterContext()
+      notificationRefreshState = createModuleRefreshState({
+        centerId: context.centerId,
+        message: context.ok
+          ? 'Notification Center yêu cầu authoritative pull mới; candidate trước đó chưa được coi là fresh.'
+          : 'Không có active canonical center; candidate business bị ẩn.',
+      })
+    }
     isStartMenuOpen = false
     isWindowOverflowOpen = false
     isCenterProfilePopoverOpen = false
     render()
+    if (isNotificationCenterOpen) {
+      void refreshNotificationAuthoritativeUpstreams('notification-open')
+    }
   })
 
   document.querySelector('[data-action="toggle-center-profile"]')?.addEventListener('click', () => {
@@ -18391,6 +18797,10 @@ function bindEvents() {
     })
   })
 
+  document.querySelector('[data-notification-action="refresh-authoritative"]')?.addEventListener('click', () => {
+    void refreshNotificationAuthoritativeUpstreams('notification-manual-refresh')
+  })
+
   document.querySelector('[data-notification-action="mark-all-read"]')?.addEventListener('click', () => {
     const visibleNotificationIds = filterNotifications(getCenterScopedNotificationsForRender(), {
       readState: notificationFilters.readState,
@@ -18434,6 +18844,15 @@ function bindEvents() {
           nextControl.setSelectionRange(selectionStart, selectionEnd)
         }
       }, event)
+    })
+  })
+
+  document.querySelectorAll('[data-module-authoritative-refresh]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      void refreshModuleAuthoritativeUpstreams(button.dataset.moduleAuthoritativeRefresh, {
+        reason: 'manual-refresh',
+      })
     })
   })
 
@@ -18963,6 +19382,7 @@ function bindEvents() {
         students,
         cashflowTransactions,
         attendanceRecords,
+        centerInfo: getCurrentCanonicalCenterContext(),
       }),
     )
     printWindow.document.close()
@@ -18997,6 +19417,7 @@ function bindEvents() {
       students,
       cashflowTransactions,
       attendanceRecords,
+      centerInfo: getCurrentCanonicalCenterContext(),
     })
     const blob = new Blob([`\uFEFF${content}`], {
       type: 'text/plain;charset=utf-8',
@@ -19005,7 +19426,10 @@ function bindEvents() {
     const link = document.createElement('a')
 
     link.href = url
-    link.download = getReportDownloadFilename(reportState.filters.reportDate)
+    link.download = getReportDownloadFilename(
+      reportState.filters.reportDate,
+      getCurrentCanonicalCenterContext(),
+    )
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -21074,9 +21498,7 @@ function bindEvents() {
       return
     }
 
-    const latestTuitionRecords = getStoredTuition(
-      isProductionCenter(currentCenterId) ? [] : createSampleTuitionRecords(students),
-    )
+    const latestTuitionRecords = getStoredTuition([])
     const latestTuitionRecord = latestTuitionRecords.find(
       (record) => record.id === tuitionPaymentFormState.tuitionId,
     )
@@ -26047,7 +26469,7 @@ function bindEvents() {
               {
                 id: `note_${Date.now()}`,
                 createdAt: new Date().toISOString(),
-                author: 'Admin DreamHome',
+                author: cloudStatus.user?.email || 'Người dùng hiện tại',
                 content,
                 tags: currentDraft.tag.trim() ? [currentDraft.tag.trim()] : [],
               },

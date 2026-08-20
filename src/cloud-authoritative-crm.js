@@ -55,20 +55,31 @@ export async function pullC53CrmSharedTruth({ supabase, centerId } = {}) {
       p_center_id: normalizedCenterId,
     })
     if (error) return failure('CRM_SHARED_TRUTH_READ_FAILED', String(error.message || error), error)
-    if (!data?.ok || !Array.isArray(data.records)) {
+    if (!data?.ok || !Array.isArray(data.records) || !Array.isArray(data.eligible_consultants)) {
       const outcomeCode = String(data?.outcome_code || 'INVALID_SERVER_RESULT')
       return failure(outcomeCode, getC53CrmOutcomeMessage(outcomeCode), data)
     }
     if (String(data.center_id || '') !== normalizedCenterId) {
       return failure('CENTER_CONTEXT_CHANGED', getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED'))
     }
+    const records = data.records.map(projectC53CrmRecord)
+    const eligibleConsultants = data.eligible_consultants
+    if (records.some((record) => !record) || eligibleConsultants.some((consultant) => (
+      !consultant
+      || typeof consultant !== 'object'
+      || Array.isArray(consultant)
+      || !cleanText(consultant.userId)
+      || !cleanText(consultant.label)
+    ))) {
+      return failure('INVALID_SERVER_RESULT', getC53CrmOutcomeMessage('INVALID_SERVER_RESULT'), data)
+    }
     return {
       ok: true,
       outcome_code: data.outcome_code,
       centerId: normalizedCenterId,
       cachePolicy: data.projection_cache_policy || C53_CRM_MASKED_CACHE_POLICY,
-      eligibleConsultants: Array.isArray(data.eligible_consultants) ? data.eligible_consultants : [],
-      records: data.records.map(projectC53CrmRecord).filter(Boolean),
+      eligibleConsultants,
+      records,
     }
   } catch (error) {
     return failure('CRM_SHARED_TRUTH_READ_FAILED', String(error?.message || error), error)

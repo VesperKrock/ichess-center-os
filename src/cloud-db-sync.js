@@ -10,7 +10,10 @@ import {
   buildCloudEntityRecords,
   isAllowedCloudEntityType,
 } from './cloud-db-entities.js'
-import { SCHEDULE_SESSION_CLOUD_ENTITY_TYPE } from './cloud-schedule-sessions.js'
+import {
+  SCHEDULE_SESSION_CLOUD_ENTITY_TYPE,
+  validateScheduleSessionCloudPayload,
+} from './cloud-schedule-sessions.js'
 import {
   createEmptyCloudBootstrapCounts,
   getCloudBootstrapSnapshotCounts,
@@ -215,14 +218,37 @@ export async function listCloudEntityPayloads({
   if (!result.ok) {
     return result
   }
+  if (!Array.isArray(result.data)) {
+    return { ok: false, outcome_code: 'INVALID_SERVER_RESULT', error: 'Authoritative core snapshot không phải array.' }
+  }
+
+  const invalidRecord = result.data.find((record) => {
+    if (
+      !record
+      || String(record.center_id || '') !== String(centerId)
+      || record.entity_type !== entityType
+      || !String(record.local_id || '').trim()
+      || !record.payload
+      || typeof record.payload !== 'object'
+      || Array.isArray(record.payload)
+      || String(record.payload.id || '').trim() !== String(record.local_id || '').trim()
+    ) return true
+    return isAuthoritativeCoreEntityType(entityType) && !projectAuthoritativeCoreRecord(record)
+  })
+  if (invalidRecord) {
+    return {
+      ok: false,
+      outcome_code: 'INVALID_SERVER_RESULT',
+      error: 'Authoritative core snapshot chứa row sai center/type/payload; projection cũ được giữ nguyên và không được coi là fresh.',
+    }
+  }
 
   return {
     ok: true,
     data: result.data
       .map((record) => isAuthoritativeCoreEntityType(entityType)
         ? projectAuthoritativeCoreRecord(record)
-        : record.payload)
-      .filter((payload) => payload && typeof payload === 'object'),
+        : record.payload),
   }
 }
 
@@ -250,11 +276,30 @@ export async function listScheduleSessionCloudPayloads({
     }
   }
 
+  if (!Array.isArray(data)) {
+    return { ok: false, outcome_code: 'INVALID_SERVER_RESULT', error: 'Schedule authoritative snapshot không phải array.' }
+  }
+  const records = data
+  const invalidRecord = records.find((record) => (
+    !record
+    || String(record.center_id || '') !== String(centerId)
+    || record.entity_type !== SCHEDULE_SESSION_CLOUD_ENTITY_TYPE
+    || !String(record.local_id || '').trim()
+    || String(record.payload?.id || '').trim() !== String(record.local_id || '').trim()
+    || !projectAuthoritativeCoreRecord(record)
+    || !validateScheduleSessionCloudPayload(record.payload).ok
+  ))
+  if (invalidRecord) {
+    return {
+      ok: false,
+      outcome_code: 'INVALID_SERVER_RESULT',
+      error: 'Schedule authoritative snapshot chứa row sai center/type/payload; không áp dụng partial truth.',
+    }
+  }
+
   return {
     ok: true,
-    data: (data || [])
-      .map((record) => projectAuthoritativeCoreRecord(record))
-      .filter((payload) => payload && typeof payload === 'object'),
+    data: records.map((record) => projectAuthoritativeCoreRecord(record)),
   }
 }
 

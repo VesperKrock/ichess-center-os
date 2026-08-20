@@ -9,7 +9,6 @@ const LEGACY_IMPORT_BATCH_IDS = new Set([
 const CENTER_SCOPED_COLLECTIONS = Object.freeze([
   'students',
   'teachers',
-  'parentConsultations',
   'classSessions',
   'tuitionPackages',
   'tuition',
@@ -18,11 +17,21 @@ const CENTER_SCOPED_COLLECTIONS = Object.freeze([
 ])
 
 export function cleanupLegacyDatasetLocalResidue(storage = globalThis.localStorage, centerId = '') {
-  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
-    return { ok: true, centerId: normalizeCenterId(centerId), removedCount: 0, changedKeys: [] }
+  const normalizedCenterId = normalizeCenterId(centerId)
+  if (!normalizedCenterId) {
+    return {
+      ok: false,
+      outcome_code: 'INVALID_CENTER_CONTEXT',
+      centerId: '',
+      removedCount: 0,
+      changedKeys: [],
+    }
   }
 
-  const normalizedCenterId = normalizeCenterId(centerId)
+  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') {
+    return { ok: true, centerId: normalizedCenterId, removedCount: 0, changedKeys: [] }
+  }
+
   let removedCount = 0
   const changedKeys = []
 
@@ -74,11 +83,8 @@ export function hasExactLegacyDatasetIdentity(record) {
 }
 
 function normalizeCenterId(centerId) {
-  const normalized = String(centerId ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-
-  return normalized || 'dreamhome'
+  const normalized = String(centerId ?? '').trim().toLowerCase()
+  return normalized && normalized.length <= 160 && /^[a-z0-9_-]+$/.test(normalized)
+    ? normalized
+    : ''
 }

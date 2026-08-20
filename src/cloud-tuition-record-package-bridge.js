@@ -60,10 +60,34 @@ export async function pullC52TuitionRecordPackageCloudEntities({
     }
   }
 
+  if (!Array.isArray(data)) {
+    return { ok: false, outcome_code: 'INVALID_SERVER_RESULT', error: 'Tuition authoritative snapshot không phải array.' }
+  }
+  const invalidRecord = data.find((record) => {
+    if (
+      !record
+      || String(record.center_id || '') !== String(centerId || '')
+      || record.entity_type !== TUITION_RECORD_PACKAGE_ENTITY_TYPE
+      || !String(record.local_id || '').trim()
+      || !Number.isSafeInteger(Number(record.entity_version))
+      || Number(record.entity_version) < 1
+    ) return true
+    const validation = normalizeTuitionRecordPackagePayload(record.payload, { centerId })
+    return !validation.ok
+      || record.local_id !== createTuitionRecordPackageLocalId(validation.record)
+  })
+  if (invalidRecord) {
+    return {
+      ok: false,
+      outcome_code: 'INVALID_SERVER_RESULT',
+      error: 'Tuition authoritative snapshot chứa row sai center/type/version/payload; không áp dụng partial truth.',
+    }
+  }
+
   return {
     ok: true,
-    records: Array.isArray(data) ? data : [],
-    empty: !Array.isArray(data) || data.length === 0,
+    records: data,
+    empty: data.length === 0,
   }
 }
 
