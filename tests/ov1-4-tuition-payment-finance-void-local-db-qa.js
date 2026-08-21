@@ -6,8 +6,11 @@ import { spawnSync } from 'node:child_process'
 const projectSlug = 'ichess-center-os'
 const expectedContainer = 'supabase_db_ichess-center-os'
 const migrationPath = 'supabase/migrations/202608210002_ov1_4_tuition_payment_finance_void.sql'
+const hardeningPath = 'supabase/migrations/202608210003_ov1_4_tuition_payment_identity_compatibility_hardening.sql'
 const migrationBytes = readFileSync(migrationPath)
+const hardeningBytes = readFileSync(hardeningPath)
 const migrationHash = createHash('sha256').update(migrationBytes).digest('hex').toUpperCase()
+const hardeningHash = createHash('sha256').update(hardeningBytes).digest('hex').toUpperCase()
 
 assert.equal(process.argv.length, 2, 'This runner accepts no arguments')
 assert(!process.env.SUPABASE_PROJECT_REF, 'Linked Supabase project references are forbidden')
@@ -52,6 +55,7 @@ const u = (value) => `${q(value)}::uuid`
 if (scalar("select to_regprocedure('public.c5_4_void_tuition_payment(text,uuid,text,text,bigint,text,uuid)') is not null;") !== 't') {
   psql(migrationBytes.toString('utf8'))
 }
+psql(hardeningBytes.toString('utf8'))
 assert.equal(
   scalar("select to_regprocedure('public.c5_4_void_tuition_payment(text,uuid,text,text,bigint,text,uuid)') is not null;"),
   't',
@@ -78,8 +82,10 @@ const ids = {
   transactionAdminVoid: randomUUID(),
   transactionOwnerVoid: randomUUID(),
   transactionPeriodStale: randomUUID(),
+  transactionGenericCreate: randomUUID(),
   adminVoidKey: randomUUID(),
   ownerVoidKey: randomUUID(),
+  genericCreateKey: randomUUID(),
 }
 const payload = JSON.stringify({
   id: ids.tuition,
@@ -94,6 +100,7 @@ const payload = JSON.stringify({
   payments: [],
   termHistory: [],
 })
+const tuitionLocalId = `tuition_record_package::${ids.tuition}`
 const paymentId = (label) => `ov1-4-payment-${label}-${suffix}`
 
 const qaSql = `
@@ -114,7 +121,7 @@ insert into public.center_cloud_entities (
   center_id, entity_type, local_id, payload, source_module, source_version,
   entity_version, created_by, updated_by
 ) values (
-  ${q(ids.center)}, 'tuition_record_package', ${q(ids.tuition)}, ${q(payload)}::jsonb,
+  ${q(ids.center)}, 'tuition_record_package', ${q(tuitionLocalId)}, ${q(payload)}::jsonb,
   'tuition', 'c5.2-authoritative-attendance-tuition-v1', 1,
   ${u(ids.owner)}, ${u(ids.owner)}
 );
@@ -127,15 +134,15 @@ insert into public.finance_transaction (
   (${u(ids.transactionAdminVoid)}, ${q(ids.center)}, 'TC-20260821-9001', 'INCOME',
    (select id from public.finance_category where center_id=${q(ids.center)} and name='Học phí'),
    'Học phí', 100000, '2026-08-21', 'Tiền mặt', 'hoc-phi', 'tuition-payment',
-   ${q(paymentId('admin'))}, ${q(ids.tuition)}, ${q(ids.student)}, ${q(ids.period)}, ${u(ids.owner)}, ${u(ids.owner)}),
+   ${q(paymentId('admin'))}, ${q(tuitionLocalId)}, ${q(ids.student)}, ${q(ids.period)}, ${u(ids.owner)}, ${u(ids.owner)}),
   (${u(ids.transactionOwnerVoid)}, ${q(ids.center)}, 'TC-20260821-9002', 'INCOME',
    (select id from public.finance_category where center_id=${q(ids.center)} and name='Học phí'),
    'Học phí', 100000, '2026-08-21', 'Tiền mặt', 'hoc-phi', 'tuition-payment',
-   ${q(paymentId('owner'))}, ${q(ids.tuition)}, ${q(ids.student)}, ${q(ids.period)}, ${u(ids.admin)}, ${u(ids.admin)}),
+   ${q(paymentId('owner'))}, ${q(tuitionLocalId)}, ${q(ids.student)}, ${q(ids.period)}, ${u(ids.admin)}, ${u(ids.admin)}),
   (${u(ids.transactionPeriodStale)}, ${q(ids.center)}, 'TC-20260821-9003', 'INCOME',
    (select id from public.finance_category where center_id=${q(ids.center)} and name='Học phí'),
    'Học phí', 100000, '2026-08-21', 'Tiền mặt', 'hoc-phi', 'tuition-payment',
-   ${q(paymentId('stale'))}, ${q(ids.tuition)}, ${q(ids.student)}, ${q(ids.period)}, ${u(ids.owner)}, ${u(ids.owner)});
+   ${q(paymentId('stale'))}, ${q(tuitionLocalId)}, ${q(ids.student)}, ${q(ids.period)}, ${u(ids.owner)}, ${u(ids.owner)});
 
 select pg_catalog.set_config('request.jwt.claim.sub', ${q(ids.admin)}, true);
 select pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
@@ -159,28 +166,28 @@ begin
 
   v_result := public.c5_4_void_tuition_payment(
     ${q(ids.center)}, ${u(ids.transactionAdminVoid)}, ${q(paymentId('admin'))},
-    ${q(ids.tuition)}, 1, 'Admin sửa khoản thu nhập nhầm', ${u(ids.adminVoidKey)}
+    ${q(tuitionLocalId)}, 1, 'Admin sửa khoản thu nhập nhầm', ${u(ids.adminVoidKey)}
   );
   if v_result->>'outcome_code' <> 'COMMITTED' or (v_result->>'replayed')::boolean then
     raise exception 'admin void failed: %', v_result;
   end if;
   v_result := public.c5_4_void_tuition_payment(
     ${q(ids.center)}, ${u(ids.transactionAdminVoid)}, ${q(paymentId('admin'))},
-    ${q(ids.tuition)}, 1, 'Admin sửa khoản thu nhập nhầm', ${u(ids.adminVoidKey)}
+    ${q(tuitionLocalId)}, 1, 'Admin sửa khoản thu nhập nhầm', ${u(ids.adminVoidKey)}
   );
   if v_result->>'outcome_code' <> 'COMMITTED' or not (v_result->>'replayed')::boolean then
     raise exception 'idempotent replay failed: %', v_result;
   end if;
   v_result := public.c5_4_void_tuition_payment(
     ${q(ids.center)}, ${u(ids.transactionAdminVoid)}, ${q(paymentId('admin'))},
-    ${q(ids.tuition)}, 1, 'Lý do khác cùng khóa', ${u(ids.adminVoidKey)}
+    ${q(tuitionLocalId)}, 1, 'Lý do khác cùng khóa', ${u(ids.adminVoidKey)}
   );
   if v_result->>'outcome_code' <> 'IDEMPOTENCY_CONFLICT' then
     raise exception 'idempotency conflict failed: %', v_result;
   end if;
   v_result := public.c5_4_void_tuition_payment(
     ${q(ids.center)}, ${u(ids.transactionAdminVoid)}, ${q(paymentId('admin'))},
-    ${q(ids.tuition)}, 1, 'Bản cũ phải bị chặn', gen_random_uuid()
+    ${q(tuitionLocalId)}, 1, 'Bản cũ phải bị chặn', gen_random_uuid()
   );
   if v_result->>'outcome_code' <> 'VERSION_STALE' then
     raise exception 'stale version failed: %', v_result;
@@ -193,9 +200,35 @@ do $qa$
 declare
   v_result jsonb;
 begin
+  v_result := public.c5_4_mutate_finance_shared_truth(
+    ${q(ids.center)},
+    pg_catalog.jsonb_build_object(
+      'operation', 'CREATE_TRANSACTION',
+      'transaction_id', ${q(ids.transactionGenericCreate)},
+      'expected_version', 0,
+      'local_source_id', ${q(paymentId('generic'))},
+      'cashflow_type', 'INCOME',
+      'category_id', (select id::text from public.finance_category where center_id=${q(ids.center)} and name='Học phí'),
+      'amount_minor', 100000,
+      'transaction_date', '2026-08-21',
+      'method', 'Tiền mặt',
+      'source_module', 'hoc-phi',
+      'source_type', 'tuition-payment',
+      'source_payment_id', ${q(paymentId('generic'))},
+      'source_tuition_id', ${q(tuitionLocalId)},
+      'source_student_id', ${q(ids.student)},
+      'source_period_id', ${q(ids.period)},
+      'attachment_action', 'KEEP'
+    ),
+    ${u(ids.genericCreateKey)}
+  );
+  if v_result->>'outcome_code' <> 'COMMITTED' then
+    raise exception 'canonical C5.2 identity payment create failed: %', v_result;
+  end if;
+
   v_result := public.c5_4_void_tuition_payment(
     ${q(ids.center)}, ${u(ids.transactionOwnerVoid)}, ${q(paymentId('owner'))},
-    ${q(ids.tuition)}, 1, 'Owner sửa khoản thu nhập nhầm', ${u(ids.ownerVoidKey)}
+    ${q(tuitionLocalId)}, 1, 'Owner sửa khoản thu nhập nhầm', ${u(ids.ownerVoidKey)}
   );
   if v_result->>'outcome_code' <> 'COMMITTED' then
     raise exception 'owner parity failed: %', v_result;
@@ -205,10 +238,10 @@ begin
   set payload = pg_catalog.jsonb_set(payload, '{currentTermId}', pg_catalog.to_jsonb(${q(`${ids.period}-new`)}::text)),
       entity_version = entity_version + 1
   where center_id = ${q(ids.center)} and entity_type = 'tuition_record_package'
-    and local_id = ${q(ids.tuition)};
+    and local_id = ${q(tuitionLocalId)};
   v_result := public.c5_4_void_tuition_payment(
     ${q(ids.center)}, ${u(ids.transactionPeriodStale)}, ${q(paymentId('stale'))},
-    ${q(ids.tuition)}, 1, 'Kỳ đã đổi phải bị chặn', gen_random_uuid()
+    ${q(tuitionLocalId)}, 1, 'Kỳ đã đổi phải bị chặn', gen_random_uuid()
   );
   if v_result->>'outcome_code' <> 'TUITION_PERIOD_STALE' then
     raise exception 'tuition currentness failed: %', v_result;
@@ -223,7 +256,7 @@ declare
 begin
   v_result := public.c5_4_void_tuition_payment(
     ${q(ids.center)}, ${u(ids.transactionPeriodStale)}, ${q(paymentId('stale'))},
-    ${q(ids.tuition)}, 1, 'Khác cơ sở phải bị chặn', gen_random_uuid()
+    ${q(tuitionLocalId)}, 1, 'Khác cơ sở phải bị chặn', gen_random_uuid()
   );
   if v_result->>'outcome_code' <> 'WRITE_ROLE_REQUIRED' then
     raise exception 'cross-center write failed: %', v_result;
@@ -250,6 +283,10 @@ begin
       where center_id=${q(ids.center)} and id=${u(ids.transactionPeriodStale)}) <> 'POSTED' then
     raise exception 'failed void changed source row';
   end if;
+  if (select status from public.finance_transaction
+      where center_id=${q(ids.center)} and id=${u(ids.transactionGenericCreate)}) <> 'POSTED' then
+    raise exception 'canonical identity payment create row mismatch';
+  end if;
   if (select count(*) from public.finance_audit_event
       where center_id=${q(ids.center)} and action='VOID_TUITION_PAYMENT') <> 2 then
     raise exception 'audit count mismatch';
@@ -268,7 +305,7 @@ psql(qaSql)
 assert.equal(scalar(`select count(*) from public.centers where id in (${q(ids.center)}, ${q(ids.otherCenter)});`), '0')
 assert.equal(scalar(`select count(*) from auth.users where id in (${u(ids.owner)}, ${u(ids.admin)}, ${u(ids.other)});`), '0')
 
-console.log(`OV1_4_LOCAL_DB_MIGRATION_READY: PASS (${migrationHash})`)
+console.log(`OV1_4_LOCAL_DB_MIGRATION_READY: PASS (${migrationHash}; ${hardeningHash})`)
 console.log('OV1_4_LOCAL_GENERIC_PROTECTION_ADMIN_VOID_RETRY_STALE_AUDIT: PASS')
 console.log('OV1_4_LOCAL_OWNER_ADMIN_OPERATIONAL_PARITY: PASS')
 console.log('OV1_4_LOCAL_CURRENTNESS_CROSS_CENTER_FAIL_CLOSED: PASS')

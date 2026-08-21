@@ -5,6 +5,7 @@ import {
 } from './attendance-advisory.js'
 import { CASHFLOW_EVIDENCE_ACCEPT, formatFileSize } from './cashflow-module.js'
 import { getStudentAttendanceCredits } from './attendance-records.js'
+import { createTuitionRecordPackageLocalId } from './cloud-tuition-record-package-bridge.js'
 import { buildStudentTuitionLink } from './student-tuition-links.js'
 
 export const initialTuitionFilters = {
@@ -922,7 +923,10 @@ export function isTuitionPaymentTransaction(transaction, tuitionId, periodId, ce
     return false
   }
 
-  if (String(transaction.sourceTuitionId || '') !== String(tuitionId || '')) {
+  const normalizedTuitionId = String(tuitionId || '')
+  const canonicalTuitionLocalId = createTuitionRecordPackageLocalId({ id: normalizedTuitionId })
+  if (![normalizedTuitionId, canonicalTuitionLocalId]
+    .includes(String(transaction.sourceTuitionId || ''))) {
     return false
   }
 

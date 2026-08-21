@@ -19,6 +19,8 @@ const sha256 = (path) => createHash('sha256')
 
 const migrationPath = 'supabase/migrations/202608210002_ov1_4_tuition_payment_finance_void.sql'
 const migration = read(migrationPath)
+const hardeningPath = 'supabase/migrations/202608210003_ov1_4_tuition_payment_identity_compatibility_hardening.sql'
+const hardening = read(hardeningPath)
 const adapter = read('src/cloud-authoritative-finance.js')
 const main = read('src/main.js')
 
@@ -58,6 +60,16 @@ for (const forbidden of [
   'grant select on public.finance_transaction',
   'create or replace function public.c5_4_mutate_finance_shared_truth',
 ]) assert(!migration.toLowerCase().includes(forbidden), `Migration broadens scope: ${forbidden}`)
+
+for (const token of [
+  'create or replace function public.c5_4_void_tuition_payment(',
+  'e.local_id = v_source_tuition_id',
+  'v_tuition_match_count <> 1',
+  "v_tuition_entity.payload->>'id', '')) = ''",
+  "v_tuition_entity.payload->>'studentId'",
+  "v_tuition_entity.payload->>'currentTermId'",
+]) assert(hardening.includes(token), `Identity hardening is missing: ${token}`)
+assert(!hardening.includes("v_tuition_entity.payload->>'id', '')) <> v_source_tuition_id"))
 
 assert.equal(
   sha256('supabase/migrations/202608140005_c5_4_finance_cashbook_authoritative_shared_truth.sql'),
@@ -164,6 +176,7 @@ for (const token of [
   "refreshC54FinanceSharedTruth({ reason: 'after-server-commit', silent: true })",
   "outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED'",
   'Khoản thu đã được hủy. Lịch sử giao dịch vẫn được giữ lại.',
+  'sourceTuitionId: createTuitionRecordPackageLocalId(latestTuitionRecord)',
 ]) assert(main.includes(token), `Runtime is missing: ${token}`)
 assert(adapter.includes("supabase.rpc('c5_4_void_tuition_payment'"))
 assert(!adapter.includes('localStorage'))
@@ -203,5 +216,18 @@ const render = (canVoidPayments) => renderTuitionModule(
 assert(render(true).includes(`data-tuition-payment-void="${transaction.id}"`))
 assert(render(true).includes('Hủy khoản thu'))
 assert(!render(false).includes('data-tuition-payment-void'))
+assert(render(true).includes('100.000'))
 
-console.log(`OV1.4 tuition payment void smoke: PASS (${migrationPath}, SHA-256 ${sha256(migrationPath)})`)
+const canonicalFinanceTransaction = {
+  ...financeTransaction,
+  sourceTuitionId: `tuition_record_package::${tuition.id}`,
+}
+const canonicalRender = renderTuitionModule(
+  [student], [tuition], initialTuitionFilters, null, null, { studentId: student.id },
+  [], [], '2026-08', null, [], null, null, [canonicalFinanceTransaction], 'center-a', null,
+  {}, { attendanceAvailable: true, calendarNotesAvailable: true, financeAvailable: true, canVoidPayments: true },
+)
+assert(canonicalRender.includes(`data-tuition-payment-void="${transaction.id}"`))
+assert(canonicalRender.includes('100.000'))
+
+console.log(`OV1.4 tuition payment void smoke: PASS (${migrationPath}, SHA-256 ${sha256(migrationPath)}; ${hardeningPath}, SHA-256 ${sha256(hardeningPath)})`)

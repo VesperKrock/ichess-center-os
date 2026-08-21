@@ -22051,7 +22051,7 @@ function bindEvents() {
       sourceModule: 'hoc-phi',
       sourceType: 'tuition-payment',
       sourcePaymentId,
-      sourceTuitionId: latestTuitionRecord.id,
+      sourceTuitionId: createTuitionRecordPackageLocalId(latestTuitionRecord),
       sourceStudentId: student.id,
       sourceParentId: student.parentId || '',
       sourceTermId: periodId,

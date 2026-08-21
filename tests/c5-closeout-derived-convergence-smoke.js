@@ -237,6 +237,7 @@ assert.equal(migrationStatus.status, 0)
 const allowedPostC5AdditiveMigrations = new Set([
   'supabase/migrations/202608210001_c5_1_dreamhome_schedule_identity_normalization.sql',
   'supabase/migrations/202608210002_ov1_4_tuition_payment_finance_void.sql',
+  'supabase/migrations/202608210003_ov1_4_tuition_payment_identity_compatibility_hardening.sql',
 ])
 const changedMigrationPaths = migrationStatus.stdout.trim().split(/\r?\n/)
   .filter(Boolean)
