@@ -1,5 +1,6 @@
 import './styles.css'
 import './student-theme.css'
+import './schedule-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -10304,6 +10305,7 @@ function renderModuleWindow(windowItem) {
   const title = getWindowTitle(windowItem)
   const headerTitle = getWindowHeaderTitle(windowItem)
   const studentSurface = getStudentWindowSurface(windowItem)
+  const isScheduleWindow = windowItem.moduleId === 'thoi-khoa-bieu' && !windowItem.type
 
   if (!title || !headerTitle || windowItem.minimized) {
     return ''
@@ -10319,7 +10321,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"

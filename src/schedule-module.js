@@ -229,38 +229,45 @@ export function renderScheduleModule(
   return `
     <section class="schedule-module ${formState || reportState || centerCalendarItemState || centerCalendarTagState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
       <div class="schedule-compact-header">
-        <div class="schedule-stats" aria-label="Tổng quan lịch tuần">
-        ${renderStatCard('Buổi trong tuần', stats.totalSessions)}
-        ${renderStatCard('Lịch cố định', stats.recurringSessions)}
-        ${renderStatCard('Buổi đột xuất', stats.oneOffSessions)}
-        ${renderStatCard('Cảnh báo trùng lịch', stats.conflictSessions)}
-        ${renderScheduleAlertBellClean(scheduleDeadlineAlerts)}
+        <div class="schedule-page-header">
+          <h3>Thời khóa biểu</h3>
+          <div class="schedule-header-actions" aria-label="Thao tác thời khóa biểu">
+            <button class="schedule-print-button" type="button" data-schedule-print-action="print">In / Lưu PDF</button>
+            ${calendarNotesAvailable
+              ? '<button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>'
+              : ''}
+            ${calendarNotesAvailable
+              ? '<button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>'
+              : ''}
+            <button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>
+            ${renderScheduleAlertBellClean(scheduleDeadlineAlerts)}
+          </div>
         </div>
 
-        <div class="schedule-toolbar" aria-label="Điều hướng tuần">
-          <button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>
-          ${calendarNotesAvailable
-            ? '<button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>'
-            : ''}
-          ${calendarNotesAvailable
-            ? '<button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>'
-            : ''}
-          <button class="schedule-print-button" type="button" data-schedule-print-action="print">In / Lưu PDF</button>
-          <div class="schedule-week-controls">
-          <button type="button" data-schedule-week-action="previous">&lt; Tuần trước</button>
-          <button type="button" data-schedule-week-action="today">Tuần này</button>
-          <button type="button" data-schedule-week-action="next">Tuần sau &gt;</button>
+        <div class="schedule-controls-bar">
+          <div class="schedule-week-group" aria-label="Điều hướng tuần">
+            <div class="schedule-week-controls">
+              <button type="button" data-schedule-week-action="previous" aria-label="Tuần trước">‹</button>
+              <button type="button" data-schedule-week-action="today">Tuần này</button>
+              <button type="button" data-schedule-week-action="next" aria-label="Tuần sau">›</button>
+            </div>
+            <strong class="schedule-week-label">${escapeHtml(formatWeekRange(normalizedWeekStart))}</strong>
           </div>
-          <strong class="schedule-week-label">${escapeHtml(formatWeekRange(normalizedWeekStart))}</strong>
+          ${calendarNotesAvailable
+            ? renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)
+            : ''}
+          <div class="schedule-stats" aria-label="Tổng quan lịch tuần">
+            ${renderStatCard('Buổi trong tuần', stats.totalSessions)}
+            ${renderStatCard('Lịch cố định', stats.recurringSessions)}
+            ${renderStatCard('Buổi đột xuất', stats.oneOffSessions)}
+            ${renderStatCard('Cảnh báo', stats.conflictSessions)}
+          </div>
         </div>
       </div>
       ${renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState)}
       ${attendanceAvailable
         ? ''
         : '<p class="schedule-form-warning" role="status">Điểm danh và báo cáo buổi học hiện chưa tải được. Lịch học vẫn có thể xem và cập nhật.</p>'}
-      ${calendarNotesAvailable
-        ? renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)
-        : ''}
       ${calendarNotesAvailable
         ? renderCenterCalendarLegend(centerCalendarTags, weekCenterCalendarItems)
         : ''}
@@ -1299,6 +1306,7 @@ function renderCenterCalendarTagManager(state, tags = [], items = []) {
             ? renderCenterCalendarTagForm(state)
             : `
               <button class="schedule-calendar-tag-create-button" type="button" data-center-calendar-tag-action="create">+ Tạo nhãn</button>
+              <h5 class="schedule-calendar-tag-section-title">Nhãn hoạt động</h5>
               ${activeTags.length ? activeTags.map((tag) => renderCenterCalendarTagRow(tag, counts.get(tag.id) || 0, false)).join('') : '<div class="schedule-calendar-tag-empty">Chưa có nhãn hoạt động</div>'}
               <details class="schedule-calendar-tag-archived" ${archivedTags.length ? '' : 'open'}>
                 <summary>Nhãn đã lưu trữ</summary>
@@ -1307,6 +1315,9 @@ function renderCenterCalendarTagManager(state, tags = [], items = []) {
             `
         }
       </div>
+      <footer class="schedule-calendar-tag-manager-footer">
+        <button type="button" data-center-calendar-tag-action="close">Đóng</button>
+      </footer>
     </section>
   `
 }
@@ -2007,7 +2018,7 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
 
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
-    <form class="schedule-form-panel" data-schedule-form>
+    <form class="schedule-form-panel ${isCompactFixedScheduleForm ? 'is-fixed-slot-panel' : 'is-session-form-panel'}" data-schedule-form>
       <div class="schedule-form-header">
         <div>
           <h4>${escapeHtml(formTitle)}</h4>
@@ -2056,6 +2067,7 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
               }
             `
         }
+        ${isCompactFixedScheduleForm ? '' : '<h5 class="schedule-form-section-heading">Thời gian & Phòng học</h5>'}
         ${
           scheduleType === 'oneOff'
             ? `
@@ -2070,6 +2082,7 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         }
         ${renderField('room', 'Phòng *', formState, 'text')}
         ${renderTeacherSelect(formState, teachers)}
+        ${isCompactFixedScheduleForm ? '' : '<h5 class="schedule-form-section-heading">Thông tin phân công</h5>'}
         ${isCompactFixedScheduleForm ? '' : renderField('teacherName', 'Tên giáo viên fallback', formState, 'text')}
         ${isCompactFixedScheduleForm ? '' : renderField('groupName', 'Nhóm/lớp', formState, 'text')}
         ${isCompactFixedScheduleForm ? '' : renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
@@ -2236,32 +2249,45 @@ function renderCenterCalendarItemForm(formState, centerCalendarTags = []) {
           : ''
       }
 
-      <div class="schedule-form-grid">
-        ${renderCenterCalendarSelectField(
-          'itemType',
-          'Loại hoạt động *',
-          formState,
-          CENTER_CALENDAR_ITEM_TYPES.map((type) => [type, CENTER_CALENDAR_ITEM_TYPE_LABELS[type]]),
-        )}
-        ${renderCenterCalendarField('title', 'Tiêu đề *', formState, 'text', { className: 'span-full' })}
-        ${renderCenterCalendarField('date', 'Ngày *', formState, 'date')}
-        <label class="schedule-form-field schedule-calendar-checkbox">
-          <span>Cả ngày</span>
-          <input
-            type="checkbox"
-            name="allDay"
-            value="true"
-            ${allDay ? 'checked' : ''}
-            data-center-calendar-form-field="allDay"
-          />
-        </label>
-        ${renderCenterCalendarField('startTime', 'Giờ bắt đầu *', formState, 'time')}
-        ${renderCenterCalendarField('endTime', 'Giờ kết thúc *', formState, 'time')}
-        ${renderCenterCalendarField('location', 'Địa điểm', formState, 'text', { className: 'span-full' })}
-        ${renderCenterCalendarTextareaField('description', 'Mô tả', formState)}
-        ${renderCenterCalendarTagSelectField(formState, centerCalendarTags)}
-        ${renderCenterCalendarRecurrenceFields(formState)}
-        ${renderCenterCalendarColorPalette(formState, preset)}
+      <div class="schedule-form-grid schedule-calendar-form-grid">
+        <section class="schedule-calendar-form-column is-primary">
+          <h5>Thông tin hoạt động</h5>
+          <div class="schedule-calendar-activity-row is-title-row">
+            ${renderCenterCalendarSelectField(
+              'itemType',
+              'Loại hoạt động *',
+              formState,
+              CENTER_CALENDAR_ITEM_TYPES.map((type) => [type, CENTER_CALENDAR_ITEM_TYPE_LABELS[type]]),
+            )}
+            ${renderCenterCalendarField('title', 'Tiêu đề hoạt động *', formState, 'text', { className: 'span-full' })}
+          </div>
+          <div class="schedule-calendar-activity-row is-date-row">
+            ${renderCenterCalendarField('date', 'Ngày diễn ra *', formState, 'date')}
+            <label class="schedule-form-field schedule-calendar-checkbox">
+              <span>Cả ngày</span>
+              <input
+                type="checkbox"
+                name="allDay"
+                value="true"
+                ${allDay ? 'checked' : ''}
+                data-center-calendar-form-field="allDay"
+              />
+            </label>
+          </div>
+          <div class="schedule-calendar-activity-row">
+            ${renderCenterCalendarField('startTime', 'Giờ bắt đầu *', formState, 'time')}
+            ${renderCenterCalendarField('endTime', 'Giờ kết thúc *', formState, 'time')}
+          </div>
+          ${renderCenterCalendarField('location', 'Địa điểm / Phòng ban', formState, 'text', { className: 'span-full' })}
+          ${renderCenterCalendarTextareaField('description', 'Mô tả chi tiết', formState)}
+        </section>
+        <section class="schedule-calendar-form-column is-secondary">
+          <h5>Phân loại</h5>
+          ${renderCenterCalendarTagSelectField(formState, centerCalendarTags)}
+          <h5>Lặp lại</h5>
+          ${renderCenterCalendarRecurrenceFields(formState)}
+          ${renderCenterCalendarColorPalette(formState, preset)}
+        </section>
       </div>
 
       ${renderFormErrors(formState.errors)}
@@ -2504,7 +2530,7 @@ function renderCenterCalendarRecurrenceFields(formState) {
 function renderCenterCalendarColorPalette(formState, selectedPreset) {
   return `
     <fieldset class="schedule-form-field schedule-calendar-color-palette span-full" data-center-calendar-color-palette>
-      <legend>Màu</legend>
+      <legend>Màu sắc hiển thị</legend>
       <div class="schedule-calendar-color-options" role="group" aria-label="Chọn màu thẻ">
         ${centerCalendarColorPaletteKeys
           .map((colorKey) => {
@@ -2717,13 +2743,10 @@ function renderScheduleAdminAttendanceForm(
       <div class="schedule-report-header">
         <div class="schedule-report-compact-title">
           <strong>Điểm danh Admin cơ sở</strong>
-          <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))}</span>
-          <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
-          <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
-          <span>Học viên trong ca: ${studentRows.length}</span>
+          <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))} · ${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
+          <span>Giáo viên: ${escapeHtml(teacherLabel.name)} · Học viên trong ca: ${studentRows.length}</span>
         </div>
         <div class="schedule-report-header-actions">
-          <button type="button" data-schedule-report-role="gateway">Quay lại chọn vai trò</button>
           <button type="button" data-schedule-action="close-report">Đóng</button>
         </div>
       </div>
@@ -2734,10 +2757,8 @@ function renderScheduleAdminAttendanceForm(
             <strong>${escapeHtml(teacherReportStatus.label)}</strong>
             <span>${escapeHtml(teacherReportStatus.detail)}</span>
           </div>
-          <div class="schedule-admin-attendance-actions">
+          <div class="schedule-admin-attendance-quick-action">
             <button type="button" class="is-secondary" data-admin-attendance-action="mark-all-present">Đánh dấu tất cả có mặt</button>
-            <button type="button" class="is-danger-ghost" data-admin-attendance-action="clear">Xóa nhập liệu</button>
-            <button type="button" class="is-primary" data-admin-attendance-action="save">Lưu điểm danh</button>
           </div>
         </section>
         ${statusMessage}
@@ -2756,6 +2777,13 @@ function renderScheduleAdminAttendanceForm(
             : '<p class="schedule-report-empty">Ca học này chưa có học viên.</p>'
         }
       </div>
+      <footer class="schedule-admin-attendance-footer">
+        <button type="button" data-schedule-report-role="gateway">Quay lại chọn vai trò</button>
+        <div class="schedule-admin-attendance-actions">
+          <button type="button" class="is-danger-ghost" data-admin-attendance-action="clear">Xóa nhập liệu</button>
+          <button type="button" class="is-primary" data-admin-attendance-action="save">Lưu điểm danh</button>
+        </div>
+      </footer>
     </section>
   `
 }
