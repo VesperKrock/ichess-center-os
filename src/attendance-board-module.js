@@ -51,7 +51,11 @@ export function renderAttendanceBoardModule(
   baselineStateOverride = null,
   isBaselineDetailsOpen = false,
   calendarNotesSharedTruthState = {},
+  availability = {},
 ) {
+  const attendanceAvailable = availability.attendanceAvailable !== false
+  const tuitionAvailable = availability.tuitionAvailable !== false
+  const calendarNotesAvailable = availability.calendarNotesAvailable !== false
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
   const storedAttendanceRecords = Array.isArray(draftRecords) ? draftRecords : loadStoredAttendanceRecords()
@@ -67,6 +71,7 @@ export function renderAttendanceBoardModule(
     normalizedFilters,
     attendanceBoardNotes,
     storedAttendanceRecords,
+    { tuitionAvailable, calendarNotesAvailable },
   )
   const visibleDates = getVisibleAttendanceDates(filteredRows, classSessions, normalizedFilters)
   const stats = getAttendanceBoardStats(students, classSessions)
@@ -112,10 +117,19 @@ export function renderAttendanceBoardModule(
       </div>
 
       ${renderOperationalNotesSharedTruthStatus(calendarNotesSharedTruthState)}
-      ${renderAttendanceBaselinePanel(storedAttendanceRecords, baselineState, baselineUndoAvailable, draftChangeCount, isBaselineDetailsOpen)}
-      ${renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState, normalizedFilters)}
-      ${renderAttendanceDetailModal(detailState, filteredRows, classSessions)}
-      ${renderAttendanceNoteModal(noteFormState, filteredRows, normalizedFilters)}
+      ${tuitionAvailable
+        ? ''
+        : `<p class="attendance-board-empty" role="status">Đối chiếu gói học phí hiện chưa tải được.${attendanceAvailable ? ' Bạn vẫn có thể điểm danh.' : ''}</p>`}
+      ${attendanceAvailable
+        ? renderAttendanceBaselinePanel(storedAttendanceRecords, baselineState, baselineUndoAvailable, draftChangeCount, isBaselineDetailsOpen)
+        : '<p class="attendance-board-empty" role="alert">Dữ liệu điểm danh chưa tải được. Vui lòng bấm Làm mới rồi thử lại.</p>'}
+      ${attendanceAvailable
+        ? renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState, normalizedFilters)
+        : ''}
+      ${attendanceAvailable ? renderAttendanceDetailModal(detailState, filteredRows, classSessions) : ''}
+      ${attendanceAvailable && calendarNotesAvailable
+        ? renderAttendanceNoteModal(noteFormState, filteredRows, normalizedFilters)
+        : ''}
     </section>
   `
 }
@@ -124,12 +138,12 @@ function renderOperationalNotesSharedTruthStatus(state = {}) {
   const message = String(state.message || '').trim()
   const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
   const migrationWarning = state.legacyMigrationRequired
-    ? ' Legacy Calendar/Notes đang được giữ nguyên, không tự nhập server.'
+    ? ' Ghi chú cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.'
     : ''
   return `
     <div class="c57-shared-truth-notice is-${escapeAttribute(tone)}" role="status">
-      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Ghi chú Bảng điểm danh dùng authoritative server truth.')}</span>
-      <button type="button" data-c57-calendar-notes-refresh ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
+      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Ghi chú Bảng điểm danh được lưu dùng chung trong cơ sở.')}</span>
+      <button type="button" data-module-authoritative-refresh="bang-diem-danh" ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
     </div>
   `
 }
@@ -213,7 +227,10 @@ export function buildAttendanceBoardRows(
   filters = initialAttendanceBoardFilters,
   attendanceBoardNotes = [],
   storedAttendanceRecords = null,
+  availability = {},
 ) {
+  const tuitionAvailable = availability.tuitionAvailable !== false
+  const calendarNotesAvailable = availability.calendarNotesAvailable !== false
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const attendanceRecords = buildUnifiedAttendanceRecords({
     sessionReports,
@@ -239,7 +256,12 @@ export function buildAttendanceBoardRows(
         .map((classSessionId) => classSessionById.get(classSessionId) || buildFallbackClassSessionFromId(classSessionId))
         .filter(Boolean)
       const tuition = tuitionByStudentId.get(student.id)
-      const attendanceSummary = getStudentAttendanceSummary(student.id, reportLookup, tuition)
+      const attendanceSummary = getStudentAttendanceSummary(
+        student.id,
+        reportLookup,
+        tuition,
+        tuitionAvailable,
+      )
       const advisoryNote = advisoryNoteByStudentId.get(student.id)
 
       return {
@@ -249,8 +271,10 @@ export function buildAttendanceBoardRows(
         classSessions: studentClassSessions,
         isUnassigned: classSessionIds.length === 0,
         tuition,
+        tuitionAvailable,
+        calendarNotesAvailable,
         attendanceSummary,
-        careStatus: getCareStatusLabel(tuition),
+        careStatus: tuitionAvailable ? getCareStatusLabel(tuition) : 'Chưa tải đối chiếu',
         note: getAttendanceBoardNote(student, advisoryNote, attendanceBoardNoteByStudentId.get(student.id)),
         attendanceBoardNote: attendanceBoardNoteByStudentId.get(student.id) || null,
         searchableText: normalizeSearchText(
@@ -502,6 +526,10 @@ function renderAttendanceBoardRow(row, rowIndex, dates, baselineState, hideClass
 }
 
 function renderAttendancePackageSessions(row) {
+  if (row?.tuitionAvailable === false) {
+    return '<span class="attendance-package-sessions is-warning">Chưa tải đối chiếu</span>'
+  }
+
   const tuition = row?.tuition
   const usedSessions = Number(tuition?.usedSessions)
   const totalSessions = Number(tuition?.totalSessions)
@@ -524,6 +552,10 @@ function renderAttendancePackageSessions(row) {
 }
 
 function renderAttendanceNoteCell(row) {
+  if (row?.calendarNotesAvailable === false) {
+    return '<span class="attendance-muted">Ghi chú chưa tải</span>'
+  }
+
   const hasNote = Boolean(String(row.attendanceBoardNote?.note || '').trim())
   const buttonLabel = hasNote ? 'Sửa ghi chú' : 'Điền ghi chú'
 
@@ -1049,7 +1081,7 @@ function getVisibleAttendanceDates(rows, classSessions, filters) {
   )
 }
 
-function getStudentAttendanceSummary(studentId, reportLookup, tuition) {
+function getStudentAttendanceSummary(studentId, reportLookup, tuition, tuitionAvailable = true) {
   const attendanceItems = [...(reportLookup.get(studentId) || [])].sort((firstItem, secondItem) =>
     firstItem.dateKey.localeCompare(secondItem.dateKey),
   )
@@ -1097,6 +1129,7 @@ function getStudentAttendanceSummary(studentId, reportLookup, tuition) {
         studiedCount,
         packageTotalSessions,
         paidCycleCount,
+        tuitionAvailable,
       ),
     )
   })
@@ -1122,7 +1155,25 @@ function getAttendanceCreditSessionNumber(credit) {
   return Number(credit)
 }
 
-function decorateAttendanceCountingItem(item, studiedCount, packageTotalSessions, paidCycleCount) {
+function decorateAttendanceCountingItem(
+  item,
+  studiedCount,
+  packageTotalSessions,
+  paidCycleCount,
+  tuitionAvailable = true,
+) {
+  if (!tuitionAvailable) {
+    return {
+      ...item,
+      displayValue: item.displayValue || attendanceStatusLabels[item.attendanceStatus] || '✓',
+      isWrapStart: false,
+      countingStatus: item.attendanceStatus === 'trial' ? 'trial' : 'neutral',
+      cycleLabel: '',
+      remainingLabel: '',
+      warning: item.note || '',
+    }
+  }
+
   if (!item.countsTowardTuition) {
     return {
       ...item,
@@ -1152,6 +1203,10 @@ function decorateAttendanceCountingItem(item, studiedCount, packageTotalSessions
 }
 
 function getAttendanceCellStatusClass(attendance) {
+  if (attendance.countingStatus === 'neutral') {
+    return ''
+  }
+
   if (attendance.countingStatus === 'unpaid') {
     return 'attendance-cell-unpaid'
   }

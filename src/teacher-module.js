@@ -296,6 +296,8 @@ export function renderTeacherModule(
   const staffMembers = Array.isArray(staffContext.staffMembers) ? staffContext.staffMembers : []
   const departments = Array.isArray(staffContext.departments) ? staffContext.departments : []
   const staffLinkState = staffContext.staffLinkState || null
+  const attendanceAvailable = staffContext.attendanceAvailable !== false
+  const staffAvailable = staffContext.staffAvailable !== false
 
   return `
     <section class="teacher-module ${formState || selectedTeacher ? 'panel-open' : ''}" aria-label="Giáo viên">
@@ -310,6 +312,8 @@ export function renderTeacherModule(
           + Thêm giáo viên
         </button>
       </div>
+
+      ${renderTeacherOptionalAvailability({ attendanceAvailable, staffAvailable })}
 
       <section class="teacher-list-section" aria-label="Danh sách giáo viên">
         <div class="teacher-list-filters" aria-label="Tìm kiếm và lọc giáo viên">
@@ -379,12 +383,23 @@ export function renderTeacherModule(
             students,
             sessionReports,
             staffMembers,
+            { attendanceAvailable, staffAvailable },
           )
         : ''}
       ${staffLinkState ? renderTeacherStaffLinkModal(staffLinkState, teachers, staffMembers, departments) : ''}
       ${formState ? renderTeacherForm(formState, classSessions) : ''}
     </section>
   `
+}
+
+function renderTeacherOptionalAvailability({ attendanceAvailable = true, staffAvailable = true } = {}) {
+  const messages = [
+    attendanceAvailable ? '' : 'Báo cáo buổi học hiện chưa tải được.',
+    staffAvailable ? '' : 'Thông tin nhân sự hiện chưa tải được.',
+  ].filter(Boolean)
+  return messages.length
+    ? `<p class="teacher-staff-link-warning" role="status">${escapeHtml(messages.join(' '))}</p>`
+    : ''
 }
 
 export function getFilteredTeachers(teachers, filters = initialTeacherFilters) {
@@ -515,7 +530,10 @@ function renderTeacherProfile(
   students = [],
   sessionReports = [],
   staffMembers = [],
+  availability = {},
 ) {
+  const attendanceAvailable = availability.attendanceAvailable !== false
+  const staffAvailable = availability.staffAvailable !== false
   const staffLink = findStaffMemberByTeacherId(staffMembers, teacher.id)
   return `
     <div class="teacher-profile-backdrop" role="presentation">
@@ -540,15 +558,20 @@ function renderTeacherProfile(
           </div>
         </div>
         <div class="teacher-profile-grid teacher-profile-two-pane">
-          ${renderTeacherInfoPane(teacher, classSessions, staffLink)}
-          ${renderTeacherTeachingUpdatePane(teacher, studentLinks, schedules, students, sessionReports, classSessions)}
+          ${renderTeacherInfoPane(teacher, classSessions, staffLink, staffAvailable)}
+          ${renderTeacherTeachingUpdatePane(teacher, studentLinks, schedules, students, sessionReports, classSessions, attendanceAvailable)}
         </div>
       </section>
     </div>
   `
 }
 
-function renderTeacherInfoPane(teacher, classSessions = [], staffLink = createTeacherStaffLinkLookupResult()) {
+function renderTeacherInfoPane(
+  teacher,
+  classSessions = [],
+  staffLink = createTeacherStaffLinkLookupResult(),
+  staffAvailable = true,
+) {
   return `
     <section class="teacher-profile-pane teacher-profile-info-pane" aria-label="Thông tin giáo viên">
       <div class="teacher-profile-pane-heading">
@@ -572,7 +595,9 @@ function renderTeacherInfoPane(teacher, classSessions = [], staffLink = createTe
         ['Khu vực hiện tại', teacher.currentArea],
       ])}
       ${renderTeacherAccountReadinessProfile(teacher)}
-      ${renderTeacherStaffLinkProfile(teacher, staffLink)}
+      ${staffAvailable
+        ? renderTeacherStaffLinkProfile(teacher, staffLink)
+        : renderTeacherStaffUnavailableProfile()}
       <section class="teacher-profile-section">
         <h5>Giảng dạy</h5>
         ${renderProfileTagGroup('Lớp dạy phù hợp', (teacher.levels ?? []).map(getTeacherLevelLabel), 'Chưa cập nhật')}
@@ -590,6 +615,7 @@ function renderTeacherTeachingUpdatePane(
   students = [],
   sessionReports = [],
   classSessions = [],
+  attendanceAvailable = true,
 ) {
   return `
     <section class="teacher-profile-pane teacher-teaching-update-pane" aria-label="Cập nhật tình hình giảng dạy">
@@ -597,7 +623,14 @@ function renderTeacherTeachingUpdatePane(
         <h5>Cập nhật tình hình giảng dạy</h5>
         <span>${Number(studentLinks.total || 0).toLocaleString('vi-VN')} học viên liên quan</span>
       </div>
-      ${renderTeacherPortalShell(teacher, schedules, students, sessionReports, classSessions)}
+      ${renderTeacherPortalShell(
+        teacher,
+        schedules,
+        students,
+        sessionReports,
+        classSessions,
+        attendanceAvailable,
+      )}
       ${renderTeacherStudentUpdateSummary(teacher, studentLinks)}
       ${
         studentLinks.students.length
@@ -643,7 +676,14 @@ function renderTeacherStudentUpdateSummary(teacher, studentLinks = createTeacher
   `
 }
 
-function renderTeacherPortalShell(teacher, schedules = [], students = [], sessionReports = [], classSessions = []) {
+function renderTeacherPortalShell(
+  teacher,
+  schedules = [],
+  students = [],
+  sessionReports = [],
+  classSessions = [],
+  attendanceAvailable = true,
+) {
   const teacherSessions = getTeacherScheduleSessions(teacher, schedules)
   const scheduleAudit = buildTeacherPortalScheduleAudit(teacher, schedules)
   const summary = buildTeacherPortalSummary(teacher, teacherSessions, sessionReports)
@@ -651,10 +691,10 @@ function renderTeacherPortalShell(teacher, schedules = [], students = [], sessio
   return `
     <details class="teacher-portal-shell" id="teacher-portal-shell-${escapeAttribute(teacher.id)}">
       <summary data-teacher-action="open-teacher-portal" data-teacher-id="${escapeAttribute(teacher.id)}" aria-expanded="false">
-        <span>Mở Teacher Portal</span>
+        <span>Mở khu vực giáo viên</span>
         <small>Lịch dạy của tôi</small>
       </summary>
-      <section class="teacher-portal-preview" aria-label="Bản xem trước Teacher Portal">
+      <section class="teacher-portal-preview" aria-label="Bản xem trước khu vực giáo viên">
         <header class="teacher-portal-header">
           <div>
             <strong>${escapeHtml(getTeacherDisplayName(teacher))}</strong>
@@ -667,13 +707,15 @@ function renderTeacherPortalShell(teacher, schedules = [], students = [], sessio
           </div>
         </header>
         <p class="teacher-portal-preview-note">
-          Đây là bản xem trước Teacher Portal. Tài khoản đăng nhập giáo viên sẽ được bật ở phase sau.
+          Đây là bản xem trước khu vực dành cho giáo viên. Tính năng đăng nhập riêng sẽ được bổ sung sau.
         </p>
         <div class="teacher-portal-summary" aria-label="Tổng quan lịch dạy của tôi">
           ${renderTeacherPortalSummaryCard('Ca sắp tới', summary.upcoming)}
           ${renderTeacherPortalSummaryCard('Ca hôm nay', summary.today)}
           ${renderTeacherPortalSummaryCard('Ca đã dạy', summary.past)}
-          ${renderTeacherPortalSummaryCard('Chưa báo cáo', summary.missingReport)}
+          ${attendanceAvailable
+            ? renderTeacherPortalSummaryCard('Chưa báo cáo', summary.missingReport)
+            : renderTeacherPortalSummaryCard('Báo cáo buổi học', 'Chưa tải')}
         </div>
         <section class="teacher-my-schedule" aria-label="Lịch dạy của tôi">
           <div class="teacher-my-schedule-heading">
@@ -684,7 +726,14 @@ function renderTeacherPortalShell(teacher, schedules = [], students = [], sessio
           ${
             teacherSessions.length
               ? `<div class="teacher-my-schedule-list">${teacherSessions
-                  .map((session) => renderTeacherScheduleSessionDetailCard(session, teacher, students, classSessions, sessionReports))
+                .map((session) => renderTeacherScheduleSessionDetailCard(
+                  session,
+                  teacher,
+                  students,
+                  classSessions,
+                  attendanceAvailable ? sessionReports : [],
+                  attendanceAvailable,
+                ))
                   .join('')}</div>`
               : '<div class="teacher-my-schedule-empty">Chưa có ca dạy nào được gắn với giáo viên này.</div>'
           }
@@ -698,12 +747,19 @@ function renderTeacherPortalSummaryCard(label, value) {
   return `
     <article>
       <span>${escapeHtml(label)}</span>
-      <strong>${Number(value || 0).toLocaleString('vi-VN')}</strong>
+      <strong>${typeof value === 'number' ? value.toLocaleString('vi-VN') : escapeHtml(value || '0')}</strong>
     </article>
   `
 }
 
-function renderTeacherScheduleSessionDetailCard(session, teacher, students = [], classSessions = [], sessionReports = []) {
+function renderTeacherScheduleSessionDetailCard(
+  session,
+  teacher,
+  students = [],
+  classSessions = [],
+  sessionReports = [],
+  attendanceAvailable = true,
+) {
   const display = getTeacherScheduleSessionDetailDisplay(session)
   const studentList = getScheduleSessionStudents(session, students)
   const classSession = getClassSessionForScheduleSession(session, classSessions)
@@ -730,7 +786,7 @@ function renderTeacherScheduleSessionDetailCard(session, teacher, students = [],
         <div class="teacher-session-detail-body" aria-label="Chi tiết ca dạy của giáo viên">
           <div class="teacher-session-detail-heading">
             <strong>Chi tiết ca dạy của tôi</strong>
-            <span>Read-only</span>
+            <span>Chỉ xem</span>
           </div>
           <section class="teacher-session-detail-section">
             <h6>Thông tin ca</h6>
@@ -759,14 +815,16 @@ function renderTeacherScheduleSessionDetailCard(session, teacher, students = [],
           </section>
           <section class="teacher-session-detail-section">
             <h6>Báo cáo ca dạy</h6>
-            ${renderProfileRows([
-              ['Trạng thái báo cáo', reportSummary.statusLabel],
-              ['Tóm tắt', reportSummary.summary],
-            ])}
-            <p>Báo cáo ca dạy sẽ được mở ở phase sau.</p>
+            ${attendanceAvailable
+              ? renderProfileRows([
+                  ['Trạng thái báo cáo', reportSummary.statusLabel],
+                  ['Tóm tắt', reportSummary.summary],
+                ])
+              : '<p class="teacher-profile-unavailable">Báo cáo buổi học hiện chưa tải được. Vui lòng bấm Làm mới.</p>'}
+            <p>Chức năng gửi báo cáo ca dạy hiện chưa được mở.</p>
           </section>
           ${warnings.length ? renderTeacherScheduleWarnings(warnings) : ''}
-          <p>Chi tiết ca chỉ đọc trong C8.4. Không chụp ảnh vào/ra, không điểm danh, không tạo hoặc sửa báo cáo ca dạy.</p>
+          <p>Chi tiết ca hiện chỉ để xem. Không hỗ trợ chụp ảnh, điểm danh hoặc tạo và sửa báo cáo tại đây.</p>
         </div>
       </details>
     </article>
@@ -805,7 +863,7 @@ function renderTeacherScheduleSessionCard(session, teacher, students = []) {
             studentList.map((student) => getStudentDisplayName(student, student.id)),
             'Chưa có danh sách học viên',
           )}
-          <p>Điểm danh và báo cáo ca dạy sẽ được chuyển vào Teacher Portal ở phase sau.</p>
+          <p>Điểm danh và báo cáo ca dạy hiện chưa thao tác tại màn hình này.</p>
           <div class="teacher-session-detail-extra">
             ${renderProfileRows([
               ['Trạng thái', display.statusLabel],
@@ -813,7 +871,7 @@ function renderTeacherScheduleSessionCard(session, teacher, students = []) {
             ])}
           </div>
           ${warnings.length ? renderTeacherScheduleWarnings(warnings) : ''}
-          <p>Chi tiết ca chỉ đọc trong C8.3. Check-in, check-out, ảnh, điểm danh và báo cáo ca dạy sẽ được bật ở phase sau.</p>
+          <p>Chi tiết ca hiện chỉ để xem. Chưa hỗ trợ chấm công, ảnh, điểm danh hoặc gửi báo cáo tại màn hình này.</p>
         </div>
       </details>
     </article>
@@ -884,7 +942,7 @@ function renderTeacherScheduleAuditNotice(audit) {
 
   if (audit.legacyNameOnlyCandidates) {
     messages.push(
-      `${Number(audit.legacyNameOnlyCandidates).toLocaleString('vi-VN')} ca legacy chỉ có tên giáo viên nên chưa tự đưa vào lịch của tôi.`,
+      `${Number(audit.legacyNameOnlyCandidates).toLocaleString('vi-VN')} ca cũ chỉ có tên giáo viên nên chưa thể tự đưa vào lịch của tôi.`,
     )
   }
 
@@ -1390,7 +1448,7 @@ function renderTeacherAccountReadinessProfile(teacher) {
         ['Trạng thái tài khoản', getTeacherAccountStatusLabel(teacher.accountStatus)],
         ['Ghi chú tài khoản', teacher.accountNotes],
       ])}
-      <p>Tài khoản đăng nhập giáo viên sẽ được bật ở phase sau. Hiện chưa tạo tài khoản đăng nhập, chưa gửi lời mời và chưa mở Teacher Portal login.</p>
+      <p>Tính năng đăng nhập riêng cho giáo viên hiện chưa được mở. Hệ thống chưa tạo tài khoản hoặc gửi lời mời.</p>
     </section>
   `
 }
@@ -1433,6 +1491,15 @@ function renderTeacherStaffLinkProfile(teacher, staffLink) {
           ? `<button type="button" data-teacher-action="open-staff-link" data-teacher-id="${escapeAttribute(teacher.id)}">Liên kết hồ sơ nhân viên</button>`
           : '<p class="teacher-staff-link-warning">Giáo viên không còn active nên không thể tạo liên kết nhân sự mới.</p>'
       }
+    </section>
+  `
+}
+
+function renderTeacherStaffUnavailableProfile() {
+  return `
+    <section class="teacher-profile-section teacher-staff-link-card">
+      <h5>Hồ sơ nhân viên</h5>
+      <p class="teacher-staff-link-warning">Thông tin nhân sự hiện chưa tải được. Hồ sơ giáo viên vẫn có thể xem và cập nhật bình thường.</p>
     </section>
   `
 }
@@ -1844,7 +1911,7 @@ function renderTeacherAccountReadinessForm(formState) {
         <strong>Tài khoản giáo viên</strong>
         <span>${escapeHtml(getTeacherAccountStatusLabel(formState.values.accountStatus))}</span>
       </div>
-      <p>Tài khoản giáo viên sẽ được bật ở phase sau. Hiện chỉ lưu email đăng nhập tương lai, chưa tạo tài khoản đăng nhập, chưa gửi lời mời và chưa mở Teacher Portal login.</p>
+      <p>Tính năng đăng nhập riêng cho giáo viên hiện chưa được mở. Email này chỉ được lưu để dùng khi chức năng sẵn sàng.</p>
       <label class="teacher-form-field teacher-form-field-wide">
         <span>Ghi chú tài khoản</span>
         <textarea data-teacher-form-field="accountNotes">${escapeHtml(formState.values.accountNotes ?? '')}</textarea>

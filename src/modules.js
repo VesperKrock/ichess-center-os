@@ -78,7 +78,7 @@ export const modules = [
   {
     id: 'thoi-khoa-bieu',
     name: 'Thời khóa biểu',
-    shortDescription: 'Xem lịch dạy, lịch làm và lịch trực tại cơ sở từ Schedule/Class authoritative.',
+    shortDescription: 'Xem lịch dạy, lịch làm và lịch trực của cơ sở.',
     status: 'active',
     plannedFeatures: [
       'Xem lịch dạy',
@@ -212,7 +212,7 @@ export const modules = [
   {
     id: 'cai-dat-co-so',
     name: 'Cài đặt cơ sở',
-    shortDescription: 'Hiển thị canonical center và các dữ liệu nền vận hành từ authoritative upstream.',
+    shortDescription: 'Hiển thị cơ sở đang hoạt động và các dữ liệu nền vận hành.',
     status: 'active',
     plannedFeatures: [
       'Thông tin cơ sở',

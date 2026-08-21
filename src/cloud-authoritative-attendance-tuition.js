@@ -26,7 +26,7 @@ export function createOperationalCommandIdempotencyKey() {
     return globalThis.crypto.randomUUID()
   }
 
-  throw new Error('Trình duyệt không hỗ trợ crypto.randomUUID cho lệnh C5.2.')
+  throw new Error('Không thể chuẩn bị mã chống lưu trùng. Vui lòng tải lại trang rồi thử lại.')
 }
 
 export function projectAuthoritativeAttendanceTuitionRecord(record = {}) {
@@ -61,20 +61,20 @@ export function createAuthoritativeAttendanceTuitionMutation({
   const normalizedOperation = String(operation || '').trim().toUpperCase()
 
   if (!isAuthoritativeAttendanceTuitionEntityType(normalizedEntityType)) {
-    throw new Error('Loại dữ liệu không thuộc authoritative contract C5.2.')
+    throw new Error('Loại dữ liệu cần lưu không hợp lệ.')
   }
 
   if (!normalizedLocalId) {
-    throw new Error('Thiếu local_id cho lệnh authoritative C5.2.')
+    throw new Error('Mã dữ liệu cần lưu không hợp lệ.')
   }
 
   if (!['UPSERT', 'DELETE'].includes(normalizedOperation)) {
-    throw new Error('Operation C5.2 không hợp lệ.')
+    throw new Error('Thao tác lưu không hợp lệ.')
   }
 
   const normalizedExpectedVersion = Number(expectedVersion)
   if (!Number.isSafeInteger(normalizedExpectedVersion) || normalizedExpectedVersion < 0) {
-    throw new Error('expected_version C5.2 không hợp lệ.')
+    throw new Error('Phiên bản dữ liệu cần lưu không hợp lệ.')
   }
 
   return {
@@ -96,11 +96,15 @@ export async function mutateAuthoritativeAttendanceTuitionEntities({
   const normalizedMutations = Array.isArray(mutations) ? mutations : []
 
   if (!supabase || typeof supabase.rpc !== 'function') {
-    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error: 'Thiếu Supabase client.' }
+    return {
+      ok: false,
+      outcome_code: 'CLIENT_NOT_READY',
+      error: 'Chưa thể kết nối để lưu dữ liệu. Thông tin bạn nhập vẫn được giữ nguyên.',
+    }
   }
 
   if (!normalizedCenterId) {
-    return { ok: false, outcome_code: 'INVALID_CENTER', error: 'Thiếu center_id.' }
+    return { ok: false, outcome_code: 'INVALID_CENTER', error: 'Chưa xác định được cơ sở đang hoạt động.' }
   }
 
   if (!normalizedMutations.length) {
@@ -134,7 +138,7 @@ export async function mutateAuthoritativeAttendanceTuitionEntities({
     return {
       ok: false,
       outcome_code: 'SERVER_COMMAND_FAILED',
-      error: String(rpcError?.message || rpcError),
+      error: getAuthoritativeAttendanceTuitionOutcomeMessage('SERVER_COMMAND_FAILED'),
       detail: rpcError,
       idempotencyKey,
     }
@@ -144,7 +148,7 @@ export async function mutateAuthoritativeAttendanceTuitionEntities({
     return {
       ok: false,
       outcome_code: 'SERVER_COMMAND_FAILED',
-      error: String(error.message || error),
+      error: getAuthoritativeAttendanceTuitionOutcomeMessage('SERVER_COMMAND_FAILED'),
       detail: error,
       idempotencyKey,
     }
@@ -189,25 +193,27 @@ export function getAuthoritativeAttendanceTuitionOutcomeMessage(outcomeCode) {
     NOT_AUTHENTICATED: 'Phiên đăng nhập không hợp lệ. Dữ liệu chưa được lưu.',
     INVALID_CENTER: 'Cơ sở không hợp lệ. Dữ liệu chưa được lưu.',
     CENTER_ACCESS_DENIED: 'Tài khoản không còn quyền tại cơ sở này.',
-    WRITE_ROLE_REQUIRED: 'Vai trò hiện tại không được ghi dữ liệu C5.2.',
-    INVALID_ENTITY_TYPE: 'Loại dữ liệu không thuộc authoritative contract C5.2.',
+    WRITE_ROLE_REQUIRED: 'Tài khoản hiện tại chỉ được xem, không được lưu thay đổi này.',
+    INVALID_ENTITY_TYPE: 'Loại dữ liệu cần lưu không hợp lệ.',
     INVALID_LOCAL_ID: 'Mã dữ liệu không hợp lệ.',
     INVALID_IDEMPOTENCY_KEY: 'Không tạo được khóa chống gửi trùng.',
-    INVALID_COMMAND: 'Lệnh lưu C5.2 không hợp lệ.',
-    INVALID_PAYLOAD: 'Dữ liệu C5.2 không hợp lệ hoặc quá lớn.',
+    INVALID_COMMAND: 'Yêu cầu lưu không hợp lệ.',
+    INVALID_PAYLOAD: 'Dữ liệu cần lưu không hợp lệ hoặc quá lớn.',
     CENTER_PAYLOAD_MISMATCH: 'Dữ liệu không thuộc cơ sở hiện tại.',
-    DUPLICATE_MUTATION: 'Lệnh có nhiều thay đổi trùng cùng một entity.',
-    ENTITY_NOT_FOUND: 'Dữ liệu không còn tồn tại trên server.',
+    DUPLICATE_MUTATION: 'Yêu cầu lưu có nhiều thay đổi trùng nhau.',
+    ENTITY_NOT_FOUND: 'Dữ liệu này không còn tồn tại. Vui lòng làm mới trước khi tiếp tục.',
     VERSION_CONFLICT: 'Dữ liệu đã được tài khoản khác cập nhật. Hãy tải lại trước khi lưu.',
-    BASELINE_STATE_REQUIRED: 'Thay đổi dữ liệu nền phải commit cùng baseline state hiện hành.',
-    BASELINE_LOCKED: 'Dữ liệu nền đang khóa; thay đổi stale bị từ chối.',
+    BASELINE_STATE_REQUIRED: 'Cần lưu trạng thái khởi tạo cùng các thay đổi điểm danh.',
+    BASELINE_LOCKED: 'Dữ liệu khởi tạo đã được khóa. Hãy làm mới trước khi chỉnh sửa.',
     IDEMPOTENCY_CONFLICT: 'Khóa gửi lại đã được dùng cho một thay đổi khác.',
     CONCURRENT_CONFLICT: 'Có thay đổi đồng thời. Hãy tải lại và thử lại.',
     ATTENDANCE_TUITION_BOUNDARY_VIOLATION:
-      'Attendance → Tuition chỉ được preview; không được tự động trừ buổi.',
-    INVALID_SERVER_RESULT: 'Server trả về kết quả không hợp lệ; cache chưa được thay đổi.',
-    SERVER_COMMAND_FAILED: 'Không thể lưu lên server; cache chưa được thay đổi.',
+      'Điểm danh chỉ dùng để đối chiếu; hệ thống chưa tự động trừ buổi học.',
+    INVALID_SERVER_RESULT:
+      'Hệ thống đã nhận phản hồi không đầy đủ. Chưa thể xác nhận màn hình đã cập nhật; vui lòng làm mới trước khi thao tác tiếp.',
+    SERVER_COMMAND_FAILED:
+      'Chưa thể xác nhận đã lưu. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng làm mới trước khi thử lại.',
   }
 
-  return messages[String(outcomeCode || '')] || 'Không thể lưu dữ liệu dùng chung C5.2.'
+  return messages[String(outcomeCode || '')] || 'Chưa lưu được dữ liệu. Thông tin bạn nhập vẫn được giữ nguyên.'
 }

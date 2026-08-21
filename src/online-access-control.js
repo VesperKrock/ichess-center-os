@@ -160,22 +160,22 @@ export function getOnlineAccessMessage(accessState) {
   const state = buildOnlineAccessState(accessState)
 
   if (state.needsMembershipPatch) {
-    return NEEDS_MEMBERSHIP_SQL_PATCH
+    return 'Chưa thể kiểm tra quyền của tài khoản tại cơ sở này.'
   }
 
   const messages = {
-    [ONLINE_ACCESS_REASONS.NOT_CONFIGURED]: 'Chua cau hinh Supabase Cloud.',
-    [ONLINE_ACCESS_REASONS.SIGNED_OUT]: 'Vui long dang nhap Supabase truoc khi ghi cloud.',
-    [ONLINE_ACCESS_REASONS.MISSING_CENTER]: 'Thieu centerId nen khong the ghi cloud.',
-    [ONLINE_ACCESS_REASONS.MISSING_MEMBERSHIP]: 'Tai khoan chua co membership center_members.',
-    [ONLINE_ACCESS_REASONS.UNKNOWN_ROLE]: 'Khong xac dinh duoc role nen khong ghi cloud.',
-    [ONLINE_ACCESS_REASONS.VIEWER_READ_ONLY]: 'Tai khoan viewer chi duoc xem, khong duoc ghi cloud.',
+    [ONLINE_ACCESS_REASONS.NOT_CONFIGURED]: 'Hệ thống lưu dữ liệu dùng chung chưa được cấu hình.',
+    [ONLINE_ACCESS_REASONS.SIGNED_OUT]: 'Vui lòng đăng nhập trước khi lưu.',
+    [ONLINE_ACCESS_REASONS.MISSING_CENTER]: 'Chưa xác định được cơ sở đang hoạt động.',
+    [ONLINE_ACCESS_REASONS.MISSING_MEMBERSHIP]: 'Tài khoản không còn quyền tại cơ sở này.',
+    [ONLINE_ACCESS_REASONS.UNKNOWN_ROLE]: 'Không xác định được quyền thao tác của tài khoản.',
+    [ONLINE_ACCESS_REASONS.VIEWER_READ_ONLY]: 'Tài khoản hiện tại chỉ được xem, không được lưu thay đổi.',
     [ONLINE_ACCESS_REASONS.LIMITED_ROLE_READ_ONLY]:
-      'Role teacher/consultant chua co scope ghi cloud trong C3.1.',
-    [ONLINE_ACCESS_REASONS.CLOUD_NOT_READY]: 'Cloud DB chua ready nen khong ghi cloud.',
+      'Tài khoản hiện tại chỉ được xem, không được lưu thay đổi.',
+    [ONLINE_ACCESS_REASONS.CLOUD_NOT_READY]: 'Chưa thể kết nối để lưu dữ liệu. Vui lòng thử lại.',
   }
 
-  return messages[state.reason] || 'Trang thai online dang read-only.'
+  return messages[state.reason] || 'Tài khoản hiện tại chỉ được xem.'
 }
 
 function getAccessReason({

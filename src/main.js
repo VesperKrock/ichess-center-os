@@ -4,7 +4,9 @@ import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import { modules } from './modules.js'
 import {
-  getModuleRefreshUpstreams,
+  evaluateModuleRefreshResults,
+  getModuleActionRequiredUpstreams,
+  getModuleRefreshContract,
   isBusinessModule,
 } from './module-authority-registry.js'
 import { createInitialCloudStatus } from './cloud-status.js'
@@ -8850,13 +8852,6 @@ async function handleInternalOpenCenter(centerId) {
   await startStudentRealtimeSubscription(switchSyncId)
   await startTeacherRealtimeSubscription(switchSyncId)
   await startScheduleSessionRealtimeSubscription(switchSyncId)
-  await bootstrapC51AttendanceSessionReportCloudData(switchSyncId)
-  await startC51AttendanceRealtimeSubscription(switchSyncId)
-  await bootstrapC52TuitionRecordPackageCloudData(switchSyncId)
-  if (switchSyncId === cloudUserSyncId) {
-    await refreshC54FinanceSharedTruth({ reason: 'center-switch-bootstrap', silent: true })
-  }
-  await startC52TuitionRealtimeSubscription(switchSyncId)
 }
 
 function normalizeInternalCenters(rows = []) {
@@ -10369,7 +10364,12 @@ function createModuleRefreshState(overrides = {}) {
   return {
     status: 'idle',
     centerId: '',
+    contextKey: '',
     upstreams: [],
+    requiredUpstreams: [],
+    optionalUpstreams: [],
+    actionRequiredUpstreams: {},
+    upstreamHealth: {},
     message: 'Chưa tải dữ liệu mới nhất cho lần mở này.',
     lastFreshAt: '',
     ...overrides,
@@ -10388,7 +10388,49 @@ function isPrimaryBusinessModuleWindow(windowItem) {
 function getModuleRefreshState(moduleId) {
   const state = moduleRefreshStates.get(moduleId)
   const centerId = getCurrentCanonicalCenterContext().centerId
-  return state?.centerId === centerId ? state : createModuleRefreshState({ centerId })
+  const contextKey = getModuleRefreshContextKey()
+  return state?.centerId === centerId && state?.contextKey === contextKey
+    ? state
+    : createModuleRefreshState({ centerId, contextKey })
+}
+
+function getModuleRefreshContextKey() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const actorUserId = String(cloudStatus.user?.id || '').trim()
+  return centerId && actorUserId ? `${actorUserId}:${centerId}` : ''
+}
+
+function isModuleUpstreamCurrent(moduleId, upstream) {
+  const state = getModuleRefreshState(moduleId)
+  return Boolean(
+    state.centerId
+    && state.centerId === getCurrentCanonicalCenterContext().centerId
+    && state.contextKey === getModuleRefreshContextKey()
+    && state.upstreamHealth?.[upstream]?.ok,
+  )
+}
+
+function areModuleActionUpstreamsCurrent(moduleId, action) {
+  const requiredUpstreams = getModuleActionRequiredUpstreams(moduleId, action)
+  return requiredUpstreams.every((upstream) => isModuleUpstreamCurrent(moduleId, upstream))
+}
+
+function getUnavailableOptionalState(moduleId, upstream, label) {
+  const state = getModuleRefreshState(moduleId)
+  const isLoading = state.status === 'loading'
+  const isCurrent = isModuleUpstreamCurrent(moduleId, upstream)
+  if (isCurrent) return null
+  return {
+    centerId: state.centerId,
+    isLoading,
+    isSaving: false,
+    message: isLoading
+      ? `Đang tải ${label}...`
+      : `${label} hiện chưa tải được.`,
+    messageTone: isLoading ? '' : 'error',
+    lastLoadedAt: '',
+    legacyMigrationRequired: false,
+  }
 }
 
 function renderModuleRefreshControl(windowItem) {
@@ -10408,9 +10450,15 @@ function renderModuleRefreshControl(windowItem) {
 function renderModuleRefreshNotice(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
-  const tone = state.status === 'fresh' ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
+  const tone = ['fresh', 'limited'].includes(state.status)
+    ? 'is-fresh'
+    : state.status === 'loading'
+      ? 'is-loading'
+      : 'is-unfresh'
   const label = state.status === 'fresh'
     ? `Dữ liệu đã được cập nhật${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
+    : state.status === 'limited'
+      ? state.message
     : state.status === 'loading'
       ? 'Đang tải dữ liệu mới nhất của chức năng này.'
       : state.message
@@ -10655,6 +10703,8 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'giao-vien') {
+    const attendanceAvailable = isModuleUpstreamCurrent('giao-vien', 'attendance')
+    const staffAvailable = isModuleUpstreamCurrent('giao-vien', 'staff')
     return renderTeacherModule(
       teachers,
       teacherFilters,
@@ -10663,11 +10713,13 @@ function renderWindowBody(windowItem) {
       students,
       scheduleSessions,
       classSessions,
-      sessionReports,
+      attendanceAvailable ? sessionReports : [],
       {
-        staffMembers,
-        departments: staffDepartments,
+        staffMembers: staffAvailable ? staffMembers : [],
+        departments: staffAvailable ? staffDepartments : [],
         staffLinkState: teacherStaffLinkState,
+        attendanceAvailable,
+        staffAvailable,
       },
     )
   }
@@ -10677,11 +10729,13 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'thoi-khoa-bieu') {
+    const attendanceAvailable = isModuleUpstreamCurrent('thoi-khoa-bieu', 'attendance')
+    const calendarNotesAvailable = isModuleUpstreamCurrent('thoi-khoa-bieu', 'calendar-notes')
     return renderScheduleModule(
       scheduleSessions,
       scheduleFormState,
       scheduleReportState,
-      sessionReports,
+      attendanceAvailable ? sessionReports : [],
       sessionReportAttendanceState,
       sessionReportLearningState,
       sessionReportLearningFormState,
@@ -10696,16 +10750,23 @@ function renderWindowBody(windowItem) {
         attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
         centerCalendarFilters: scheduleCalendarFilters,
         centerCalendarItemState: scheduleCalendarItemState,
-        centerCalendarItems,
-        centerCalendarTags,
+        centerCalendarItems: calendarNotesAvailable ? centerCalendarItems : [],
+        centerCalendarTags: calendarNotesAvailable ? centerCalendarTags : [],
         centerCalendarTagState: scheduleCalendarTagState,
-        calendarNotesSharedTruthState: c57CalendarNotesSharedTruthState,
+        calendarNotesSharedTruthState: getUnavailableOptionalState(
+          'thoi-khoa-bieu',
+          'calendar-notes',
+          'Lịch hoạt động bổ sung',
+        ) || c57CalendarNotesSharedTruthState,
         classSessions,
       },
     )
   }
 
   if (moduleItem.id === 'hoc-phi') {
+    const attendanceAvailable = isModuleUpstreamCurrent('hoc-phi', 'attendance')
+    const calendarNotesAvailable = isModuleUpstreamCurrent('hoc-phi', 'calendar-notes')
+    const financeAvailable = areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')
     return renderTuitionModule(
       students,
       tuitionRecords,
@@ -10713,20 +10774,31 @@ function renderWindowBody(windowItem) {
       tuitionFormState,
       tuitionPaymentFormState,
       tuitionDetailState,
-      sessionReports,
-      attendanceAdvisoryNotes,
+      attendanceAvailable ? sessionReports : [],
+      calendarNotesAvailable ? attendanceAdvisoryNotes : [],
       getCurrentMonthKey(),
       tuitionRollbackPreviewState,
       buildUnifiedAttendanceRecords({
-        sessionReports,
-        storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        sessionReports: attendanceAvailable ? sessionReports : [],
+        storedRecords: attendanceAvailable
+          ? loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+          : [],
       }),
       tuitionCareNoteState,
       tuitionAdvisoryWindowState,
-      cashflowTransactions,
+      financeAvailable ? cashflowTransactions : [],
       getCurrentResolvedCenterId(),
       tuitionPeriodActionConfirmationState,
-      c57CalendarNotesSharedTruthState,
+      getUnavailableOptionalState(
+        'hoc-phi',
+        'calendar-notes',
+        'Ghi chú chăm sóc dùng chung',
+      ) || c57CalendarNotesSharedTruthState,
+      {
+        attendanceAvailable,
+        calendarNotesAvailable,
+        financeAvailable,
+      },
     )
   }
 
@@ -10836,22 +10908,34 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'bang-diem-danh') {
+    const attendanceAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'attendance')
+    const tuitionAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'tuition')
+    const calendarNotesAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'calendar-notes')
     return renderAttendanceBoardModule(
       students,
       classSessions,
-      tuitionRecords,
-      sessionReports,
-      attendanceAdvisoryNotes,
+      tuitionAvailable ? tuitionRecords : [],
+      attendanceAvailable ? sessionReports : [],
+      calendarNotesAvailable ? attendanceAdvisoryNotes : [],
       attendanceBoardFilters,
       attendanceBoardDetailState,
-      attendanceBoardNotes,
+      calendarNotesAvailable ? attendanceBoardNotes : [],
       attendanceBoardNoteFormState,
       Boolean(attendanceBaselineUndoSnapshot),
       getAttendanceBaselineDraftRecords(),
       getAttendanceBaselineDraftChangeCount(),
       getAttendanceBaselineDraftState(),
       isAttendanceBaselineDetailsOpen,
-      c57CalendarNotesSharedTruthState,
+      getUnavailableOptionalState(
+        'bang-diem-danh',
+        'calendar-notes',
+        'Ghi chú dùng chung',
+      ) || c57CalendarNotesSharedTruthState,
+      {
+        attendanceAvailable,
+        tuitionAvailable,
+        calendarNotesAvailable,
+      },
     )
   }
 
@@ -10961,6 +11045,15 @@ function createTuitionCareNoteState(studentId, patch = {}) {
 
 async function saveTuitionCareNote() {
   if (!tuitionCareNoteState?.studentId) {
+    return
+  }
+
+  if (!isModuleUpstreamCurrent('hoc-phi', 'core')) {
+    tuitionCareNoteState = createTuitionCareNoteState(tuitionCareNoteState.studentId, {
+      values: tuitionCareNoteState.values,
+      error: 'Dữ liệu học viên chưa được tải mới. Thông tin bạn nhập vẫn được giữ nguyên.',
+    })
+    render()
     return
   }
 
@@ -11852,8 +11945,15 @@ function openModuleWindow(moduleId) {
 function resetModuleRefreshStateForOpen(moduleId) {
   if (!isBusinessModule(moduleId)) return
   const context = getCurrentCanonicalCenterContext()
+  const contextKey = getModuleRefreshContextKey()
+  const contract = getModuleRefreshContract(moduleId)
   moduleRefreshStates.set(moduleId, createModuleRefreshState({
     centerId: context.centerId,
+    contextKey,
+    upstreams: contract.all,
+    requiredUpstreams: contract.required,
+    optionalUpstreams: contract.optional,
+    actionRequiredUpstreams: contract.actionRequired,
     message: context.ok
       ? 'Đang chờ tải dữ liệu mới nhất của cơ sở hiện tại.'
       : 'Chưa xác định được cơ sở đang hoạt động; dữ liệu cũ được ẩn để tránh nhầm lẫn.',
@@ -11861,12 +11961,14 @@ function resetModuleRefreshStateForOpen(moduleId) {
 }
 
 async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-refresh' } = {}) {
-  const upstreams = getModuleRefreshUpstreams(moduleId)
+  const contract = getModuleRefreshContract(moduleId)
+  const upstreams = contract.all
   if (!isBusinessModule(moduleId) || !upstreams.length) {
     return { ok: true, skipped: true, upstreams: [] }
   }
 
   const centerContext = getCurrentCanonicalCenterContext()
+  const contextKey = getModuleRefreshContextKey()
   const refreshId = (moduleRefreshRunIds.get(moduleId) || 0) + 1
   moduleRefreshRunIds.set(moduleId, refreshId)
   if (!centerContext.ok) {
@@ -11877,7 +11979,11 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     }
     moduleRefreshStates.set(moduleId, createModuleRefreshState({
       status: 'failed',
+      contextKey,
       upstreams,
+      requiredUpstreams: contract.required,
+      optionalUpstreams: contract.optional,
+      actionRequiredUpstreams: contract.actionRequired,
       message: result.error,
     }))
     render()
@@ -11887,7 +11993,11 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   moduleRefreshStates.set(moduleId, createModuleRefreshState({
     status: 'loading',
     centerId: centerContext.centerId,
+    contextKey,
     upstreams,
+    requiredUpstreams: contract.required,
+    optionalUpstreams: contract.optional,
+    actionRequiredUpstreams: contract.actionRequired,
     message: 'Đang tải dữ liệu mới nhất...',
   }))
   render()
@@ -11908,33 +12018,68 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     || !latestContext.ok
     || latestContext.centerId !== centerContext.centerId
     || currentState?.centerId !== centerContext.centerId
+    || currentState?.contextKey !== contextKey
+    || getModuleRefreshContextKey() !== contextKey
   ) {
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', results }
   }
 
-  const failures = results.filter((result) => !result.ok)
-  if (failures.length) {
+  const evaluation = evaluateModuleRefreshResults(moduleId, results)
+  if (!evaluation.ok) {
     moduleRefreshStates.set(moduleId, createModuleRefreshState({
       status: 'failed',
       centerId: centerContext.centerId,
+      contextKey,
       upstreams,
+      requiredUpstreams: contract.required,
+      optionalUpstreams: contract.optional,
+      actionRequiredUpstreams: contract.actionRequired,
+      upstreamHealth: evaluation.health,
       message: 'Không thể làm mới dữ liệu lúc này. Thông tin đang hiển thị có thể chưa phải bản mới nhất. Vui lòng thử lại.',
     }))
     render()
-    return { ok: false, outcome_code: 'MODULE_REFRESH_FAILED', results, failures }
+    return {
+      ok: false,
+      outcome_code: 'MODULE_REQUIRED_REFRESH_FAILED',
+      results,
+      failures: evaluation.requiredFailures,
+      evaluation,
+    }
   }
 
   notifications = syncAppNotifications(notifications)
   const lastFreshAt = new Date().toISOString()
+  const limitedLabels = evaluation.nonBlockingFailures.map((upstream) => ({
+    attendance: 'Dữ liệu điểm danh bổ sung',
+    staff: 'Thông tin nhân sự',
+    tuition: 'Đối chiếu học phí',
+    finance: 'Số đã thu và thanh toán',
+    'calendar-notes': 'Ghi chú dùng chung',
+  })[upstream] || 'Một phần dữ liệu bổ sung')
   moduleRefreshStates.set(moduleId, createModuleRefreshState({
-    status: 'fresh',
+    status: evaluation.status,
     centerId: centerContext.centerId,
+    contextKey,
     upstreams,
-    message: 'Đã tải dữ liệu mới nhất.',
+    requiredUpstreams: contract.required,
+    optionalUpstreams: contract.optional,
+    actionRequiredUpstreams: contract.actionRequired,
+    upstreamHealth: evaluation.health,
+    message: evaluation.status === 'limited'
+      ? `Dữ liệu chính đã cập nhật. ${limitedLabels.join(', ')} hiện chưa tải được.`
+      : 'Đã tải dữ liệu mới nhất.',
     lastFreshAt,
   }))
   render()
-  return { ok: true, centerId: centerContext.centerId, upstreams, results, lastFreshAt }
+  return {
+    ok: true,
+    limited: evaluation.status === 'limited',
+    centerId: centerContext.centerId,
+    upstreams,
+    results,
+    evaluation,
+    lastFreshAt,
+  }
 }
 
 async function refreshAuthoritativeUpstream(upstream, reason) {
@@ -11965,10 +12110,16 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
     }
     case 'core':
       return bootstrapCoreCloudDataForCurrentCenter(cloudUserSyncId, { force: true })
-    case 'attendance':
-      return bootstrapC51AttendanceSessionReportCloudData(cloudUserSyncId, { force: true })
-    case 'tuition':
-      return bootstrapC52TuitionRecordPackageCloudData(cloudUserSyncId, { force: true })
+    case 'attendance': {
+      const result = await bootstrapC51AttendanceSessionReportCloudData(cloudUserSyncId, { force: true })
+      if (result.ok) await startC51AttendanceRealtimeSubscription(cloudUserSyncId)
+      return result
+    }
+    case 'tuition': {
+      const result = await bootstrapC52TuitionRecordPackageCloudData(cloudUserSyncId, { force: true })
+      if (result.ok) await startC52TuitionRealtimeSubscription(cloudUserSyncId)
+      return result
+    }
     case 'crm':
       return refreshC53CrmSharedTruth({ reason, silent: true })
     case 'finance':
@@ -12379,6 +12530,11 @@ function readLatestCashflowTransactionsForCurrentCenter(centerId = getCurrentRes
 
 function openTuitionPaymentForm(student, tuitionRecord) {
   if (!student || !tuitionRecord) {
+    return
+  }
+
+  if (!areModuleActionUpstreamsCurrent('hoc-phi', 'payment')) {
+    window.alert('Chưa tải được số đã thu và dữ liệu thanh toán. Vui lòng bấm Làm mới rồi thử lại.')
     return
   }
 
@@ -13622,13 +13778,6 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await startStudentRealtimeSubscription(syncId)
     await startTeacherRealtimeSubscription(syncId)
     await startScheduleSessionRealtimeSubscription(syncId)
-    await bootstrapC51AttendanceSessionReportCloudData(syncId)
-    await startC51AttendanceRealtimeSubscription(syncId)
-    await bootstrapC52TuitionRecordPackageCloudData(syncId)
-    if (syncId === cloudUserSyncId) {
-      await refreshC54FinanceSharedTruth({ reason: 'signed-in-bootstrap', silent: true })
-    }
-    await startC52TuitionRealtimeSubscription(syncId)
   }
 }
 
@@ -15168,7 +15317,7 @@ async function refreshC57CalendarNotesSharedTruth({ reason = 'manual-refresh', s
     centerId,
     isLoading: true,
     isSaving: false,
-    message: silent ? '' : 'Đang tải authoritative Calendar/Operational Notes...',
+    message: silent ? '' : 'Đang tải lịch hoạt động và ghi chú dùng chung...',
     messageTone: '',
     lastLoadedAt: '',
     legacyMigrationRequired: false,
@@ -15256,8 +15405,8 @@ async function refreshC57CalendarNotesSharedTruth({ reason = 'manual-refresh', s
     isLoading: false,
     isSaving: false,
     message: reason === 'after-server-commit'
-      ? 'Calendar/Operational Notes đã commit server và projection đã làm mới.'
-      : `Đã tải authoritative Calendar/Notes (${centerCalendarItems.length} hoạt động, ${attendanceAdvisoryNotes.length + attendanceBoardNotes.length} ghi chú).`,
+      ? 'Đã lưu và tải lại lịch hoạt động cùng ghi chú dùng chung.'
+      : `Đã tải ${centerCalendarItems.length} hoạt động và ${attendanceAdvisoryNotes.length + attendanceBoardNotes.length} ghi chú dùng chung.`,
     messageTone: 'success',
     lastLoadedAt: new Date().toISOString(),
   }
@@ -15703,7 +15852,7 @@ async function bootstrapC51AttendanceSessionReportCloudData(
     cloudDbState = {
       ...cloudDbState,
       readinessStatus: readiness.ready === false ? cloudDbState.readinessStatus : 'ready',
-      message: result.error || 'C5.2 attendance/session report cloud degraded; cache chưa thay đổi.',
+      message: result.error || 'Chưa tải được dữ liệu điểm danh. Dữ liệu đang hiển thị chưa được xác nhận là mới nhất.',
       messageTone: 'error',
       lastUpdatedAt: new Date().toISOString(),
     }
@@ -15726,7 +15875,7 @@ async function bootstrapC51AttendanceSessionReportCloudData(
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: 'ready',
-    message: `Đã bootstrap C5.2 attendance/session report authoritative (${result.records.length} entity).`,
+    message: `Đã tải dữ liệu điểm danh (${result.records.length} mục).`,
     messageTone: result.records.length ? 'success' : '',
     lastUpdatedAt: new Date().toISOString(),
   }
@@ -15743,6 +15892,20 @@ async function writeC52AttendanceSessionReportThroughCloud({
   idempotencyKey,
   reason = 'c5-2-authoritative-save',
 } = {}) {
+  const isAttendanceBoardAction = String(reason).startsWith('baseline-')
+    || String(reason).startsWith('attendance-board-')
+  const moduleId = isAttendanceBoardAction ? 'bang-diem-danh' : 'thoi-khoa-bieu'
+  const unavailableUpstreams = ['core', 'attendance']
+    .filter((upstream) => !isModuleUpstreamCurrent(moduleId, upstream))
+  if (unavailableUpstreams.length) {
+    return {
+      ok: false,
+      skipped: true,
+      outcome_code: 'REQUIRED_REFRESH_UNAVAILABLE',
+      error: 'Dữ liệu cần thiết chưa được tải mới. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng bấm Làm mới rồi thử lại.',
+    }
+  }
+
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
   })
@@ -15817,7 +15980,7 @@ async function writeC52AttendanceSessionReportThroughCloud({
     return {
       ok: false,
       outcome_code: 'CENTER_CONTEXT_CHANGED',
-      error: 'Cơ sở đã thay đổi; lệnh cũ chưa được gửi lên server.',
+      error: 'Cơ sở đã thay đổi; yêu cầu chưa được gửi. Thông tin bạn nhập vẫn được giữ nguyên.',
     }
   }
 
@@ -15860,8 +16023,8 @@ async function writeC52AttendanceSessionReportThroughCloud({
       committed: Boolean(result.ok),
       outcome_code: 'CENTER_CONTEXT_CHANGED',
       error: result.ok
-        ? 'Dữ liệu đã commit tại cơ sở trước; view hiện tại không bị thay đổi.'
-        : result.error || 'Cơ sở đã thay đổi; projection không bị thay đổi.',
+        ? 'Dữ liệu đã được lưu tại cơ sở trước đó nhưng màn hình hiện tại chưa được cập nhật.'
+        : result.error || 'Cơ sở đã thay đổi; màn hình hiện tại chưa được cập nhật.',
     }
   }
 
@@ -15886,8 +16049,8 @@ async function writeC52AttendanceSessionReportThroughCloud({
     ...cloudDbState,
     readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
     message: result.ok
-      ? `Đã commit server C5.2 (${reason}): ${result.count || 0} entity.`
-      : result.error || 'C5.2 server write failed; projection chưa thay đổi.',
+      ? `Đã lưu dữ liệu điểm danh (${result.count || 0} mục).`
+      : result.error || 'Chưa lưu được dữ liệu điểm danh. Thông tin bạn nhập vẫn được giữ nguyên.',
     messageTone: result.ok ? 'success' : 'error',
     lastUpdatedAt: new Date().toISOString(),
   }
@@ -15996,7 +16159,7 @@ function handleC51AttendanceRealtimeStatus(status) {
 
   cloudDbState = {
     ...cloudDbState,
-    message: status.message || 'C5.1 realtime degraded; giữ cache local.',
+    message: status.message || 'Kết nối cập nhật điểm danh bị gián đoạn. Vui lòng bấm Làm mới.',
     messageTone: 'error',
     lastUpdatedAt: new Date().toISOString(),
   }
@@ -16063,7 +16226,7 @@ async function bootstrapC52TuitionRecordPackageCloudData(
     cloudDbState = {
       ...cloudDbState,
       readinessStatus: readiness.ready === false ? cloudDbState.readinessStatus : 'ready',
-      message: result.error || 'C5.2 tuition cloud degraded; projection chưa thay đổi.',
+      message: result.error || 'Chưa tải được dữ liệu học phí. Dữ liệu đang hiển thị chưa được xác nhận là mới nhất.',
       messageTone: 'error',
       lastUpdatedAt: new Date().toISOString(),
     }
@@ -16083,7 +16246,7 @@ async function bootstrapC52TuitionRecordPackageCloudData(
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: 'ready',
-    message: `Đã bootstrap Học phí authoritative (${result.records.length} tuition_record_package).`,
+    message: `Đã tải dữ liệu học phí (${result.records.length} mục).`,
     messageTone: result.records.length ? 'success' : '',
     lastUpdatedAt: new Date().toISOString(),
   }
@@ -16097,6 +16260,17 @@ async function writeC52TuitionRecordPackageThroughCloud(
   auditContext = {},
   idempotencyKey,
 ) {
+  const unavailableUpstreams = ['core', 'tuition']
+    .filter((upstream) => !isModuleUpstreamCurrent('hoc-phi', upstream))
+  if (unavailableUpstreams.length) {
+    return {
+      ok: false,
+      skipped: true,
+      outcome_code: 'REQUIRED_REFRESH_UNAVAILABLE',
+      error: 'Dữ liệu học phí chưa được tải mới. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng bấm Làm mới rồi thử lại.',
+    }
+  }
+
   const writeCenterId = getCurrentResolvedCenterId()
   const accessState = buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
@@ -16152,7 +16326,7 @@ async function writeC52TuitionRecordPackageThroughCloud(
     return {
       ok: false,
       outcome_code: 'CENTER_CONTEXT_CHANGED',
-      error: 'Cơ sở đã thay đổi; lệnh Học phí cũ chưa được gửi lên server.',
+      error: 'Cơ sở đã thay đổi; yêu cầu lưu học phí chưa được gửi. Thông tin bạn nhập vẫn được giữ nguyên.',
     }
   }
 
@@ -16184,8 +16358,8 @@ async function writeC52TuitionRecordPackageThroughCloud(
       committed: Boolean(result.ok),
       outcome_code: 'CENTER_CONTEXT_CHANGED',
       error: result.ok
-        ? 'Học phí đã commit tại cơ sở trước; view hiện tại không bị thay đổi.'
-        : result.error || 'Cơ sở đã thay đổi; projection Học phí không bị thay đổi.',
+        ? 'Học phí đã được lưu tại cơ sở trước đó nhưng màn hình hiện tại chưa được cập nhật.'
+        : result.error || 'Cơ sở đã thay đổi; màn hình học phí hiện tại chưa được cập nhật.',
     }
   }
 
@@ -16216,8 +16390,8 @@ async function writeC52TuitionRecordPackageThroughCloud(
     ...cloudDbState,
     readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
     message: result.ok
-      ? `Đã commit server Học phí (${reason}): ${result.count || 0} tuition_record_package.`
-      : result.error || 'C5.2 tuition server write failed; projection chưa thay đổi.',
+      ? `Đã lưu học phí (${result.count || 0} mục).`
+      : result.error || 'Chưa lưu được học phí. Thông tin bạn nhập vẫn được giữ nguyên.',
     messageTone: result.ok ? 'success' : 'error',
     lastUpdatedAt: new Date().toISOString(),
   }
@@ -19538,12 +19712,6 @@ function bindEvents() {
     })
   })
 
-  document.querySelectorAll('[data-c57-calendar-notes-refresh]').forEach((button) => {
-    button.addEventListener('click', () => {
-      void refreshC57CalendarNotesSharedTruth({ reason: 'manual-refresh' })
-    })
-  })
-
   document.querySelectorAll('[data-inventory-movement-filter]').forEach((control) => {
     control.addEventListener('input', () => {
       const filterName = control.dataset.inventoryMovementFilter
@@ -21093,9 +21261,8 @@ function bindEvents() {
   document.querySelectorAll('[data-tuition-action="open-advisory-window"]').forEach((button) => {
     button.addEventListener('click', async (event) => {
       await withTuitionViewportLock(async () => {
-        const refresh = await refreshC57CalendarNotesSharedTruth({
+        const refresh = await refreshModuleAuthoritativeUpstreams('hoc-phi', {
           reason: 'attendance-advisory-surface-open',
-          silent: true,
         })
         if (!refresh.ok) return
         tuitionAdvisoryWindowState = { isOpen: true }
@@ -21268,6 +21435,16 @@ function bindEvents() {
       event.preventDefault()
       event.stopPropagation()
 
+      if (!areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')) {
+        window.alert('Chưa tải được số đã thu hiện tại. Vui lòng bấm Làm mới rồi thử lại.')
+        return
+      }
+
+      if (!isModuleUpstreamCurrent('hoc-phi', 'attendance')) {
+        window.alert('Chưa tải được dữ liệu điểm danh để kiểm tra kỳ học. Vui lòng bấm Làm mới rồi thử lại.')
+        return
+      }
+
       const tuitionRecord = getLatestTuitionRecordForCurrentCenter(button.dataset.tuitionId)
       const student = tuitionRecord
         ? students.find((item) => item.id === tuitionRecord.studentId)
@@ -21307,6 +21484,21 @@ function bindEvents() {
     event?.stopPropagation?.()
 
     if (!tuitionFormState || tuitionFormState.isSaving) {
+      return
+    }
+
+    if (
+      tuitionFormState.mode === 'renew' &&
+      !areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')
+    ) {
+      tuitionFormState = {
+        ...tuitionFormState,
+        errors: {
+          ...tuitionFormState.errors,
+          form: 'Chưa tải được số đã thu hiện tại. Thông tin bạn nhập vẫn được giữ nguyên.',
+        },
+      }
+      render()
       return
     }
 
@@ -21410,14 +21602,14 @@ function bindEvents() {
         isSaving: false,
         errors: {
           ...tuitionFormState?.errors,
-          form: result.error || 'Học phí chưa được lưu lên server.',
+          form: result.error || 'Chưa lưu được học phí. Thông tin bạn nhập vẫn được giữ nguyên.',
         },
       }
       if (tuitionPeriodActionConfirmationState) {
         tuitionPeriodActionConfirmationState = {
           ...tuitionPeriodActionConfirmationState,
           isSaving: false,
-          reasons: [result.error || 'Học phí chưa được lưu lên server.'],
+          reasons: [result.error || 'Chưa lưu được học phí. Thông tin bạn nhập vẫn được giữ nguyên.'],
         }
       }
       render()
@@ -21546,6 +21738,18 @@ function bindEvents() {
     event.preventDefault()
 
     if (!tuitionPaymentFormState || tuitionPaymentFormState.isSaving) {
+      return
+    }
+
+    if (!areModuleActionUpstreamsCurrent('hoc-phi', 'payment')) {
+      tuitionPaymentFormState = {
+        ...tuitionPaymentFormState,
+        errors: {
+          ...tuitionPaymentFormState.errors,
+          form: 'Chưa tải được số đã thu và dữ liệu thanh toán. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng bấm Làm mới rồi thử lại.',
+        },
+      }
+      render()
       return
     }
 
@@ -21678,7 +21882,7 @@ function bindEvents() {
         ...tuitionPaymentFormState,
         errors: {
           ...tuitionPaymentFormState.errors,
-          attachment: 'Không thể tải ảnh lên. Vui lòng kiểm tra đăng nhập/quyền cloud trước khi lưu chứng từ.',
+          attachment: 'Chưa thể tải ảnh chứng từ. Vui lòng kiểm tra đăng nhập và quyền thao tác.',
         },
       }
       render()
@@ -21797,7 +22001,7 @@ function bindEvents() {
         isSaving: false,
         errors: {
           ...tuitionPaymentFormState.errors,
-          form: 'Danh mục Học phí authoritative không khả dụng; hãy Làm mới Finance.',
+          form: 'Chưa tải được danh mục thu học phí. Vui lòng bấm Làm mới rồi thử lại.',
         },
       }
       render()
@@ -21840,7 +22044,7 @@ function bindEvents() {
         isSaving: false,
         errors: {
           ...tuitionPaymentFormState.errors,
-          form: financeResult.error || 'Thanh toán chưa được commit vào authoritative Finance.',
+          form: financeResult.error || 'Chưa ghi nhận được khoản thanh toán. Thông tin bạn nhập vẫn được giữ nguyên.',
         },
       }
       render()
@@ -25276,7 +25480,7 @@ function bindEvents() {
         if (!result.ok) {
           scheduleAdminAttendanceState = {
             ...scheduleAdminAttendanceState,
-            error: result.error || 'Không lưu được điểm danh lên server.',
+            error: result.error || 'Chưa lưu được điểm danh. Thông tin bạn nhập vẫn được giữ nguyên.',
             saveState: '',
           }
           render()
@@ -25381,7 +25585,7 @@ function bindEvents() {
     if (!result.ok) {
       sessionReportAttendanceState = {
         ...sessionReportAttendanceState,
-        error: result.error || 'Báo cáo buổi học chưa được lưu lên server.',
+        error: result.error || 'Chưa lưu được báo cáo buổi học. Thông tin bạn nhập vẫn được giữ nguyên.',
         saveState: '',
       }
       render()
@@ -25498,7 +25702,7 @@ function bindEvents() {
     if (!result.ok) {
       sessionReportAttendanceState = {
         ...sessionReportAttendanceState,
-        error: result.error || 'Khách học chưa được lưu lên server.',
+        error: result.error || 'Chưa lưu được thông tin khách học. Thông tin bạn nhập vẫn được giữ nguyên.',
         saveState: '',
       }
       render()
@@ -25540,7 +25744,7 @@ function bindEvents() {
       if (!result.ok) {
         sessionReportAttendanceState = {
           ...sessionReportAttendanceState,
-          error: result.error || 'Thay đổi khách học chưa được lưu lên server.',
+          error: result.error || 'Chưa lưu được thay đổi khách học. Thông tin bạn nhập vẫn được giữ nguyên.',
           saveState: '',
         }
         render()
@@ -25623,7 +25827,7 @@ function bindEvents() {
       if (!result.ok) {
         sessionReportLearningState = {
           ...sessionReportLearningState,
-          error: result.error || 'Nội dung buổi học chưa được lưu lên server.',
+          error: result.error || 'Chưa lưu được nội dung buổi học. Thông tin bạn nhập vẫn được giữ nguyên.',
           saveState: '',
         }
         render()
@@ -25760,7 +25964,7 @@ function bindEvents() {
     if (!result.ok) {
       sessionReportLearningState = {
         ...sessionReportLearningState,
-        error: result.error || 'Nội dung buổi học chưa được lưu lên server.',
+        error: result.error || 'Chưa lưu được nội dung buổi học. Thông tin bạn nhập vẫn được giữ nguyên.',
         saveState: '',
       }
       render()
@@ -25826,7 +26030,7 @@ function bindEvents() {
     if (!result.ok) {
       sessionReportExtraState = {
         ...nextExtraState,
-        error: result.error || 'Thông tin báo cáo chưa được lưu lên server.',
+        error: result.error || 'Chưa lưu được thông tin báo cáo. Thông tin bạn nhập vẫn được giữ nguyên.',
         saveState: '',
       }
       render()
@@ -27283,6 +27487,26 @@ function restorePreviousTuitionPeriod(currentRecord, previousTerm, restoredAt = 
 async function undoEmptyTuitionPeriodFromConfirmation() {
   const confirmation = tuitionPeriodActionConfirmationState
   if (!confirmation || confirmation.action !== 'undo-empty-period') {
+    return
+  }
+
+  if (!areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')) {
+    tuitionPeriodActionConfirmationState = {
+      ...confirmation,
+      isSaving: false,
+      reasons: ['Chưa tải được số đã thu hiện tại. Vui lòng bấm Làm mới rồi thử lại.'],
+    }
+    render()
+    return
+  }
+
+  if (!isModuleUpstreamCurrent('hoc-phi', 'attendance')) {
+    tuitionPeriodActionConfirmationState = {
+      ...confirmation,
+      isSaving: false,
+      reasons: ['Chưa tải được dữ liệu điểm danh để kiểm tra kỳ học. Vui lòng bấm Làm mới rồi thử lại.'],
+    }
+    render()
     return
   }
 

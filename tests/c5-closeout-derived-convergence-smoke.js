@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
   MODULE_AUTHORITY_REGISTRY,
+  evaluateModuleRefreshResults,
+  getModuleRefreshContract,
   getModuleRefreshUpstreams,
 } from '../src/module-authority-registry.js'
 import {
@@ -62,6 +64,25 @@ assert.deepEqual(getModuleRefreshUpstreams('bang-diem-danh'), ['core', 'attendan
 assert.deepEqual(getModuleRefreshUpstreams('nhom-tai-chinh'), ['finance'])
 assert.deepEqual(getModuleRefreshUpstreams('hoc-vien'), ['core-student'])
 assert.deepEqual(getModuleRefreshUpstreams('dang-cap-nhat'), [])
+assert.deepEqual(getModuleRefreshContract('giao-vien'), {
+  required: ['core'],
+  optional: ['attendance', 'staff'],
+  actionRequired: {},
+  all: ['core', 'attendance', 'staff'],
+})
+assert.deepEqual(getModuleRefreshContract('hoc-phi').actionRequired, {
+  payment: ['finance'],
+  'collected-balance': ['finance'],
+})
+assert.deepEqual(
+  evaluateModuleRefreshResults('bang-diem-danh', [
+    { upstream: 'core', ok: true },
+    { upstream: 'attendance', ok: true },
+    { upstream: 'tuition', ok: false, outcome_code: 'SCHEMA_NOT_READY' },
+    { upstream: 'calendar-notes', ok: false, outcome_code: 'SCHEMA_NOT_READY' },
+  ]).status,
+  'limited',
+)
 
 assert.equal(assertNoBrowserBusinessAuthority().ok, true)
 assert.equal(BROWSER_STORAGE_REGISTRY.length, 42)

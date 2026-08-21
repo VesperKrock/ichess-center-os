@@ -188,31 +188,43 @@ export function renderScheduleModule(
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate()
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
-  const centerCalendarItemState = deadlineOptions.centerCalendarItemState || null
-  const centerCalendarTagState = deadlineOptions.centerCalendarTagState || null
-  const centerCalendarTags = normalizeCenterCalendarTags(deadlineOptions.centerCalendarTags)
+  const attendanceAvailable = deadlineOptions.attendanceAvailable !== false
+  const calendarNotesAvailable = deadlineOptions.calendarNotesAvailable !== false
+  const centerCalendarItemState = calendarNotesAvailable
+    ? deadlineOptions.centerCalendarItemState || null
+    : null
+  const centerCalendarTagState = calendarNotesAvailable
+    ? deadlineOptions.centerCalendarTagState || null
+    : null
+  const centerCalendarTags = calendarNotesAvailable
+    ? normalizeCenterCalendarTags(deadlineOptions.centerCalendarTags)
+    : []
   const centerCalendarFilters = normalizeCenterCalendarFilters(deadlineOptions.centerCalendarFilters)
   const calendarNotesSharedTruthState = deadlineOptions.calendarNotesSharedTruthState || {}
   const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
   const weekRangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
   const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
-  const weekCenterCalendarItems = getCenterCalendarItemsForDisplayRange(
-    deadlineOptions.centerCalendarItems,
-    weekRangeStartAt,
-    weekRangeEndAt,
-  )
+  const weekCenterCalendarItems = calendarNotesAvailable
+    ? getCenterCalendarItemsForDisplayRange(
+        deadlineOptions.centerCalendarItems,
+        weekRangeStartAt,
+        weekRangeEndAt,
+      )
+    : []
   const visibleCenterCalendarItems = filterCenterCalendarItems(weekCenterCalendarItems, centerCalendarFilters)
   const teacherLookup = createLookup(teachers)
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
   const stats = getScheduleStats(visibleSessions, conflictMap)
-  const scheduleDeadlineAlerts = buildScheduleDeadlineAlerts({
-    sessions: visibleSessions,
-    attendanceRecords: deadlineOptions.attendanceRecords,
-    sessionReports,
-    teachers,
-    now: deadlineOptions.now,
-  })
+  const scheduleDeadlineAlerts = attendanceAvailable
+    ? buildScheduleDeadlineAlerts({
+        sessions: visibleSessions,
+        attendanceRecords: deadlineOptions.attendanceRecords,
+        sessionReports,
+        teachers,
+        now: deadlineOptions.now,
+      })
+    : []
 
   return `
     <section class="schedule-module ${formState || reportState || centerCalendarItemState || centerCalendarTagState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
@@ -227,8 +239,12 @@ export function renderScheduleModule(
 
         <div class="schedule-toolbar" aria-label="Điều hướng tuần">
           <button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>
-          <button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>
-          <button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>
+          ${calendarNotesAvailable
+            ? '<button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>'
+            : ''}
+          ${calendarNotesAvailable
+            ? '<button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>'
+            : ''}
           <button class="schedule-print-button" type="button" data-schedule-print-action="print">In / Lưu PDF</button>
           <div class="schedule-week-controls">
           <button type="button" data-schedule-week-action="previous">&lt; Tuần trước</button>
@@ -239,8 +255,15 @@ export function renderScheduleModule(
         </div>
       </div>
       ${renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState)}
-      ${renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)}
-      ${renderCenterCalendarLegend(centerCalendarTags, weekCenterCalendarItems)}
+      ${attendanceAvailable
+        ? ''
+        : '<p class="schedule-form-warning" role="status">Điểm danh và báo cáo buổi học hiện chưa tải được. Lịch học vẫn có thể xem và cập nhật.</p>'}
+      ${calendarNotesAvailable
+        ? renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)
+        : ''}
+      ${calendarNotesAvailable
+        ? renderCenterCalendarLegend(centerCalendarTags, weekCenterCalendarItems)
+        : ''}
       ${
         weekCenterCalendarItems.length && !visibleCenterCalendarItems.length
           ? '<p class="schedule-calendar-filter-empty">Không có hoạt động phù hợp bộ lọc</p>'
@@ -264,10 +287,10 @@ export function renderScheduleModule(
         </div>
       </div>
       ${formState ? renderScheduleForm(formState, teachers, students, sessions, normalizedWeekStart, classSessions) : ''}
-      ${centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags) : ''}
-      ${centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
+      ${calendarNotesAvailable && centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags) : ''}
+      ${calendarNotesAvailable && centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
       ${
-        reportState
+        reportState && attendanceAvailable
           ? renderScheduleReportPanel(
               reportState,
               sessions,
@@ -283,7 +306,9 @@ export function renderScheduleModule(
               guestParticipantFormState,
               adminAttendanceState,
             )
-          : ''
+          : reportState
+            ? '<p class="schedule-form-warning" role="status">Chưa thể mở điểm danh hoặc báo cáo buổi học. Vui lòng bấm Làm mới rồi thử lại.</p>'
+            : ''
       }
     </section>
   `
@@ -293,12 +318,12 @@ function renderCalendarNotesSharedTruthStatus(state = {}) {
   const message = String(state.message || '').trim()
   const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
   const migrationWarning = state.legacyMigrationRequired
-    ? ' Legacy Calendar/Notes đang được giữ nguyên để migration có kiểm soát; không tự nhập lên server.'
+    ? ' Ghi chú cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.'
     : ''
   return `
     <div class="c57-shared-truth-notice is-${escapeAttribute(tone)}" role="status">
-      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Calendar tùy chỉnh dùng authoritative server truth theo đúng cơ sở.')}</span>
-      <button type="button" data-c57-calendar-notes-refresh ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
+      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Lịch hoạt động được lưu dùng chung trong cơ sở.')}</span>
+      <button type="button" data-module-authoritative-refresh="thoi-khoa-bieu" ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
     </div>
   `
 }

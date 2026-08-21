@@ -113,8 +113,12 @@ for (const [startToken, endToken] of [
   ['async function syncCloudUser', 'function createInitialCloudDbState'],
 ]) {
   const bootstrap = sourceSlice(startToken, endToken)
-  assert(bootstrap.includes('refreshC54FinanceSharedTruth'))
   for (const unavailable of [
+    'bootstrapC51AttendanceSessionReportCloudData',
+    'startC51AttendanceRealtimeSubscription',
+    'bootstrapC52TuitionRecordPackageCloudData',
+    'startC52TuitionRealtimeSubscription',
+    'refreshC54FinanceSharedTruth',
     'refreshC55StaffHrSharedTruth',
     'refreshC56InventorySharedTruth',
     'refreshC57CalendarNotesSharedTruth',
