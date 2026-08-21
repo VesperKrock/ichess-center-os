@@ -22,7 +22,7 @@ export function canWriteC54FinanceSharedTruth(accessState = {}) {
     role,
     error: canWrite
       ? ''
-      : 'Vai trò hiện tại chỉ được đọc Finance/Cashbook; dữ liệu chưa được lưu.',
+      : 'Vai trò hiện tại chỉ được xem Thu chi; dữ liệu chưa được lưu.',
   }
 }
 
@@ -117,6 +117,60 @@ export async function mutateC54FinanceSharedTruth({
   }
 }
 
+export async function mutateC54TuitionPaymentVoid({
+  supabase,
+  centerId,
+  command,
+  idempotencyKey = createC54FinanceIdempotencyKey(),
+} = {}) {
+  if (!supabase || typeof supabase.rpc !== 'function') {
+    return failure('CLIENT_NOT_READY', getC54FinanceOutcomeMessage('CLIENT_NOT_READY'), null, idempotencyKey)
+  }
+  const normalizedCenterId = cleanText(centerId)
+  if (!normalizedCenterId) {
+    return failure('INVALID_CENTER', getC54FinanceOutcomeMessage('INVALID_CENTER'), null, idempotencyKey)
+  }
+
+  let normalizedCommand
+  try {
+    normalizedCommand = buildC54VoidTuitionPaymentCommand(command)
+  } catch (error) {
+    return failure('INVALID_PAYLOAD', String(error?.message || error), null, idempotencyKey)
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('c5_4_void_tuition_payment', {
+      p_center_id: normalizedCenterId,
+      p_transaction_id: normalizedCommand.transaction_id,
+      p_source_payment_id: normalizedCommand.source_payment_id,
+      p_source_tuition_id: normalizedCommand.source_tuition_id,
+      p_expected_version: normalizedCommand.expected_version,
+      p_reason: normalizedCommand.reason,
+      p_idempotency_key: idempotencyKey,
+    })
+    if (error) {
+      return failure('SERVER_COMMAND_FAILED', String(error.message || error), error, idempotencyKey)
+    }
+    if (!data?.ok) {
+      const outcomeCode = String(data?.outcome_code || 'SERVER_COMMAND_FAILED')
+      return failure(outcomeCode, getC54FinanceOutcomeMessage(outcomeCode), data, idempotencyKey)
+    }
+    const version = Number(data.entity_version)
+    if (data.outcome_code !== 'COMMITTED'
+      || data.entity_type !== 'TRANSACTION'
+      || data.entity_id !== normalizedCommand.transaction_id
+      || data.center_id !== normalizedCenterId
+      || data.source_payment_id !== normalizedCommand.source_payment_id
+      || data.source_tuition_id !== normalizedCommand.source_tuition_id
+      || !Number.isSafeInteger(version) || version < 2) {
+      return failure('INVALID_SERVER_RESULT', getC54FinanceOutcomeMessage('INVALID_SERVER_RESULT'), data, idempotencyKey)
+    }
+    return { ...data, ok: true, entity_version: version, idempotencyKey }
+  } catch (error) {
+    return failure('SERVER_COMMAND_FAILED', String(error?.message || error), error, idempotencyKey)
+  }
+}
+
 export function buildC54SaveCategoryCommand(category = {}) {
   const version = financeVersion(category)
   const type = cleanText(category.type).toLowerCase()
@@ -188,6 +242,50 @@ export function buildC54VoidTransactionCommand(transaction = {}) {
     operation: 'VOID_TRANSACTION',
     transaction_id: requireUuid(transaction.id, 'Thiếu transaction_id authoritative.'),
     expected_version: requirePositiveVersion(transaction, 'Transaction'),
+  }
+}
+
+export function buildC54VoidTuitionPaymentCommand(transaction = {}, reason = transaction.reason) {
+  if (cleanText(transaction.sourceModule || transaction.source_module) !== 'hoc-phi'
+    || cleanText(transaction.sourceType || transaction.source_type) !== 'tuition-payment') {
+    throw new Error('Chỉ có thể hủy khoản thu được tạo từ Học phí.')
+  }
+  if (cleanText(transaction.status).toLowerCase() !== 'posted') {
+    throw new Error('Khoản thu này không còn ở trạng thái có thể hủy.')
+  }
+  const normalizedReason = cleanText(reason)
+  if (normalizedReason.length < 3 || normalizedReason.length > 500 || /[\u0000-\u001f\u007f]/.test(normalizedReason)) {
+    throw new Error('Lý do hủy cần từ 3 đến 500 ký tự và nằm trên một dòng.')
+  }
+  const expectedVersion = Number(transaction.expected_version || transaction.cloudVersion)
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    throw new Error('Phiên bản khoản thu không hợp lệ. Vui lòng bấm Làm mới.')
+  }
+  const sourcePaymentId = requireText(
+    transaction.sourcePaymentId || transaction.source_payment_id,
+    'Khoản thu thiếu mã thanh toán Học phí.',
+  )
+  const sourceTuitionId = requireText(
+    transaction.sourceTuitionId || transaction.source_tuition_id,
+    'Khoản thu thiếu mã gói Học phí.',
+  )
+  if (sourcePaymentId.length > 240 || sourceTuitionId.length > 240
+    || /[\u0000-\u001f\u007f]/.test(`${sourcePaymentId}${sourceTuitionId}`)) {
+    throw new Error('Liên kết khoản thu Học phí không hợp lệ.')
+  }
+  return {
+    operation: 'VOID_TUITION_PAYMENT',
+    transaction_id: requireUuid(
+      transaction.id || transaction.transaction_id,
+      'Không xác định được khoản thu cần hủy.',
+    ),
+    source_module: 'hoc-phi',
+    source_type: 'tuition-payment',
+    source_payment_id: sourcePaymentId,
+    source_tuition_id: sourceTuitionId,
+    expected_version: expectedVersion,
+    status: 'posted',
+    reason: normalizedReason,
   }
 }
 
@@ -361,27 +459,27 @@ export function projectC54CashbookReconciliation(row = {}) {
 
 export function getC54FinanceOutcomeMessage(outcomeCode) {
   const messages = {
-    NOT_AUTHENTICATED: 'Phiên đăng nhập không hợp lệ; Finance chưa được lưu.',
-    CLIENT_NOT_READY: 'Không kết nối được cloud; Finance chưa được lưu.',
-    INVALID_CENTER: 'Cơ sở không hợp lệ; Finance chưa được lưu.',
-    CENTER_ACCESS_DENIED: 'Tài khoản không có active membership tại cơ sở này.',
-    WRITE_ROLE_REQUIRED: 'Vai trò hiện tại không được ghi Finance/Cashbook.',
-    INVALID_COMMAND: 'Lệnh Finance không hợp lệ.',
-    INVALID_OPERATION: 'Thao tác không thuộc authoritative Finance C5.4.',
-    INVALID_PAYLOAD: 'Dữ liệu Finance không hợp lệ.',
+    NOT_AUTHENTICATED: 'Phiên đăng nhập không hợp lệ; dữ liệu chưa được lưu.',
+    CLIENT_NOT_READY: 'Không kết nối được máy chủ; dữ liệu chưa được lưu.',
+    INVALID_CENTER: 'Cơ sở không hợp lệ; dữ liệu chưa được lưu.',
+    CENTER_ACCESS_DENIED: 'Tài khoản không có quyền truy cập cơ sở này.',
+    WRITE_ROLE_REQUIRED: 'Vai trò hiện tại không được cập nhật Thu chi.',
+    INVALID_COMMAND: 'Yêu cầu cập nhật Thu chi không hợp lệ.',
+    INVALID_OPERATION: 'Thao tác Thu chi không hợp lệ.',
+    INVALID_PAYLOAD: 'Dữ liệu Thu chi không hợp lệ.',
     INVALID_MONEY: 'Số tiền phải là số nguyên VND an toàn.',
-    RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy dữ liệu Finance trong đúng cơ sở.',
+    RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy dữ liệu Thu chi trong cơ sở hiện tại.',
     VERSION_STALE: 'Dữ liệu đã được tài khoản khác cập nhật; hãy Làm mới trước khi lưu.',
     CATEGORY_ARCHIVED: 'Danh mục đã lưu trữ; không thể dùng cho giao dịch mới.',
     CATEGORY_NAME_CONFLICT: 'Tên danh mục đã tồn tại trong cơ sở này.',
     CATEGORY_IN_USE: 'Danh mục đang được giao dịch sử dụng.',
     SOURCE_TRANSACTION_CONFLICT: 'Payment/source này đã gắn với một giao dịch khác.',
-    PROTECTED_TRANSACTION: 'Giao dịch nguồn Học phí không được sửa hoặc void từ Thu chi.',
-    TUITION_SOURCE_NOT_FOUND: 'Không tìm thấy authoritative tuition package đúng học viên/cơ sở.',
-    TUITION_SOURCE_INVALID: 'Authoritative tuition package có số tiền không hợp lệ.',
+    PROTECTED_TRANSACTION: 'Khoản thu Học phí chỉ có thể hủy từ màn hình Học phí và không thể sửa tùy ý trong Thu chi.',
+    TUITION_SOURCE_NOT_FOUND: 'Không tìm thấy gói học phí phù hợp trong cơ sở hiện tại.',
+    TUITION_SOURCE_INVALID: 'Gói học phí có số tiền không hợp lệ.',
     TUITION_PERIOD_STALE: 'Kỳ học phí đã thay đổi; hãy mở lại form thanh toán.',
     TUITION_LEGACY_PAYMENT_UNRECONCILED: 'Paid amount legacy chưa được đối soát với Finance.',
-    TUITION_PAYMENT_EXCEEDS_OUTSTANDING: 'Thanh toán đồng thời vượt quá số còn nợ authoritative.',
+    TUITION_PAYMENT_EXCEEDS_OUTSTANDING: 'Khoản thanh toán vượt quá số tiền còn nợ.',
     CLOSED_PERIOD: 'Ngày giao dịch/thiết lập đã thuộc kỳ đối soát đóng.',
     RECONCILIATION_CLOSED: 'Đối soát đã đóng và không thể cập nhật.',
     RESOURCE_STATE_CONFLICT: 'Dữ liệu Finance đang ở trạng thái không cho phép thao tác này.',
@@ -389,12 +487,13 @@ export function getC54FinanceOutcomeMessage(outcomeCode) {
     ATTACHMENT_ALREADY_BOUND: 'Chứng từ đã được bind với giao dịch khác.',
     IDEMPOTENCY_CONFLICT: 'Khóa retry đã được dùng cho một lệnh Finance khác.',
     CONCURRENT_CONFLICT: 'Có lệnh Finance đồng thời; hãy Làm mới rồi thử lại.',
-    INVALID_SERVER_RESULT: 'Server trả kết quả Finance không hợp lệ; projection chưa thay đổi.',
-    CENTER_CONTEXT_CHANGED: 'Cơ sở đã đổi; view hiện tại không nhận dữ liệu từ cơ sở trước.',
-    FINANCE_SHARED_TRUTH_READ_FAILED: 'Không đọc được authoritative Finance; projection chưa thay đổi.',
-    SERVER_COMMAND_FAILED: 'Không commit được Finance lên server; projection chưa thay đổi.',
+    INVALID_SERVER_RESULT: 'Máy chủ trả kết quả không hợp lệ; danh sách chưa thay đổi.',
+    CENTER_CONTEXT_CHANGED: 'Cơ sở đã đổi; màn hình hiện tại không nhận dữ liệu từ cơ sở trước.',
+    FINANCE_SHARED_TRUTH_READ_FAILED: 'Không tải được dữ liệu Thu chi; danh sách cũ không được coi là mới.',
+    SERVER_COMMAND_FAILED: 'Không lưu được dữ liệu Thu chi lên máy chủ; danh sách chưa thay đổi.',
+    COMMITTED_PROJECTION_REFRESH_FAILED: 'Khoản thu đã được hủy nhưng danh sách mới chưa tải lại được. Vui lòng bấm Làm mới.',
   }
-  return messages[String(outcomeCode || '')] || 'Không thể cập nhật authoritative Finance/Cashbook.'
+  return messages[String(outcomeCode || '')] || 'Không thể cập nhật dữ liệu Thu chi.'
 }
 
 function projectC54Attachment(row = {}) {

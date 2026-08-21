@@ -195,6 +195,7 @@ export function renderTuitionModule(
   const attendanceAvailable = availability.attendanceAvailable !== false
   const calendarNotesAvailable = availability.calendarNotesAvailable !== false
   const financeAvailable = availability.financeAvailable !== false
+  const canVoidPayments = availability.canVoidPayments === true
   const rows = buildTuitionRows(
     students,
     tuitionRecords,
@@ -325,6 +326,7 @@ export function renderTuitionModule(
               cashflowTransactions,
               centerId,
               financeAvailable,
+              canVoidPayments,
             )
           : ''
       }
@@ -335,7 +337,7 @@ export function renderTuitionModule(
             detailRow?.attendanceTuitionPreview,
             cashflowTransactions,
             centerId,
-            { attendanceAvailable, financeAvailable },
+            { attendanceAvailable, financeAvailable, canVoidPayments },
           )
         : ''}
       ${rollbackPreviewState ? renderRollbackPreviewPanel(rollbackPreviewState) : ''}
@@ -1800,6 +1802,7 @@ function renderPaymentForm(
   cashflowTransactions = [],
   centerId = '',
   financeAvailable = true,
+  canVoidPayments = false,
 ) {
   const { values, errors } = formState
   const amounts = financeAvailable
@@ -1886,6 +1889,7 @@ function renderPaymentForm(
           ? renderLedgerPaymentTimeline(paymentSummary, {
               title: '',
               emptyMessage: 'Chưa có lần thanh toán nào',
+              canVoidPayments,
             })
           : '<p class="tuition-payment-empty">Lịch sử thanh toán hiện chưa tải được.</p>'}
       </section>
@@ -1948,6 +1952,7 @@ function renderTuitionDetailContent(
 ) {
   const attendanceAvailable = availability.attendanceAvailable !== false
   const financeAvailable = availability.financeAvailable !== false
+  const canVoidPayments = availability.canVoidPayments === true
   const remainingSessions = tuitionRecord.totalSessions - tuitionRecord.usedSessions
   const amounts = financeAvailable
     ? calculateTuitionAmounts(tuitionRecord, cashflowTransactions, centerId)
@@ -2003,6 +2008,7 @@ function renderTuitionDetailContent(
         ? renderLedgerPaymentTimeline(paymentSummary, {
             title: 'Lịch sử thanh toán',
             emptyMessage: 'Chưa có lần thanh toán nào',
+            canVoidPayments,
           })
         : '<p class="tuition-payment-empty">Lịch sử thanh toán hiện chưa tải được.</p>'}
     </section>
@@ -2091,7 +2097,7 @@ function renderLedgerPaymentTimeline(summary = {}, options = {}) {
         payments.length
           ? `
             <div class="tuition-payment-history-list">
-              ${payments.map((transaction) => renderLedgerPaymentTimelineItem(transaction)).join('')}
+              ${payments.map((transaction) => renderLedgerPaymentTimelineItem(transaction, options)).join('')}
             </div>
           `
           : `<p class="tuition-payment-empty">${escapeHtml(emptyMessage)}</p>`
@@ -2100,7 +2106,7 @@ function renderLedgerPaymentTimeline(summary = {}, options = {}) {
   `
 }
 
-function renderLedgerPaymentTimelineItem(transaction) {
+function renderLedgerPaymentTimelineItem(transaction, options = {}) {
   const evidenceLabel = hasTransactionEvidence(transaction) ? 'Có chứng từ' : 'Không có chứng từ'
   const displayCode = getSafeTransactionDisplayCode(transaction)
 
@@ -2125,6 +2131,9 @@ function renderLedgerPaymentTimelineItem(transaction) {
         <button type="button" data-tuition-payment-open-transaction="${escapeAttribute(transaction.id)}">
           Mở giao dịch Thu chi
         </button>
+        ${options.canVoidPayments && !options.isHistorical
+          ? `<button type="button" data-tuition-payment-void="${escapeAttribute(transaction.id)}">Hủy khoản thu</button>`
+          : ''}
       </div>
     </article>
   `

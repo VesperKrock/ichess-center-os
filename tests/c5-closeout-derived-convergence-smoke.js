@@ -234,12 +234,15 @@ const migrationStatus = spawnSync(
   { cwd: root, encoding: 'utf8' },
 )
 assert.equal(migrationStatus.status, 0)
-const allowedAdditiveMigration = 'supabase/migrations/202608210001_c5_1_dreamhome_schedule_identity_normalization.sql'
+const allowedPostC5AdditiveMigrations = new Set([
+  'supabase/migrations/202608210001_c5_1_dreamhome_schedule_identity_normalization.sql',
+  'supabase/migrations/202608210002_ov1_4_tuition_payment_finance_void.sql',
+])
 const changedMigrationPaths = migrationStatus.stdout.trim().split(/\r?\n/)
   .filter(Boolean)
   .map((line) => line.slice(3).replaceAll('\\', '/'))
 assert(
-  changedMigrationPaths.every((path) => path === allowedAdditiveMigration),
+  changedMigrationPaths.every((path) => allowedPostC5AdditiveMigrations.has(path)),
   `Inherited migrations must remain byte-immutable: ${changedMigrationPaths.join(', ')}`,
 )
 

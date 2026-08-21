@@ -47,12 +47,14 @@ import {
   buildC54SaveSettingsCommand,
   buildC54SaveTransactionCommand,
   buildC54UpsertReconciliationCommand,
+  buildC54VoidTuitionPaymentCommand,
   buildC54VoidTransactionCommand,
   canWriteC54FinanceSharedTruth,
   createC54FinanceIdempotencyKey,
   createC54FinanceRetryFingerprint,
   getC54FinanceOutcomeMessage,
   mutateC54FinanceSharedTruth,
+  mutateC54TuitionPaymentVoid,
   pullC54FinanceSharedTruth,
 } from './cloud-authoritative-finance.js'
 import { inspectAndQuarantineC54LegacyFinance } from './legacy-finance-quarantine.js'
@@ -708,6 +710,7 @@ let c54FinanceSharedTruthState = {
 }
 let c54FinanceSyncRunId = 0
 const c54FinanceRetryCommands = new Map()
+const c54TuitionPaymentVoidRetryCommands = new Map()
 const c54AttachmentRetryIntents = new WeakMap()
 let c55StaffHrSharedTruthState = {
   centerId: '',
@@ -1545,6 +1548,7 @@ function resetTransientStateForCenterSwitch() {
   }
   c54FinanceSyncRunId += 1
   c54FinanceRetryCommands.clear()
+  c54TuitionPaymentVoidRetryCommands.clear()
   c54FinanceSharedTruthState = {
     centerId: getCurrentResolvedCenterId(),
     isLoading: false,
@@ -10767,6 +10771,9 @@ function renderWindowBody(windowItem) {
     const attendanceAvailable = isModuleUpstreamCurrent('hoc-phi', 'attendance')
     const calendarNotesAvailable = isModuleUpstreamCurrent('hoc-phi', 'calendar-notes')
     const financeAvailable = areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')
+    const canVoidPayments = financeAvailable
+      && !c54FinanceSharedTruthState.isSaving
+      && canWriteC54FinanceSharedTruth(buildCurrentOnlineAccessState({ cloudReady: true })).canWrite
     return renderTuitionModule(
       students,
       tuitionRecords,
@@ -10798,6 +10805,7 @@ function renderWindowBody(windowItem) {
         attendanceAvailable,
         calendarNotesAvailable,
         financeAvailable,
+        canVoidPayments,
       },
     )
   }
@@ -14864,7 +14872,7 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     ...c54FinanceSharedTruthState,
     centerId,
     isLoading: true,
-    message: silent ? c54FinanceSharedTruthState.message : 'Đang tải authoritative Finance/Cashbook...',
+    message: silent ? c54FinanceSharedTruthState.message : 'Đang tải dữ liệu Thu chi...',
     messageTone: '',
     legacyMigrationRequired: legacy.migrationRequired,
     legacySnapshotKey: legacy.snapshotKey || '',
@@ -14877,7 +14885,7 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     cashflowCategories = []
     cashbookSettings = createDefaultCashbookSettings([])
     cashbookReconciliations = []
-    const error = 'Cần đăng nhập và có active membership để đọc authoritative Finance/Cashbook.'
+    const error = 'Vui lòng đăng nhập và chọn đúng cơ sở để tải dữ liệu Thu chi.'
     c54FinanceSharedTruthState = {
       ...c54FinanceSharedTruthState,
       isLoading: false,
@@ -14939,8 +14947,8 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     isLoading: false,
     isSaving: false,
     message: reason === 'after-server-commit'
-      ? 'Finance/Cashbook đã commit server và projection đã được làm mới.'
-      : `Đã tải authoritative Finance (${cashflowTransactions.length} giao dịch).`,
+      ? 'Dữ liệu Thu chi đã được cập nhật và tải lại.'
+      : `Đã tải ${cashflowTransactions.length} giao dịch Thu chi.`,
     messageTone: 'success',
     lastLoadedAt: new Date().toISOString(),
   }
@@ -14987,7 +14995,7 @@ async function writeC54FinanceCommand(command, {
     ...c54FinanceSharedTruthState,
     centerId,
     isSaving: true,
-    message: 'Đang commit authoritative Finance/Cashbook...',
+    message: 'Đang lưu dữ liệu Thu chi...',
     messageTone: '',
   }
   render()
@@ -15023,7 +15031,7 @@ async function writeC54FinanceCommand(command, {
       committed: Boolean(result.ok),
       outcome_code: 'CENTER_CONTEXT_CHANGED',
       error: result.ok
-        ? 'Finance đã commit tại cơ sở trước; view cơ sở hiện tại không nhận projection đó.'
+        ? 'Dữ liệu đã được lưu ở cơ sở trước. Màn hình hiện tại không hiển thị dữ liệu của cơ sở đó.'
         : getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED'),
       ...commandContext,
     }
@@ -15050,12 +15058,119 @@ async function writeC54FinanceCommand(command, {
       ok: false,
       committed: true,
       outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
-      error: 'Finance đã commit server nhưng chưa tải lại được projection; không ghi local giả thành công.',
+      error: 'Dữ liệu đã được lưu nhưng danh sách mới chưa tải lại được. Vui lòng bấm Làm mới.',
       ...commandContext,
     }
   }
   c54FinanceRetryCommands.delete(retryScope)
   return { ...result, ok: true, projection, reason, ...commandContext }
+}
+
+async function writeC54TuitionPaymentVoid(transaction, reason) {
+  const centerId = getCurrentResolvedCenterId()
+  const access = canWriteC54FinanceSharedTruth(buildCurrentOnlineAccessState({ cloudReady: true }))
+  if (!access.canWrite) {
+    return { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+  }
+
+  let requestedCommand
+  try {
+    requestedCommand = buildC54VoidTuitionPaymentCommand(transaction, reason)
+  } catch (error) {
+    return { ok: false, outcome_code: 'INVALID_PAYLOAD', error: String(error?.message || error) }
+  }
+
+  const retryScope = `${centerId}|${requestedCommand.transaction_id}`
+  const existingPending = c54TuitionPaymentVoidRetryCommands.get(retryScope)
+  const pending = existingPending || {
+    centerId,
+    command: requestedCommand,
+    idempotencyKey: createC54FinanceIdempotencyKey(),
+  }
+  c54TuitionPaymentVoidRetryCommands.set(retryScope, pending)
+
+  const runId = ++c54FinanceSyncRunId
+  c54FinanceSharedTruthState = {
+    ...c54FinanceSharedTruthState,
+    centerId,
+    isSaving: true,
+    message: 'Đang hủy khoản thu...',
+    messageTone: '',
+  }
+  render()
+
+  const readiness = await getCloudDbContext(centerId)
+  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()
+    || !readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : readiness
+    if (runId === c54FinanceSyncRunId) {
+      c54FinanceSharedTruthState = {
+        ...c54FinanceSharedTruthState,
+        isSaving: false,
+        message: result.error || 'Không thể hủy khoản thu lúc này.',
+        messageTone: 'error',
+      }
+      render()
+    }
+    return { ...result, reusedPendingIntent: Boolean(existingPending) }
+  }
+
+  const result = await mutateC54TuitionPaymentVoid({
+    supabase: readiness.supabase,
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Khoản thu đã được hủy ở cơ sở trước. Màn hình hiện tại không hiển thị dữ liệu của cơ sở đó.'
+        : getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+      reusedPendingIntent: Boolean(existingPending),
+    }
+  }
+  if (!result.ok && !isC54RetryableFinanceFailure(result)) {
+    c54TuitionPaymentVoidRetryCommands.delete(retryScope)
+  }
+  if (!result.ok) {
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      isSaving: false,
+      message: result.error || getC54FinanceOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return { ...result, reusedPendingIntent: Boolean(existingPending) }
+  }
+
+  c54FinanceSharedTruthState = { ...c54FinanceSharedTruthState, isSaving: false }
+  const projection = await refreshC54FinanceSharedTruth({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    const failure = {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: getC54FinanceOutcomeMessage('COMMITTED_PROJECTION_REFRESH_FAILED'),
+      reusedPendingIntent: Boolean(existingPending),
+    }
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      isSaving: false,
+      message: failure.error,
+      messageTone: 'error',
+    }
+    render()
+    return failure
+  }
+  c54TuitionPaymentVoidRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reusedPendingIntent: Boolean(existingPending) }
 }
 
 function isC54RetryableFinanceFailure(result = {}) {
@@ -21222,6 +21337,39 @@ function bindEvents() {
       event.preventDefault()
       event.stopPropagation()
       openTuitionPaymentSourceTransaction(button.dataset.tuitionPaymentOpenTransaction)
+    })
+  })
+
+  document.querySelectorAll('[data-tuition-payment-void]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (!areModuleActionUpstreamsCurrent('hoc-phi', 'payment')) {
+        window.alert('Dữ liệu Học phí hoặc Thu chi chưa tải xong. Vui lòng bấm Làm mới rồi thử lại.')
+        return
+      }
+      const transactionId = String(button.dataset.tuitionPaymentVoid || '').trim()
+      const transaction = cashflowTransactions.find((item) => item.id === transactionId)
+      if (!transaction) {
+        window.alert('Không tìm thấy khoản thu trong dữ liệu vừa tải. Vui lòng bấm Làm mới.')
+        return
+      }
+      if (!window.confirm(
+        'Khoản thu sẽ được đánh dấu đã hủy và vẫn được giữ trong lịch sử. Bạn có muốn tiếp tục?',
+      )) return
+
+      const retryScope = `${getCurrentResolvedCenterId()}|${transactionId}`
+      const previousReason = c54TuitionPaymentVoidRetryCommands.get(retryScope)?.command?.reason || ''
+      const reason = window.prompt('Nhập lý do hủy khoản thu (ít nhất 3 ký tự):', previousReason)
+      if (reason === null) return
+
+      const result = await writeC54TuitionPaymentVoid(transaction, reason)
+      if (!result.ok) {
+        window.alert(result.error || 'Không thể hủy khoản thu lúc này.')
+        return
+      }
+      window.alert('Khoản thu đã được hủy. Lịch sử giao dịch vẫn được giữ lại.')
     })
   })
 
