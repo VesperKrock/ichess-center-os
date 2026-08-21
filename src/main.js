@@ -1,6 +1,7 @@
 import './styles.css'
 import './student-theme.css'
 import './schedule-theme.css'
+import './report-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -10306,6 +10307,7 @@ function renderModuleWindow(windowItem) {
   const headerTitle = getWindowHeaderTitle(windowItem)
   const studentSurface = getStudentWindowSurface(windowItem)
   const isScheduleWindow = windowItem.moduleId === 'thoi-khoa-bieu' && !windowItem.type
+  const isReportWindow = windowItem.moduleId === 'bao-cao' && !windowItem.type
 
   if (!title || !headerTitle || windowItem.minimized) {
     return ''
@@ -10321,7 +10323,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -10904,6 +10906,7 @@ function renderWindowBody(windowItem) {
   if (moduleItem.id === 'bao-cao') {
     const centerInfo = getCurrentCanonicalCenterContext()
     return renderReportModule({
+      viewMode: reportState.viewMode,
       filters: reportState.filters,
       draft: reportState.draft,
       selectedBarDetail: reportState.selectedBarDetail,
@@ -19503,6 +19506,15 @@ function bindEvents() {
         return
       }
 
+      if (action === 'filter') {
+        openReportTransactionDrilldown({
+          mode: reportTransactionDrilldownState?.scope?.mode,
+          type: sourceActionButton.dataset.reportSourceType,
+          category: reportTransactionDrilldownState?.scope?.category,
+        })
+        return
+      }
+
       const transactionId = sourceActionButton.dataset.reportSourceTransactionId
       if (action === 'open-transaction') {
         openReportSourceTransaction(transactionId)
@@ -19540,6 +19552,22 @@ function bindEvents() {
         type: drilldownButton.dataset.reportDrilldownType,
         category: drilldownButton.dataset.reportDrilldownCategory,
       })
+      return
+    }
+
+    const viewButton = event.target.closest('[data-report-view-mode]')
+
+    if (viewButton) {
+      event.preventDefault()
+      event.stopPropagation()
+      reportState = {
+        ...reportState,
+        viewMode: viewButton.dataset.reportViewMode === 'week' ? 'week' : 'day',
+        selectedBarDetail: null,
+      }
+      reportTransactionDrilldownState = null
+      reportTransactionDrilldownToken += 1
+      render()
       return
     }
 

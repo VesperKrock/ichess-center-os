@@ -29,6 +29,7 @@ export function createInitialReportState(now = new Date()) {
   const today = toDateKey(now)
 
   return {
+    viewMode: 'day',
     filters: {
       reportDate: today,
       weekStartDate: getWeekStartDate(today),
@@ -39,6 +40,7 @@ export function createInitialReportState(now = new Date()) {
 }
 
 export function renderReportModule({
+  viewMode = 'day',
   filters = initialReportFilters,
   draft = initialReportDraft,
   students = [],
@@ -57,35 +59,53 @@ export function renderReportModule({
     attendanceRecords,
   })
   const activeCenter = normalizeReportCenterInfo(centerInfo)
+  const activeViewMode = viewMode === 'week' ? 'week' : 'day'
 
   return `
-    <section class="report-module" aria-label="Báo cáo vận hành cơ sở ${escapeAttribute(activeCenter.displayName)}">
-      <div class="report-filters" aria-label="Bộ lọc ngày và tuần">
-        <label>
-          <span>Ngày báo cáo</span>
-          <input type="date" value="${escapeAttribute(activeFilters.reportDate)}" data-report-filter="reportDate" />
-        </label>
-        <div class="report-week-control">
-          <span>Tuần đang xem: ${escapeHtml(reportData.weekLabel)}</span>
-          <input type="date" value="${escapeAttribute(activeFilters.weekStartDate)}" data-report-filter="weekStartDate" />
+    <section class="report-module" data-report-view="${activeViewMode}" aria-label="Báo cáo vận hành cơ sở ${escapeAttribute(activeCenter.displayName)}">
+      <header class="report-header">
+        <div class="report-heading-group">
+          <h3>Báo cáo</h3>
+          <div class="report-view-tabs" aria-label="Chọn báo cáo ngày hoặc tuần">
+            <button type="button" class="${activeViewMode === 'day' ? 'is-active' : ''}" data-report-view-mode="day" aria-pressed="${activeViewMode === 'day'}">Ngày</button>
+            <button type="button" class="${activeViewMode === 'week' ? 'is-active' : ''}" data-report-view-mode="week" aria-pressed="${activeViewMode === 'week'}">Tuần</button>
+          </div>
         </div>
-        <div class="report-week-actions" aria-label="Điều hướng tuần báo cáo">
-          <button type="button" data-report-week-action="previous">Tuần trước</button>
-          <button type="button" data-report-week-action="current">Tuần này</button>
-          <button type="button" data-report-week-action="next">Tuần sau</button>
-        </div>
+        ${renderReportPeriodControl(activeViewMode, activeFilters, reportData)}
         <div class="report-actions">
           <button type="button" data-report-action="print">In báo cáo</button>
           <button type="button" data-report-action="download">Tải báo cáo</button>
         </div>
-      </div>
+      </header>
 
       <div class="report-grid" data-report-scroll-region="report-grid">
-        ${renderDailyReport(reportData, activeDraft)}
-        ${renderWeeklyReport(reportData, selectedBarDetail)}
+        ${activeViewMode === 'day' ? renderDailyReport(reportData, activeDraft) : renderWeeklyReport(reportData, selectedBarDetail)}
       </div>
       ${renderReportSourceTransactionsModal(sourceTransactionsState)}
     </section>
+  `
+}
+
+function renderReportPeriodControl(viewMode, filters, data) {
+  if (viewMode === 'week') {
+    return `
+      <div class="report-week-period" aria-label="Điều hướng tuần báo cáo">
+        <button type="button" data-report-week-action="previous" aria-label="Tuần trước">‹</button>
+        <label class="report-week-control">
+          <span>Tuần đang xem: ${escapeHtml(data.weekLabel)}</span>
+          <input type="date" value="${escapeAttribute(filters.weekStartDate)}" data-report-filter="weekStartDate" aria-label="Chọn tuần báo cáo" />
+        </label>
+        <button type="button" data-report-week-action="current">Tuần hiện tại</button>
+        <button type="button" data-report-week-action="next" aria-label="Tuần sau">›</button>
+      </div>
+    `
+  }
+
+  return `
+    <label class="report-day-control">
+      <span>Ngày báo cáo</span>
+      <input type="date" value="${escapeAttribute(filters.reportDate)}" data-report-filter="reportDate" />
+    </label>
   `
 }
 
@@ -124,6 +144,7 @@ export function buildReportData({
     reportDateLabel: formatDate(activeFilters.reportDate),
     weekLabel: `${formatDate(weekDays[0])} - ${formatDate(weekDays[weekDays.length - 1])}`,
     dailyTransactions,
+    weeklyTransactions: weekTransactions,
     dailyIncome,
     dailyExpense,
     weeklyIncome,
@@ -318,36 +339,36 @@ export function getReportDownloadFilename(reportDate = getTodayDate(), centerInf
 function renderDailyReport(data, draft) {
   return `
     <section class="report-panel report-daily-panel" aria-labelledby="daily-report-title">
-      <div class="report-panel-heading">
-        <h4 id="daily-report-title">Báo cáo ngày</h4>
-        <span>${escapeHtml(data.reportDateLabel)}</span>
-      </div>
+      <h4 class="report-visually-hidden" id="daily-report-title">Báo cáo ngày</h4>
       <div class="report-stat-row">
         ${renderReportStat('Doanh thu trong ngày', formatMoney(data.dailyIncome), 'income')}
         ${renderReportStat('Chi phí trong ngày', formatMoney(data.dailyExpense), 'expense')}
         ${renderReportStat('Còn lại', formatMoney(data.dailyIncome - data.dailyExpense), 'balance')}
+        ${renderReportSourceStat(data.dailyTransactions)}
       </div>
-      ${renderReportSourceActions('day')}
-      ${
-        data.dailyTransactions.length
-          ? renderDailyTransactionList(data.dailyTransactions)
-          : '<p class="report-empty">Chưa có giao dịch thu/chi trong ngày đang chọn.</p>'
-      }
-      <div class="report-daily-form" aria-label="Nội dung báo cáo công việc ngày">
-        ${renderReportTextarea('Công việc ngày', 'dailyTasks', draft.dailyTasks, 'Các việc đã xử lý trong ngày')}
-        ${renderReportTextarea('Tình huống/vấn đề xảy ra trong ngày', 'dailyIssues', draft.dailyIssues, 'Tình huống phát sinh, việc cần theo dõi')}
-        ${renderReportTextarea('Ghi chú vận hành', 'operationNote', draft.operationNote, 'Ghi chú bàn giao hoặc lưu ý nội bộ')}
-        ${renderPendingTaskBox(draft)}
-        <label>
-          <span>Người phụ trách</span>
-          <input
-            type="text"
-            value="${escapeAttribute(draft.ownerName)}"
-            placeholder="Người phụ trách"
-            data-report-draft-field="ownerName"
-          />
-        </label>
+      <div class="report-daily-workspace">
+        <section class="report-daily-card report-daily-notes-card" aria-labelledby="report-daily-notes-title">
+          <h5 id="report-daily-notes-title">Ghi nhận vận hành trong ngày</h5>
+          <div class="report-daily-form" aria-label="Nội dung báo cáo công việc ngày">
+            ${renderReportTextarea('Công việc ngày', 'dailyTasks', draft.dailyTasks, 'Nhập các việc đã xử lý trong ngày...', 'Các việc đã xử lý trong ngày')}
+            ${renderReportTextarea('Tình huống / vấn đề xảy ra trong ngày', 'dailyIssues', draft.dailyIssues, 'Nhập tình huống phát sinh, việc cần theo dõi...', 'Tình huống phát sinh, việc cần theo dõi')}
+            ${renderReportTextarea('Ghi chú vận hành', 'operationNote', draft.operationNote, 'Nhập ghi chú bàn giao hoặc lưu ý nội bộ...', 'Ghi chú bàn giao hoặc lưu ý nội bộ')}
+          </div>
+        </section>
+        <section class="report-daily-card report-checklist-card" aria-labelledby="report-pending-tasks-title">
+          ${renderPendingTaskBox(draft)}
+          <label class="report-owner-field">
+            <span>Người phụ trách</span>
+            <input
+              type="text"
+              value="${escapeAttribute(draft.ownerName)}"
+              placeholder="Người phụ trách"
+              data-report-draft-field="ownerName"
+            />
+          </label>
+        </section>
       </div>
+      ${renderReportSourceSection('day', data.dailyTransactions)}
     </section>
   `
 }
@@ -358,30 +379,26 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
 
   return `
     <section class="report-panel report-weekly-panel" aria-labelledby="weekly-report-title">
-      <div class="report-panel-heading">
-        <h4 id="weekly-report-title">Báo cáo tuần</h4>
-        <span>${escapeHtml(data.weekLabel)}</span>
-      </div>
+      <h4 class="report-visually-hidden" id="weekly-report-title">Báo cáo tuần</h4>
       <div class="report-stat-row">
         ${renderReportStat('Tổng doanh thu', formatMoney(data.weeklyIncome), 'income')}
         ${renderReportStat('Tổng chi phí', formatMoney(data.weeklyExpense), 'expense')}
         ${renderReportStat('Còn lại', formatMoney(data.weeklyBalance), 'balance')}
         ${renderReportStat('Tổng học viên', data.studentCount.toLocaleString('vi-VN'), 'neutral')}
       </div>
-      ${renderReportSourceActions('week')}
       <div class="report-chart-grid">
         <section class="report-chart-card" aria-label="Biểu đồ cột thu chi theo tuần">
           <div class="report-chart-heading">
-            <h5>Biểu đồ cột thu/chi theo tuần</h5>
-            <span>Đơn vị: VNĐ · Min 0 · Max ${formatMoney(data.weeklyBars.axisMax)}</span>
+            <h5>Thu / Chi theo tuần</h5>
+            <span>Đơn vị: VNĐ · Tối đa ${formatMoney(data.weeklyBars.axisMax)}</span>
           </div>
           ${renderCashflowBarChart(data.weeklyBars)}
           ${renderReportBarDetail(selectedBarDetail)}
         </section>
         <section class="report-chart-card" aria-label="Biểu đồ tròn học vắng nghỉ tổng thể cơ sở">
           <div class="report-chart-heading">
-            <h5>Biểu đồ học/vắng/nghỉ tổng thể cơ sở</h5>
-            <span>100% = tổng học viên cơ sở</span>
+            <h5>Học / Vắng / Nghỉ</h5>
+            <span>Tổng hợp từ dữ liệu điểm danh trong tuần</span>
           </div>
           <div class="report-attendance-chart">
             <div
@@ -403,6 +420,7 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
           }
         </section>
       </div>
+      ${renderReportSourceSection('week', data.weeklyTransactions)}
     </section>
   `
 }
@@ -411,10 +429,9 @@ function renderPendingTaskBox(draft) {
   const pendingTasks = draft.pendingTasks && typeof draft.pendingTasks === 'object' ? draft.pendingTasks : {}
 
   return `
-    <section class="report-pending-tasks" aria-labelledby="report-pending-tasks-title">
+    <div class="report-pending-tasks">
       <div class="report-pending-tasks-heading">
-        <h5 id="report-pending-tasks-title">VIỆC CHƯA THỰC HIỆN</h5>
-        <span>Checklist công việc ngày</span>
+        <h5 id="report-pending-tasks-title">Checklist công việc ngày</h5>
       </div>
       <div class="report-pending-task-list">
         ${reportPendingTaskItems
@@ -433,6 +450,42 @@ function renderPendingTaskBox(draft) {
           .join('')}
       </div>
       ${renderReportTextarea('Công việc khác', 'otherPendingTasks', draft.otherPendingTasks, 'Công việc khác...')}
+    </div>
+  `
+}
+
+function renderReportSourceStat(transactions) {
+  const total = transactions.reduce((sum, transaction) => {
+    const amount = Number(transaction.amount)
+    return Number.isFinite(amount) ? sum + Math.max(0, amount) : sum
+  }, 0)
+
+  return `
+    <article class="report-stat report-source-stat is-neutral">
+      <span>Nguồn giao dịch ngày</span>
+      <div>
+        <strong>${transactions.length.toLocaleString('vi-VN')} giao dịch</strong>
+        <b>${escapeHtml(formatMoney(total))}</b>
+      </div>
+    </article>
+  `
+}
+
+function renderReportSourceSection(mode, transactions) {
+  const periodLabel = mode === 'week' ? 'tuần đang chọn' : 'ngày đang chọn'
+
+  return `
+    <section class="report-source-section" aria-label="Nguồn giao dịch ${periodLabel}">
+      <div class="report-source-section-copy">
+        <h5>Nguồn giao dịch</h5>
+        <p>${
+          transactions.length
+            ? `${transactions.length.toLocaleString('vi-VN')} giao dịch thu/chi trong ${periodLabel}.`
+            : `Chưa có giao dịch thu/chi trong ${periodLabel}.`
+        }</p>
+      </div>
+      ${renderReportSourceActions(mode)}
+      ${transactions.length ? renderDailyTransactionList(transactions) : ''}
     </section>
   `
 }
@@ -462,10 +515,11 @@ function renderReportSourceActions(mode) {
   `
 }
 
-function renderReportTextarea(label, field, value, placeholder) {
+function renderReportTextarea(label, field, value, placeholder, helper = '') {
   return `
     <label>
       <span>${label}</span>
+      ${helper ? `<small class="report-field-helper">${escapeHtml(helper)}</small>` : ''}
       <textarea
         placeholder="${escapeAttribute(placeholder)}"
         data-report-draft-field="${escapeAttribute(field)}"
@@ -512,6 +566,7 @@ function renderReportSourceTransactionsModal(state) {
     const amount = Number(transaction.amount)
     return Number.isFinite(amount) ? sum + Math.max(0, amount) : sum
   }, 0)
+  const activeType = ['income', 'expense'].includes(state.scope?.type) ? state.scope.type : 'all'
 
   return `
     <div class="report-source-modal-backdrop" data-report-source-action="close" role="presentation">
@@ -531,9 +586,16 @@ function renderReportSourceTransactionsModal(state) {
         </div>
         ${state.message ? `<p class="report-source-message is-${escapeAttribute(state.messageTone || 'info')}">${escapeHtml(state.message)}</p>` : ''}
         ${state.error ? `<p class="report-source-message is-error">${escapeHtml(state.error)}</p>` : ''}
-        <div class="report-source-summary">
-          <span>${transactions.length.toLocaleString('vi-VN')} giao dịch</span>
-          <strong>${escapeHtml(formatMoney(total))}</strong>
+        <div class="report-source-toolbar">
+          <div class="report-source-filters" aria-label="Lọc loại giao dịch nguồn">
+            ${renderReportSourceFilterButton('all', 'Tất cả', activeType)}
+            ${renderReportSourceFilterButton('income', 'Thu', activeType)}
+            ${renderReportSourceFilterButton('expense', 'Chi', activeType)}
+          </div>
+          <div class="report-source-summary">
+            <span>${transactions.length.toLocaleString('vi-VN')} giao dịch</span>
+            <strong>${escapeHtml(formatMoney(total))}</strong>
+          </div>
         </div>
         ${state.status === 'loading' ? '<p class="report-empty">Đang kiểm tra trạng thái chứng từ...</p>' : ''}
         ${
@@ -546,6 +608,18 @@ function renderReportSourceTransactionsModal(state) {
   `
 }
 
+function renderReportSourceFilterButton(type, label, activeType) {
+  return `
+    <button
+      type="button"
+      class="${activeType === type ? 'is-active' : ''}"
+      data-report-source-action="filter"
+      data-report-source-type="${escapeAttribute(type)}"
+      aria-pressed="${activeType === type}"
+    >${escapeHtml(label)}</button>
+  `
+}
+
 function renderReportSourceTransactionTable(transactions, state) {
   const transactionCodes = state.transactionCodes || {}
   const attachmentCounts = state.attachmentCounts || {}
@@ -555,14 +629,11 @@ function renderReportSourceTransactionTable(transactions, state) {
       <table class="report-source-table">
         <thead>
           <tr>
-            <th>Mã</th>
-            <th>Ngày</th>
-            <th>Thu/Chi</th>
-            <th>Danh mục</th>
+            <th>Thời gian</th>
+            <th>Loại</th>
+            <th>Nội dung / Nguồn</th>
+            <th>Liên quan</th>
             <th>Số tiền</th>
-            <th>Người liên quan</th>
-            <th>Nguồn</th>
-            <th>Chứng từ</th>
             <th>Thao tác</th>
           </tr>
         </thead>
@@ -586,14 +657,17 @@ function renderReportSourceTransactionRow(transaction, transactionCodes, attachm
 
   return `
     <tr class="report-source-row is-${escapeAttribute(transaction.type || 'unknown')}">
-      <td><strong>${escapeHtml(transactionCode || 'Chưa có mã')}</strong></td>
       <td>${escapeHtml(formatDate(String(transaction.transactionDate || transaction.date || '').slice(0, 10)))}</td>
-      <td>${escapeHtml(transaction.type === 'expense' ? 'Chi' : 'Thu')}</td>
-      <td><span class="report-source-ellipsis">${escapeHtml(transaction.category || 'Khác')}</span></td>
-      <td><strong>${escapeHtml(formatMoney(transaction.amount))}</strong></td>
-      <td><span class="report-source-ellipsis">${escapeHtml(transaction.personName || transaction.recordedBy || 'Chưa rõ')}</span></td>
-      <td><span class="report-source-ellipsis">${escapeHtml(sourceLabel)}</span></td>
-      <td>${escapeHtml(hasEvidence ? `${count || 1} chứng từ` : 'Chưa có')}</td>
+      <td><span class="report-source-type-badge">${escapeHtml(transaction.type === 'expense' ? 'Chi' : 'Thu')}</span></td>
+      <td>
+        <strong class="report-source-ellipsis" title="${escapeAttribute(transaction.category || 'Khác')}">${escapeHtml(transaction.category || 'Khác')}</strong>
+        <small class="report-source-ellipsis" title="${escapeAttribute(`${sourceLabel} · ${transactionCode || 'Chưa có mã'}`)}">${escapeHtml(sourceLabel)} · ${escapeHtml(transactionCode || 'Chưa có mã')}</small>
+      </td>
+      <td>
+        <span class="report-source-ellipsis" title="${escapeAttribute(transaction.personName || transaction.recordedBy || 'Chưa rõ')}">${escapeHtml(transaction.personName || transaction.recordedBy || 'Chưa rõ')}</span>
+        <small>${escapeHtml(hasEvidence ? `${count || 1} chứng từ` : 'Chưa có chứng từ')}</small>
+      </td>
+      <td><strong>${escapeHtml(formatSignedMoney(transaction))}</strong></td>
       <td>
         <div class="report-source-row-actions">
           <button type="button" data-report-source-action="open-transaction" data-report-source-transaction-id="${escapeAttribute(transactionId)}">Mở giao dịch</button>
