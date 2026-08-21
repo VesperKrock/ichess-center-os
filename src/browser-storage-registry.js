@@ -12,6 +12,7 @@ export const BROWSER_STORAGE_CLASSIFICATIONS = Object.freeze([
 
 export const BROWSER_STORAGE_REGISTRY = Object.freeze([
   local('ichess-center-os:view-mode', 'PERSONAL_UI_STATE', 'Desktop display preference'),
+  local('ichess-center-os:theme', 'PERSONAL_UI_STATE', 'Light/dark appearance preference'),
   local('ichess-center-os:desktop-module-order', 'PERSONAL_UI_STATE', 'Desktop ordering preference'),
   center('students', 'CACHE_PROJECTION', 'C5.1 Student projection; pre-C5 bytes preserved before replacement'),
   center('classSessions', 'CACHE_PROJECTION', 'C5.1 Class projection; pre-C5 bytes preserved before replacement'),

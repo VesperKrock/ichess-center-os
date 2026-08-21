@@ -38,6 +38,7 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
 
   return `
     <section class="student-detail student-detail-overview" aria-label="Hồ sơ tổng quan học viên">
+      <h3 class="student-detail-page-title">Hồ sơ học viên</h3>
       <div class="student-detail-hero">
         <div class="student-avatar-stack">
           ${renderStudentAvatar(student)}
@@ -57,15 +58,34 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
           <p>${formatBirthDate(student.birthDate)} · ${formatAgeLabel(student.birthDate)} · ${getGenderLabel(student.gender)}</p>
           <p>Trường: ${getSchoolLabel(student)} · PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(primaryParentPhone))}</p>
         </div>
-        <button
-          class="student-detail-edit"
-          type="button"
-          data-student-action="edit-from-detail"
-          data-student-edit-id="${student.id}"
-          ${readOnlyProjection ? 'disabled' : ''}
-        >
-          ${readOnlyProjection ? 'Projection canonical — chỉ đọc' : 'Sửa hồ sơ'}
-        </button>
+        <div class="student-detail-hero-actions">
+          <button
+            class="student-detail-edit"
+            type="button"
+            data-student-action="edit-from-detail"
+            data-student-edit-id="${student.id}"
+            ${readOnlyProjection ? 'disabled' : ''}
+          >
+            ${readOnlyProjection ? 'Hồ sơ chỉ đọc' : 'Sửa hồ sơ'}
+          </button>
+          <span class="student-detail-delete-slot"></span>
+        </div>
+        <div class="student-detail-quick-facts" aria-label="Tóm tắt học viên">
+          ${renderStudentQuickFact('GV phụ trách', assignedTeacherLabel)}
+          ${renderStudentQuickFact('Ca học / Lớp', classSessionLabel)}
+          ${renderStudentQuickFact(
+            'Còn lại',
+            Number.isFinite(studentTuitionLink.tuition.remainingSessions)
+              ? `${studentTuitionLink.tuition.remainingSessions} buổi`
+              : '—',
+          )}
+          ${renderStudentQuickFact(
+            'Cần thanh toán',
+            studentTuitionLink.tuition.hasTuition
+              ? formatMoney(studentTuitionLink.tuition.payableAmount)
+              : '—',
+          )}
+        </div>
       </div>
 
       <div class="student-overview-grid">
@@ -116,7 +136,6 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
             ['Nhận xét GV', 'Sẽ cập nhật sau'],
             ['Kế hoạch học tập', 'Sẽ cập nhật sau'],
           ],
-          `<button type="button" class="student-detail-open-button" data-student-detail-action="open-learning" data-student-id="${student.id}">Mở chi tiết</button>`,
         )}
         ${renderOverviewTile('Tự động sau', [
           ['Chuyên cần', 'Tự động cập nhật sau'],
@@ -138,6 +157,9 @@ export function renderStudentCareNotes(student, careNoteDraft = emptyCareNoteDra
 
   return `
     <section class="student-care-notes student-care-window" aria-label="Chăm sóc và ghi chú học viên">
+      <header class="student-care-page-header">
+        <h3>Chăm sóc / Ghi chú <span>— ${escapeHtml(student.fullName)}</span></h3>
+      </header>
       <div class="student-care-layout">
         <div class="student-care-history-panel">
           <h4>Lịch sử ghi chú chăm sóc</h4>
@@ -145,48 +167,51 @@ export function renderStudentCareNotes(student, careNoteDraft = emptyCareNoteDra
         </div>
         <div class="student-care-form">
           <h4>${isEditing ? 'Sửa ghi chú chăm sóc' : 'Thêm ghi chú chăm sóc'}</h4>
-          <label>
-            <span>Tag / chủ đề</span>
-            <input
-              type="text"
-              value="${escapeAttribute(careNoteDraft.tag ?? '')}"
-              data-care-note-field="tag"
-              data-care-note-student-id="${student.id}"
-              placeholder="Ví dụ: Lịch học, Học phí"
-            />
-          </label>
-          <label>
-            <span>Nội dung ghi chú</span>
-            <textarea
-              data-care-note-field="content"
-              data-care-note-student-id="${student.id}"
-              placeholder="Nhập nội dung đã trao đổi hoặc việc cần theo dõi..."
-            >${careNoteDraft.content ?? ''}</textarea>
-          </label>
-          ${
-            careNoteDraft.error
-              ? `<p class="care-note-error">${careNoteDraft.error}</p>`
-              : ''
-          }
-          <div class="care-note-suggestions" aria-label="Gợi ý nhanh ghi chú">
-            ${careNoteSuggestions
-              .slice(0, 8)
-              .map(
-                (suggestion) => `
-                  <button type="button" data-care-note-suggestion="${escapeAttribute(suggestion)}" data-care-note-student-id="${student.id}">
-                    ${suggestion}
-                  </button>
-                `,
-              )
-              .join('')}
-          </div>
-          <div class="care-note-actions">
-            <button type="button" data-care-note-action="save" data-care-note-student-id="${student.id}">
-              ${isEditing ? 'Lưu thay đổi' : 'Lưu ghi chú'}
-            </button>
-            <button type="button" data-care-note-action="clear" data-care-note-student-id="${student.id}">
-              ${isEditing ? 'Hủy sửa' : 'Hủy nhập'}
-            </button>
+          <div class="student-care-form-card">
+            <label>
+              <span>Tag / chủ đề</span>
+              <input
+                type="text"
+                value="${escapeAttribute(careNoteDraft.tag ?? '')}"
+                data-care-note-field="tag"
+                data-care-note-student-id="${student.id}"
+                placeholder="Ví dụ: Lịch học, Học phí"
+              />
+            </label>
+            <label>
+              <span>Nội dung ghi chú</span>
+              <textarea
+                data-care-note-field="content"
+                data-care-note-student-id="${student.id}"
+                placeholder="Nhập nội dung đã trao đổi hoặc việc cần theo dõi..."
+              >${careNoteDraft.content ?? ''}</textarea>
+            </label>
+            ${
+              careNoteDraft.error
+                ? `<p class="care-note-error">${careNoteDraft.error}</p>`
+                : ''
+            }
+            <p class="care-note-suggestion-label">Gợi ý nhanh:</p>
+            <div class="care-note-suggestions" aria-label="Gợi ý nhanh ghi chú">
+              ${careNoteSuggestions
+                .slice(0, 8)
+                .map(
+                  (suggestion) => `
+                    <button type="button" data-care-note-suggestion="${escapeAttribute(suggestion)}" data-care-note-student-id="${student.id}">
+                      ${suggestion}
+                    </button>
+                  `,
+                )
+                .join('')}
+            </div>
+            <div class="care-note-actions">
+              <button type="button" data-care-note-action="save" data-care-note-student-id="${student.id}">
+                ${isEditing ? 'Lưu thay đổi' : 'Lưu ghi chú'}
+              </button>
+              <button type="button" data-care-note-action="clear" data-care-note-student-id="${student.id}">
+                ${isEditing ? 'Hủy sửa' : 'Hủy nhập'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -253,7 +278,7 @@ function renderOverviewTile(title, rows, action = '') {
         ${rows
           .map(
             ([label, value]) => `
-              <div>
+              <div class="${isStudentOverviewMetricLabel(label) ? 'student-overview-metric-row' : ''}">
                 <dt>${label}</dt>
                 <dd>${displayValue(value)}</dd>
               </div>
@@ -263,6 +288,19 @@ function renderOverviewTile(title, rows, action = '') {
       </dl>
     </section>
   `
+}
+
+function renderStudentQuickFact(label, value) {
+  return `
+    <div>
+      <span>${label}</span>
+      <strong>${displayValue(value)}</strong>
+    </div>
+  `
+}
+
+function isStudentOverviewMetricLabel(label) {
+  return ['GV phụ trách', 'Ca học / Lớp', 'Còn lại', 'Cần thanh toán'].includes(label)
 }
 
 function renderStudentFamilyTuitionTile(link) {
@@ -331,7 +369,7 @@ function renderCareNoteHistory(student) {
           (note) => `
             <article class="care-note-item">
               <div>
-                <strong>${note.author || 'Admin DreamHome'}</strong>
+                <strong>${note.author || 'Người dùng hiện tại'}</strong>
                 <time datetime="${note.createdAt}">${formatDateTime(note.createdAt)}</time>
               </div>
               <p>${note.content}</p>

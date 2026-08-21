@@ -176,26 +176,29 @@ export function renderStudentModule(
   return `
     <section class="student-module ${formState ? 'form-open' : ''}" aria-label="Danh sách học viên">
       <div class="student-module-content">
+        <header class="student-page-header">
+          <div>
+            <h3>DANH SÁCH HỌC VIÊN</h3>
+            <p>Quản lý thông tin chi tiết học tập, ca học và phụ huynh học viên hệ thống iChess</p>
+          </div>
+          <button class="student-add-button" type="button" data-student-action="open-create">
+            <span aria-hidden="true">+</span> Thêm học viên
+          </button>
+        </header>
         <div class="student-overview" aria-label="Tìm kiếm, lọc và thống kê học viên">
-          <div class="student-top-row">
+          <div class="student-filter-summary-row">
+            <div class="student-filter-controls">
             <label class="student-search-field">
-              <span>Tìm kiếm</span>
+              <span class="sr-only">Tìm kiếm</span>
               <input
                 type="search"
                 value="${escapeAttribute(filters.query)}"
-                placeholder="Tên học viên, phụ huynh, số điện thoại, trường học"
+                placeholder="Tìm học viên, phụ huynh, số điện thoại, trường học..."
                 data-student-filter="query"
               />
             </label>
-            <button class="student-add-button" type="button" data-student-action="open-create">
-              + Thêm học viên
-            </button>
-          </div>
-
-          <div class="student-bottom-row">
-            <div class="student-filter-row">
               <label>
-                <span>Trạng thái</span>
+                <span class="sr-only">Trạng thái</span>
                 <select data-student-filter="status">
                   ${renderOption('all', 'Tất cả trạng thái', filters.status)}
                   ${studentStatuses
@@ -204,7 +207,7 @@ export function renderStudentModule(
                 </select>
               </label>
               <label>
-                <span>Cấp độ học</span>
+                <span class="sr-only">Cấp độ học</span>
                 <select data-student-filter="level">
                   ${renderOption('all', 'Tất cả cấp độ học', filters.level)}
                   ${studentLevelOptions
@@ -213,7 +216,7 @@ export function renderStudentModule(
                 </select>
               </label>
               <label>
-                <span>Ca học / Lớp</span>
+                <span class="sr-only">Ca học / Lớp</span>
                 <select data-student-filter="classSessionId">
                   ${renderOption('all', 'Tất cả ca học', filters.classSessionId)}
                   ${renderOption('unassigned', 'Chưa phân lớp', filters.classSessionId)}
@@ -454,7 +457,7 @@ function renderStudentForm(
 
   return `
     <div class="student-form-backdrop" aria-hidden="true"></div>
-    <section class="student-form-panel" aria-label="${title}">
+    <section class="student-form-panel" aria-label="${title}" ${formState.isSaving ? 'aria-busy="true"' : ''}>
       <div class="student-form-header">
         <div>
           <h4>${title}</h4>
@@ -482,16 +485,17 @@ function renderStudentForm(
               class="student-save-button"
               type="button"
               data-student-action="save-form"
-              ${isReadyToSave ? '' : 'disabled'}
+              ${isReadyToSave && !formState.isSaving ? '' : 'disabled'}
             >
-              ${isEdit ? 'Lưu thay đổi' : 'Lưu học viên'}
+              ${formState.isSaving ? 'Đang lưu…' : isEdit ? 'Lưu thay đổi' : 'Lưu học viên'}
             </button>
           </span>
-          <button class="student-danger-button" type="button" data-student-action="cancel-form">
+          <button class="student-danger-button" type="button" data-student-action="cancel-form" ${formState.isSaving ? 'disabled' : ''}>
             ${isEdit ? 'Hủy sửa' : 'Hủy thêm'}
           </button>
         </div>
       </div>
+      ${formState.errors.form ? `<p class="student-form-error" role="alert">${escapeHtml(formState.errors.form)}</p>` : ''}
       <div class="student-form-scroll">
         <div class="student-form-grid">
           ${
@@ -835,7 +839,7 @@ function renderStudentRow(student, teachers = [], classSessions = []) {
       </td>
       <td title="${escapeAttribute(student.parentName)}">${getShortName(student.parentName)}</td>
       <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
-      <td><span class="student-status">${student.currentStatus}</span></td>
+      <td><span class="student-status ${getStudentStatusToneClass(student.currentStatus)}">${student.currentStatus}</span></td>
       <td>${escapeHtml(getLevelLabel(student.level))}</td>
       <td>${student.elo ?? '—'}</td>
       <td title="${escapeAttribute(student.schoolName)}">${getShortSchoolName(student.schoolName)}</td>
@@ -901,7 +905,7 @@ function renderStudentClassSessionCell(student, classSessionLookup = new Map()) 
       ${visibleItems
         .map(
           (item) => `
-            <span class="student-class-session-badge ${item.status === 'inactive' ? 'inactive' : ''}">
+            <span class="student-class-session-badge ${item.status === 'inactive' ? 'inactive' : item.status === 'missing' ? 'missing' : ''}">
               ${escapeHtml(item.label)}
               ${item.status === 'inactive' ? '<em>Đã ngưng</em>' : ''}
             </span>
@@ -948,6 +952,20 @@ function getTeacherStatusLabel(status) {
   }
 
   return statusLabels[status] ?? 'Chưa cập nhật'
+}
+
+function getStudentStatusToneClass(status) {
+  const normalizedStatus = normalizeText(status)
+
+  if (normalizedStatus.includes('bao luu')) {
+    return 'is-paused'
+  }
+
+  if (normalizedStatus.includes('ngung')) {
+    return 'is-stopped'
+  }
+
+  return 'is-active'
 }
 
 function getTeacherTypeLabel(teacherType) {

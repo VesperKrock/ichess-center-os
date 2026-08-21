@@ -1,4 +1,5 @@
 import './styles.css'
+import './student-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -124,6 +125,7 @@ import {
   getStoredStudents,
   getStoredTeachers,
   getStoredTuition,
+  getUiTheme,
   getViewMode,
   createCloudDbPullBackup,
   saveDeletedNotificationIds,
@@ -136,6 +138,7 @@ import {
   saveStoredStudents,
   saveStoredTeachers,
   saveStoredTuition,
+  saveUiTheme,
   saveViewMode,
 } from './storage.js'
 import {
@@ -636,6 +639,7 @@ const preservedScrollSelector = preservedScrollTargets.map(([selector]) => selec
 const lastKnownPreservedScrollPositions = new Map()
 
 let currentViewMode = getViewMode()
+let currentUiTheme = getUiTheme()
 let isStartMenuOpen = false
 let isWindowOverflowOpen = false
 let isNotificationCenterOpen = false
@@ -6981,6 +6985,10 @@ function openLinkedTeacherFromStaff(teacherId) {
   openModuleWindowFromChildInteraction('giao-vien')
 }
 
+function applyUiTheme() {
+  document.documentElement.dataset.uiTheme = currentUiTheme
+}
+
 function render() {
   if (shouldDeferRenderForTextEditing()) {
     deferRenderUntilTextEditingEnds()
@@ -10279,9 +10287,23 @@ function getOrderedModules() {
   return desktopModuleOrder.map((moduleId) => modulesById.get(moduleId)).filter(Boolean)
 }
 
+function getStudentWindowSurface(windowItem) {
+  if (windowItem.moduleId === 'hoc-vien' && !windowItem.type) {
+    return studentFormState ? 'form' : 'list'
+  }
+
+  const surfacesByType = {
+    'student-detail': 'profile',
+    'student-care-notes': 'care-notes',
+  }
+
+  return surfacesByType[windowItem.type] || ''
+}
+
 function renderModuleWindow(windowItem) {
   const title = getWindowTitle(windowItem)
   const headerTitle = getWindowHeaderTitle(windowItem)
+  const studentSurface = getStudentWindowSurface(windowItem)
 
   if (!title || !headerTitle || windowItem.minimized) {
     return ''
@@ -10297,10 +10319,11 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
+      ${studentSurface ? `data-student-surface="${studentSurface}"` : ''}
       data-module-title="${escapeAttribute(headerTitle)}"
       data-designer-hook="module-window"
       aria-labelledby="${windowItem.id}-title"
@@ -10980,10 +11003,7 @@ function renderStudentDetailWithDeleteAction(student, classSessions = []) {
     </button>
   `
 
-  return detailHtml.replace('</button>\n      </div>\n\n      <div class="student-overview-grid">', `</button>${deleteAction}
-      </div>
-
-      <div class="student-overview-grid">`)
+  return detailHtml.replace('<span class="student-detail-delete-slot"></span>', deleteAction)
 }
 
 function getWindowTitle(windowItem) {
@@ -11861,6 +11881,23 @@ function renderStartMenu() {
         <button type="button" data-view-mode="grid">Dạng ô vuông</button>
         <button type="button" data-view-mode="list">Dạng danh sách</button>
         <button type="button" data-cloud-action="logout">Đăng xuất</button>
+      </div>
+      <div class="start-menu-section start-menu-theme-control" aria-label="Chọn giao diện">
+        <p>Giao diện</p>
+        <div class="start-menu-theme-options">
+          <button
+            class="${currentUiTheme === 'light' ? 'active' : ''}"
+            type="button"
+            data-ui-theme="light"
+            aria-pressed="${currentUiTheme === 'light'}"
+          >☀ Sáng</button>
+          <button
+            class="${currentUiTheme === 'dark' ? 'active' : ''}"
+            type="button"
+            data-ui-theme="dark"
+            aria-pressed="${currentUiTheme === 'dark'}"
+          >🌙 Tối</button>
+        </div>
       </div>
       <div class="start-menu-section">
         <p>Danh sách module</p>
@@ -13481,6 +13518,7 @@ async function softDeleteStudent(studentId) {
   const result = await commitStudentProjection(deletedStudent, 'student-delete')
 
   if (!result.ok) {
+    window.alert(result.userMessage || result.error || 'Hồ sơ học viên chưa được xóa.')
     render()
     return
   }
@@ -19064,6 +19102,20 @@ function bindEvents() {
     if (isNotificationCenterOpen) {
       void refreshNotificationAuthoritativeUpstreams('notification-open')
     }
+  })
+
+  document.querySelectorAll('[data-ui-theme]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextTheme = button.dataset.uiTheme
+      if (!['light', 'dark'].includes(nextTheme) || nextTheme === currentUiTheme) {
+        return
+      }
+
+      currentUiTheme = nextTheme
+      saveUiTheme(currentUiTheme)
+      applyUiTheme()
+      render()
+    })
   })
 
   document.querySelector('[data-action="toggle-center-profile"]')?.addEventListener('click', () => {
@@ -26653,11 +26705,6 @@ function bindEvents() {
         return
       }
 
-      if (studentDetailAction === 'open-learning') {
-        setTimeout(() => openStudentSubWindow(studentId, 'student-learning'), 0)
-        return
-      }
-
       if (studentDetailAction === 'soft-delete') {
         softDeleteStudent(studentId)
         return
@@ -26954,6 +27001,10 @@ function bindEvents() {
   })
 
   document.querySelector('[data-student-action="save-form"]')?.addEventListener('click', async () => {
+    if (studentFormState?.isSaving) {
+      return
+    }
+
     if (!isStudentFormReady(studentFormState.values)) {
       studentFormState = {
         ...studentFormState,
@@ -26993,6 +27044,12 @@ function bindEvents() {
       savedStudent = { ...newStudent, id: commandLocalId, createdAt: commandCreatedAt }
     }
 
+    studentFormState = {
+      ...studentFormState,
+      isSaving: true,
+    }
+    render()
+
     const result = await commitStudentProjection(
       savedStudent,
       'student-save',
@@ -27002,7 +27059,11 @@ function bindEvents() {
     if (!result.ok) {
       studentFormState = {
         ...studentFormState,
-        errors: { ...studentFormState.errors, form: result.error || 'Học viên chưa được lưu.' },
+        isSaving: false,
+        errors: {
+          ...studentFormState.errors,
+          form: result.userMessage || result.error || 'Học viên chưa được lưu.',
+        },
       }
       render()
       return
@@ -28171,7 +28232,7 @@ function updateStudentFormSaveButton() {
   }
 
   const disabledReason = getStudentFormSaveDisabledReason(studentFormState.values)
-  saveButton.disabled = Boolean(disabledReason)
+  saveButton.disabled = Boolean(disabledReason || studentFormState.isSaving)
   saveButton.removeAttribute('aria-describedby')
 
   if (reasonWrap) {
@@ -28428,6 +28489,7 @@ function installManualCloudBackfillHelpers() {
 
 installManualCloudBackfillHelpers()
 installTextEditingRenderProtection()
+applyUiTheme()
 render()
 initializeSupabaseAuth()
 

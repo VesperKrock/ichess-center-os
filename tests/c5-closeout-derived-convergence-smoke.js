@@ -85,7 +85,7 @@ assert.deepEqual(
 )
 
 assert.equal(assertNoBrowserBusinessAuthority().ok, true)
-assert.equal(BROWSER_STORAGE_REGISTRY.length, 42)
+assert.equal(BROWSER_STORAGE_REGISTRY.length, 43)
 assert.deepEqual(BROWSER_STORAGE_CLASSIFICATIONS, [
   'ACTIVE_AUTHORITY', 'CACHE_PROJECTION', 'PERSONAL_UI_STATE', 'UNSAVED_DRAFT',
   'FIXTURE_SAMPLE', 'REAL_LOCAL_ONLY', 'UNCERTAIN', 'QUARANTINED_NOT_ACTIVE',
@@ -94,7 +94,7 @@ assert.deepEqual(BROWSER_STORAGE_CLASSIFICATIONS, [
 const storageCounts = countBrowserStorageClassifications()
 assert.equal(storageCounts.ACTIVE_AUTHORITY || 0, 0)
 assert.equal(storageCounts.CACHE_PROJECTION, 12)
-assert.equal(storageCounts.PERSONAL_UI_STATE, 3)
+assert.equal(storageCounts.PERSONAL_UI_STATE, 4)
 assert.equal(storageCounts.QUARANTINED_NOT_ACTIVE, 27)
 const declaredCenterScopes = [...storageSource.matchAll(/createCenterScopedStorageKey\(\s*'([^']+)'/g)]
   .map((match) => match[1])

@@ -17,6 +17,7 @@ import {
 } from './staff-administrative-governance-module.js'
 
 const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
+export const UI_THEME_KEY = 'ichess-center-os:theme'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
 const DEFAULT_STORAGE_CENTER_ID = 'dreamhome'
 let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
@@ -97,6 +98,7 @@ const CLOUD_PULL_BACKUP_PREFIX = 'ichessCenterOS.backup.beforeCloudPull.'
 const CLOUD_PULL_BACKUP_KEEP_COUNT = 2
 const CURRENT_NOTIFICATIONS_VERSION = '15J.1'
 const VALID_VIEW_MODES = ['grid', 'list']
+const VALID_UI_THEMES = ['light', 'dark']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
 const VALID_NOTIFICATION_TYPES = [
   'system',
@@ -240,6 +242,28 @@ export function getViewMode() {
 export function saveViewMode(mode) {
   if (VALID_VIEW_MODES.includes(mode)) {
     localStorage.setItem(VIEW_MODE_KEY, mode)
+  }
+}
+
+export function getUiTheme(storage = globalThis.localStorage) {
+  try {
+    const savedTheme = storage?.getItem(UI_THEME_KEY)
+    return VALID_UI_THEMES.includes(savedTheme) ? savedTheme : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+export function saveUiTheme(theme, storage = globalThis.localStorage) {
+  if (!VALID_UI_THEMES.includes(theme)) {
+    return false
+  }
+
+  try {
+    storage?.setItem(UI_THEME_KEY, theme)
+    return true
+  } catch {
+    return false
   }
 }
 
