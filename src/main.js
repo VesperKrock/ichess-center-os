@@ -6,7 +6,12 @@ import './tuition-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
-import { modules } from './modules.js'
+import {
+  getProductionLauncherModules,
+  isProductionModuleAvailable,
+  isProductionModuleVisible,
+  modules,
+} from './modules.js'
 import {
   applyModuleUpstreamRefreshResult,
   createLoadingModuleUpstreamHealth,
@@ -15,6 +20,7 @@ import {
   getModuleRefreshContract,
   getModuleUpstreamUiState,
   isBusinessModule,
+  isUnavailableCalendarNotesOutcome,
 } from './module-authority-registry.js'
 import { createInitialCloudStatus } from './cloud-status.js'
 import {
@@ -659,7 +665,9 @@ const authoritativeRefreshInFlight = new Map()
 let notificationRefreshRunId = 0
 const moduleRefreshStates = new Map()
 let notificationRefreshState = createModuleRefreshState()
-let desktopModuleOrder = getDesktopModuleOrder(modules.map((moduleItem) => moduleItem.id))
+let desktopModuleOrder = getDesktopModuleOrder(
+  getProductionLauncherModules().map((moduleItem) => moduleItem.id),
+)
 let shortcutDragState = null
 let suppressNextModuleClick = false
 let shortcutDocumentDragBound = false
@@ -10240,22 +10248,27 @@ function renderDashboard() {
     .map(
       (moduleItem) => {
         const unreadCount = unreadCountsByModule[moduleItem.id] || 0
+        const canOpen = isProductionModuleAvailable(moduleItem.id)
 
         return `
           <button
-            class="module-button designer-theme-hook"
+            class="module-button designer-theme-hook ${canOpen ? '' : 'is-unavailable'}"
             type="button"
-            data-module-launcher="desktop"
             data-module-id="${moduleItem.id}"
-            data-shortcut-id="${moduleItem.id}"
             data-module-title="${escapeAttribute(moduleItem.name)}"
             data-designer-hook="module-card"
+            ${
+              canOpen
+                ? `data-module-launcher="desktop" data-shortcut-id="${moduleItem.id}"`
+                : 'data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled'
+            }
           >
             <span class="module-card-icon-slot designer-image-slot" aria-hidden="true"></span>
             <span class="module-card-label">${moduleItem.name}</span>
             <span class="module-card-visual-slot module-visual-placeholder" aria-hidden="true"></span>
+            ${canOpen ? '' : '<span class="module-availability-label">Chưa khả dụng</span>'}
             ${
-              unreadCount
+              canOpen && unreadCount
                 ? `<span class="module-notification-badge" aria-label="${unreadCount} thông báo chưa đọc">${unreadCount}</span>`
                 : ''
             }
@@ -10290,7 +10303,9 @@ function renderOpenWindows() {
 
 function getOrderedModules() {
   const modulesById = new Map(modules.map((moduleItem) => [moduleItem.id, moduleItem]))
-  return desktopModuleOrder.map((moduleId) => modulesById.get(moduleId)).filter(Boolean)
+  return desktopModuleOrder
+    .map((moduleId) => modulesById.get(moduleId))
+    .filter((moduleItem) => isProductionModuleVisible(moduleItem?.id))
 }
 
 function getStudentWindowSurface(windowItem) {
@@ -10466,15 +10481,22 @@ function getUnavailableOptionalState(moduleId, upstream, label) {
   const upstreamStatus = getModuleUpstreamUiState(state, upstream)
   const isLoading = ['idle', 'loading'].includes(upstreamStatus)
   const isCurrent = isModuleUpstreamCurrent(moduleId, upstream)
+  const outcomeCode = state.upstreamHealth?.[upstream]?.outcomeCode || ''
+  const isUnavailable = upstream === 'calendar-notes'
+    && isUnavailableCalendarNotesOutcome(outcomeCode)
   if (isCurrent) return null
   return {
     centerId: state.centerId,
     isLoading,
     isSaving: false,
+    availabilityStatus: isLoading ? 'loading' : isUnavailable ? 'unavailable' : 'failed',
+    outcomeCode,
     message: isLoading
       ? `Đang tải ${label}...`
-      : `${label} hiện chưa tải được.`,
-    messageTone: isLoading ? '' : 'error',
+      : isUnavailable
+        ? `${label} hiện chưa khả dụng.`
+        : `${label} hiện chưa tải được.`,
+    messageTone: isLoading ? '' : isUnavailable ? 'warning' : 'error',
     lastLoadedAt: '',
     legacyMigrationRequired: false,
   }
@@ -10858,7 +10880,7 @@ function renderWindowBody(windowItem) {
       getUnavailableOptionalState(
         'hoc-phi',
         'calendar-notes',
-        'Ghi chú chăm sóc dùng chung',
+        'Ghi chú chăm sóc theo tháng và ghi chú điểm danh',
       ) || c57CalendarNotesSharedTruthState,
       {
         coreStatus,
@@ -11002,7 +11024,7 @@ function renderWindowBody(windowItem) {
       getUnavailableOptionalState(
         'bang-diem-danh',
         'calendar-notes',
-        'Ghi chú dùng chung',
+        'Ghi chú chăm sóc theo tháng và ghi chú điểm danh',
       ) || c57CalendarNotesSharedTruthState,
       {
         attendanceAvailable,
@@ -11615,12 +11637,15 @@ function renderNotificationCenterHotfix(unreadCount) {
   const notificationModuleSummaries = buildNotificationModuleSummaries(visibleNotifications)
   const notificationSummaryItems = notificationModuleSummaries
     .map(
-      (summary) => `
+      (summary) => {
+        const canOpen = summary.canOpen && isProductionModuleAvailable(summary.sourceModule)
+        return `
         <button
           type="button"
-          class="notification-module-summary level-${summary.severity} ${summary.canOpen ? 'can-open' : 'is-readonly'}"
-          ${summary.canOpen ? `data-notification-module-id="${escapeAttribute(summary.sourceModule)}"` : ''}
-          tabindex="0"
+          class="notification-module-summary level-${summary.severity} ${canOpen ? 'can-open' : 'is-readonly'}"
+          ${canOpen ? `data-notification-module-id="${escapeAttribute(summary.sourceModule)}"` : ''}
+          tabindex="${canOpen ? '0' : '-1'}"
+          ${canOpen ? '' : 'aria-disabled="true" disabled'}
           aria-label="${escapeAttribute(summary.title)}"
         >
           <div class="notification-module-summary-header">
@@ -11629,10 +11654,11 @@ function renderNotificationCenterHotfix(unreadCount) {
           </div>
           <p>${escapeHtml(summary.message)}</p>
           <span class="notification-module-summary-meta">
-            ${summary.canOpen ? 'Bấm để mở module' : 'Chi tiết nằm trong thông báo hệ thống'}
+            ${canOpen ? 'Bấm để mở module' : 'Chi tiết nằm trong thông báo hệ thống'}
           </span>
         </button>
-      `,
+      `
+      },
     )
     .join('')
   const emptyText = getNotificationEmptyText(notificationFilters.readState)
@@ -11906,13 +11932,26 @@ function getActiveWindowId() {
 }
 
 function renderStartMenu() {
-  const moduleItems = modules
+  const moduleItems = getProductionLauncherModules()
     .map(
-      (moduleItem) => `
-        <button class="start-menu-module" type="button" data-module-launcher="start-menu" data-module-id="${moduleItem.id}">
-          ${moduleItem.name}
-        </button>
-      `,
+      (moduleItem) => {
+        const canOpen = isProductionModuleAvailable(moduleItem.id)
+        return `
+          <button
+            class="start-menu-module ${canOpen ? '' : 'is-unavailable'}"
+            type="button"
+            data-module-id="${moduleItem.id}"
+            ${
+              canOpen
+                ? 'data-module-launcher="start-menu"'
+                : 'data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled'
+            }
+          >
+            <span>${moduleItem.name}</span>
+            ${canOpen ? '' : '<span class="start-menu-availability-label">Chưa khả dụng</span>'}
+          </button>
+        `
+      },
     )
     .join('')
 
@@ -11982,6 +12021,10 @@ function getModuleLauncherFromEventTarget(target) {
 }
 
 function openModuleWindow(moduleId) {
+  if (!isProductionModuleAvailable(moduleId)) {
+    return false
+  }
+
   const existingWindow = openWindows.find((windowItem) => windowItem.moduleId === moduleId)
 
   if (existingWindow) {
@@ -11992,7 +12035,7 @@ function openModuleWindow(moduleId) {
     resetModuleRefreshStateForOpen(moduleId)
     render()
     void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-reopen' })
-    return
+    return true
   }
 
   if (moduleId === 'nhan-vien') {
@@ -12027,6 +12070,7 @@ function openModuleWindow(moduleId) {
   resetModuleRefreshStateForOpen(moduleId)
   render()
   void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-open' })
+  return true
 }
 
 function resetModuleRefreshStateForOpen(moduleId) {
@@ -12145,13 +12189,21 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
 
   notifications = syncAppNotifications(notifications)
   const lastFreshAt = new Date().toISOString()
-  const limitedLabels = evaluation.nonBlockingFailures.map((upstream) => ({
-    attendance: 'Dữ liệu điểm danh bổ sung',
-    staff: 'Thông tin nhân sự',
-    tuition: 'Đối chiếu học phí',
-    finance: 'Số đã thu và thanh toán',
-    'calendar-notes': 'Ghi chú dùng chung',
-  })[upstream] || 'Một phần dữ liệu bổ sung')
+  const limitedMessages = evaluation.nonBlockingFailures.map((upstream) => {
+    const label = ({
+      attendance: 'Dữ liệu điểm danh bổ sung',
+      staff: 'Thông tin nhân sự',
+      tuition: 'Đối chiếu học phí',
+      finance: 'Số đã thu và thanh toán',
+      'calendar-notes': moduleId === 'thoi-khoa-bieu'
+        ? 'Lịch hoạt động bổ sung'
+        : 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh',
+    })[upstream] || 'Một phần dữ liệu bổ sung'
+    const outcomeCode = evaluation.health?.[upstream]?.outcomeCode || ''
+    return upstream === 'calendar-notes' && isUnavailableCalendarNotesOutcome(outcomeCode)
+      ? `${label} hiện chưa khả dụng`
+      : `${label} hiện chưa tải được`
+  })
   moduleRefreshStates.set(moduleId, createModuleRefreshState({
     status: evaluation.status,
     centerId: centerContext.centerId,
@@ -12162,7 +12214,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     actionRequiredUpstreams: contract.actionRequired,
     upstreamHealth: evaluation.health,
     message: evaluation.status === 'limited'
-      ? `Dữ liệu chính đã cập nhật. ${limitedLabels.join(', ')} hiện chưa tải được.`
+      ? `Dữ liệu chính đã cập nhật. ${limitedMessages.join('; ')}.`
       : 'Đã tải dữ liệu mới nhất.',
     lastFreshAt,
   }))
@@ -12298,7 +12350,9 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
 
 function openModuleWindowFromChildInteraction(moduleId) {
   const beforeWindow = openWindows.find((windowItem) => windowItem.moduleId === moduleId)
-  openModuleWindow(moduleId)
+  if (!openModuleWindow(moduleId)) {
+    return
+  }
   const targetWindow = beforeWindow || openWindows.find((windowItem) => windowItem.moduleId === moduleId)
 
   if (!targetWindow) {
@@ -19279,7 +19333,7 @@ function bindEvents() {
   document.querySelectorAll('[data-notification-module-id]').forEach((button) => {
     button.addEventListener('click', () => {
       const moduleId = button.dataset.notificationModuleId
-      if (!moduleId || !modules.some((moduleItem) => moduleItem.id === moduleId)) {
+      if (!moduleId || !isProductionModuleAvailable(moduleId)) {
         return
       }
 
@@ -28066,7 +28120,7 @@ function markNotificationRead(notificationId) {
 function openNotificationSourceModule(notificationId) {
   const notification = notifications.find((item) => item.id === notificationId)
 
-  if (!notification || !modules.some((moduleItem) => moduleItem.id === notification.sourceModule)) {
+  if (!notification || !isProductionModuleAvailable(notification.sourceModule)) {
     return
   }
 

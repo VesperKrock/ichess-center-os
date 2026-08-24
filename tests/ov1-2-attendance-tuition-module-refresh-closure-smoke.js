@@ -137,7 +137,11 @@ const scheduleHtml = renderScheduleModule(
     attendanceRecords: [{ id: 'stale-attendance' }],
     centerCalendarItems: [{ id: 'stale-calendar' }],
     centerCalendarTags: [{ id: 'stale-tag', label: 'Stale' }],
-    calendarNotesSharedTruthState: { message: 'Lịch hoạt động bổ sung hiện chưa tải được.' },
+    calendarNotesSharedTruthState: {
+      message: 'Lịch hoạt động bổ sung hiện chưa khả dụng.',
+      messageTone: 'warning',
+      availabilityStatus: 'unavailable',
+    },
   },
 )
 assert(scheduleHtml.includes('Lịch học vẫn có thể xem và cập nhật.'))
@@ -161,7 +165,11 @@ const boardHtml = renderAttendanceBoardModule(
   0,
   { status: 'notStarted' },
   false,
-  { message: 'Ghi chú dùng chung hiện chưa tải được.' },
+  {
+    message: 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh hiện chưa khả dụng.',
+    messageTone: 'warning',
+    availabilityStatus: 'unavailable',
+  },
   { attendanceAvailable: false, tuitionAvailable: false, calendarNotesAvailable: false },
 )
 assert(boardHtml.includes('Dữ liệu điểm danh chưa tải được.'))
@@ -199,7 +207,11 @@ const tuitionHtml = renderTuitionModule(
   [{ id: 'stale-payment', amount: 800000 }],
   'center-a',
   null,
-  { message: 'Ghi chú chăm sóc dùng chung hiện chưa tải được.' },
+  {
+    message: 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh hiện chưa khả dụng.',
+    messageTone: 'warning',
+    availabilityStatus: 'unavailable',
+  },
   { attendanceAvailable: true, calendarNotesAvailable: false, financeAvailable: false },
 )
 assert(tuitionHtml.includes('Số đã thu và dữ liệu thanh toán hiện chưa tải được.'))

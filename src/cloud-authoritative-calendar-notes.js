@@ -41,7 +41,12 @@ export async function pullC57CalendarNotesSharedTruth({ supabase, centerId } = {
     const { data, error } = await supabase.rpc('c5_7_list_calendar_notes_shared_truth', {
       p_center_id: normalizedCenterId,
     })
-    if (error) return failure('SHARED_TRUTH_READ_FAILED', String(error.message || error), error)
+    if (error) {
+      const outcomeCode = isC57BackendNotDeployedError(error)
+        ? 'BACKEND_NOT_DEPLOYED'
+        : 'SHARED_TRUTH_READ_FAILED'
+      return failure(outcomeCode, String(error.message || error), error)
+    }
     if (!data?.ok || data.outcome_code !== 'AUTHORITATIVE_SNAPSHOT'
       || cleanText(data.center_id) !== normalizedCenterId
       || !Array.isArray(data.calendar_items) || !Array.isArray(data.calendar_tags)
@@ -389,11 +394,17 @@ export function getC57OutcomeMessage(code) {
     INVALID_SERVER_RESULT: 'Server trả snapshot không hợp lệ; không cài projection một phần.',
     INVALID_SERVER_STATE: 'Server phát hiện tham chiếu Calendar/Notes không còn hợp lệ.',
     CENTER_CONTEXT_CHANGED: 'Cơ sở đã đổi; view hiện tại không nhận dữ liệu cơ sở trước.',
+    BACKEND_NOT_DEPLOYED: 'Calendar/Notes hiện chưa khả dụng trên hệ thống này.',
     SHARED_TRUTH_READ_FAILED: 'Không đọc được authoritative Calendar/Notes.',
     SERVER_COMMAND_FAILED: 'Không commit được Calendar/Notes lên server.',
     COMMITTED_PROJECTION_REFRESH_FAILED: 'Đã commit server nhưng chưa tải lại được projection.',
   }
   return messages[String(code || '')] || 'Không thể cập nhật authoritative Calendar/Notes.'
+}
+
+function isC57BackendNotDeployedError(error = {}) {
+  return new Set(['PGRST202', 'PGRST205', '42P01', '42883'])
+    .has(cleanText(error?.code).toUpperCase())
 }
 
 function normalizeRecurrenceRule(value, startAt = '') {

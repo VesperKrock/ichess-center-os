@@ -111,7 +111,7 @@ excludesAll(content.main, [
   'getStoredAttendanceBoardNotes(', 'saveStoredAttendanceBoardNotes(',
 ], 'C5.7 no active browser authority')
 for (const moduleSource of [content.schedule, content.tuition, content.attendanceBoard]) {
-  includesAll(moduleSource, ['data-c57-calendar-notes-refresh', 'Làm mới'], 'C5.7 refresh UX')
+  includesAll(moduleSource, ['data-module-authoritative-refresh', 'Làm mới'], 'C5.7 refresh UX')
 }
 assert(content.main.includes('const result = await commitStudentProjection({'),
   'Tuition care note must remain on canonical C5.1 Student authority')

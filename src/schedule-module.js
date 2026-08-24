@@ -323,7 +323,7 @@ export function renderScheduleModule(
 
 function renderCalendarNotesSharedTruthStatus(state = {}) {
   const message = String(state.message || '').trim()
-  const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
+  const tone = ['success', 'warning', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
   const migrationWarning = state.legacyMigrationRequired
     ? ' Ghi chú cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.'
     : ''

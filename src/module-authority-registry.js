@@ -97,6 +97,15 @@ export const MODULE_UPSTREAM_UI_STATE = Object.freeze({
   FAILED: 'failed',
 })
 
+const UNAVAILABLE_CALENDAR_NOTES_OUTCOMES = new Set([
+  'BACKEND_NOT_DEPLOYED',
+  'SCHEMA_NOT_READY',
+  'PGRST202',
+  'PGRST205',
+  '42P01',
+  '42883',
+])
+
 export function createLoadingModuleUpstreamHealth(upstreams = []) {
   return Object.fromEntries((Array.isArray(upstreams) ? upstreams : []).map((upstream) => [upstream, {
     ok: false,
@@ -143,6 +152,10 @@ export function getModuleUpstreamUiState(refreshState = {}, upstream = '') {
     return MODULE_UPSTREAM_UI_STATE.IDLE
   }
   return MODULE_UPSTREAM_UI_STATE.FAILED
+}
+
+export function isUnavailableCalendarNotesOutcome(outcomeCode = '') {
+  return UNAVAILABLE_CALENDAR_NOTES_OUTCOMES.has(String(outcomeCode || '').trim().toUpperCase())
 }
 
 export function evaluateModuleRefreshResults(moduleId, results = []) {

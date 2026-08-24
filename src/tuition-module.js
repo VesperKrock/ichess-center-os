@@ -424,27 +424,30 @@ function renderOperationalNotesSharedTruthStatus(state = {}, domainStatus = 'rea
   if (pending) {
     return `
       <div class="c57-shared-truth-notice is-info" role="status">
-        <span>Đang tải ghi chú chăm sóc...</span>
+        <span>Đang tải ghi chú chăm sóc theo tháng và ghi chú điểm danh...</span>
         <button type="button" data-module-authoritative-refresh="hoc-phi" disabled>Làm mới</button>
       </div>
     `
   }
   if (domainStatus === 'failed') {
+    const isTransientFailure = state.availabilityStatus === 'failed'
     return `
       <div class="c57-shared-truth-notice is-warning" role="status">
-        <span>Ghi chú chăm sóc hiện chưa tải được. Gói học phí vẫn có thể xem và cập nhật.</span>
+        <span>${isTransientFailure
+          ? 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh hiện chưa tải được. Ghi chú học viên vẫn dùng được.'
+          : 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh hiện chưa khả dụng. Ghi chú học viên vẫn dùng được.'}</span>
         <button type="button" data-module-authoritative-refresh="hoc-phi">Làm mới</button>
       </div>
     `
   }
   const message = String(state.message || '').trim()
-  const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
+  const tone = ['success', 'warning', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
   const migrationWarning = state.legacyMigrationRequired
-    ? ' Ghi chú cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.'
+    ? ' Ghi chú theo tháng hoặc ghi chú điểm danh cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.'
     : ''
   return `
     <div class="c57-shared-truth-notice is-${escapeHtml(tone)}" role="status">
-      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Ghi chú chăm sóc thủ công được lưu dùng chung trong cơ sở.')}</span>
+      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh được lưu dùng chung trong cơ sở.')}</span>
       <button type="button" data-module-authoritative-refresh="hoc-phi" ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
     </div>
   `

@@ -22,7 +22,8 @@ export const modules = [
     id: 'khach-hang-tu-van',
     name: 'Phụ huynh / Tư vấn',
     shortDescription: 'Theo dõi danh sách phụ huynh, khách tư vấn và trạng thái chăm sóc ban đầu.',
-    status: 'active',
+    status: 'unavailable',
+    launcherVisibility: 'unavailable',
     plannedFeatures: [
       'Xem danh sách phụ huynh và khách tư vấn',
       'Tìm kiếm theo tên, SĐT, học viên hoặc nhu cầu',
@@ -61,7 +62,7 @@ export const modules = [
     id: 'nhan-vien',
     name: 'Nhân viên',
     shortDescription: 'Theo dõi chấm công, địa điểm dạy và tổng buổi hoạt động của nhân sự/giáo viên.',
-    status: 'active',
+    status: 'unavailable',
     plannedFeatures: [
       'Bảng chấm công',
       'Tổng buổi theo ca dạy',
@@ -176,7 +177,8 @@ export const modules = [
     id: 'kho-hang',
     name: 'Kho hàng',
     shortDescription: 'Theo dõi vật tư, tài sản và tồn kho của cơ sở.',
-    status: 'active',
+    status: 'unavailable',
+    launcherVisibility: 'unavailable',
     plannedFeatures: [
       'Xem danh sách vật tư / tài sản',
       'Nhập kho',
@@ -256,3 +258,21 @@ export const modules = [
     plannedData: ['Danh sách ý tưởng module', 'Ghi chú phạm vi tương lai'],
   },
 ]
+
+export function isProductionModuleAvailable(moduleId, moduleItems = modules) {
+  return moduleItems.some(
+    (moduleItem) => moduleItem.id === moduleId && moduleItem.status === 'active',
+  )
+}
+
+export function isProductionModuleVisible(moduleId, moduleItems = modules) {
+  return moduleItems.some(
+    (moduleItem) =>
+      moduleItem.id === moduleId &&
+      (moduleItem.status === 'active' || moduleItem.launcherVisibility === 'unavailable'),
+  )
+}
+
+export function getProductionLauncherModules(moduleItems = modules) {
+  return moduleItems.filter((moduleItem) => isProductionModuleVisible(moduleItem.id, moduleItems))
+}

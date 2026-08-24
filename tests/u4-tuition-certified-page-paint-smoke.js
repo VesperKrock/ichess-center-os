@@ -148,13 +148,13 @@ for (const token of [
   'data-tuition-notes-state="loading"',
   'data-tuition-finance-state="loading"',
   'Đang tải đối chiếu điểm danh...',
-  'Đang tải ghi chú chăm sóc...',
+  'Đang tải ghi chú chăm sóc theo tháng và ghi chú điểm danh...',
   'Đang tải số đã thu và dữ liệu thanh toán...',
   'Đang tải…',
 ]) assert(loadingHtml.includes(token), `Pending Tuition UI is missing ${token}`)
 for (const falseFailure of [
   'Đối chiếu điểm danh hiện chưa tải được',
-  'Ghi chú chăm sóc hiện chưa tải được',
+  'Ghi chú chăm sóc theo tháng và ghi chú điểm danh hiện chưa khả dụng',
   'Số đã thu và dữ liệu thanh toán hiện chưa tải được',
   '>Chưa tải<',
 ]) assert(!loadingHtml.includes(falseFailure), `Pending Tuition UI must not show ${falseFailure}`)
@@ -196,7 +196,8 @@ const notesFailedHtml = render({
   },
 })
 assert(notesFailedHtml.includes('c57-shared-truth-notice is-warning'))
-assert(notesFailedHtml.includes('Ghi chú chăm sóc hiện chưa tải được'))
+assert(notesFailedHtml.includes('Ghi chú chăm sóc theo tháng và ghi chú điểm danh hiện chưa khả dụng. Ghi chú học viên vẫn dùng được.'))
+assert(notesFailedHtml.includes('data-tuition-action="open-care-notes"'))
 assert(notesFailedHtml.includes('data-tuition-action="open-debt"'))
 
 const packageWhileFinanceLoadingHtml = render({

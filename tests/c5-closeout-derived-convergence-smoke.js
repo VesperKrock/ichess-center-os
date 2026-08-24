@@ -127,7 +127,8 @@ for (const forbidden of [
   'getStoredNotifications(createSampleNotifications())',
   'listLegacyStudentProjections',
 ]) assert(!main.includes(forbidden), `Fixture may not seed runtime/server path: ${forbidden}`)
-assert.equal((modulesSource.match(/status: 'active'/g) || []).length, 13)
+assert.equal((modulesSource.match(/status: 'active'/g) || []).length, 10)
+assert.equal((modulesSource.match(/status: 'unavailable'/g) || []).length, 3)
 assert(!modulesSource.includes("status: 'in-progress'"))
 assert(!modulesSource.includes("status: 'planned'"))
 
