@@ -12,10 +12,10 @@
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: #374151;
-  font-size: 12px;
+  color: #111827;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -37,7 +37,8 @@
   color: #4b5563;
   background: transparent;
   box-shadow: none;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .desktop-window.is-tuition-window > .window-titlebar .window-controls > button.module-authoritative-refresh {
@@ -72,7 +73,7 @@
 }
 
 :root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar h2 {
-  color: #d1d5db;
+  color: #f4f4f5;
 }
 
 :root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .window-controls > button,
@@ -903,12 +904,13 @@
   top: -12px;
   z-index: 3;
   display: flex;
-  align-items: flex-start;
+  min-height: 70px;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin: -12px -12px 0;
   border-bottom: 1px solid var(--tuition-border);
-  padding: 9px 12px;
+  padding: 12px 16px;
   color: var(--tuition-text);
   background: var(--tuition-surface);
 }
@@ -920,17 +922,17 @@
 
 .desktop-window.is-tuition-window .tuition-form-header h4 {
   color: var(--tuition-text);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 22px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 29px;
 }
 
 .desktop-window.is-tuition-window .tuition-form-header p {
   margin-top: 3px;
   color: var(--tuition-secondary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 17px;
+  line-height: 18px;
 }
 
 .desktop-window.is-tuition-window .tuition-form-header button {
@@ -941,7 +943,7 @@
   color: var(--tuition-text);
   background: var(--tuition-surface-soft);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
 }
 
@@ -1021,15 +1023,15 @@
 
 .desktop-window.is-tuition-window .tuition-package-setup-heading h5 {
   color: var(--tuition-text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 18px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 .desktop-window.is-tuition-window .tuition-package-setup-heading p {
   color: var(--tuition-secondary);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 18px;
 }
 
 .desktop-window.is-tuition-window .tuition-package-suggestions {
@@ -1077,9 +1079,9 @@
 .desktop-window.is-tuition-window .tuition-form-grid label > span,
 .desktop-window.is-tuition-window .tuition-payment-evidence-field > span {
   color: var(--tuition-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 18px;
 }
 
 .desktop-window.is-tuition-window .tuition-form-grid input,
@@ -1096,7 +1098,7 @@
   padding: 7px 9px;
   color: var(--tuition-text);
   background: var(--tuition-input);
-  font-size: 13px;
+  font-size: 14px;
   outline: none;
 }
 
@@ -1403,7 +1405,7 @@
 
 .desktop-window.is-tuition-window .tuition-rollback-preview-note strong {
   color: var(--tuition-text);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .desktop-window.is-tuition-window .tuition-rollback-preview-note span,
@@ -1411,8 +1413,8 @@
 .desktop-window.is-tuition-window .tuition-rollback-preview-item p {
   margin: 0;
   color: var(--tuition-secondary);
-  font-size: 12px;
-  line-height: 17px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .desktop-window.is-tuition-window .tuition-rollback-preview-message.is-error {
@@ -1449,12 +1451,12 @@
 
 .desktop-window.is-tuition-window .tuition-rollback-preview-item-header strong {
   color: var(--tuition-text);
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .desktop-window.is-tuition-window .tuition-rollback-preview-item-header span {
   color: var(--tuition-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1473,7 +1475,7 @@
   overflow: hidden;
   color: var(--tuition-secondary);
   background: var(--tuition-surface);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1506,21 +1508,21 @@
 .desktop-window.is-tuition-window .tuition-rollback-preview-diff dt {
   color: var(--tuition-text);
   background: var(--tuition-surface);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .desktop-window.is-tuition-window .tuition-rollback-preview-diff dd {
   color: var(--tuition-secondary);
   background: var(--tuition-surface);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .desktop-window.is-tuition-window .tuition-rollback-preview-diff dd span {
   display: block;
   margin-bottom: 2px;
   color: var(--tuition-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1561,9 +1563,9 @@
 .desktop-window.is-tuition-window .student-care-layout h4 {
   margin: 0;
   color: var(--tuition-text);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 20px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 22px;
 }
 
 .desktop-window.is-tuition-window .care-note-list {
@@ -1593,7 +1595,7 @@
 
 .desktop-window.is-tuition-window .care-note-item strong {
   color: var(--tuition-text);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .desktop-window.is-tuition-window .care-note-item time,
@@ -1601,8 +1603,8 @@
 .desktop-window.is-tuition-window .care-note-empty {
   margin: 0;
   color: var(--tuition-secondary);
-  font-size: 12px;
-  line-height: 17px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .desktop-window.is-tuition-window .care-note-tags {
@@ -1618,7 +1620,7 @@
   padding: 3px 7px;
   color: var(--tuition-secondary);
   background: var(--tuition-surface-soft);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -1629,7 +1631,7 @@
 
 .desktop-window.is-tuition-window .student-care-form label > span {
   color: var(--tuition-secondary);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 
@@ -1648,7 +1650,7 @@
   width: 100%;
   color: var(--tuition-secondary);
   content: 'Gợi ý nhanh';
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -1679,7 +1681,7 @@
   padding: 8px 12px;
   color: var(--tuition-secondary);
   background: var(--tuition-surface);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 /* Month-end care */
@@ -1701,7 +1703,7 @@
   padding: 2px 6px;
   color: var(--tuition-secondary);
   background: var(--tuition-surface-soft);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .desktop-window.is-tuition-window .tuition-advisory-window-body,
@@ -1724,7 +1726,7 @@
   border-bottom: 1px solid var(--tuition-border);
   padding: 8px;
   color: var(--tuition-secondary);
-  font-size: 12px;
+  font-size: 14px;
   text-align: left;
   vertical-align: middle;
 }
@@ -1735,18 +1737,41 @@
   z-index: 2;
   color: var(--tuition-secondary);
   background: var(--tuition-surface-soft);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .desktop-window.is-tuition-window .tuition-advisory-table td > strong {
   color: var(--tuition-text);
+  font-size: 16px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-table td:first-child > strong {
+  font-size: 18px;
 }
 
 .desktop-window.is-tuition-window .tuition-advisory-table td > small,
 .desktop-window.is-tuition-window .tuition-advisory-table td small {
   color: var(--tuition-secondary);
+  font-size: 14px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-window-panel .tuition-form-header {
+  min-height: 88px;
+  padding: 14px 18px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-window-panel .tuition-form-header h4 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 34px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-window-panel .tuition-form-header p {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .desktop-window.is-tuition-window .tuition-advisory-note {

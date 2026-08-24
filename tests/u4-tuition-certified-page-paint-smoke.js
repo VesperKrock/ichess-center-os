@@ -476,6 +476,9 @@ for (const token of [
   '.tuition-care-note-panel',
   '.tuition-rollback-preview-note',
   '.tuition-rollback-preview-diff dd span',
+  'font-size: 24px;',
+  'font-size: 28px;',
+  'font-size: 18px;',
   '.tuition-advisory-table-wrap',
   '@media (max-width: 1280px)',
   '@media (max-width: 1080px)',
@@ -485,6 +488,10 @@ for (const token of [
 assert(!/\bzoom\s*:|transform\s*:\s*scale\(/i.test(tuitionTheme))
 assert(!/^\s*\.taskbar\b/m.test(tuitionTheme), 'U4 must not style the runtime taskbar')
 assert(!/^\s*\.window-titlebar\b/m.test(tuitionTheme), 'U4 titlebar polish must remain Tuition-scoped')
+assert(/\.desktop-window\.is-tuition-window > \.window-titlebar h2\s*\{[\s\S]*?font-size:\s*13px;/.test(tuitionTheme), 'Tuition titlebar must preserve the current Figma 13px chrome title')
+assert(/\.desktop-window\.is-tuition-window \.tuition-form-header h4\s*\{[\s\S]*?font-size:\s*24px;/.test(tuitionTheme), 'Tuition modal title must match the current Figma 24px title')
+assert(/\.desktop-window\.is-tuition-window \.tuition-advisory-window-panel \.tuition-form-header h4\s*\{[\s\S]*?font-size:\s*28px;/.test(tuitionTheme), 'Month-end modal title must match the current Figma 28px title')
+assert(!/\.tuition-form-panel\s*\{[^}]*opacity:\s*(?:0|0?\.[0-9]+)/s.test(tuitionTheme), 'Active Tuition modal foreground must not inherit reduced opacity')
 assert(!/localStorage|sessionStorage/.test(tuitionModule), 'Tuition renderer must not add browser business authority')
 assert(!/supabase|\.rpc\(|insert\(|update\(|delete\(/i.test(tuitionModule), 'Tuition renderer must not mutate server contracts')
 
