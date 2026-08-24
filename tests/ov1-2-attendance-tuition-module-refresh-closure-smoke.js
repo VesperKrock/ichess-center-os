@@ -203,7 +203,7 @@ const tuitionHtml = renderTuitionModule(
   { attendanceAvailable: true, calendarNotesAvailable: false, financeAvailable: false },
 )
 assert(tuitionHtml.includes('Số đã thu và dữ liệu thanh toán hiện chưa tải được.'))
-assert(tuitionHtml.includes('<td title="">Chưa tải</td>'))
+assert(tuitionHtml.includes('<td class="tuition-paid-cell" title="">Chưa tải</td>'))
 assert(tuitionHtml.includes('<span class="tuition-muted">Chưa tải</span>'))
 assert(!tuitionHtml.includes('data-tuition-payment-action="save-payment"'))
 assert(!tuitionHtml.includes('data-tuition-advisory-action="save"'))

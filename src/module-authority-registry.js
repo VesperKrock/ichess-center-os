@@ -90,6 +90,61 @@ export function getModuleActionRequiredUpstreams(moduleId, action) {
   return [...(getModuleAuthorityEntry(moduleId)?.actionRequiredUpstreams?.[action] || [])]
 }
 
+export const MODULE_UPSTREAM_UI_STATE = Object.freeze({
+  IDLE: 'idle',
+  LOADING: 'loading',
+  READY: 'ready',
+  FAILED: 'failed',
+})
+
+export function createLoadingModuleUpstreamHealth(upstreams = []) {
+  return Object.fromEntries((Array.isArray(upstreams) ? upstreams : []).map((upstream) => [upstream, {
+    ok: false,
+    outcomeCode: 'PENDING',
+    status: MODULE_UPSTREAM_UI_STATE.LOADING,
+  }]))
+}
+
+export function applyModuleUpstreamRefreshResult(refreshState = {}, result = {}) {
+  const upstream = String(result?.upstream || '')
+  if (!upstream || !Array.isArray(refreshState.upstreams) || !refreshState.upstreams.includes(upstream)) {
+    return refreshState
+  }
+
+  const ok = Boolean(result?.ok)
+  return {
+    ...refreshState,
+    upstreamHealth: {
+      ...(refreshState.upstreamHealth || {}),
+      [upstream]: {
+        ok,
+        outcomeCode: String(result?.outcome_code || (ok ? 'OK' : 'UNKNOWN_FAILURE')),
+        status: ok ? MODULE_UPSTREAM_UI_STATE.READY : MODULE_UPSTREAM_UI_STATE.FAILED,
+      },
+    },
+  }
+}
+
+export function getModuleUpstreamUiState(refreshState = {}, upstream = '') {
+  const health = refreshState?.upstreamHealth?.[upstream]
+  if (health?.ok || health?.status === MODULE_UPSTREAM_UI_STATE.READY) {
+    return MODULE_UPSTREAM_UI_STATE.READY
+  }
+  if (health?.status === MODULE_UPSTREAM_UI_STATE.FAILED) {
+    return MODULE_UPSTREAM_UI_STATE.FAILED
+  }
+  if (
+    health?.status === MODULE_UPSTREAM_UI_STATE.LOADING
+    || refreshState?.status === MODULE_UPSTREAM_UI_STATE.LOADING
+  ) {
+    return MODULE_UPSTREAM_UI_STATE.LOADING
+  }
+  if (!refreshState?.status || refreshState.status === MODULE_UPSTREAM_UI_STATE.IDLE) {
+    return MODULE_UPSTREAM_UI_STATE.IDLE
+  }
+  return MODULE_UPSTREAM_UI_STATE.FAILED
+}
+
 export function evaluateModuleRefreshResults(moduleId, results = []) {
   const contract = getModuleRefreshContract(moduleId)
   const requiredSet = new Set(contract.required)

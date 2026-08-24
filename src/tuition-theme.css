@@ -1,0 +1,1903 @@
+/* U4 — certified Tuition page paint. Window chrome is Tuition-scoped; taskbar is untouched. */
+
+.desktop-window.is-tuition-window > .window-titlebar {
+  min-height: 32px;
+  padding: 0 8px 0 12px;
+  border-bottom-color: #d1d5db;
+  color: #111827;
+  background: #f3f4f6;
+}
+
+.desktop-window.is-tuition-window > .window-titlebar h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window > .window-titlebar .window-controls {
+  gap: 4px;
+}
+
+.desktop-window.is-tuition-window > .window-titlebar .window-controls > button,
+.desktop-window.is-tuition-window > .window-titlebar .module-authoritative-refresh,
+.desktop-window.is-tuition-window > .window-titlebar .module-notification-bell summary {
+  width: 28px;
+  min-width: 28px;
+  height: 24px;
+  min-height: 24px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  padding: 0;
+  color: #4b5563;
+  background: transparent;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.desktop-window.is-tuition-window > .window-titlebar .window-controls > button.module-authoritative-refresh {
+  width: auto;
+  min-width: 68px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window > .window-titlebar .window-controls > button:hover,
+.desktop-window.is-tuition-window > .window-titlebar .window-controls > button:focus-visible,
+.desktop-window.is-tuition-window > .window-titlebar .module-authoritative-refresh:hover,
+.desktop-window.is-tuition-window > .window-titlebar .module-authoritative-refresh:focus-visible,
+.desktop-window.is-tuition-window > .window-titlebar .module-notification-bell summary:hover,
+.desktop-window.is-tuition-window > .window-titlebar .module-notification-bell summary:focus-visible {
+  border-color: #9ca3af;
+  color: #111827;
+  background: #e5e7eb;
+}
+
+.desktop-window.is-tuition-window > .window-titlebar [data-window-action='close']:hover,
+.desktop-window.is-tuition-window > .window-titlebar [data-window-action='close']:focus-visible {
+  border-color: #dc2626;
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar {
+  border-bottom-color: #2a2f36;
+  color: #f4f4f5;
+  background: #171a20;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar h2 {
+  color: #d1d5db;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .window-controls > button,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .module-authoritative-refresh,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .module-notification-bell summary {
+  border-color: #3f4650;
+  color: #c7cbd1;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .window-controls > button:hover,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .window-controls > button:focus-visible,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .module-authoritative-refresh:hover,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .module-authoritative-refresh:focus-visible,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .module-notification-bell summary:hover,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar .module-notification-bell summary:focus-visible {
+  border-color: #6b7280;
+  color: #f4f4f5;
+  background: #2a2f36;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar [data-window-action='close']:hover,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-titlebar [data-window-action='close']:focus-visible {
+  border-color: #f87171;
+  color: #fecaca;
+  background: #3a1d20;
+}
+
+.desktop-window.is-tuition-window > .window-body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  background: #f7f7f8;
+}
+
+.desktop-window.is-tuition-window > .window-body > .module-authoritative-refresh-notice,
+.desktop-window.is-tuition-window .c57-shared-truth-notice {
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  padding: 6px 10px;
+  color: #374151;
+  background: #f9fafb;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  opacity: 1;
+}
+
+.desktop-window.is-tuition-window > .window-body > .module-authoritative-refresh-notice {
+  margin: 6px 22px 0;
+}
+
+.desktop-window.is-tuition-window > .window-body > .module-authoritative-refresh-notice.is-fresh,
+.desktop-window.is-tuition-window .c57-shared-truth-notice.is-success {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.desktop-window.is-tuition-window > .window-body > .module-authoritative-refresh-notice.is-unfresh,
+.desktop-window.is-tuition-window .c57-shared-truth-notice.is-error,
+.desktop-window.is-tuition-window .c57-shared-truth-notice.is-warning {
+  border-color: #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.desktop-window.is-tuition-window > .window-body > .tuition-module {
+  flex: 1 1 auto;
+  height: auto;
+}
+
+.desktop-window.is-tuition-window .tuition-module {
+  --tuition-canvas: #f7f7f8;
+  --tuition-surface: #ffffff;
+  --tuition-surface-soft: #fafafb;
+  --tuition-input: #ffffff;
+  --tuition-border: #e5e7eb;
+  --tuition-border-strong: #d1d5db;
+  --tuition-text: #111827;
+  --tuition-secondary: #4b5563;
+  --tuition-muted: #6b7280;
+  --tuition-placeholder: #6b7280;
+  --tuition-primary: #111827;
+  --tuition-primary-text: #ffffff;
+  --tuition-positive: #047857;
+  --tuition-positive-soft: #ecfdf5;
+  --tuition-warning: #b45309;
+  --tuition-warning-soft: #fef3c7;
+  --tuition-danger: #b91c1c;
+  --tuition-danger-soft: #fef2f2;
+  --tuition-focus: rgb(17 24 39 / 24%);
+  --tuition-overlay: rgb(17 24 39 / 34%);
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--tuition-text);
+  background: var(--tuition-canvas);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-body {
+  background: #0b0d10;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-body > .module-authoritative-refresh-notice {
+  border-color: #374151;
+  color: #d1d5db;
+  background: #171a20;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .c57-shared-truth-notice {
+  border-color: #374151;
+  color: #d1d5db;
+  background: #171a20;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-body > .module-authoritative-refresh-notice.is-fresh,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .c57-shared-truth-notice.is-success {
+  border-color: #166534;
+  color: #86efac;
+  background: #123126;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window > .window-body > .module-authoritative-refresh-notice.is-unfresh,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .c57-shared-truth-notice.is-error,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .c57-shared-truth-notice.is-warning {
+  border-color: #92400e;
+  color: #fcd34d;
+  background: #3a2400;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .tuition-module {
+  --tuition-canvas: #0b0d10;
+  --tuition-surface: #14171c;
+  --tuition-surface-soft: #171a20;
+  --tuition-input: #101216;
+  --tuition-border: #2a2f36;
+  --tuition-border-strong: #3f4650;
+  --tuition-text: #f4f4f5;
+  --tuition-secondary: #c7cbd1;
+  --tuition-muted: #9ca3af;
+  --tuition-placeholder: #9ca3af;
+  --tuition-primary: #f4f4f5;
+  --tuition-primary-text: #101216;
+  --tuition-positive: #34d399;
+  --tuition-positive-soft: #123126;
+  --tuition-warning: #fbbf24;
+  --tuition-warning-soft: #3a2400;
+  --tuition-danger: #f87171;
+  --tuition-danger-soft: #3a1d20;
+  --tuition-focus: rgb(244 244 245 / 28%);
+  --tuition-overlay: rgb(0 0 0 / 72%);
+}
+
+.desktop-window.is-tuition-window .tuition-module *,
+.desktop-window.is-tuition-window .tuition-module *::before,
+.desktop-window.is-tuition-window .tuition-module *::after {
+  box-sizing: border-box;
+}
+
+.desktop-window.is-tuition-window .tuition-module button,
+.desktop-window.is-tuition-window .tuition-module input,
+.desktop-window.is-tuition-window .tuition-module select,
+.desktop-window.is-tuition-window .tuition-module textarea {
+  font: inherit;
+}
+
+.desktop-window.is-tuition-window .tuition-module-content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  padding: 9px 22px 10px;
+}
+
+.desktop-window.is-tuition-window .tuition-module.form-open .tuition-module-content {
+  filter: none;
+  opacity: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.desktop-window.is-tuition-window .tuition-page-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-entry {
+  display: block;
+  width: min(100%, 440px);
+  min-height: 48px;
+  overflow: visible;
+  border: 1px solid var(--tuition-border);
+  border-radius: 9.6px;
+  background: var(--tuition-surface);
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-header {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  padding: 6px 12px;
+  color: var(--tuition-text);
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-header h3 {
+  margin: 0;
+  color: var(--tuition-text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-header p {
+  margin: 2px 0 0;
+  color: var(--tuition-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-header button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-header button:hover,
+.desktop-window.is-tuition-window .tuition-advisory-header button:focus-visible {
+  border-color: var(--tuition-border-strong);
+  outline: 2px solid var(--tuition-focus);
+  outline-offset: 1px;
+}
+
+.desktop-window.is-tuition-window .c57-shared-truth-notice {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.desktop-window.is-tuition-window .c57-shared-truth-notice span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .c57-shared-truth-notice button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.desktop-window.is-tuition-window .tuition-overview {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 9.6px;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) 264px 264px;
+  gap: 16px;
+  align-items: end;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row label {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row label > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row input,
+.desktop-window.is-tuition-window .tuition-filter-row select {
+  width: 100%;
+  min-height: 43px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--tuition-text);
+  background: var(--tuition-input);
+  font-size: 14px;
+  font-weight: 400;
+  outline: none;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row input {
+  padding-left: 38px;
+  background-image: linear-gradient(45deg, transparent, transparent);
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row label:first-child::before {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  z-index: 1;
+  width: 13px;
+  height: 13px;
+  transform: translateY(-50%);
+  border: 1.8px solid var(--tuition-muted);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row label:first-child::after {
+  position: absolute;
+  top: calc(50% + 5px);
+  left: 25px;
+  z-index: 1;
+  width: 6px;
+  height: 1.8px;
+  transform: rotate(45deg);
+  transform-origin: left center;
+  border-radius: 2px;
+  background: var(--tuition-muted);
+  content: '';
+  pointer-events: none;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row input::placeholder,
+.desktop-window.is-tuition-window .tuition-module textarea::placeholder,
+.desktop-window.is-tuition-window .tuition-module input::placeholder {
+  color: var(--tuition-placeholder);
+  opacity: 1;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row select {
+  color-scheme: light;
+  cursor: pointer;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .tuition-filter-row select,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .tuition-form-grid select,
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .tuition-advisory-table select {
+  color-scheme: dark;
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row option,
+.desktop-window.is-tuition-window .tuition-form-grid option {
+  color: var(--tuition-text);
+  background: var(--tuition-input);
+}
+
+.desktop-window.is-tuition-window .tuition-filter-row input:hover,
+.desktop-window.is-tuition-window .tuition-filter-row select:hover,
+.desktop-window.is-tuition-window .tuition-filter-row input:focus,
+.desktop-window.is-tuition-window .tuition-filter-row select:focus {
+  border-color: var(--tuition-border-strong);
+  box-shadow: 0 0 0 3px var(--tuition-focus);
+}
+
+.desktop-window.is-tuition-window .tuition-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(132px, 224px)) minmax(410px, 1fr);
+  gap: 12.8px;
+  align-items: stretch;
+}
+
+.desktop-window.is-tuition-window .tuition-stat-card {
+  display: grid;
+  min-height: 68px;
+  align-content: center;
+  justify-content: stretch;
+  gap: 3px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 9.6px;
+  padding: 10px 12.8px;
+  background: var(--tuition-surface);
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-stat-card span {
+  color: var(--tuition-secondary);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.desktop-window.is-tuition-window .tuition-stat-card strong {
+  color: var(--tuition-text);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 29px;
+}
+
+.desktop-window.is-tuition-window .tuition-stat-card.is-package strong {
+  color: var(--tuition-positive);
+}
+
+.desktop-window.is-tuition-window .tuition-stat-card.is-debt strong {
+  color: var(--tuition-warning);
+}
+
+.desktop-window.is-tuition-window .tuition-warning-summary {
+  display: flex;
+  min-width: 0;
+  min-height: 68px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 9.6px;
+  padding: 10px 12px;
+  background: var(--tuition-surface);
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-warning-summary > strong,
+.desktop-window.is-tuition-window .tuition-warning-summary > b {
+  color: var(--tuition-secondary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.desktop-window.is-tuition-window .tuition-warning-summary > b {
+  margin-left: auto;
+  color: var(--tuition-warning);
+}
+
+.desktop-window.is-tuition-window .tuition-warning-summary > span {
+  border: 1px solid var(--tuition-border);
+  border-radius: 16px;
+  padding: 6px 10px;
+  color: var(--tuition-text);
+  background: var(--tuition-canvas);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desktop-window.is-tuition-window .tuition-warning-summary > span.is-due {
+  border-color: #fed7aa;
+  color: var(--tuition-warning);
+  background: var(--tuition-warning-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-warning-summary > span.is-overdue {
+  border-color: #fecaca;
+  color: var(--tuition-danger);
+  background: var(--tuition-danger-soft);
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .tuition-warning-summary > span.is-due {
+  border-color: #854d0e;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-tuition-window .tuition-warning-summary > span.is-overdue {
+  border-color: #7f1d1d;
+}
+
+.desktop-window.is-tuition-window .tuition-table-wrap {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  border: 1px solid var(--tuition-border);
+  border-radius: 9.6px;
+  background: var(--tuition-surface);
+  scrollbar-gutter: stable;
+}
+
+.desktop-window.is-tuition-window .tuition-table {
+  width: 100%;
+  min-width: 1472px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.desktop-window.is-tuition-window .tuition-table th:nth-child(1) { width: 256px; }
+.desktop-window.is-tuition-window .tuition-table th:nth-child(2) { width: 224px; }
+.desktop-window.is-tuition-window .tuition-table th:nth-child(3) { width: 176px; }
+.desktop-window.is-tuition-window .tuition-table th:nth-child(4) { width: 144px; text-align: right; }
+.desktop-window.is-tuition-window .tuition-table th:nth-child(5) { width: 144px; text-align: right; }
+.desktop-window.is-tuition-window .tuition-table th:nth-child(6) { width: 144px; text-align: center; }
+.desktop-window.is-tuition-window .tuition-table th:nth-child(7) { width: 384px; }
+
+.desktop-window.is-tuition-window .tuition-table th,
+.desktop-window.is-tuition-window .tuition-table td {
+  min-width: 0;
+  border-bottom: 1px solid var(--tuition-border);
+  padding: 10px 12px;
+  color: var(--tuition-secondary);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.desktop-window.is-tuition-window .tuition-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 41px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-tuition-window .tuition-table td {
+  height: 94px;
+  overflow: visible;
+  font-size: 14px;
+  line-height: 18px;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.desktop-window.is-tuition-window .tuition-table tbody tr:nth-child(even) td {
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-clickable-row {
+  cursor: pointer;
+}
+
+.desktop-window.is-tuition-window .tuition-clickable-row:hover td,
+.desktop-window.is-tuition-window .tuition-clickable-row:focus-visible td {
+  background: color-mix(in srgb, var(--tuition-surface) 90%, var(--tuition-text) 10%);
+}
+
+.desktop-window.is-tuition-window .tuition-clickable-row:focus-visible {
+  outline: 2px solid var(--tuition-text);
+  outline-offset: -2px;
+}
+
+.desktop-window.is-tuition-window .tuition-clickable-row.has-sync-conflict td {
+  background: color-mix(in srgb, var(--tuition-warning-soft) 58%, var(--tuition-surface) 42%);
+}
+
+.desktop-window.is-tuition-window .tuition-student-cell,
+.desktop-window.is-tuition-window .tuition-package-cell,
+.desktop-window.is-tuition-window .tuition-amount-cell,
+.desktop-window.is-tuition-window .tuition-handling-cell {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.desktop-window.is-tuition-window .tuition-student-cell strong,
+.desktop-window.is-tuition-window .tuition-package-cell > strong,
+.desktop-window.is-tuition-window .tuition-amount-cell > strong {
+  overflow: hidden;
+  color: var(--tuition-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-student-cell span,
+.desktop-window.is-tuition-window .tuition-student-cell small,
+.desktop-window.is-tuition-window .tuition-package-cell > span,
+.desktop-window.is-tuition-window .tuition-amount-cell > small {
+  overflow: hidden;
+  color: var(--tuition-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-package-cell.is-empty > strong {
+  color: var(--tuition-secondary);
+}
+
+.desktop-window.is-tuition-window .tuition-paid-cell {
+  color: var(--tuition-text);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.desktop-window.is-tuition-window .tuition-debt-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  justify-content: flex-end;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 0;
+  color: var(--tuition-positive);
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.desktop-window.is-tuition-window .tuition-debt-button.has-debt {
+  color: var(--tuition-warning);
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .tuition-debt-button:hover,
+.desktop-window.is-tuition-window .tuition-debt-button:focus-visible {
+  outline: 2px solid var(--tuition-focus);
+  outline-offset: 2px;
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .tuition-status {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tuition-border);
+  border-radius: 14px;
+  padding: 4px 9px;
+  color: var(--tuition-text);
+  background: var(--tuition-canvas);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.desktop-window.is-tuition-window .tuition-status-warning,
+.desktop-window.is-tuition-window .tuition-status-due {
+  border-color: #fed7aa;
+  color: var(--tuition-warning);
+  background: var(--tuition-warning-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-status-danger {
+  border-color: #fecaca;
+  color: var(--tuition-danger);
+  background: var(--tuition-danger-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-status-info {
+  border-color: #a7f3d0;
+  color: var(--tuition-positive);
+  background: var(--tuition-positive-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-handling-summary {
+  overflow: hidden;
+  color: var(--tuition-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-clickable-row.has-sync-conflict .tuition-handling-summary,
+.desktop-window.is-tuition-window .tuition-attendance-warning,
+.desktop-window.is-tuition-window .tuition-attendance-compare.is-warning {
+  color: var(--tuition-warning);
+}
+
+.desktop-window.is-tuition-window .tuition-row-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 13px;
+}
+
+.desktop-window.is-tuition-window .tuition-row-actions button {
+  min-height: 24px;
+  max-width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  padding: 2px;
+  overflow: hidden;
+  color: var(--tuition-text);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 17px;
+  text-decoration: underline;
+  text-overflow: ellipsis;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-row-actions button:hover,
+.desktop-window.is-tuition-window .tuition-row-actions button:focus-visible {
+  outline: 2px solid var(--tuition-focus);
+  outline-offset: 1px;
+  color: var(--tuition-text);
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .tuition-attendance-compare,
+.desktop-window.is-tuition-window .tuition-conflict-badge,
+.desktop-window.is-tuition-window .tuition-care-badges span,
+.desktop-window.is-tuition-window .tuition-overpaid-badge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  overflow: hidden;
+  color: var(--tuition-secondary);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-attendance-compare.is-match {
+  color: var(--tuition-positive);
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .tuition-attendance-compare.is-muted {
+  color: var(--tuition-muted);
+}
+
+.desktop-window.is-tuition-window .tuition-conflict-badge,
+.desktop-window.is-tuition-window .tuition-care-badges .is-warning,
+.desktop-window.is-tuition-window .tuition-care-badges .is-danger {
+  color: var(--tuition-warning);
+}
+
+.desktop-window.is-tuition-window .tuition-empty {
+  color: var(--tuition-secondary);
+  text-align: center;
+}
+
+/* Package, payment, history, detail, care and month-end dialogs */
+.desktop-window.is-tuition-window .tuition-form-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  border-radius: 0;
+  background: var(--tuition-overlay);
+}
+
+.desktop-window.is-tuition-window .tuition-form-panel {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 21;
+  display: grid;
+  width: min(980px, calc(100% - 32px));
+  max-height: calc(100% - 24px);
+  transform: translateX(-50%);
+  gap: 8px;
+  overflow: auto;
+  border: 1px solid var(--tuition-border);
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 35%);
+  opacity: 1;
+  scrollbar-gutter: stable;
+}
+
+.desktop-window.is-tuition-window .tuition-form-panel,
+.desktop-window.is-tuition-window .tuition-form-panel > *,
+.desktop-window.is-tuition-window .tuition-form-panel article,
+.desktop-window.is-tuition-window .tuition-form-panel dl,
+.desktop-window.is-tuition-window .tuition-form-panel table {
+  filter: none;
+  opacity: 1;
+}
+
+.desktop-window.is-tuition-window .tuition-form-panel.tuition-full-window-panel {
+  top: 12px;
+  right: 5%;
+  bottom: 12px;
+  left: 5%;
+  width: auto;
+  height: auto;
+  max-height: none;
+  transform: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.desktop-window.is-tuition-window .tuition-form-header {
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -12px -12px 0;
+  border-bottom: 1px solid var(--tuition-border);
+  padding: 9px 12px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+}
+
+.desktop-window.is-tuition-window .tuition-form-header h4,
+.desktop-window.is-tuition-window .tuition-form-header p {
+  margin: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-form-header h4 {
+  color: var(--tuition-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+.desktop-window.is-tuition-window .tuition-form-header p {
+  margin-top: 3px;
+  color: var(--tuition-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 17px;
+}
+
+.desktop-window.is-tuition-window .tuition-form-header button {
+  min-width: 30px;
+  min-height: 30px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 6px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface-soft);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.desktop-window.is-tuition-window .tuition-form-header button:hover,
+.desktop-window.is-tuition-window .tuition-form-header button:focus-visible {
+  border-color: var(--tuition-border-strong);
+  outline: 2px solid var(--tuition-focus);
+}
+
+.desktop-window.is-tuition-window .tuition-term-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(250px, 1.6fr);
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--tuition-border);
+  border-radius: 8px;
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-term-summary > div {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 10px;
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .tuition-term-summary > div + div {
+  border-left: 1px solid var(--tuition-border);
+}
+
+.desktop-window.is-tuition-window .tuition-term-summary > .tuition-formula {
+  grid-column: auto;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--tuition-border);
+  border-radius: 0;
+  padding: 5px 9px;
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .tuition-term-summary > .tuition-formula div {
+  padding: 1px 0;
+}
+
+.desktop-window.is-tuition-window .tuition-term-summary span,
+.desktop-window.is-tuition-window .tuition-term-summary small {
+  color: var(--tuition-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-tuition-window .tuition-term-summary strong {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--tuition-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-package-setup {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-package-setup-heading h5,
+.desktop-window.is-tuition-window .tuition-package-setup-heading p {
+  margin: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-package-setup-heading h5 {
+  color: var(--tuition-text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.desktop-window.is-tuition-window .tuition-package-setup-heading p {
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.desktop-window.is-tuition-window .tuition-package-suggestions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.desktop-window.is-tuition-window .tuition-package-suggestions button {
+  min-height: 34px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desktop-window.is-tuition-window .tuition-package-suggestions button.active {
+  border-color: var(--tuition-primary);
+  color: var(--tuition-primary-text);
+  background: var(--tuition-primary);
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid label.span-full,
+.desktop-window.is-tuition-window .tuition-discount-preview,
+.desktop-window.is-tuition-window .tuition-paid-readonly {
+  grid-column: 1 / -1;
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid label > span,
+.desktop-window.is-tuition-window .tuition-payment-evidence-field > span {
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid input,
+.desktop-window.is-tuition-window .tuition-form-grid select,
+.desktop-window.is-tuition-window .tuition-form-grid textarea,
+.desktop-window.is-tuition-window .student-care-form input,
+.desktop-window.is-tuition-window .student-care-form textarea,
+.desktop-window.is-tuition-window .tuition-advisory-table select,
+.desktop-window.is-tuition-window .tuition-advisory-note {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: var(--tuition-text);
+  background: var(--tuition-input);
+  font-size: 13px;
+  outline: none;
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid input:hover,
+.desktop-window.is-tuition-window .tuition-form-grid select:hover,
+.desktop-window.is-tuition-window .tuition-form-grid textarea:hover,
+.desktop-window.is-tuition-window .tuition-form-grid input:focus,
+.desktop-window.is-tuition-window .tuition-form-grid select:focus,
+.desktop-window.is-tuition-window .tuition-form-grid textarea:focus,
+.desktop-window.is-tuition-window .student-care-form input:focus,
+.desktop-window.is-tuition-window .student-care-form textarea:focus {
+  border-color: var(--tuition-border-strong);
+  box-shadow: 0 0 0 3px var(--tuition-focus);
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid label.has-error input,
+.desktop-window.is-tuition-window .tuition-form-grid label.has-error select,
+.desktop-window.is-tuition-window .tuition-form-grid label.has-error textarea {
+  border-color: var(--tuition-danger);
+}
+
+.desktop-window.is-tuition-window .tuition-form-grid small {
+  color: var(--tuition-danger);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.desktop-window.is-tuition-window .tuition-formula,
+.desktop-window.is-tuition-window .tuition-paid-readonly,
+.desktop-window.is-tuition-window .tuition-ledger-note {
+  border: 1px solid var(--tuition-border);
+  border-radius: 7px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-formula {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+.desktop-window.is-tuition-window .tuition-formula div {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(150px, auto);
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.desktop-window.is-tuition-window .tuition-formula div + div {
+  border-top: 1px solid var(--tuition-border);
+}
+
+.desktop-window.is-tuition-window .tuition-formula dt,
+.desktop-window.is-tuition-window .tuition-formula dd {
+  margin: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-formula dt {
+  color: var(--tuition-secondary);
+}
+
+.desktop-window.is-tuition-window .tuition-formula dd {
+  color: var(--tuition-text);
+  font-weight: 700;
+  text-align: right;
+}
+
+.desktop-window.is-tuition-window .tuition-formula .is-paid dd {
+  color: var(--tuition-positive);
+}
+
+.desktop-window.is-tuition-window .tuition-formula .is-debt dd,
+.desktop-window.is-tuition-window .tuition-formula .is-payable dd {
+  color: var(--tuition-warning);
+}
+
+.desktop-window.is-tuition-window .tuition-domain-notice {
+  margin: 0;
+  border: 1px solid var(--tuition-border-strong);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  opacity: 1;
+}
+
+.desktop-window.is-tuition-window .tuition-domain-notice.is-loading {
+  border-color: var(--tuition-border-strong);
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-domain-notice.is-warning {
+  border-color: var(--tuition-warning);
+  color: var(--tuition-warning);
+  background: var(--tuition-warning-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-domain-notice.is-error {
+  border-color: var(--tuition-danger);
+  color: var(--tuition-danger);
+  background: var(--tuition-danger-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-form-error,
+.desktop-window.is-tuition-window .tuition-payment-warning,
+.desktop-window.is-tuition-window .care-note-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: var(--tuition-danger);
+  background: var(--tuition-danger-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.desktop-window.is-tuition-window .tuition-form-actions {
+  position: sticky;
+  bottom: -12px;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 -12px -12px;
+  border-top: 1px solid var(--tuition-border);
+  padding: 9px 12px;
+  background: var(--tuition-surface);
+}
+
+.desktop-window.is-tuition-window .tuition-form-actions button,
+.desktop-window.is-tuition-window .care-note-actions button,
+.desktop-window.is-tuition-window .tuition-care-note-footer button {
+  min-height: 34px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desktop-window.is-tuition-window .tuition-form-actions button:last-child,
+.desktop-window.is-tuition-window .care-note-actions button:first-child,
+.desktop-window.is-tuition-window .tuition-care-note-footer button {
+  border-color: var(--tuition-primary);
+  color: var(--tuition-primary-text);
+  background: var(--tuition-primary);
+}
+
+.desktop-window.is-tuition-window .tuition-form-actions button:hover,
+.desktop-window.is-tuition-window .tuition-form-actions button:focus-visible,
+.desktop-window.is-tuition-window .care-note-actions button:hover,
+.desktop-window.is-tuition-window .care-note-actions button:focus-visible,
+.desktop-window.is-tuition-window .tuition-care-note-footer button:hover,
+.desktop-window.is-tuition-window .tuition-care-note-footer button:focus-visible {
+  outline: 2px solid var(--tuition-focus);
+  outline-offset: 1px;
+}
+
+.desktop-window.is-tuition-window .tuition-form-actions button:disabled,
+.desktop-window.is-tuition-window .tuition-form-actions button:last-child:disabled,
+.desktop-window.is-tuition-window .tuition-module button:disabled {
+  border-color: var(--tuition-border);
+  color: var(--tuition-muted);
+  background: var(--tuition-surface-soft);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.desktop-window.is-tuition-window .tuition-payment-panel {
+  width: min(900px, calc(100% - 32px));
+}
+
+.desktop-window.is-tuition-window .tuition-detail-panel {
+  width: min(940px, calc(100% - 32px));
+}
+
+.desktop-window.is-tuition-window .tuition-payment-action-row button,
+.desktop-window.is-tuition-window .tuition-ledger-payment-actions button,
+.desktop-window.is-tuition-window .tuition-advisory-save {
+  min-height: 32px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.desktop-window.is-tuition-window button[data-tuition-payment-void] {
+  border-color: var(--tuition-danger);
+  color: var(--tuition-danger);
+  background: var(--tuition-danger-soft);
+}
+
+.desktop-window.is-tuition-window button[data-tuition-payment-void]:hover,
+.desktop-window.is-tuition-window button[data-tuition-payment-void]:focus-visible {
+  outline: 2px solid var(--tuition-danger);
+  outline-offset: 1px;
+}
+
+.desktop-window.is-tuition-window .tuition-payment-history,
+.desktop-window.is-tuition-window .tuition-term-history,
+.desktop-window.is-tuition-window .tuition-payment-timeline,
+.desktop-window.is-tuition-window .tuition-payment-item,
+.desktop-window.is-tuition-window .tuition-term-history-item,
+.desktop-window.is-tuition-window .tuition-detail-overview > div,
+.desktop-window.is-tuition-window .tuition-rollback-preview-item {
+  border-color: var(--tuition-border);
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-payment-history h5,
+.desktop-window.is-tuition-window .tuition-payment-item strong,
+.desktop-window.is-tuition-window .tuition-term-history-item strong,
+.desktop-window.is-tuition-window .tuition-detail-overview strong,
+.desktop-window.is-tuition-window .tuition-payment-timeline-header h5 {
+  color: var(--tuition-text);
+}
+
+.desktop-window.is-tuition-window .tuition-payment-item time,
+.desktop-window.is-tuition-window .tuition-payment-item p,
+.desktop-window.is-tuition-window .tuition-payment-item small,
+.desktop-window.is-tuition-window .tuition-payment-empty,
+.desktop-window.is-tuition-window .tuition-payment-timeline-header p,
+.desktop-window.is-tuition-window .tuition-detail-overview span {
+  color: var(--tuition-secondary);
+}
+
+.desktop-window.is-tuition-window .tuition-payment-source-badge,
+.desktop-window.is-tuition-window .tuition-discount-badge,
+.desktop-window.is-tuition-window .tuition-advisory-badge,
+.desktop-window.is-tuition-window .tuition-advisory-source {
+  border-color: var(--tuition-border);
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-care-note-button {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  border: 1px solid var(--tuition-border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-care-note-button.has-note {
+  border-color: var(--tuition-positive);
+  color: var(--tuition-positive);
+  background: var(--tuition-positive-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-care-note-button.is-empty {
+  border-style: dashed;
+  color: var(--tuition-secondary);
+}
+
+.desktop-window.is-tuition-window .tuition-care-note-button:hover,
+.desktop-window.is-tuition-window .tuition-care-note-button:focus-visible {
+  border-color: var(--tuition-text);
+  outline: 2px solid var(--tuition-focus);
+  outline-offset: 1px;
+  color: var(--tuition-text);
+}
+
+/* Runtime-only audit history follows the certified Tuition modal hierarchy. */
+.desktop-window.is-tuition-window .tuition-rollback-preview-panel {
+  width: min(760px, calc(100% - 32px));
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-note {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--tuition-border-strong);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-note strong {
+  color: var(--tuition-text);
+  font-size: 13px;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-note span,
+.desktop-window.is-tuition-window .tuition-rollback-preview-message,
+.desktop-window.is-tuition-window .tuition-rollback-preview-item p {
+  margin: 0;
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-message.is-error {
+  color: var(--tuition-danger);
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-list {
+  display: grid;
+  min-height: 0;
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  gap: 9px;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-item-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-item-header strong {
+  color: var(--tuition-text);
+  font-size: 14px;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-item-header span {
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-fields span {
+  max-width: 100%;
+  border: 1px solid var(--tuition-border-strong);
+  border-radius: 999px;
+  padding: 3px 7px;
+  overflow: hidden;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-diff {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-diff div {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  align-items: stretch;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-diff dt,
+.desktop-window.is-tuition-window .tuition-rollback-preview-diff dd {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--tuition-border);
+  border-radius: 7px;
+  padding: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-diff dt {
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-diff dd {
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface);
+  font-size: 12px;
+}
+
+.desktop-window.is-tuition-window .tuition-rollback-preview-diff dd span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--tuition-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Care / Notes */
+.desktop-window.is-tuition-window .tuition-care-note-panel {
+  right: 7%;
+  left: 7%;
+}
+
+.desktop-window.is-tuition-window .tuition-care-note-window {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .student-care-layout {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+  gap: 12px;
+}
+
+.desktop-window.is-tuition-window .student-care-history-panel,
+.desktop-window.is-tuition-window .student-care-form {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.desktop-window.is-tuition-window .student-care-layout h4 {
+  margin: 0;
+  color: var(--tuition-text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.desktop-window.is-tuition-window .care-note-list {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
+  gap: 8px;
+  padding-right: 3px;
+  scrollbar-gutter: stable;
+}
+
+.desktop-window.is-tuition-window .care-note-item {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 7px;
+  padding: 8px;
+  color: var(--tuition-text);
+  background: var(--tuition-surface);
+}
+
+.desktop-window.is-tuition-window .care-note-item > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.desktop-window.is-tuition-window .care-note-item strong {
+  color: var(--tuition-text);
+  font-size: 13px;
+}
+
+.desktop-window.is-tuition-window .care-note-item time,
+.desktop-window.is-tuition-window .care-note-item p,
+.desktop-window.is-tuition-window .care-note-empty {
+  margin: 0;
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.desktop-window.is-tuition-window .care-note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.desktop-window.is-tuition-window .care-note-tags span,
+.desktop-window.is-tuition-window .care-note-suggestions button {
+  border: 1px solid var(--tuition-border);
+  border-radius: 14px;
+  padding: 3px 7px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.desktop-window.is-tuition-window .student-care-form label {
+  display: grid;
+  gap: 4px;
+}
+
+.desktop-window.is-tuition-window .student-care-form label > span {
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.desktop-window.is-tuition-window .student-care-form textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.desktop-window.is-tuition-window .care-note-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.desktop-window.is-tuition-window .care-note-suggestions::before {
+  width: 100%;
+  color: var(--tuition-secondary);
+  content: 'Gợi ý nhanh';
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.desktop-window.is-tuition-window .care-note-suggestions button {
+  min-height: 26px;
+  cursor: pointer;
+}
+
+.desktop-window.is-tuition-window .care-note-suggestions button:hover,
+.desktop-window.is-tuition-window .care-note-suggestions button:focus-visible {
+  border-color: var(--tuition-border-strong);
+  outline: 2px solid var(--tuition-focus);
+}
+
+.desktop-window.is-tuition-window .care-note-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.desktop-window.is-tuition-window .tuition-care-note-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -12px -12px;
+  border-top: 1px solid var(--tuition-border);
+  padding: 8px 12px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface);
+  font-size: 11px;
+}
+
+/* Month-end care */
+.desktop-window.is-tuition-window .tuition-advisory-window-panel {
+  right: 4%;
+  left: 4%;
+  padding-bottom: 12px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-meta span {
+  border-radius: 12px;
+  padding: 2px 6px;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+  font-size: 11px;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-window-body,
+.desktop-window.is-tuition-window .tuition-advisory-table-wrap {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-table th,
+.desktop-window.is-tuition-window .tuition-advisory-table td {
+  border-bottom: 1px solid var(--tuition-border);
+  padding: 8px;
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  color: var(--tuition-secondary);
+  background: var(--tuition-surface-soft);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-table td > strong {
+  color: var(--tuition-text);
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-table td > small,
+.desktop-window.is-tuition-window .tuition-advisory-table td small {
+  color: var(--tuition-secondary);
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-note {
+  min-height: 36px;
+  resize: vertical;
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-save {
+  width: auto;
+  margin: 5px 0 0;
+  color: var(--tuition-primary-text);
+  background: var(--tuition-primary);
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-badge.is-warning,
+.desktop-window.is-tuition-window .tuition-advisory-badge.is-due {
+  border-color: #fed7aa;
+  color: var(--tuition-warning);
+  background: var(--tuition-warning-soft);
+}
+
+.desktop-window.is-tuition-window .tuition-advisory-badge.is-danger,
+.desktop-window.is-tuition-window .tuition-advisory-table td.is-overdue {
+  color: var(--tuition-danger);
+}
+
+@media (max-width: 1400px) {
+  .desktop-window.is-tuition-window .tuition-stats {
+    grid-template-columns: repeat(4, minmax(120px, 1fr)) minmax(430px, 1.2fr);
+    gap: 10px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-warning-summary {
+    gap: 5px;
+    padding: 8px 7px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-warning-summary > span {
+    padding: 6px 7px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .desktop-window.is-tuition-window .tuition-module-content {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-page-header {
+    justify-content: flex-end;
+  }
+
+  .desktop-window.is-tuition-window .tuition-advisory-entry {
+    width: min(100%, 380px);
+  }
+
+  .desktop-window.is-tuition-window .tuition-filter-row {
+    grid-template-columns: minmax(260px, 1fr) 220px 220px;
+    gap: 10px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-stats {
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+  }
+
+  .desktop-window.is-tuition-window .tuition-warning-summary {
+    grid-column: 1 / -1;
+    min-height: 52px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-table {
+    min-width: 1320px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-form-panel.tuition-full-window-panel {
+    right: 18px;
+    left: 18px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .desktop-window.is-tuition-window .tuition-page-header {
+    justify-content: flex-end;
+  }
+
+  .desktop-window.is-tuition-window .tuition-advisory-entry {
+    width: min(100%, 330px);
+    min-height: 48px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-advisory-header {
+    min-height: 46px;
+    padding: 6px 10px;
+  }
+
+  .desktop-window.is-tuition-window .tuition-filter-row {
+    grid-template-columns: minmax(250px, 1fr) repeat(2, minmax(180px, 220px));
+  }
+
+  .desktop-window.is-tuition-window .tuition-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .desktop-window.is-tuition-window .tuition-warning-summary {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+  }
+
+  .desktop-window.is-tuition-window .student-care-layout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .desktop-window.is-tuition-window .student-care-history-panel {
+    min-height: 260px;
+  }
+}
+
+@media (max-width: 760px) {
+  .desktop-window.is-tuition-window .tuition-module-content {
+    overflow-y: auto;
+  }
+
+  .desktop-window.is-tuition-window .tuition-filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .desktop-window.is-tuition-window .tuition-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .desktop-window.is-tuition-window .tuition-warning-summary {
+    align-items: flex-start;
+  }
+
+  .desktop-window.is-tuition-window .tuition-warning-summary > b {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .desktop-window.is-tuition-window .tuition-form-panel {
+    width: calc(100% - 16px);
+  }
+
+  .desktop-window.is-tuition-window .tuition-form-grid,
+  .desktop-window.is-tuition-window .tuition-term-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .desktop-window.is-tuition-window .tuition-term-summary > div + div {
+    border-top: 1px solid var(--tuition-border);
+    border-left: 0;
+  }
+}

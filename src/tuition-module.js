@@ -173,6 +173,22 @@ export function createEmptyTuitionPaymentAttachmentDraft() {
   }
 }
 
+const TUITION_DOMAIN_UI_STATES = new Set(['idle', 'loading', 'ready', 'failed'])
+
+export function resolveTuitionDomainUiState(explicitState, available = true) {
+  const normalizedState = String(explicitState || '').trim().toLowerCase()
+  if (TUITION_DOMAIN_UI_STATES.has(normalizedState)) return normalizedState
+  return available === false ? 'failed' : 'ready'
+}
+
+function isTuitionDomainPending(state) {
+  return state === 'idle' || state === 'loading'
+}
+
+function getTuitionDomainPlaceholder(state) {
+  return isTuitionDomainPending(state) ? 'Đang tải…' : 'Chưa tải'
+}
+
 export function renderTuitionModule(
   students,
   tuitionRecords,
@@ -193,16 +209,30 @@ export function renderTuitionModule(
   calendarNotesSharedTruthState = {},
   availability = {},
 ) {
-  const attendanceAvailable = availability.attendanceAvailable !== false
-  const calendarNotesAvailable = availability.calendarNotesAvailable !== false
-  const financeAvailable = availability.financeAvailable !== false
+  const coreStatus = resolveTuitionDomainUiState(availability.coreStatus, true)
+  const tuitionStatus = resolveTuitionDomainUiState(availability.tuitionStatus, true)
+  const attendanceStatus = resolveTuitionDomainUiState(
+    availability.attendanceStatus,
+    availability.attendanceAvailable !== false,
+  )
+  const calendarNotesStatus = resolveTuitionDomainUiState(
+    availability.calendarNotesStatus,
+    availability.calendarNotesAvailable !== false,
+  )
+  const financeStatus = resolveTuitionDomainUiState(
+    availability.financeStatus,
+    availability.financeAvailable !== false,
+  )
+  const attendanceAvailable = attendanceStatus === 'ready'
+  const calendarNotesAvailable = calendarNotesStatus === 'ready'
+  const financeAvailable = financeStatus === 'ready'
   const canVoidPayments = availability.canVoidPayments === true
   const rows = buildTuitionRows(
     students,
     tuitionRecords,
     attendanceRecords,
     cashflowTransactions,
-    { attendanceAvailable, financeAvailable },
+    { attendanceAvailable, attendanceStatus, financeAvailable, financeStatus },
   )
   const visibleRows = filterTuitionRows(rows, filters)
   const stats = getTuitionStats(rows)
@@ -244,15 +274,22 @@ export function renderTuitionModule(
   )
 
   return `
-    <section class="tuition-module ${hasPanel ? 'form-open' : ''}" data-tuition-scroll-region="module">
+    <section
+      class="tuition-module ${hasPanel ? 'form-open' : ''}"
+      data-tuition-scroll-region="module"
+      data-tuition-core-state="${coreStatus}"
+      data-tuition-authority-state="${tuitionStatus}"
+      data-tuition-attendance-state="${attendanceStatus}"
+      data-tuition-notes-state="${calendarNotesStatus}"
+      data-tuition-finance-state="${financeStatus}"
+    >
       <div class="tuition-module-content" data-tuition-scroll-region="content">
-      ${renderOperationalNotesSharedTruthStatus(calendarNotesSharedTruthState)}
         ${attendanceAvailable
-          ? ''
-          : '<p class="tuition-payment-warning" role="status">Đối chiếu điểm danh hiện chưa tải được. Gói học phí vẫn có thể xem và cập nhật.</p>'}
-        ${financeAvailable
-          ? ''
-          : '<p class="tuition-payment-warning" role="status">Số đã thu và dữ liệu thanh toán hiện chưa tải được. Chức năng thanh toán đang tạm khóa.</p>'}
+          ? `<header class="tuition-page-header">${renderAttendanceAdvisoryEntry(advisoryRows, advisoryMonthKey)}</header>`
+          : ''}
+        ${renderOperationalNotesSharedTruthStatus(calendarNotesSharedTruthState, calendarNotesStatus)}
+        ${renderTuitionDomainNotice('attendance', attendanceStatus)}
+        ${renderTuitionDomainNotice('finance', financeStatus)}
         <div class="tuition-overview">
           <div class="tuition-filter-row">
             <label>
@@ -261,7 +298,7 @@ export function renderTuitionModule(
                 type="search"
                 value="${escapeHtml(filters.query)}"
                 data-tuition-filter="query"
-                placeholder="Tên học viên, phụ huynh, SĐT, ghi chú"
+                placeholder="Tìm tên học viên, phụ huynh, SĐT, ghi chú..."
               />
             </label>
             <label>
@@ -278,13 +315,17 @@ export function renderTuitionModule(
             </label>
           </div>
           <div class="tuition-stats" aria-label="Thống kê học phí">
-            ${renderStat('Tổng học viên', stats.total)}
-            ${renderStat('Đã có gói', stats.withPackage)}
-            ${renderStat('Chưa có gói', stats.noPackage)}
-            ${renderStat('Còn 2/1 buổi', stats.lowSessions)}
-            ${renderStat('Đến hạn', stats.due)}
-            ${renderStat('Quá hạn', stats.overdue)}
-            ${renderStat('Còn nợ', financeAvailable ? stats.debt : 'Chưa tải')}
+            ${renderStat('Tổng học viên', stats.total, 'total')}
+            ${renderStat('Đã có gói', stats.withPackage, 'package')}
+            ${renderStat('Chưa có gói', stats.noPackage, 'missing')}
+            ${renderStat('Còn nợ', financeAvailable ? stats.debt : getTuitionDomainPlaceholder(financeStatus), 'debt')}
+            <div class="tuition-warning-summary">
+              <strong>Cần chú ý</strong>
+              <span class="is-neutral">Còn 2/1 buổi · ${stats.lowSessions}</span>
+              <span class="is-due">Đến hạn · ${stats.due}</span>
+              <span class="is-overdue">Quá hạn · ${stats.overdue}</span>
+              <b>${financeAvailable ? `Còn nợ: ${stats.debt}` : `Số đã thu: ${getTuitionDomainPlaceholder(financeStatus)}`}</b>
+            </div>
           </div>
         </div>
         <div class="tuition-table-wrap" data-tuition-scroll-region="table">
@@ -292,31 +333,26 @@ export function renderTuitionModule(
             <thead>
               <tr>
                 <th>Học viên</th>
-                <th>Phụ huynh</th>
-                <th>Gói</th>
-                <th>Buổi đã học</th>
-                <th>Học phí gốc</th>
-                <th>Ưu đãi</th>
+                <th>Gói & tiến độ</th>
                 <th>Cần thanh toán</th>
                 <th>Đã thanh toán</th>
                 <th>Còn nợ</th>
                 <th>Trạng thái</th>
-                <th>Ghi chú</th>
+                <th>Cần xử lý</th>
               </tr>
             </thead>
             <tbody>
               ${
                 visibleRows.length
                   ? visibleRows.map((row) => renderTuitionRow(row)).join('')
-                  : '<tr><td class="tuition-empty" colspan="11">Không có học viên phù hợp.</td></tr>'
+                  : '<tr><td class="tuition-empty" colspan="7">Không có học viên phù hợp.</td></tr>'
               }
             </tbody>
           </table>
         </div>
-        ${attendanceAvailable ? renderAttendanceAdvisoryEntry(advisoryRows, advisoryMonthKey) : ''}
       </div>
       ${formState && formStudent
-        ? renderTuitionForm(formStudent, formState, cashflowTransactions, centerId, financeAvailable)
+        ? renderTuitionForm(formStudent, formState, cashflowTransactions, centerId, financeAvailable, financeStatus)
         : ''}
       ${
         paymentFormState && paymentStudent && paymentTuition
@@ -328,6 +364,7 @@ export function renderTuitionModule(
               centerId,
               financeAvailable,
               canVoidPayments,
+              financeStatus,
             )
           : ''
       }
@@ -338,20 +375,68 @@ export function renderTuitionModule(
             detailRow?.attendanceTuitionPreview,
             cashflowTransactions,
             centerId,
-            { attendanceAvailable, financeAvailable, canVoidPayments },
+            {
+              attendanceAvailable,
+              attendanceStatus,
+              financeAvailable,
+              financeStatus,
+              canVoidPayments,
+            },
           )
         : ''}
       ${rollbackPreviewState ? renderRollbackPreviewPanel(rollbackPreviewState) : ''}
       ${careNoteStudent ? renderTuitionCareNotePanel(careNoteStudent, careNoteState) : ''}
       ${hasAdvisoryWindow && attendanceAvailable
-        ? renderAttendanceAdvisoryWindow(advisoryRows, advisoryMonthKey, calendarNotesAvailable)
+        ? renderAttendanceAdvisoryWindow(
+            advisoryRows,
+            advisoryMonthKey,
+            calendarNotesAvailable,
+            calendarNotesStatus,
+          )
         : ''}
       ${periodActionConfirmationState ? renderTuitionPeriodActionConfirmation(periodActionConfirmationState) : ''}
     </section>
   `
 }
 
-function renderOperationalNotesSharedTruthStatus(state = {}) {
+function renderTuitionDomainNotice(domain, state) {
+  if (state === 'ready') return ''
+  const pending = isTuitionDomainPending(state)
+  const definitions = {
+    attendance: {
+      loading: 'Đang tải đối chiếu điểm danh...',
+      failed: 'Đối chiếu điểm danh hiện chưa tải được. Gói học phí vẫn có thể xem và cập nhật.',
+      failureTone: 'is-warning',
+    },
+    finance: {
+      loading: 'Đang tải số đã thu và dữ liệu thanh toán...',
+      failed: 'Số đã thu và dữ liệu thanh toán hiện chưa tải được. Chức năng thanh toán đang tạm khóa.',
+      failureTone: 'is-error',
+    },
+  }
+  const definition = definitions[domain]
+  if (!definition) return ''
+  return `<p class="tuition-domain-notice ${pending ? 'is-loading' : definition.failureTone}" role="status">${definition[pending ? 'loading' : 'failed']}</p>`
+}
+
+function renderOperationalNotesSharedTruthStatus(state = {}, domainStatus = 'ready') {
+  const pending = isTuitionDomainPending(domainStatus)
+  if (pending) {
+    return `
+      <div class="c57-shared-truth-notice is-info" role="status">
+        <span>Đang tải ghi chú chăm sóc...</span>
+        <button type="button" data-module-authoritative-refresh="hoc-phi" disabled>Làm mới</button>
+      </div>
+    `
+  }
+  if (domainStatus === 'failed') {
+    return `
+      <div class="c57-shared-truth-notice is-warning" role="status">
+        <span>Ghi chú chăm sóc hiện chưa tải được. Gói học phí vẫn có thể xem và cập nhật.</span>
+        <button type="button" data-module-authoritative-refresh="hoc-phi">Làm mới</button>
+      </div>
+    `
+  }
   const message = String(state.message || '').trim()
   const tone = ['success', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
   const migrationWarning = state.legacyMigrationRequired
@@ -439,7 +524,7 @@ function renderAttendanceAdvisoryEntry(rows, monthKey) {
       <div class="tuition-advisory-header">
         <div>
           <h3>Chăm sóc cuối tháng</h3>
-          <p>Tháng ${month}/${year} · ${rows.length} học viên cần theo dõi.</p>
+          <p>Tháng ${month}/${year} · ${rows.length} học viên</p>
         </div>
         <button type="button" data-tuition-action="open-advisory-window">Mở bảng chăm sóc</button>
       </div>
@@ -447,7 +532,12 @@ function renderAttendanceAdvisoryEntry(rows, monthKey) {
   `
 }
 
-function renderAttendanceAdvisoryWindow(rows, monthKey, calendarNotesAvailable = true) {
+function renderAttendanceAdvisoryWindow(
+  rows,
+  monthKey,
+  calendarNotesAvailable = true,
+  calendarNotesStatus = 'ready',
+) {
   const [year, month] = monthKey.split('-')
 
   return `
@@ -456,7 +546,11 @@ function renderAttendanceAdvisoryWindow(rows, monthKey, calendarNotesAvailable =
       <div class="tuition-form-header">
         <div>
           <h4>Bảng chăm sóc cuối tháng</h4>
-          <p>Tháng ${month}/${year} · Tự tổng hợp từ điểm danh và học phí, không ghi ngược vào gói học phí.</p>
+          <p>Tháng ${month}/${year} · ${rows.length} học viên cần theo dõi</p>
+          <div class="tuition-advisory-meta">
+            <span>Tự tổng hợp từ điểm danh + học phí</span>
+            <span>Không ghi ngược vào gói học phí</span>
+          </div>
         </div>
         <button type="button" data-tuition-advisory-window-action="close" aria-label="Đóng bảng chăm sóc cuối tháng">X</button>
       </div>
@@ -476,7 +570,11 @@ function renderAttendanceAdvisoryWindow(rows, monthKey, calendarNotesAvailable =
             </tr>
           </thead>
           <tbody>
-            ${rows.map((row) => renderAttendanceAdvisoryRow(row, calendarNotesAvailable)).join('')}
+            ${rows.map((row) => renderAttendanceAdvisoryRow(
+              row,
+              calendarNotesAvailable,
+              calendarNotesStatus,
+            )).join('')}
           </tbody>
         </table>
       </div>
@@ -485,7 +583,11 @@ function renderAttendanceAdvisoryWindow(rows, monthKey, calendarNotesAvailable =
   `
 }
 
-function renderAttendanceAdvisoryRow(row, calendarNotesAvailable = true) {
+function renderAttendanceAdvisoryRow(
+  row,
+  calendarNotesAvailable = true,
+  calendarNotesStatus = 'ready',
+) {
   const studentId = escapeHtml(row.student.id)
   const remainingLabel =
     row.remainingSessions === null ? '—' : String(row.remainingSessions)
@@ -519,7 +621,7 @@ function renderAttendanceAdvisoryRow(row, calendarNotesAvailable = true) {
                 .join('')}
             </select>
             <small>${escapeHtml(row.careStatusLabel)}</small>`
-          : '<span class="tuition-advisory-source">Chưa tải</span>'}
+          : `<span class="tuition-advisory-source">${getTuitionDomainPlaceholder(calendarNotesStatus)}</span>`}
       </td>
       <td>
         ${calendarNotesAvailable
@@ -537,7 +639,7 @@ function renderAttendanceAdvisoryRow(row, calendarNotesAvailable = true) {
             >
               Lưu ghi chú
             </button>`
-          : '<span class="tuition-advisory-source">Chưa tải</span>'}
+          : `<span class="tuition-advisory-source">${getTuitionDomainPlaceholder(calendarNotesStatus)}</span>`}
       </td>
       <td><span class="tuition-advisory-source">${escapeHtml(row.source)}</span></td>
     </tr>
@@ -552,7 +654,15 @@ export function buildTuitionRows(
   availability = {},
 ) {
   const attendanceAvailable = availability.attendanceAvailable !== false
+  const attendanceStatus = resolveTuitionDomainUiState(
+    availability.attendanceStatus,
+    attendanceAvailable,
+  )
   const financeAvailable = availability.financeAvailable !== false
+  const financeStatus = resolveTuitionDomainUiState(
+    availability.financeStatus,
+    financeAvailable,
+  )
   const tuitionByStudentId = new Map(tuitionRecords.map((record) => [record.studentId, record]))
   const attendancePreviewByStudentId = buildTuitionAttendancePreviewMap(attendanceRecords)
 
@@ -571,7 +681,9 @@ export function buildTuitionRows(
         student,
         tuition: null,
         attendanceAvailable,
+        attendanceStatus,
         financeAvailable,
+        financeStatus,
         careNotes,
         familyTuitionLink,
         attendanceTuitionPreview,
@@ -599,6 +711,7 @@ export function buildTuitionRows(
           legacyPaidAmount: null,
           hasLedgerSource: false,
           financeAvailable: false,
+          financeStatus,
         }
     const debtAmount = amounts.remainingDebt
     const status = getTuitionWarningStatus(remainingSessions)
@@ -611,7 +724,9 @@ export function buildTuitionRows(
       packageKind,
       amounts,
       attendanceAvailable,
+      attendanceStatus,
       financeAvailable,
+      financeStatus,
       status,
       remainingSessions,
       debtAmount,
@@ -1153,7 +1268,9 @@ function filterTuitionRows(rows, filters) {
 function renderTuitionRow(row) {
   const tuition = row.tuition
   const attendanceAvailable = row.attendanceAvailable !== false
+  const attendanceStatus = resolveTuitionDomainUiState(row.attendanceStatus, attendanceAvailable)
   const financeAvailable = row.financeAvailable !== false
+  const financeStatus = resolveTuitionDomainUiState(row.financeStatus, financeAvailable)
   const compactStudentName = getCompactStudentName(row.student.fullName)
   const careNotes = Array.isArray(row.careNotes) ? row.careNotes : []
   const hasOverpayment = tuition ? Math.max((row.amounts?.paidAmount || 0) - (row.amounts?.payableAmount || 0), 0) > 0 : false
@@ -1163,6 +1280,12 @@ function renderTuitionRow(row) {
   const termNumber = tuition?.currentTermNumber || 1
   const amounts = tuition ? row.amounts || calculateTuitionAmounts(tuition) : null
   const familyLink = row.familyTuitionLink
+  const careWarnings = Array.isArray(familyLink?.warnings) ? familyLink.warnings : []
+  const handlingText = [...new Set([
+    hasSyncConflict ? 'Xung đột dữ liệu' : '',
+    row.attendanceTuitionPreview?.isMismatch ? 'Cần kiểm tra học phí' : '',
+    ...careWarnings.map((warning) => warning.label),
+  ].filter(Boolean))].join(' · ') || (careNotes.length ? 'Có ghi chú cần chăm sóc' : tuition ? 'Sẵn sàng thao tác' : 'Chưa có dữ liệu học phí')
 
   return `
     <tr
@@ -1171,38 +1294,34 @@ function renderTuitionRow(row) {
       tabindex="0"
       title="${rowTitle}"
     >
-      <td title="${escapeHtml(row.student.fullName)}"><strong>${escapeHtml(compactStudentName)}</strong></td>
-      <td title="${escapeHtml(familyLink.parent.primaryPhone || '')}">
-        ${renderTuitionFamilyLink(familyLink)}
+      <td>
+        <div class="tuition-student-cell" title="${escapeHtml(row.student.fullName)}">
+          <strong>${escapeHtml(compactStudentName)}</strong>
+          <span>PH: ${escapeHtml(familyLink.parent.parentName || 'Chưa cập nhật')}</span>
+          <small>${escapeHtml(familyLink.parent.primaryPhone || 'Chưa có SĐT')}</small>
+        </div>
       </td>
       <td>
         ${
           tuition
             ? `
               <div class="tuition-package-cell">
-                <span>${escapeHtml(tuition.packageName)}</span>
+                <strong>${escapeHtml(tuition.packageName)}</strong>
+                <span>${tuition.usedSessions} / ${tuition.totalSessions} buổi${termNumber > 1 ? ` · Kỳ ${termNumber}` : ''}</span>
                 ${hasSyncConflict ? renderTuitionConflictBadge(conflictMarker) : ''}
+                ${renderTuitionAttendancePreview(row.attendanceTuitionPreview, attendanceAvailable, attendanceStatus)}
               </div>
             `
-            : '<span class="tuition-muted">Chưa có gói</span>'
+            : '<div class="tuition-package-cell is-empty"><strong>Chưa có gói</strong><span>Chưa rõ tổng buổi</span></div>'
         }
       </td>
       <td>
-        ${
-          tuition
-            ? `
-              <div class="tuition-session-cell">
-                <strong>${tuition.usedSessions}/${tuition.totalSessions}${termNumber > 1 ? ` <small class="tuition-term-chip">· Kỳ ${termNumber}</small>` : ''}</strong>
-                ${renderTuitionAttendancePreview(row.attendanceTuitionPreview, attendanceAvailable)}
-              </div>
-            `
-            : '—'
-        }
+        <div class="tuition-amount-cell">
+          <strong>${amounts ? formatMoney(amounts.payableAmount) : '—'}</strong>
+          <small>${amounts ? `Ưu đãi: ${formatMoney(amounts.discountAmount)}` : ''}</small>
+        </div>
       </td>
-      <td title="${amounts ? formatMoney(amounts.tuitionAmount) : ''}">${amounts ? formatMoney(amounts.tuitionAmount) : '—'}</td>
-      <td title="${amounts ? getDiscountFormulaLabel(amounts) : ''}">${amounts ? renderDiscountCell(amounts) : '—'}</td>
-      <td title="${amounts ? formatMoney(amounts.payableAmount) : ''}">${amounts ? formatMoney(amounts.payableAmount) : '—'}</td>
-      <td title="${amounts && financeAvailable ? formatMoney(amounts.paidAmount) : ''}">${amounts && financeAvailable ? formatMoney(amounts.paidAmount) : tuition ? 'Chưa tải' : '—'}</td>
+      <td class="tuition-paid-cell" title="${amounts && financeAvailable ? formatMoney(amounts.paidAmount) : ''}">${amounts && financeAvailable ? formatMoney(amounts.paidAmount) : tuition ? getTuitionDomainPlaceholder(financeStatus) : '—'}</td>
       <td>
         ${
           tuition && financeAvailable
@@ -1219,7 +1338,7 @@ function renderTuitionRow(row) {
               ${hasOverpayment ? '<span class="tuition-overpaid-badge">Có đóng dư</span>' : ''}
             `
             : tuition
-              ? '<span class="tuition-muted">Chưa tải</span>'
+              ? `<span class="tuition-muted">${getTuitionDomainPlaceholder(financeStatus)}</span>`
               : '—'
         }
       </td>
@@ -1235,23 +1354,26 @@ function renderTuitionRow(row) {
         </button>
       </td>
       <td>
-        ${renderTuitionCareNoteButton(row.student, careNotes)}
-        ${
-          tuition
-            ? `
-              <button
-                class="tuition-history-button"
-                type="button"
-                data-tuition-action="open-rollback-preview"
-                data-tuition-id="${escapeHtml(tuition.id)}"
-                title="Xem lịch sử thay đổi"
-              >
-                Xem lịch sử
-              </button>
-            `
-            : ''
-        }
-        ${renderTuitionCareBadges(familyLink)}
+        <div class="tuition-handling-cell">
+          <span class="tuition-handling-summary">${escapeHtml(handlingText)}</span>
+          <div class="tuition-row-actions">
+            ${
+              tuition
+                ? `
+                  <button
+                    class="tuition-history-button"
+                    type="button"
+                    data-tuition-action="open-rollback-preview"
+                    data-tuition-id="${escapeHtml(tuition.id)}"
+                    title="Xem lịch sử thay đổi"
+                  >Xem lịch sử</button>
+                `
+                : ''
+            }
+            ${renderTuitionCareNoteButton(row.student, careNotes)}
+            <button class="tuition-package-action" type="button">${tuition ? 'Cập nhật gói' : 'Gán gói'}</button>
+          </div>
+        </div>
       </td>
     </tr>
   `
@@ -1260,7 +1382,7 @@ function renderTuitionRow(row) {
 function renderTuitionCareNoteButton(student, careNotes = []) {
   const noteCount = careNotes.length
   const latestNote = careNotes[0]
-  const label = noteCount ? `Có ghi chú (${noteCount})` : 'Chưa có ghi chú'
+  const label = 'Chăm sóc / Ghi chú'
   const title = latestNote?.content || label
 
   return `
@@ -1289,8 +1411,8 @@ function renderTuitionCareNotePanel(student, state = {}) {
     <section class="tuition-form-panel tuition-full-window-panel tuition-care-note-panel" aria-label="Chăm sóc / Ghi chú - ${escapeAttribute(student.fullName)}">
       <div class="tuition-form-header">
         <div>
-          <h4>Chăm sóc / Ghi chú - ${escapeHtml(student.fullName)}</h4>
-          <p>Ghi chú lưu chung theo học viên để Module Học phí và Module Học viên cùng đọc được.</p>
+          <h4>${escapeHtml(student.fullName)}</h4>
+          <p>Chăm sóc / Ghi chú · PH: ${escapeHtml(student.parentName || 'Chưa cập nhật')} · ${escapeHtml(student.parentPhone || 'Chưa có SĐT')}</p>
         </div>
         <button type="button" data-tuition-care-note-action="close" aria-label="Đóng ghi chú chăm sóc">X</button>
       </div>
@@ -1338,6 +1460,10 @@ function renderTuitionCareNotePanel(student, state = {}) {
           </div>
         </div>
       </section>
+      <footer class="tuition-care-note-footer">
+        <span>Ghi chú dùng chung theo học viên · Học phí và Học viên cùng đọc được</span>
+        <button type="button" data-tuition-care-note-action="close">Đóng</button>
+      </footer>
     </section>
   `
 }
@@ -1472,9 +1598,9 @@ function renderTuitionConflictBadge(conflictMarker) {
   `
 }
 
-function renderTuitionAttendancePreview(preview, attendanceAvailable = true) {
+function renderTuitionAttendancePreview(preview, attendanceAvailable = true, attendanceStatus = 'ready') {
   if (!attendanceAvailable) {
-    return '<span class="tuition-attendance-compare is-muted">Đối chiếu chưa tải</span>'
+    return `<span class="tuition-attendance-compare is-muted">${isTuitionDomainPending(attendanceStatus) ? 'Đang tải đối chiếu…' : 'Đối chiếu chưa tải'}</span>`
   }
 
   if (!preview) {
@@ -1528,32 +1654,13 @@ function renderTuitionFamilyLink(link) {
   `
 }
 
-function renderTuitionCareBadges(link) {
-  const warnings = link.warnings.slice(0, 2)
-
-  if (!warnings.length) {
-    return ''
-  }
-
-  return `
-    <div class="tuition-care-badges" aria-label="Cảnh báo chăm sóc">
-      ${warnings
-        .map(
-          (warning) => `
-            <span class="is-${escapeHtml(warning.tone)}">${escapeHtml(warning.label)}</span>
-          `,
-        )
-        .join('')}
-    </div>
-  `
-}
-
 function renderTuitionForm(
   student,
   formState,
   cashflowTransactions = [],
   centerId = '',
   financeAvailable = true,
+  financeStatus = 'ready',
 ) {
   const isEdit = formState.mode === 'edit'
   const isRenew = formState.mode === 'renew'
@@ -1576,62 +1683,74 @@ function renderTuitionForm(
             paidAmount: null,
             remainingDebt: null,
             financeAvailable: false,
+            financeStatus,
           }
       : baseDiscountPreview
 
   return `
     <div class="tuition-form-backdrop" data-tuition-action="cancel-form"></div>
-    <form class="tuition-form-panel" data-tuition-form>
+    <form
+      class="tuition-form-panel"
+      data-tuition-form
+      data-preserve-scroll-key="${escapeAttribute(`${student.id}:${formState.mode}`)}"
+    >
       <div class="tuition-form-header">
         <div>
-          <h4>${isRenew ? 'Chốt kỳ hiện tại & tạo kỳ mới' : isEdit ? 'Cập nhật gói học phí' : 'Gán gói học phí'}</h4>
-          <p>${escapeHtml(student.fullName)} · ${escapeHtml(student.parentName || 'Chưa có phụ huynh')} · ${escapeHtml(student.parentPhone || 'Chưa có SĐT')}</p>
+          <h4>${escapeHtml(student.fullName)}</h4>
+          <p>${isRenew ? 'Chốt kỳ hiện tại & tạo kỳ mới' : isEdit ? 'Cập nhật gói học phí' : 'Gán gói học phí'} · PH: ${escapeHtml(student.parentName || 'Chưa cập nhật')} · ${escapeHtml(student.parentPhone || 'Chưa có SĐT')}</p>
         </div>
         <button type="button" data-tuition-action="cancel-form" aria-label="Đóng form">X</button>
       </div>
       ${isEdit || isRenew
-        ? renderCurrentTermSummary(formState.record, cashflowTransactions, centerId, financeAvailable)
+        ? renderCurrentTermSummary(formState.record, cashflowTransactions, centerId, financeAvailable, financeStatus)
         : ''}
       ${
         financeAvailable && isRenew && formState.record && getTuitionOverpaidAmount(formState.record) > 0
           ? '<p class="tuition-payment-warning">Kỳ hiện tại có khoản đóng dư. Vui lòng nhập thủ công số tiền muốn ghi nhận cho kỳ mới.</p>'
           : ''
       }
-      <div class="tuition-package-suggestions" aria-label="Gợi ý gói buổi">
-        ${[8, 16, 32]
-          .map(
-            (sessionCount) => `
-              <button
-                class="${String(values.totalSessions) === String(sessionCount) ? 'active' : ''}"
-                type="button"
-                data-tuition-package-suggestion="${sessionCount}"
-              >
-                ${sessionCount} buổi
-              </button>
-            `,
-          )
-          .join('')}
-      </div>
-      <div class="tuition-form-grid">
-        ${renderTextField('packageName', 'Tên gói', values.packageName, errors.packageName)}
-        ${renderTextField('totalSessions', 'Tổng số buổi', values.totalSessions, errors.totalSessions, 'number')}
-        ${renderTextField('usedSessions', 'Số buổi đã học', values.usedSessions, errors.usedSessions, 'number')}
-        ${renderTextField('totalAmount', 'Học phí gốc', values.totalAmount, errors.totalAmount)}
-        ${renderDiscountPresetField(values, errors)}
-        ${renderDiscountCustomField(values, errors)}
-        ${renderDiscountPreview(discountPreview)}
-        ${isEdit || isRenew
-          ? renderReadOnlyPaidAmountNote(formState.record, cashflowTransactions, centerId, financeAvailable)
-          : ''}
-        ${renderTextField('dueDate', 'Hạn đóng / ngày nhắc', values.dueDate, errors.dueDate, 'date')}
-        <label class="span-full ${errors.note ? 'has-error' : ''}">
-          <span>Ghi chú</span>
-          <textarea data-tuition-form-field="note">${escapeHtml(values.note)}</textarea>
-          ${errors.note ? `<small>${errors.note}</small>` : ''}
-        </label>
-      </div>
+      ${errors.form ? `<p class="tuition-form-error" role="alert">${escapeHtml(errors.form)}</p>` : ''}
+      <section class="tuition-package-setup" aria-label="Thiết lập gói">
+        <div class="tuition-package-setup-heading">
+          <h5>Thiết lập gói</h5>
+          <p>${isEdit ? 'Chỉnh cấu hình gói hiện tại của học viên' : 'Thiết lập gói học phí cho học viên'}</p>
+        </div>
+        <div class="tuition-package-suggestions" aria-label="Gợi ý gói buổi">
+          ${[8, 16, 32]
+            .map(
+              (sessionCount) => `
+                <button
+                  class="${String(values.totalSessions) === String(sessionCount) ? 'active' : ''}"
+                  type="button"
+                  data-tuition-package-suggestion="${sessionCount}"
+                >
+                  ${sessionCount} buổi
+                </button>
+              `,
+            )
+            .join('')}
+        </div>
+        <div class="tuition-form-grid">
+          ${renderTextField('packageName', 'Tên gói', values.packageName, errors.packageName)}
+          ${renderTextField('totalSessions', 'Tổng số buổi', values.totalSessions, errors.totalSessions, 'number')}
+          ${renderTextField('usedSessions', 'Số buổi đã học', values.usedSessions, errors.usedSessions, 'number')}
+          ${renderTextField('totalAmount', 'Học phí gốc', values.totalAmount, errors.totalAmount)}
+          ${renderDiscountPresetField(values, errors)}
+          ${renderDiscountCustomField(values, errors)}
+          ${renderDiscountPreview(discountPreview)}
+          ${isEdit || isRenew
+            ? renderReadOnlyPaidAmountNote(formState.record, cashflowTransactions, centerId, financeAvailable, financeStatus)
+            : ''}
+          ${renderTextField('dueDate', 'Hạn đóng / ngày nhắc', values.dueDate, errors.dueDate, 'date')}
+          <label class="span-full ${errors.note ? 'has-error' : ''}">
+            <span>Ghi chú</span>
+            <textarea data-tuition-form-field="note" placeholder="Nhập ghi chú cho gói học phí...">${escapeHtml(values.note)}</textarea>
+            ${errors.note ? `<small>${errors.note}</small>` : ''}
+          </label>
+        </div>
+      </section>
       ${isEdit || isRenew
-        ? renderTermHistory(formState.record, cashflowTransactions, centerId, financeAvailable)
+        ? renderTermHistory(formState.record, cashflowTransactions, centerId, financeAvailable, financeStatus)
         : ''}
       <div class="tuition-form-actions">
         <button type="button" data-tuition-action="cancel-form">Hủy</button>
@@ -1660,6 +1779,7 @@ function renderCurrentTermSummary(
   cashflowTransactions = [],
   centerId = '',
   financeAvailable = true,
+  financeStatus = 'ready',
 ) {
   if (!tuitionRecord) {
     return ''
@@ -1672,6 +1792,7 @@ function renderCurrentTermSummary(
         paidAmount: null,
         remainingDebt: null,
         financeAvailable: false,
+        financeStatus,
       }
   const paymentSummary = financeAvailable
     ? buildTuitionPaymentSummary({ tuitionRecord, cashflowTransactions, centerId })
@@ -1689,8 +1810,8 @@ function renderCurrentTermSummary(
       </div>
       <div>
         <span>Số lần thanh toán</span>
-        <strong>${financeAvailable ? paymentSummary.paymentCount : 'Chưa tải'}</strong>
-        <small>${financeAvailable ? escapeHtml(paymentSummary.statusLabel) : 'Vui lòng bấm Làm mới'}</small>
+        <strong>${financeAvailable ? paymentSummary.paymentCount : getTuitionDomainPlaceholder(financeStatus)}</strong>
+        <small>${financeAvailable ? escapeHtml(paymentSummary.statusLabel) : isTuitionDomainPending(financeStatus) ? 'Đang tải dữ liệu thanh toán...' : 'Vui lòng bấm Làm mới'}</small>
       </div>
       ${renderTuitionFormula(amounts)}
     </section>
@@ -1702,6 +1823,7 @@ function renderReadOnlyPaidAmountNote(
   cashflowTransactions = [],
   centerId = '',
   financeAvailable = true,
+  financeStatus = 'ready',
 ) {
   const amounts = financeAvailable
     ? calculateTuitionAmounts(tuitionRecord, cashflowTransactions, centerId)
@@ -1710,10 +1832,12 @@ function renderReadOnlyPaidAmountNote(
   return `
     <div class="tuition-paid-readonly">
       <span>Đã thanh toán</span>
-      <strong>${financeAvailable ? formatMoney(amounts.paidAmount) : 'Chưa tải'}</strong>
+      <strong>${financeAvailable ? formatMoney(amounts.paidAmount) : getTuitionDomainPlaceholder(financeStatus)}</strong>
       <small>${financeAvailable
         ? 'Tính từ các lần ghi nhận thanh toán trong Thu chi.'
-        : 'Số đã thu hiện chưa tải được.'}</small>
+        : isTuitionDomainPending(financeStatus)
+          ? 'Đang tải số đã thu và dữ liệu thanh toán...'
+          : 'Số đã thu hiện chưa tải được.'}</small>
     </div>
   `
 }
@@ -1723,6 +1847,7 @@ function renderTermHistory(
   cashflowTransactions = [],
   centerId = '',
   financeAvailable = true,
+  financeStatus = 'ready',
 ) {
   const termHistory = tuitionRecord?.termHistory ?? []
 
@@ -1731,7 +1856,7 @@ function renderTermHistory(
       <h5>Lịch sử kỳ học</h5>
       ${
         !financeAvailable
-          ? '<p class="tuition-payment-empty">Lịch sử thu tiền hiện chưa tải được.</p>'
+          ? `<p class="tuition-payment-empty">${isTuitionDomainPending(financeStatus) ? 'Đang tải lịch sử thu tiền...' : 'Lịch sử thu tiền hiện chưa tải được.'}</p>`
           : termHistory.length
           ? `
             <div class="tuition-term-history-list">
@@ -1807,6 +1932,7 @@ function renderPaymentForm(
   centerId = '',
   financeAvailable = true,
   canVoidPayments = false,
+  financeStatus = 'ready',
 ) {
   const { values, errors } = formState
   const amounts = financeAvailable
@@ -1816,6 +1942,7 @@ function renderPaymentForm(
         paidAmount: null,
         remainingDebt: null,
         financeAvailable: false,
+        financeStatus,
       }
   const debtAmount = financeAvailable ? amounts.remainingDebt : 0
   const overpaidAmount = financeAvailable
@@ -1831,6 +1958,15 @@ function renderPaymentForm(
   const disableSave = Boolean(
     !financeAvailable || formState.isSaving || debtAmount <= 0 || hasLegacyUnreconciled,
   )
+  const historyOnlyMessage = !financeAvailable
+    ? isTuitionDomainPending(financeStatus)
+      ? 'Đang tải dữ liệu thanh toán. Thông tin bạn đã nhập vẫn được giữ nguyên.'
+      : 'Dữ liệu thanh toán chưa tải. Vui lòng bấm Làm mới trước khi thao tác.'
+    : hasLegacyUnreconciled
+      ? 'Kỳ này đang chờ đối soát số đã thu cũ với Thu chi nên chưa thể ghi nhận thêm.'
+      : debtAmount <= 0
+        ? 'Học viên không còn nợ. Màn hình này chỉ hiển thị trạng thái thanh toán từ Thu chi.'
+        : 'Màn hình này chỉ hiển thị trạng thái thanh toán từ Thu chi.'
 
   return `
     <div class="tuition-form-backdrop" data-tuition-payment-action="cancel-payment"></div>
@@ -1845,7 +1981,10 @@ function renderPaymentForm(
       ${renderTuitionFormula(amounts)}
       ${financeAvailable
         ? ''
-        : '<p class="tuition-payment-warning" role="alert">Số đã thu và dữ liệu thanh toán hiện chưa tải được. Thông tin bạn nhập vẫn được giữ nguyên.</p>'}
+        : isTuitionDomainPending(financeStatus)
+          ? '<p class="tuition-domain-notice is-loading" role="status">Đang tải số đã thu và dữ liệu thanh toán... Thông tin bạn nhập vẫn được giữ nguyên.</p>'
+          : '<p class="tuition-domain-notice is-error" role="alert">Số đã thu và dữ liệu thanh toán hiện chưa tải được. Thông tin bạn nhập vẫn được giữ nguyên.</p>'}
+      ${errors.form ? `<p class="tuition-form-error" role="alert">${escapeHtml(errors.form)}</p>` : ''}
       <p class="tuition-ledger-note">Đã thanh toán và Còn nợ được tính từ giao dịch Thu chi liên kết.</p>
       ${
         overpaidAmount > 0
@@ -1864,7 +2003,7 @@ function renderPaymentForm(
       }
       ${
         isHistoryOnly
-          ? '<p class="tuition-payment-empty">Học viên không còn nợ. Panel này chỉ hiển thị trạng thái thanh toán từ Thu chi.</p>'
+          ? `<p class="tuition-payment-empty">${historyOnlyMessage}</p>`
           : `
             <div class="tuition-form-grid">
               ${renderTextField('amount', 'Số tiền', values.amount, errors.amount, 'text', 'payment')}
@@ -1895,9 +2034,9 @@ function renderPaymentForm(
               emptyMessage: 'Chưa có lần thanh toán nào',
               canVoidPayments,
             })
-          : '<p class="tuition-payment-empty">Lịch sử thanh toán hiện chưa tải được.</p>'}
+          : `<p class="tuition-payment-empty">${isTuitionDomainPending(financeStatus) ? 'Đang tải lịch sử thanh toán...' : 'Lịch sử thanh toán hiện chưa tải được.'}</p>`}
       </section>
-      ${renderTermHistory(tuitionRecord, cashflowTransactions, centerId, financeAvailable)}
+      ${renderTermHistory(tuitionRecord, cashflowTransactions, centerId, financeAvailable, financeStatus)}
       <div class="tuition-form-actions">
         <button type="button" data-tuition-payment-action="cancel-payment">${isHistoryOnly ? 'Đóng' : 'Hủy'}</button>
         ${isHistoryOnly ? '' : `<button type="submit" data-tuition-payment-action="save-payment" ${disableSave ? 'disabled' : ''}>${formState.isSaving ? 'Đang lưu...' : 'Lưu thanh toán'}</button>`}
@@ -1955,7 +2094,15 @@ function renderTuitionDetailContent(
   availability = {},
 ) {
   const attendanceAvailable = availability.attendanceAvailable !== false
+  const attendanceStatus = resolveTuitionDomainUiState(
+    availability.attendanceStatus,
+    attendanceAvailable,
+  )
   const financeAvailable = availability.financeAvailable !== false
+  const financeStatus = resolveTuitionDomainUiState(
+    availability.financeStatus,
+    financeAvailable,
+  )
   const canVoidPayments = availability.canVoidPayments === true
   const remainingSessions = tuitionRecord.totalSessions - tuitionRecord.usedSessions
   const amounts = financeAvailable
@@ -1965,6 +2112,7 @@ function renderTuitionDetailContent(
         paidAmount: null,
         remainingDebt: null,
         financeAvailable: false,
+        financeStatus,
       }
   const paymentSummary = financeAvailable
     ? buildTuitionPaymentSummary({ tuitionRecord, cashflowTransactions, centerId })
@@ -1981,14 +2129,14 @@ function renderTuitionDetailContent(
       ${renderDetailMetric('Đã học', tuitionRecord.usedSessions)}
       ${renderDetailMetric(
         'Theo điểm danh',
-        renderTuitionAttendancePreview(attendanceTuitionPreview, attendanceAvailable),
+        renderTuitionAttendancePreview(attendanceTuitionPreview, attendanceAvailable, attendanceStatus),
         true,
       )}
       ${renderDetailMetric('Còn lại', remainingSessions)}
       ${renderDetailMetric('Hạn đóng / ngày nhắc', tuitionRecord.dueDate || 'Chưa đặt')}
       ${renderDetailMetric('Trạng thái', status.label)}
-      ${renderDetailMetric('Thanh toán', financeAvailable ? paymentSummary.statusLabel : 'Chưa tải')}
-      ${renderDetailMetric('Số lần thanh toán', financeAvailable ? paymentSummary.paymentCount : 'Chưa tải')}
+      ${renderDetailMetric('Thanh toán', financeAvailable ? paymentSummary.statusLabel : getTuitionDomainPlaceholder(financeStatus))}
+      ${renderDetailMetric('Số lần thanh toán', financeAvailable ? paymentSummary.paymentCount : getTuitionDomainPlaceholder(financeStatus))}
       ${renderDetailMetric('Ghi chú', escapeHtml(tuitionRecord.note || 'Không có ghi chú'), true)}
     </section>
     ${renderTuitionFormula(amounts)}
@@ -1998,11 +2146,11 @@ function renderTuitionDetailContent(
         data-tuition-action="open-debt"
         data-tuition-student-id="${escapeHtml(tuitionRecord.studentId)}"
         ${canCollectPayment ? '' : 'disabled'}
-        title="${canCollectPayment ? 'Ghi nhận thanh toán học phí' : !financeAvailable ? 'Dữ liệu thanh toán chưa tải' : hasLegacyUnreconciled ? 'Kỳ có số đã thu cũ chưa đối soát' : 'Đã thanh toán đủ'}"
+        title="${canCollectPayment ? 'Ghi nhận thanh toán học phí' : !financeAvailable ? isTuitionDomainPending(financeStatus) ? 'Đang tải dữ liệu thanh toán' : 'Dữ liệu thanh toán chưa tải' : hasLegacyUnreconciled ? 'Kỳ có số đã thu cũ chưa đối soát' : 'Đã thanh toán đủ'}"
       >
         Ghi nhận thanh toán
       </button>
-      <small>${canCollectPayment ? 'Tạo một giao dịch Thu chi liên kết.' : !financeAvailable ? 'Vui lòng bấm Làm mới để tải số đã thu.' : hasLegacyUnreconciled ? 'Cần đối soát dữ liệu cũ trước khi ghi nhận thêm.' : 'Đã thanh toán đủ.'}</small>
+      <small>${canCollectPayment ? 'Tạo một giao dịch Thu chi liên kết.' : !financeAvailable ? isTuitionDomainPending(financeStatus) ? 'Đang tải số đã thu và dữ liệu thanh toán...' : 'Vui lòng bấm Làm mới để tải số đã thu.' : hasLegacyUnreconciled ? 'Cần đối soát dữ liệu cũ trước khi ghi nhận thêm.' : 'Đã thanh toán đủ.'}</small>
     </div>
     <p class="tuition-ledger-note">Đã thanh toán và Còn nợ được tính từ các giao dịch Thu chi liên kết.</p>
     ${financeAvailable ? renderLegacyUnreconciledPanel(paymentSummary) : ''}
@@ -2014,9 +2162,9 @@ function renderTuitionDetailContent(
             emptyMessage: 'Chưa có lần thanh toán nào',
             canVoidPayments,
           })
-        : '<p class="tuition-payment-empty">Lịch sử thanh toán hiện chưa tải được.</p>'}
+        : `<p class="tuition-payment-empty">${isTuitionDomainPending(financeStatus) ? 'Đang tải lịch sử thanh toán...' : 'Lịch sử thanh toán hiện chưa tải được.'}</p>`}
     </section>
-    ${renderTermHistory(tuitionRecord, cashflowTransactions, centerId, financeAvailable)}
+    ${renderTermHistory(tuitionRecord, cashflowTransactions, centerId, financeAvailable, financeStatus)}
   `
 }
 
@@ -2321,9 +2469,9 @@ function getTuitionStats(rows) {
   )
 }
 
-function renderStat(label, value) {
+function renderStat(label, value, tone = 'neutral') {
   return `
-    <div class="tuition-stat-card">
+    <div class="tuition-stat-card is-${escapeHtml(tone)}">
       <span>${label}</span>
       <strong>${value}</strong>
     </div>
@@ -2510,6 +2658,7 @@ function renderDiscountCell(amounts) {
 function renderTuitionFormula(amounts) {
   const remainingDebt = amounts.remainingDebt ?? amounts.debtAmount
   const financeAvailable = amounts.financeAvailable !== false
+  const financeStatus = resolveTuitionDomainUiState(amounts.financeStatus, financeAvailable)
   const discountLabel =
     amounts.discountType === 'percent'
       ? `-${formatMoney(amounts.discountAmount)} (${amounts.discountValue}%)`
@@ -2520,8 +2669,8 @@ function renderTuitionFormula(amounts) {
       <div><dt>Học phí gốc</dt><dd>${formatMoney(amounts.tuitionAmount)}</dd></div>
       <div><dt>Ưu đãi</dt><dd>${discountLabel}</dd></div>
       <div class="is-payable"><dt>Cần thanh toán</dt><dd>${formatMoney(amounts.payableAmount)}</dd></div>
-      <div class="is-paid"><dt>Đã thanh toán</dt><dd>${financeAvailable ? `-${formatMoney(amounts.paidAmount)}` : 'Chưa tải'}</dd></div>
-      <div class="is-debt"><dt>Còn nợ</dt><dd>${financeAvailable ? formatMoney(remainingDebt) : 'Chưa tải'}</dd></div>
+      <div class="is-paid"><dt>Đã thanh toán</dt><dd>${financeAvailable ? `-${formatMoney(amounts.paidAmount)}` : getTuitionDomainPlaceholder(financeStatus)}</dd></div>
+      <div class="is-debt"><dt>Còn nợ</dt><dd>${financeAvailable ? formatMoney(remainingDebt) : getTuitionDomainPlaceholder(financeStatus)}</dd></div>
     </dl>
   `
 }

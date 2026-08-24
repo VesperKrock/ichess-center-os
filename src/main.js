@@ -2,14 +2,18 @@ import './styles.css'
 import './student-theme.css'
 import './schedule-theme.css'
 import './report-theme.css'
+import './tuition-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import { modules } from './modules.js'
 import {
+  applyModuleUpstreamRefreshResult,
+  createLoadingModuleUpstreamHealth,
   evaluateModuleRefreshResults,
   getModuleActionRequiredUpstreams,
   getModuleRefreshContract,
+  getModuleUpstreamUiState,
   isBusinessModule,
 } from './module-authority-registry.js'
 import { createInitialCloudStatus } from './cloud-status.js'
@@ -10308,6 +10312,7 @@ function renderModuleWindow(windowItem) {
   const studentSurface = getStudentWindowSurface(windowItem)
   const isScheduleWindow = windowItem.moduleId === 'thoi-khoa-bieu' && !windowItem.type
   const isReportWindow = windowItem.moduleId === 'bao-cao' && !windowItem.type
+  const isTuitionWindow = windowItem.moduleId === 'hoc-phi' && !windowItem.type
 
   if (!title || !headerTitle || windowItem.minimized) {
     return ''
@@ -10323,7 +10328,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -10441,6 +10446,16 @@ function isModuleUpstreamCurrent(moduleId, upstream) {
   )
 }
 
+function getModuleUpstreamStatus(moduleId, upstream) {
+  return getModuleUpstreamUiState(getModuleRefreshState(moduleId), upstream)
+}
+
+function combineModuleUpstreamStatuses(...statuses) {
+  if (statuses.some((status) => status === 'failed')) return 'failed'
+  if (statuses.every((status) => status === 'ready')) return 'ready'
+  return 'loading'
+}
+
 function areModuleActionUpstreamsCurrent(moduleId, action) {
   const requiredUpstreams = getModuleActionRequiredUpstreams(moduleId, action)
   return requiredUpstreams.every((upstream) => isModuleUpstreamCurrent(moduleId, upstream))
@@ -10448,7 +10463,8 @@ function areModuleActionUpstreamsCurrent(moduleId, action) {
 
 function getUnavailableOptionalState(moduleId, upstream, label) {
   const state = getModuleRefreshState(moduleId)
-  const isLoading = state.status === 'loading'
+  const upstreamStatus = getModuleUpstreamUiState(state, upstream)
+  const isLoading = ['idle', 'loading'].includes(upstreamStatus)
   const isCurrent = isModuleUpstreamCurrent(moduleId, upstream)
   if (isCurrent) return null
   return {
@@ -10795,9 +10811,25 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'hoc-phi') {
-    const attendanceAvailable = isModuleUpstreamCurrent('hoc-phi', 'attendance')
-    const calendarNotesAvailable = isModuleUpstreamCurrent('hoc-phi', 'calendar-notes')
-    const financeAvailable = areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')
+    const coreStatus = getModuleUpstreamStatus('hoc-phi', 'core')
+    const tuitionStatus = getModuleUpstreamStatus('hoc-phi', 'tuition')
+    const attendanceStatus = combineModuleUpstreamStatuses(
+      coreStatus,
+      tuitionStatus,
+      getModuleUpstreamStatus('hoc-phi', 'attendance'),
+    )
+    const calendarNotesStatus = combineModuleUpstreamStatuses(
+      coreStatus,
+      getModuleUpstreamStatus('hoc-phi', 'calendar-notes'),
+    )
+    const financeStatus = combineModuleUpstreamStatuses(
+      coreStatus,
+      tuitionStatus,
+      getModuleUpstreamStatus('hoc-phi', 'finance'),
+    )
+    const attendanceAvailable = attendanceStatus === 'ready'
+    const calendarNotesAvailable = calendarNotesStatus === 'ready'
+    const financeAvailable = financeStatus === 'ready'
     const canVoidPayments = financeAvailable
       && !c54FinanceSharedTruthState.isSaving
       && canWriteC54FinanceSharedTruth(buildCurrentOnlineAccessState({ cloudReady: true })).canWrite
@@ -10829,8 +10861,13 @@ function renderWindowBody(windowItem) {
         'Ghi chú chăm sóc dùng chung',
       ) || c57CalendarNotesSharedTruthState,
       {
+        coreStatus,
+        tuitionStatus,
+        attendanceStatus,
         attendanceAvailable,
+        calendarNotesStatus,
         calendarNotesAvailable,
+        financeStatus,
         financeAvailable,
         canVoidPayments,
       },
@@ -12048,17 +12085,26 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     requiredUpstreams: contract.required,
     optionalUpstreams: contract.optional,
     actionRequiredUpstreams: contract.actionRequired,
+    upstreamHealth: createLoadingModuleUpstreamHealth(upstreams),
     message: 'Đang tải dữ liệu mới nhất...',
   }))
   render()
 
   const results = await Promise.all(upstreams.map(async (upstream) => {
+    let settledResult
     try {
       const result = await refreshAuthoritativeUpstream(upstream, `${moduleId}:${reason}`)
-      return { upstream, ...(result || { ok: false, outcome_code: 'NO_REFRESH_RESULT' }) }
+      settledResult = { upstream, ...(result || { ok: false, outcome_code: 'NO_REFRESH_RESULT' }) }
     } catch (error) {
-      return { upstream, ok: false, outcome_code: 'REFRESH_THROWN', error: String(error?.message || error) }
+      settledResult = {
+        upstream,
+        ok: false,
+        outcome_code: 'REFRESH_THROWN',
+        error: String(error?.message || error),
+      }
     }
+    recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, settledResult)
+    return settledResult
   }))
 
   const latestContext = getCurrentCanonicalCenterContext()
@@ -12130,6 +12176,26 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     evaluation,
     lastFreshAt,
   }
+}
+
+function recordModuleUpstreamRefreshResult(moduleId, refreshId, centerId, contextKey, result) {
+  const latestContext = getCurrentCanonicalCenterContext()
+  const currentState = moduleRefreshStates.get(moduleId)
+  if (
+    refreshId !== moduleRefreshRunIds.get(moduleId)
+    || !latestContext.ok
+    || latestContext.centerId !== centerId
+    || currentState?.status !== 'loading'
+    || currentState?.centerId !== centerId
+    || currentState?.contextKey !== contextKey
+    || getModuleRefreshContextKey() !== contextKey
+  ) {
+    return false
+  }
+
+  moduleRefreshStates.set(moduleId, applyModuleUpstreamRefreshResult(currentState, result))
+  render()
+  return true
 }
 
 async function refreshAuthoritativeUpstream(upstream, reason) {
