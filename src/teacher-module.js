@@ -395,7 +395,7 @@ export function renderTeacherModule(
 function renderTeacherOptionalAvailability({ attendanceAvailable = true, staffAvailable = true } = {}) {
   const messages = [
     attendanceAvailable ? '' : 'Báo cáo buổi học hiện chưa tải được.',
-    staffAvailable ? '' : 'Thông tin nhân sự hiện chưa tải được.',
+    staffAvailable ? '' : 'Thông tin nhân sự hiện chưa khả dụng.',
   ].filter(Boolean)
   return messages.length
     ? `<p class="teacher-staff-link-warning" role="status">${escapeHtml(messages.join(' '))}</p>`
@@ -1499,7 +1499,7 @@ function renderTeacherStaffUnavailableProfile() {
   return `
     <section class="teacher-profile-section teacher-staff-link-card">
       <h5>Hồ sơ nhân viên</h5>
-      <p class="teacher-staff-link-warning">Thông tin nhân sự hiện chưa tải được. Hồ sơ giáo viên vẫn có thể xem và cập nhật bình thường.</p>
+      <p class="teacher-staff-link-warning">Thông tin nhân sự hiện chưa khả dụng. Hồ sơ giáo viên vẫn có thể xem và cập nhật bình thường.</p>
     </section>
   `
 }

@@ -116,19 +116,19 @@ export const modules = [
   {
     id: 'nhom-tai-chinh',
     name: 'Nhóm Tài chính',
-    shortDescription: 'Wrapper UI an toàn cho Sổ quỹ và Thu chi; Sổ quỹ đặt trước Thu chi, không merge logic.',
+    shortDescription: 'Mở nhanh Sổ quỹ và Thu chi để xem tình hình tài chính hiện tại của cơ sở.',
     status: 'active',
     plannedFeatures: [
-      'Tổng quan tài chính nhẹ',
-      'Lối vào Sổ quỹ',
-      'Lối vào Thu chi',
-      'Tổng hợp derived từ Sổ quỹ và Thu chi',
+      'Tổng quan các khu vực tài chính',
+      'Mở Sổ quỹ',
+      'Mở Thu chi',
+      'Xem dữ liệu hiện có theo từng khu vực',
     ],
     plannedData: [
-      'Không tạo storage mới',
-      'Không đổi logic Thu chi',
-      'Không đổi logic Sổ quỹ',
-      'Không merge dữ liệu tài chính',
+      'Số dư và đối soát trong Sổ quỹ',
+      'Khoản thu trong Thu chi',
+      'Khoản chi trong Thu chi',
+      'Trạng thái dữ liệu hiện tại',
     ],
   },
   {

@@ -4,20 +4,20 @@ export function renderFinanceWorkspaceModule() {
       <div class="finance-workspace-header">
         <div>
           <h3 id="finance-workspace-title">Nhóm Tài chính</h3>
-          <p>Wrapper UI an toàn cho Sổ quỹ và Thu chi. Sổ quỹ đặt trước Thu chi, không merge logic.</p>
+          <p>Xem nhanh và mở các khu vực tài chính đang dùng của cơ sở.</p>
         </div>
       </div>
 
       <div class="finance-workspace-overview" aria-label="Tổng quan tài chính">
         <article>
           <span>Tổng quan</span>
-          <strong>Tài chính</strong>
-          <p>Không đổi công thức, storage hoặc dữ liệu tài chính hiện có.</p>
+          <strong>Khu vực tài chính</strong>
+          <p>Mở Sổ quỹ để xem số dư và đối soát; mở Thu chi để xem các khoản thu, chi.</p>
         </article>
         <article>
-          <span>Dashboard nâng cao</span>
-          <strong>Phase sau</strong>
-          <p>Ngày/tuần/quý/năm sẽ cần aggregation chuẩn trước khi hiển thị số liệu.</p>
+          <span>Dữ liệu hiện tại</span>
+          <strong>Xem theo từng khu vực</strong>
+          <p>Sổ quỹ và Thu chi hiển thị dữ liệu tài chính hiện có của cơ sở khi được mở.</p>
         </article>
       </div>
 
@@ -26,8 +26,8 @@ export function renderFinanceWorkspaceModule() {
           <div>
             <span>1</span>
             <h4>Sổ quỹ</h4>
-            <p>Theo dõi số dư, đối soát và trạng thái chốt sổ theo ngày bằng module Sổ quỹ hiện có.</p>
-            <small>Đối soát nằm trong Sổ quỹ, chưa tách thành module riêng.</small>
+            <p>Theo dõi số dư, đối soát và trạng thái chốt sổ theo ngày.</p>
+            <small>Việc đối soát được thực hiện trong Sổ quỹ.</small>
           </div>
           <button type="button" data-finance-open-module="so-quy">Xem Sổ quỹ</button>
         </article>
@@ -36,7 +36,7 @@ export function renderFinanceWorkspaceModule() {
           <div>
             <span>2</span>
             <h4>Thu chi</h4>
-            <p>Ghi nhận khoản thu, khoản chi và quản lý giao dịch bằng module Thu chi hiện có.</p>
+            <p>Ghi nhận khoản thu, khoản chi và quản lý các giao dịch hiện có.</p>
           </div>
           <button type="button" data-finance-open-module="thu-chi">Xem Thu chi</button>
         </article>

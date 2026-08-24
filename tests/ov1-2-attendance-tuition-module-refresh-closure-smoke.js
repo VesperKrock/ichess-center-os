@@ -112,7 +112,7 @@ const teacherHtml = renderTeacherModule(
   },
 )
 assert(teacherHtml.includes('Báo cáo buổi học hiện chưa tải được.'))
-assert(teacherHtml.includes('Thông tin nhân sự hiện chưa tải được.'))
+assert(teacherHtml.includes('Thông tin nhân sự hiện chưa khả dụng.'))
 assert(!teacherHtml.includes('stale-report'))
 assert(!teacherHtml.includes('stale-staff'))
 
