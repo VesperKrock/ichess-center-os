@@ -147,6 +147,8 @@ const scheduleHtml = renderScheduleModule(
 assert(scheduleHtml.includes('Lịch học vẫn có thể xem và cập nhật.'))
 assert(scheduleHtml.includes('Chưa thể mở điểm danh hoặc báo cáo buổi học.'))
 assert(!scheduleHtml.includes('data-center-calendar-action="open-create"'))
+assert.equal((scheduleHtml.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 2)
+assert.equal((scheduleHtml.match(/data-capability-state="unavailable"/g) || []).length, 2)
 assert(!scheduleHtml.includes('stale-calendar'))
 assert(!scheduleHtml.includes('stale-session-report'))
 

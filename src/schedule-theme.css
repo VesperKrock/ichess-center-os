@@ -182,6 +182,29 @@
   background: var(--schedule-surface) !important;
 }
 
+.desktop-window.is-schedule-window .schedule-header-actions > button.is-capability-unavailable:disabled {
+  border-color: var(--schedule-border-strong) !important;
+  color: var(--schedule-text-secondary) !important;
+  background: var(--schedule-surface-muted) !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.desktop-window.is-schedule-window .schedule-header-actions > button.is-capability-unavailable:disabled > span {
+  margin-left: 5px;
+  color: var(--schedule-warning);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.desktop-window.is-schedule-window .schedule-header-actions > button.is-capability-unavailable[data-capability-state="loading"]:disabled > span {
+  color: var(--schedule-text-help);
+}
+
+.desktop-window.is-schedule-window .schedule-header-actions > button.is-capability-unavailable[data-capability-state="failed"]:disabled > span {
+  color: var(--schedule-danger);
+}
+
 .desktop-window.is-schedule-window .schedule-alert-bell {
   position: relative;
   min-width: 34px;
@@ -1650,6 +1673,14 @@
   border-color: #7f1d1d;
   color: #fca5a5;
   background: #2a1517;
+}
+
+:root[data-ui-theme="dark"] .desktop-window.is-schedule-window .schedule-header-actions > button.is-capability-unavailable[data-capability-state="unavailable"]:disabled > span {
+  color: #fbbf24;
+}
+
+:root[data-ui-theme="dark"] .desktop-window.is-schedule-window .schedule-header-actions > button.is-capability-unavailable[data-capability-state="failed"]:disabled > span {
+  color: #fca5a5;
 }
 
 :root[data-ui-theme="dark"] .desktop-window.is-schedule-window .schedule-header-actions .schedule-add-button,

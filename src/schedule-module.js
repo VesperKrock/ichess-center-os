@@ -201,6 +201,18 @@ export function renderScheduleModule(
     : []
   const centerCalendarFilters = normalizeCenterCalendarFilters(deadlineOptions.centerCalendarFilters)
   const calendarNotesSharedTruthState = deadlineOptions.calendarNotesSharedTruthState || {}
+  const calendarNotesAvailabilityStatus = calendarNotesAvailable
+    ? 'ready'
+    : ['loading', 'unavailable', 'failed'].includes(calendarNotesSharedTruthState.availabilityStatus)
+      ? calendarNotesSharedTruthState.availabilityStatus
+      : calendarNotesSharedTruthState.isLoading
+        ? 'loading'
+        : 'unavailable'
+  const calendarNotesAvailabilityLabel = {
+    loading: 'Đang tải',
+    unavailable: 'Chưa khả dụng',
+    failed: 'Chưa tải được',
+  }[calendarNotesAvailabilityStatus] || ''
   const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
   const weekRangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
   const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
@@ -235,10 +247,10 @@ export function renderScheduleModule(
             <button class="schedule-print-button" type="button" data-schedule-print-action="print">In / Lưu PDF</button>
             ${calendarNotesAvailable
               ? '<button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>'
-              : ''}
+              : `<button class="schedule-calendar-tag-manager-button is-capability-unavailable" type="button" disabled aria-disabled="true" tabindex="-1" data-schedule-optional-capability="calendar-notes" data-capability-state="${escapeAttribute(calendarNotesAvailabilityStatus)}">Quản lý nhãn <span>${escapeHtml(calendarNotesAvailabilityLabel)}</span></button>`}
             ${calendarNotesAvailable
               ? '<button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>'
-              : ''}
+              : `<button class="schedule-calendar-add-button is-capability-unavailable" type="button" disabled aria-disabled="true" tabindex="-1" data-schedule-optional-capability="calendar-notes" data-capability-state="${escapeAttribute(calendarNotesAvailabilityStatus)}">+ Thêm hoạt động <span>${escapeHtml(calendarNotesAvailabilityLabel)}</span></button>`}
             <button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>
             ${renderScheduleAlertBellClean(scheduleDeadlineAlerts)}
           </div>

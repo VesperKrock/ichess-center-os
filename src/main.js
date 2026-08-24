@@ -10817,6 +10817,7 @@ function renderWindowBody(windowItem) {
       scheduleAdminAttendanceState,
       {
         attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        calendarNotesAvailable,
         centerCalendarFilters: scheduleCalendarFilters,
         centerCalendarItemState: scheduleCalendarItemState,
         centerCalendarItems: calendarNotesAvailable ? centerCalendarItems : [],
@@ -24477,6 +24478,9 @@ function bindEvents() {
     scheduleCalendarTagState = null
   }
 
+  const canUseScheduleCalendarNotes = () =>
+    isModuleUpstreamCurrent('thoi-khoa-bieu', 'calendar-notes')
+
   const resetScheduleReportPanels = () => {
     scheduleReportState = null
     scheduleAdminAttendanceState = null
@@ -24499,6 +24503,8 @@ function bindEvents() {
     getCenterCalendarTagById(getCurrentCenterCalendarTags(), tagId)
 
   const openCenterCalendarItemDetail = (itemId) => {
+    if (!canUseScheduleCalendarNotes()) return
+
     const item = getCurrentCenterCalendarItem(itemId)
 
     if (!item) {
@@ -24514,6 +24520,8 @@ function bindEvents() {
   }
 
   const openCenterCalendarOccurrenceDetail = (masterId, occurrenceDate) => {
+    if (!canUseScheduleCalendarNotes()) return
+
     const masterItem = getCurrentCenterCalendarItem(masterId)
 
     if (!masterItem || !isWeeklyRecurringCenterCalendarItem(masterItem)) {
@@ -24554,6 +24562,8 @@ function bindEvents() {
   }
 
   const openCenterCalendarSeriesEdit = (masterId, occurrenceDate = '') => {
+    if (!canUseScheduleCalendarNotes()) return
+
     const { masterItem } = resolveCurrentCenterCalendarSeriesMaster(masterId)
 
     if (!masterItem) {
@@ -24574,6 +24584,8 @@ function bindEvents() {
   }
 
   const openCenterCalendarSeriesDelete = (masterId, occurrenceDate = '') => {
+    if (!canUseScheduleCalendarNotes()) return
+
     const { masterItem } = resolveCurrentCenterCalendarSeriesMaster(masterId)
 
     if (!masterItem) {
@@ -24746,6 +24758,10 @@ function bindEvents() {
   }
 
   const persistCenterCalendarItem = async (centerId, nextItem, existingItem = null) => {
+    if (!canUseScheduleCalendarNotes()) {
+      return { ok: false, outcome_code: 'SHARED_TRUTH_NOT_CURRENT', error: 'Đang chờ dữ liệu hoạt động hiện tại.' }
+    }
+
     if (!centerId || centerId !== getCurrentC57AuthoritativeCenterId()) {
       return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC57OutcomeMessage('CENTER_CONTEXT_CHANGED') }
     }
@@ -24877,6 +24893,8 @@ function bindEvents() {
   const saveCenterCalendarTagFromForm = async (event) => {
     event?.preventDefault?.()
 
+    if (!canUseScheduleCalendarNotes()) return
+
     if (!scheduleCalendarTagState || !['create', 'edit'].includes(scheduleCalendarTagState.mode)) {
       return
     }
@@ -24963,6 +24981,8 @@ function bindEvents() {
   })
 
   document.querySelector('[data-center-calendar-action="open-create"]')?.addEventListener('click', () => {
+    if (!canUseScheduleCalendarNotes()) return
+
     scheduleFormState = null
     scheduleCalendarTagState = null
     resetScheduleReportPanels()
@@ -25002,6 +25022,8 @@ function bindEvents() {
   document.querySelector('[data-center-calendar-tag-action="open-manager"]')?.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
+    if (!canUseScheduleCalendarNotes()) return
+
     scheduleFormState = null
     scheduleCalendarItemState = null
     resetScheduleReportPanels()
@@ -25267,6 +25289,8 @@ function bindEvents() {
       event.preventDefault()
       event.stopPropagation()
 
+      if (!canUseScheduleCalendarNotes()) return
+
       if (action === 'close') {
         scheduleCalendarTagState = null
         render()
@@ -25375,6 +25399,8 @@ function bindEvents() {
 
       event.preventDefault()
       event.stopPropagation()
+
+      if (!canUseScheduleCalendarNotes()) return
 
       if (action === 'close') {
         scheduleCalendarItemState = null

@@ -82,6 +82,9 @@ assert(!scheduleLoading.includes('Lịch hoạt động bổ sung hiện chưa k
 assert(!scheduleLoading.includes('Lịch hoạt động bổ sung hiện chưa tải được.'))
 assert(scheduleLoading.includes('data-schedule-action="open-create"'))
 assert(!scheduleLoading.includes('data-center-calendar-action="open-create"'))
+assert.equal((scheduleLoading.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 2)
+assert.equal((scheduleLoading.match(/data-capability-state="loading"/g) || []).length, 2)
+assert.equal((scheduleLoading.match(/<span>Đang tải<\/span>/g) || []).length, 2)
 
 const scheduleUnavailable = renderScheduleWithCalendarState({
   message: 'Lịch hoạt động bổ sung hiện chưa khả dụng.',
@@ -92,6 +95,8 @@ assert(scheduleUnavailable.includes('c57-shared-truth-notice is-warning'))
 assert(scheduleUnavailable.includes('Lịch hoạt động bổ sung hiện chưa khả dụng.'))
 assert(scheduleUnavailable.includes('data-schedule-action="open-create"'))
 assert(!scheduleUnavailable.includes('c57-shared-truth-notice is-error'))
+assert.equal((scheduleUnavailable.match(/data-capability-state="unavailable"/g) || []).length, 2)
+assert.equal((scheduleUnavailable.match(/<span>Chưa khả dụng<\/span>/g) || []).length, 2)
 
 const scheduleFailed = renderScheduleWithCalendarState({
   message: 'Lịch hoạt động bổ sung hiện chưa tải được.',
@@ -100,6 +105,8 @@ const scheduleFailed = renderScheduleWithCalendarState({
 })
 assert(scheduleFailed.includes('c57-shared-truth-notice is-error'))
 assert(scheduleFailed.includes('Lịch hoạt động bổ sung hiện chưa tải được.'))
+assert.equal((scheduleFailed.match(/data-capability-state="failed"/g) || []).length, 2)
+assert.equal((scheduleFailed.match(/<span>Chưa tải được<\/span>/g) || []).length, 2)
 
 function renderBoardWithCalendarState(calendarNotesSharedTruthState) {
   return renderAttendanceBoardModule(
