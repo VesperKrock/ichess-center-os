@@ -13975,6 +13975,195 @@ h3 {
   background: rgba(31, 93, 153, 0.34);
 }
 
+.parent-first-state {
+  display: grid;
+  min-height: 180px;
+  flex: 1 1 auto;
+  place-items: center;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 20px;
+  color: #dbe8f7;
+  background: rgba(11, 18, 26, 0.78);
+  text-align: center;
+}
+
+.parent-first-state.is-loading {
+  border-color: rgba(118, 164, 231, 0.36);
+  color: #cfe0ff;
+}
+
+.parent-first-state.is-unavailable {
+  border-color: rgba(240, 180, 91, 0.38);
+  color: #ffe4b8;
+}
+
+.parent-first-state.is-error {
+  border-color: rgba(255, 120, 120, 0.42);
+  color: #ffd0d0;
+}
+
+.parent-link-review-modal,
+.parent-identity-edit-modal {
+  width: min(760px, calc(100% - 16px));
+  height: min(680px, calc(100dvh - 80px), calc(100% - 12px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.parent-identity-edit-modal {
+  width: min(660px, calc(100% - 16px));
+  height: min(520px, calc(100dvh - 80px), calc(100% - 12px));
+}
+
+.parent-link-review-body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.parent-link-review-body > section {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(160, 184, 214, 0.16);
+  border-radius: 8px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.parent-link-review-body h4,
+.parent-link-review-body p {
+  margin: 0;
+}
+
+.parent-link-review-body h4 {
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.parent-link-review-body > section > label {
+  display: grid;
+  gap: 5px;
+}
+
+.parent-link-review-body > section > label > span {
+  color: #b7c8dc;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.parent-link-review-body > section > label > select {
+  min-height: 38px;
+  border: 1px solid rgba(160, 184, 214, 0.3);
+  border-radius: 7px;
+  padding: 8px 9px;
+  color: #f4f7fb;
+  background: #0b121a;
+}
+
+.parent-link-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.parent-link-choice label,
+.parent-link-checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 7px !important;
+  color: #dbe8f7;
+  font-weight: 750;
+}
+
+.parent-link-choice input,
+.parent-link-checkbox input {
+  width: 18px !important;
+  min-height: 18px !important;
+}
+
+.parent-link-review-summary {
+  display: grid;
+  gap: 3px;
+  border-radius: 7px;
+  padding: 9px 10px;
+  color: #dbe8f7;
+  background: rgba(118, 164, 231, 0.1);
+}
+
+.parent-link-review-summary span,
+.parent-contact-form-footer > span {
+  color: #b7c8dc;
+  font-size: 0.8rem;
+}
+
+.parent-link-end-warning {
+  border-color: rgba(255, 120, 120, 0.36) !important;
+  color: #ffd0d0;
+  background: rgba(132, 32, 32, 0.12) !important;
+}
+
+.parent-contact-form-footer button.is-danger,
+.parent-linked-student-actions button.is-danger {
+  border-color: rgba(255, 120, 120, 0.56) !important;
+  color: #ffd0d0 !important;
+  background: rgba(132, 32, 32, 0.28) !important;
+}
+
+.parent-linked-student-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(160, 184, 214, 0.18);
+  border-radius: 8px;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.parent-linked-student-card > button {
+  border: 0;
+  padding: 3px;
+  background: transparent;
+}
+
+.parent-linked-student-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.parent-linked-student-actions span {
+  margin-right: auto;
+  color: #b7c8dc;
+  font-size: 0.76rem;
+}
+
+.parent-linked-student-actions button {
+  width: auto;
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 0.74rem;
+}
+
+.parent-contact-form-message {
+  border: 1px solid rgba(82, 209, 139, 0.34);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #c9f7d8;
+  background: rgba(24, 123, 75, 0.16);
+}
+
+@media (max-width: 720px) {
+  .parent-link-review-modal,
+  .parent-identity-edit-modal {
+    width: 100%;
+  }
+
+  .parent-link-review-modal .parent-contact-form-grid,
+  .parent-identity-edit-modal .parent-contact-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-panel-header {
   justify-content: space-between;
 }

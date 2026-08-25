@@ -240,6 +240,7 @@ const allowedPostC5AdditiveMigrations = new Set([
   'supabase/migrations/202608210002_ov1_4_tuition_payment_finance_void.sql',
   'supabase/migrations/202608210003_ov1_4_tuition_payment_identity_compatibility_hardening.sql',
   'supabase/migrations/202608210004_c5_1_dreamhome_prod_schedule_identity_normalization.sql',
+  'supabase/migrations/202608250001_ph_1_authoritative_parent_student_link_and_contact_identity_update.sql',
 ])
 const changedMigrationPaths = migrationStatus.stdout.trim().split(/\r?\n/)
   .filter(Boolean)

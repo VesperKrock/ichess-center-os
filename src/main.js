@@ -8,7 +8,7 @@ import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import {
   getProductionLauncherModules,
-  isProductionModuleAvailable,
+  isProductionModuleAvailable as isStaticProductionModuleAvailable,
   isProductionModuleVisible,
   modules,
 } from './modules.js'
@@ -32,16 +32,6 @@ import {
   signOutSupabase,
 } from './supabase-auth.js'
 import { getSupabaseClient, getSupabaseConfigStatus } from './supabase-client.js'
-import {
-  approveAndExecuteCanonicalConversion,
-  crmConversionBridgeErrorMessage,
-  getStoredConversionEnvelope,
-  listVerifiedTotpFactors,
-  prepareCanonicalConversion,
-  refreshCanonicalConversion,
-  reviewCanonicalConversion,
-  verifyFreshTotp,
-} from './crm-conversion-bridge.js'
 import {
   buildAttachmentFileName,
   buildTransactionCode,
@@ -201,6 +191,7 @@ import {
   createEditParentContactFormState,
   createEmptyParentContactFormState,
   initialParentConsultationFilters,
+  mergeParentContactsWithStudents,
   renderParentConsultationModule,
   markEnrollmentReadyForParentContact,
   saveEnrollmentDraftToParentContact,
@@ -484,10 +475,21 @@ import {
   buildC53UpsertAppointmentCommand,
   canWriteC53CrmSharedTruth,
   createC53CrmIdempotencyKey,
-  getC53CrmOutcomeMessage,
   mutateC53CrmSharedTruth,
   pullC53CrmSharedTruth,
 } from './cloud-authoritative-crm.js'
+import {
+  createParentFirstCapabilityState,
+  createParentStudentLink,
+  endParentStudentLink,
+  getParentFirstOutcomeMessage,
+  isParentFirstBackendUnavailable,
+  isParentFirstCapabilityReady,
+  PARENT_FIRST_CAPABILITY_STATUS,
+  pullParentStudentLinks,
+  updateParentStudentLink,
+  updateProtectedContactIdentity,
+} from './cloud-authoritative-parent-student-links.js'
 import {
   NEEDS_SUPABASE_REALTIME_PATCH,
   mergeRealtimeStudentIntoList,
@@ -700,7 +702,11 @@ let skipNextParentContactScrollCapture = false
 let parentQuickNoteState = null
 let parentNoteHistoryContactId = null
 let parentContactDetailId = null
-let parentConvertPreviewState = null
+let parentStudentLinks = []
+let parentLinkReviewState = null
+let parentIdentityEditState = null
+let parentFirstCapabilityState = createParentFirstCapabilityState()
+let parentFirstCapabilityRunId = 0
 let c53CrmSharedTruthState = {
   centerId: '',
   isLoading: false,
@@ -1038,55 +1044,28 @@ function getCurrentCanonicalCenterContext() {
   }
 }
 
+function isProductionModuleAvailable(moduleId) {
+  if (moduleId === 'khach-hang-tu-van') {
+    return isParentFirstCapabilityReady(parentFirstCapabilityState, getCurrentCanonicalCenterContext().centerId)
+  }
+  return isStaticProductionModuleAvailable(moduleId)
+}
+
+function getUnavailableModuleLabel(moduleId) {
+  if (
+    moduleId === 'khach-hang-tu-van'
+    && parentFirstCapabilityState.status === PARENT_FIRST_CAPABILITY_STATUS.LOADING
+  ) {
+    return 'Đang kiểm tra...'
+  }
+  return 'Chưa khả dụng'
+}
+
 function getStudentsWithCanonicalProjections() {
   // C5 closeout: the Student business list is exclusively the C5.1
   // authoritative projection. P4B session envelopes remain bridge-status
   // cache only while that phase is frozen; they cannot add Student rows.
   return students
-}
-
-function parseCanonicalReviewDecision(value) {
-  const [decision = 'CREATE_NEW', targetId = '', targetVersion = ''] = String(value || '').split('|')
-  return {
-    decision,
-    targetId: ['REUSE_EXISTING', 'DO_NOT_CREATE'].includes(decision) && targetId ? targetId : null,
-    targetVersion: ['REUSE_EXISTING', 'DO_NOT_CREATE'].includes(decision) && targetId ? Number(targetVersion) || null : null,
-  }
-}
-
-async function refreshParentCanonicalConversion({ loadFactors = true } = {}) {
-  if (!parentConvertPreviewState?.contactId || !parentConvertPreviewState.bridgeEnvelope?.bridgeSessionId) return
-  const state = parentConvertPreviewState
-  try {
-    const refreshed = await refreshCanonicalConversion({
-      centerId: getCurrentResolvedCenterId(),
-      sourceRecordId: state.contactId,
-      envelope: state.bridgeEnvelope,
-    })
-    let factors = state.totpFactors || []
-    if (loadFactors && refreshed.envelope.status === 'REVIEWED') {
-      try { factors = await listVerifiedTotpFactors() } catch { factors = [] }
-    }
-    if (parentConvertPreviewState?.contactId !== state.contactId) return
-    parentConvertPreviewState = {
-      ...parentConvertPreviewState,
-      bridgeResult: refreshed.result,
-      bridgeEnvelope: refreshed.envelope,
-      studentSearch: refreshed.result.student_search || parentConvertPreviewState.studentSearch,
-      guardianSearch: refreshed.result.guardian_search || parentConvertPreviewState.guardianSearch,
-      totpFactors: factors,
-      bridgeBusy: false,
-      bridgeError: '',
-    }
-  } catch (error) {
-    if (parentConvertPreviewState?.contactId !== state.contactId) return
-    parentConvertPreviewState = {
-      ...parentConvertPreviewState,
-      bridgeBusy: false,
-      bridgeError: crmConversionBridgeErrorMessage(error),
-    }
-  }
-  render()
 }
 
 function getCloudAttachmentAccessContext() {
@@ -1418,6 +1397,15 @@ function getCenterScopedNotificationsForRender() {
   return canRenderCenterScopedModuleBadges() ? notifications : []
 }
 
+function resetParentFirstRuntimeForAccessBoundary(centerId = '') {
+  parentFirstCapabilityRunId += 1
+  parentStudentLinks = []
+  parentLinkReviewState = null
+  parentIdentityEditState = null
+  parentContactDetailId = null
+  parentFirstCapabilityState = createParentFirstCapabilityState({ centerId })
+}
+
 function clearC55StaffHrTransientUi() {
   openWindows
     .filter((windowItem) => windowItem.type === 'staff-administrative-profile')
@@ -1549,7 +1537,13 @@ function resetTransientStateForCenterSwitch() {
   parentQuickNoteState = null
   parentNoteHistoryContactId = null
   parentContactDetailId = null
-  parentConvertPreviewState = null
+  parentStudentLinks = []
+  parentLinkReviewState = null
+  parentIdentityEditState = null
+  parentFirstCapabilityRunId += 1
+  parentFirstCapabilityState = createParentFirstCapabilityState({
+    centerId: getCurrentCanonicalCenterContext().centerId,
+  })
   c53CrmSyncRunId += 1
   c53CrmRetryCommands.clear()
   c53CrmSharedTruthState = {
@@ -8873,6 +8867,7 @@ async function handleInternalOpenCenter(centerId) {
     return
   }
 
+  await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
   await loadCenterMemberProfiles(switchSyncId)
   await loadCurrentMonthCloudAttachments(switchSyncId)
   await startStudentRealtimeSubscription(switchSyncId)
@@ -10266,7 +10261,7 @@ function renderDashboard() {
             <span class="module-card-icon-slot designer-image-slot" aria-hidden="true"></span>
             <span class="module-card-label">${moduleItem.name}</span>
             <span class="module-card-visual-slot module-visual-placeholder" aria-hidden="true"></span>
-            ${canOpen ? '' : '<span class="module-availability-label">Chưa khả dụng</span>'}
+            ${canOpen ? '' : `<span class="module-availability-label">${getUnavailableModuleLabel(moduleItem.id)}</span>`}
             ${
               canOpen && unreadCount
                 ? `<span class="module-notification-badge" aria-label="${unreadCount} thông báo chưa đọc">${unreadCount}</span>`
@@ -10766,8 +10761,15 @@ function renderWindowBody(windowItem) {
       parentQuickNoteState,
       parentNoteHistoryContactId,
       parentContactDetailId,
-      parentConvertPreviewState,
+      null,
       c53CrmSharedTruthState,
+      {
+        ...parentFirstCapabilityState,
+        moduleRefreshStatus: getModuleRefreshState('khach-hang-tu-van').status,
+        links: parentStudentLinks,
+        linkReviewState: parentLinkReviewState,
+        identityEditState: parentIdentityEditState,
+      },
     )
   }
 
@@ -11949,7 +11951,7 @@ function renderStartMenu() {
             }
           >
             <span>${moduleItem.name}</span>
-            ${canOpen ? '' : '<span class="start-menu-availability-label">Chưa khả dụng</span>'}
+            ${canOpen ? '' : `<span class="start-menu-availability-label">${getUnavailableModuleLabel(moduleItem.id)}</span>`}
           </button>
         `
       },
@@ -12291,6 +12293,8 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
     }
     case 'crm':
       return refreshC53CrmSharedTruth({ reason, silent: true })
+    case 'parent-links':
+      return refreshParentStudentLinksSharedTruth({ reason })
     case 'finance':
       // Coordinator parity with the accepted C5.4 entry points:
       // refreshC54FinanceSharedTruth({ reason: 'module-open' })
@@ -13747,6 +13751,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   const syncId = ++cloudUserSyncId
 
   if (!user) {
+    resetParentFirstRuntimeForAccessBoundary('')
     resetC55StaffHrRuntimeForAccessBoundary('')
     resetC56InventoryRuntimeForAccessBoundary('')
     resetC57CalendarNotesRuntimeForAccessBoundary('')
@@ -13806,6 +13811,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   // Withhold every prior Staff/HR projection and sensitive draft before this
   // account's exact-center membership is resolved. Browser reuse must never
   // inherit the previous account's in-memory HR state.
+  resetParentFirstRuntimeForAccessBoundary('')
   resetC55StaffHrRuntimeForAccessBoundary('')
   resetC56InventoryRuntimeForAccessBoundary('')
   resetC57CalendarNotesRuntimeForAccessBoundary('')
@@ -13945,6 +13951,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   await bootstrapCoreCloudDataForCurrentCenter(syncId)
 
   if (cloudStatus.membershipStatus === 'loaded') {
+    await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
@@ -14746,6 +14753,421 @@ function buildScheduleSessionRuntimeContext({
   }
 }
 
+async function refreshParentStudentLinksSharedTruth({ reason = 'manual-refresh' } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++parentFirstCapabilityRunId
+
+  parentStudentLinks = []
+  parentFirstCapabilityState = createParentFirstCapabilityState({
+    centerId,
+    status: centerId ? PARENT_FIRST_CAPABILITY_STATUS.LOADING : PARENT_FIRST_CAPABILITY_STATUS.FAILED,
+    isLoading: Boolean(centerId),
+    message: centerId ? 'Đang kiểm tra dữ liệu Phụ huynh / Tư vấn...' : 'Chưa xác định được cơ sở đang hoạt động.',
+  })
+  render()
+
+  if (!centerContext.ok || !canUseCoreCloudDb()) {
+    const result = { ok: false, outcome_code: 'CLIENT_NOT_READY', error: getParentFirstOutcomeMessage('CLIENT_NOT_READY') }
+    parentFirstCapabilityState = createParentFirstCapabilityState({
+      centerId,
+      status: PARENT_FIRST_CAPABILITY_STATUS.FAILED,
+      message: result.error,
+      messageTone: 'error',
+    })
+    render()
+    return result
+  }
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== parentFirstCapabilityRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getParentFirstOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getParentFirstOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      : { ...readiness, error: getParentFirstOutcomeMessage('CLIENT_NOT_READY') }
+    parentFirstCapabilityState = createParentFirstCapabilityState({
+      centerId,
+      status: PARENT_FIRST_CAPABILITY_STATUS.FAILED,
+      message: result.error,
+      messageTone: 'error',
+    })
+    render()
+    return result
+  }
+
+  const result = await pullParentStudentLinks({ supabase: readiness.supabase, centerId })
+  if (runId !== parentFirstCapabilityRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getParentFirstOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    const unavailable = isParentFirstBackendUnavailable(result)
+    parentFirstCapabilityState = createParentFirstCapabilityState({
+      centerId,
+      status: unavailable ? PARENT_FIRST_CAPABILITY_STATUS.UNAVAILABLE : PARENT_FIRST_CAPABILITY_STATUS.FAILED,
+      message: unavailable ? getParentFirstOutcomeMessage('BACKEND_NOT_DEPLOYED') : getParentFirstOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? 'warning' : 'error',
+    })
+    render()
+    return result
+  }
+
+  parentStudentLinks = result.links
+  parentFirstCapabilityState = createParentFirstCapabilityState({
+    centerId,
+    status: PARENT_FIRST_CAPABILITY_STATUS.READY,
+    message: reason === 'capability-probe' ? '' : 'Đã tải liên kết phụ huynh và học viên mới nhất.',
+    messageTone: 'success',
+    lastLoadedAt: result.readAt || new Date().toISOString(),
+  })
+  render()
+  return result
+}
+
+async function runParentFirstMutation(execute, { keepDraft = true } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  if (!centerContext.ok || !isParentFirstCapabilityReady(parentFirstCapabilityState, centerContext.centerId)) {
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error: getParentFirstOutcomeMessage('CLIENT_NOT_READY') }
+  }
+  const readiness = await checkCloudDbReadiness(centerContext.centerId)
+  if (!readiness.ok || readiness.centerId !== centerContext.centerId) {
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error: getParentFirstOutcomeMessage('CLIENT_NOT_READY') }
+  }
+  let result
+  try {
+    result = await execute(readiness.supabase, centerContext.centerId)
+  } catch {
+    return {
+      ok: false,
+      outcome_code: 'INVALID_COMMAND',
+      error: getParentFirstOutcomeMessage('INVALID_COMMAND'),
+    }
+  }
+  if (!result.ok) return result
+
+  const projection = await refreshParentStudentLinksSharedTruth({ reason: 'after-server-commit' })
+  if (!projection.ok) {
+    const failure = {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Thay đổi đã được lưu nhưng chưa tải lại được. Hãy bấm Làm mới trước khi thao tác tiếp.',
+      keepDraft,
+    }
+    parentFirstCapabilityState = createParentFirstCapabilityState({
+      centerId: centerContext.centerId,
+      status: PARENT_FIRST_CAPABILITY_STATUS.FAILED,
+      message: failure.error,
+      messageTone: 'warning',
+    })
+    render()
+    return failure
+  }
+  return { ...result, ok: true, projection }
+}
+
+function getMergedParentConsultations() {
+  return mergeParentContactsWithStudents(
+    parentConsultations,
+    getStudentsWithCanonicalProjections(),
+    parentStudentLinks,
+  )
+}
+
+function createParentLinkDraft(overrides = {}) {
+  return {
+    mode: 'create',
+    fixedContactId: '',
+    selectedContactId: '',
+    contactChoice: 'existing',
+    studentId: '',
+    newContactName: '',
+    newContactPhone: '',
+    newContactEmail: '',
+    relationshipType: 'PARENT',
+    isPrimaryContact: true,
+    financialContactRole: 'PRIMARY',
+    academicContactRole: 'PRIMARY',
+    linkId: createC53CrmIdempotencyKey(),
+    linkVersion: 0,
+    linkIdempotencyKey: createC53CrmIdempotencyKey(),
+    contactCreateCommand: null,
+    isSaving: false,
+    error: '',
+    message: '',
+    ...overrides,
+  }
+}
+
+function openParentLinkReviewForDerivedContact(contactId, studentId) {
+  if (!isProductionModuleAvailable('khach-hang-tu-van')) return false
+  const contact = getMergedParentConsultations().find((item) => item.id === contactId && item.isDerivedFromStudents)
+  const student = getStudentsWithCanonicalProjections().find((item) => item.id === studentId && !item.isDeleted)
+  if (!contact || !student) return false
+  parentLinkReviewState = createParentLinkDraft({
+    contactChoice: 'new',
+    studentId: student.id,
+    newContactName: contact.parentName || '',
+    newContactPhone: contact.phone || '',
+    newContactEmail: contact.email || '',
+  })
+  render()
+  return true
+}
+
+function openParentLinkReviewForContact(contactId) {
+  if (!isProductionModuleAvailable('khach-hang-tu-van')) return false
+  const contact = getMergedParentConsultations().find(
+    (item) => item.id === contactId && !item.isDerivedFromStudents && item.canonicalContactId,
+  )
+  if (!contact) return false
+  parentLinkReviewState = createParentLinkDraft({
+    fixedContactId: contact.id,
+    selectedContactId: contact.canonicalContactId,
+  })
+  render()
+  return true
+}
+
+function openParentLinkReviewForExistingLink(linkId, mode = 'update') {
+  if (!isProductionModuleAvailable('khach-hang-tu-van')) return false
+  const link = parentStudentLinks.find((item) => item.linkId === linkId && item.linkStatus === 'ACTIVE')
+  const contact = getMergedParentConsultations().find((item) => item.canonicalContactId === link?.contactId)
+  if (!link || !contact) return false
+  parentLinkReviewState = createParentLinkDraft({
+    mode,
+    fixedContactId: contact.id,
+    selectedContactId: link.contactId,
+    studentId: link.studentId,
+    relationshipType: link.relationshipType,
+    isPrimaryContact: link.isPrimaryContact,
+    financialContactRole: link.financialContactRole,
+    academicContactRole: link.academicContactRole,
+    linkId: link.linkId,
+    linkVersion: link.linkVersion,
+  })
+  render()
+  return true
+}
+
+function openParentIdentityEditor(contactId) {
+  if (!isProductionModuleAvailable('khach-hang-tu-van')) return false
+  const contact = getMergedParentConsultations().find(
+    (item) => item.id === contactId && item.contactIdentityAvailable && item.canonicalContactId,
+  )
+  if (!contact || !Number.isSafeInteger(Number(contact.contactVersion)) || Number(contact.contactVersion) < 1) return false
+  parentIdentityEditState = {
+    contactRecordId: contact.id,
+    contactId: contact.canonicalContactId,
+    expectedVersion: Number(contact.contactVersion),
+    displayName: contact.parentName || '',
+    primaryPhone: contact.phone || '',
+    secondaryPhone: contact.secondaryPhone || '',
+    email: contact.email || '',
+    idempotencyKey: createC53CrmIdempotencyKey(),
+    isSaving: false,
+    error: '',
+    message: '',
+  }
+  render()
+  return true
+}
+
+function validateParentLinkDraft(state) {
+  if (!state?.studentId) return 'Vui lòng chọn học viên.'
+  if (!getStudentsWithCanonicalProjections().some((student) => student.id === state.studentId && !student.isDeleted)) {
+    return 'Học viên không còn trong danh sách hiện tại. Hãy làm mới và chọn lại.'
+  }
+  if (state.mode === 'update' || state.mode === 'end') return ''
+  if (state.fixedContactId || state.contactChoice === 'existing') {
+    return state.selectedContactId ? '' : 'Vui lòng chọn hồ sơ phụ huynh.'
+  }
+  if (!String(state.newContactName || '').trim()) return 'Vui lòng nhập tên phụ huynh.'
+  if (!String(state.newContactPhone || '').trim() && !String(state.newContactEmail || '').trim()) {
+    return 'Vui lòng nhập ít nhất một số điện thoại hoặc email.'
+  }
+  return ''
+}
+
+function buildParentContactCreateCommandFromLinkDraft(state) {
+  const now = new Date().toISOString()
+  return buildC53CreateLeadCommand({
+    id: `parent-first-${state.linkId}`,
+    contactType: 'currentParent',
+    customerStage: 'converted',
+    parentName: String(state.newContactName || '').trim(),
+    phone: String(state.newContactPhone || '').trim(),
+    secondaryPhone: '',
+    email: String(state.newContactEmail || '').trim(),
+    consultationStatus: 'activeCare',
+    source: 'oldStudent',
+    leadStudentName: '',
+    leadNeed: '',
+    careLogs: [],
+    appointments: [],
+    enrollmentDraft: {},
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+async function saveParentLinkReview() {
+  const state = parentLinkReviewState
+  if (!state || state.isSaving || !isProductionModuleAvailable('khach-hang-tu-van')) return
+  const validationError = validateParentLinkDraft(state)
+  if (validationError) {
+    parentLinkReviewState = { ...state, error: validationError, message: '' }
+    render()
+    return
+  }
+
+  parentLinkReviewState = { ...state, isSaving: true, error: '', message: '' }
+  render()
+  let activeState = parentLinkReviewState
+  let contactId = activeState.selectedContactId
+
+  if (activeState.mode === 'create' && !activeState.fixedContactId && activeState.contactChoice === 'new') {
+    const command = activeState.contactCreateCommand || buildParentContactCreateCommandFromLinkDraft(activeState)
+    parentLinkReviewState = { ...activeState, contactCreateCommand: command }
+    const contactResult = await writeC53CrmCommand(command, { reason: 'parent-first-create-contact' })
+    if (!contactResult.ok) {
+      parentLinkReviewState = {
+        ...parentLinkReviewState,
+        isSaving: false,
+        error: getParentFriendlyCrmOutcomeMessage(contactResult),
+        message: contactResult.committed ? 'Hồ sơ đã được tạo nhưng danh sách chưa tải lại. Bấm Lưu lần nữa để tiếp tục sau khi kết nối ổn định.' : '',
+      }
+      render()
+      return
+    }
+    const createdContact = parentConsultations.find((contact) => contact.canonicalCaseId === contactResult.case_id)
+    if (!createdContact?.canonicalContactId) {
+      parentLinkReviewState = {
+        ...parentLinkReviewState,
+        isSaving: false,
+        error: 'Hồ sơ đã được tạo nhưng chưa xác định được bản ghi vừa tạo. Hãy làm mới trước khi liên kết.',
+        message: 'Hồ sơ phụ huynh đã được lưu; học viên chưa được liên kết.',
+      }
+      render()
+      return
+    }
+    contactId = createdContact.canonicalContactId
+    activeState = {
+      ...parentLinkReviewState,
+      contactChoice: 'existing',
+      selectedContactId: contactId,
+    }
+    parentLinkReviewState = activeState
+  }
+
+  const result = await runParentFirstMutation((supabase, centerId) => {
+    if (activeState.mode === 'end') {
+      return endParentStudentLink({
+        supabase,
+        centerId,
+        linkId: activeState.linkId,
+        expectedVersion: activeState.linkVersion,
+        idempotencyKey: activeState.linkIdempotencyKey,
+      })
+    }
+    if (activeState.mode === 'update') {
+      return updateParentStudentLink({
+        supabase,
+        centerId,
+        linkId: activeState.linkId,
+        expectedVersion: activeState.linkVersion,
+        relationshipType: activeState.relationshipType,
+        isPrimaryContact: activeState.isPrimaryContact,
+        financialContactRole: activeState.financialContactRole,
+        academicContactRole: activeState.academicContactRole,
+        idempotencyKey: activeState.linkIdempotencyKey,
+      })
+    }
+    return createParentStudentLink({
+      supabase,
+      centerId,
+      linkId: activeState.linkId,
+      contactId,
+      studentId: activeState.studentId,
+      relationshipType: activeState.relationshipType,
+      isPrimaryContact: activeState.isPrimaryContact,
+      financialContactRole: activeState.financialContactRole,
+      academicContactRole: activeState.academicContactRole,
+      idempotencyKey: activeState.linkIdempotencyKey,
+    })
+  })
+  if (!result.ok) {
+    parentLinkReviewState = {
+      ...activeState,
+      isSaving: false,
+      error: result.error || getParentFirstOutcomeMessage(result.outcome_code),
+      message: result.committed ? 'Thay đổi đã được lưu nhưng danh sách chưa tải lại. Hãy bấm Làm mới.' : '',
+    }
+    render()
+    return
+  }
+  parentLinkReviewState = null
+  parentContactDetailId = null
+  render()
+}
+
+async function saveParentIdentityEdit() {
+  const state = parentIdentityEditState
+  if (!state || state.isSaving || !isProductionModuleAvailable('khach-hang-tu-van')) return
+  const displayName = String(state.displayName || '').trim()
+  const phones = [state.primaryPhone, state.secondaryPhone].map((item) => String(item || '').trim()).filter(Boolean)
+  const emails = [state.email].map((item) => String(item || '').trim()).filter(Boolean)
+  if (!displayName || (!phones.length && !emails.length)) {
+    parentIdentityEditState = { ...state, error: 'Vui lòng nhập tên và ít nhất một số điện thoại hoặc email.', message: '' }
+    render()
+    return
+  }
+  parentIdentityEditState = { ...state, isSaving: true, error: '', message: '' }
+  render()
+  const result = await runParentFirstMutation((supabase, centerId) => updateProtectedContactIdentity({
+    supabase,
+    centerId,
+    contactId: state.contactId,
+    expectedVersion: state.expectedVersion,
+    displayName,
+    phones,
+    emails,
+    idempotencyKey: state.idempotencyKey,
+  }))
+  if (!result.ok) {
+    parentIdentityEditState = {
+      ...state,
+      isSaving: false,
+      error: result.error || getParentFirstOutcomeMessage(result.outcome_code),
+      message: result.committed ? 'Thông tin đã được lưu nhưng chưa tải lại được. Hãy bấm Làm mới.' : '',
+    }
+    render()
+    return
+  }
+  parentIdentityEditState = null
+  parentContactDetailId = state.contactRecordId
+  render()
+}
+
+function getParentFriendlyCrmOutcomeMessage(result = {}) {
+  const code = String(result.outcome_code || '').toUpperCase()
+  if (['CASE_VERSION_STALE', 'STATE_VERSION_STALE', 'CANDIDATE_VERSION_STALE', 'CONTACT_VERSION_STALE', 'CONCURRENT_CONFLICT'].includes(code)) {
+    return 'Hồ sơ đã được người khác cập nhật. Hãy làm mới trước khi lưu lại.'
+  }
+  if (['INGRESS_CONFLICT', 'SOURCE_IDENTITY_CONFLICT', 'IDEMPOTENCY_CONFLICT'].includes(code)) {
+    return 'Thông tin liên hệ trùng hoặc lần thử lại không còn khớp. Hãy kiểm tra và làm mới trước khi tiếp tục.'
+  }
+  if (['CENTER_ACCESS_DENIED', 'WRITE_ROLE_REQUIRED', 'NOT_AUTHENTICATED'].includes(code)) {
+    return 'Tài khoản hiện tại không được phép thay đổi hồ sơ này.'
+  }
+  if (result.committed) {
+    return 'Thay đổi đã được lưu nhưng chưa tải lại được danh sách. Hãy bấm Làm mới.'
+  }
+  return 'Chưa thể lưu hồ sơ. Nội dung đang nhập vẫn được giữ nguyên.'
+}
+
 async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
   const centerContext = getCurrentCanonicalCenterContext()
   const centerId = centerContext.centerId
@@ -14758,14 +15180,13 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
   parentQuickNoteState = null
   parentNoteHistoryContactId = null
   parentContactDetailId = null
-  parentConvertPreviewState = null
   notifications = syncAppNotifications(notifications)
   c53CrmSharedTruthState = {
     ...c53CrmSharedTruthState,
     centerId,
     isLoading: Boolean(centerId),
     isSaving: false,
-    message: centerId && !silent ? 'Đang inventory legacy và tải authoritative CRM...' : '',
+    message: centerId && !silent ? 'Đang kiểm tra dữ liệu cũ và tải hồ sơ phụ huynh...' : '',
     messageTone: '',
     lastLoadedAt: '',
     eligibleConsultants: [],
@@ -14776,7 +15197,7 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
   render()
 
   if (!centerContext.ok || !canUseCoreCloudDb()) {
-    const error = 'Cần đăng nhập và có active membership tại đúng cơ sở để đọc authoritative CRM.'
+    const error = 'Cần đăng nhập và chọn đúng cơ sở để tải hồ sơ phụ huynh.'
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
       isLoading: false,
@@ -14793,13 +15214,13 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
     centerId,
   })
   if (runId !== c53CrmSyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
-    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Cơ sở đã thay đổi; dữ liệu cũ đã được ẩn.' }
   }
   if (!legacy.ok) {
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
       isLoading: false,
-      message: legacy.error,
+      message: 'Dữ liệu cũ chưa được bảo toàn an toàn nên danh sách chưa được tải. Vui lòng liên hệ người hỗ trợ.',
       messageTone: 'error',
       lastLoadedAt: '',
       legacyMigrationRequired: true,
@@ -14811,7 +15232,7 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
   c53CrmSharedTruthState = {
     ...c53CrmSharedTruthState,
     isLoading: true,
-    message: silent ? '' : 'Đang tải authoritative CRM...',
+    message: silent ? '' : 'Đang tải hồ sơ phụ huynh...',
     messageTone: '',
     legacyMigrationRequired: legacy.migrationRequired,
     legacyManifestKey: legacy.manifestKey,
@@ -14821,16 +15242,16 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
 
   const readiness = await checkCloudDbReadiness(centerId)
   if (runId !== c53CrmSyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
-    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Cơ sở đã thay đổi; dữ liệu cũ đã được ẩn.' }
   }
   if (!readiness.ok || readiness.centerId !== centerId) {
     const result = readiness.ok
-      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Cơ sở đã thay đổi; dữ liệu cũ đã được ẩn.' }
       : readiness
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
       isLoading: false,
-      message: result.error || getC53CrmOutcomeMessage('CRM_SHARED_TRUTH_READ_FAILED'),
+      message: 'Dữ liệu phụ huynh hiện chưa tải được. Vui lòng thử lại.',
       messageTone: 'error',
       lastLoadedAt: '',
     }
@@ -14840,13 +15261,13 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
 
   const result = await pullC53CrmSharedTruth({ supabase: readiness.supabase, centerId })
   if (runId !== c53CrmSyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
-    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Cơ sở đã thay đổi; dữ liệu cũ đã được ẩn.' }
   }
   if (!result.ok) {
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
       isLoading: false,
-      message: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+      message: 'Dữ liệu phụ huynh hiện chưa tải được. Vui lòng thử lại.',
       messageTone: 'error',
       lastLoadedAt: '',
     }
@@ -14863,8 +15284,8 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
     centerId,
     isLoading: false,
     message: reason === 'after-server-commit'
-      ? 'CRM đã commit server và projection hiện tại đã được làm mới.'
-      : `Đã tải authoritative CRM (${result.records.length} Case).`,
+      ? 'Thay đổi đã được lưu và danh sách hiện tại đã được làm mới.'
+      : `Đã tải ${result.records.length} hồ sơ phụ huynh / tư vấn.`,
     messageTone: 'success',
     lastLoadedAt: new Date().toISOString(),
     eligibleConsultants: result.eligibleConsultants,
@@ -14879,7 +15300,7 @@ async function writeC53CrmCommand(command, { reason = 'crm-save' } = {}) {
     cloudReady: cloudDbState.readinessStatus === 'ready',
   }))
   if (!access.canWrite) {
-    const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+    const result = { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: 'Tài khoản hiện tại không được phép thay đổi hồ sơ phụ huynh.' }
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
       centerId,
@@ -14904,7 +15325,7 @@ async function writeC53CrmCommand(command, { reason = 'crm-save' } = {}) {
     ...c53CrmSharedTruthState,
     centerId,
     isSaving: true,
-    message: 'Đang commit authoritative CRM...',
+    message: 'Đang lưu hồ sơ phụ huynh...',
     messageTone: '',
   }
   render()
@@ -14917,13 +15338,13 @@ async function writeC53CrmCommand(command, { reason = 'crm-save' } = {}) {
     || readiness.centerId !== centerId
   ) {
     const result = readiness.ok
-      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: 'Cơ sở đã thay đổi; dữ liệu cũ đã được ẩn.' }
       : readiness
     if (runId === c53CrmSyncRunId) {
       c53CrmSharedTruthState = {
         ...c53CrmSharedTruthState,
         isSaving: false,
-        message: result.error || getC53CrmOutcomeMessage('SERVER_COMMAND_FAILED'),
+        message: getParentFriendlyCrmOutcomeMessage(result),
         messageTone: 'error',
       }
       render()
@@ -14944,8 +15365,8 @@ async function writeC53CrmCommand(command, { reason = 'crm-save' } = {}) {
       committed: Boolean(result.ok),
       outcome_code: 'CENTER_CONTEXT_CHANGED',
       error: result.ok
-        ? 'CRM đã commit tại cơ sở trước; view cơ sở hiện tại không nhận projection đó.'
-        : getC53CrmOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+        ? 'Thay đổi đã được lưu ở cơ sở trước; dữ liệu đó không được hiển thị sau khi chuyển cơ sở.'
+        : 'Cơ sở đã thay đổi; dữ liệu cũ đã được ẩn.',
     }
   }
 
@@ -14956,7 +15377,7 @@ async function writeC53CrmCommand(command, { reason = 'crm-save' } = {}) {
     c53CrmSharedTruthState = {
       ...c53CrmSharedTruthState,
       isSaving: false,
-      message: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+      message: getParentFriendlyCrmOutcomeMessage(result),
       messageTone: 'error',
     }
     render()
@@ -14968,13 +15389,23 @@ async function writeC53CrmCommand(command, { reason = 'crm-save' } = {}) {
   c53CrmSharedTruthState = { ...c53CrmSharedTruthState, isSaving: false }
   const projection = await refreshC53CrmSharedTruth({ reason: 'after-server-commit', silent: true })
   if (!projection.ok) {
-    return {
+    const failure = {
       ...result,
       ok: false,
       committed: true,
       outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
-      error: 'CRM đã commit server nhưng chưa tải lại được projection; không ghi local giả thành công.',
+      error: 'Thay đổi đã được lưu nhưng chưa tải lại được danh sách. Hãy bấm Làm mới trước khi thao tác tiếp.',
     }
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      centerId,
+      isSaving: false,
+      message: failure.error,
+      messageTone: 'error',
+      lastLoadedAt: '',
+    }
+    render()
+    return failure
   }
   c53CrmRetryCommands.delete(retryScope)
   return { ...result, ok: true, projection, reason }
@@ -18470,6 +18901,7 @@ async function initializeSupabaseAuth() {
     const user = await getCurrentSupabaseUser()
     await syncCloudUser(user, { reason: 'initial-get-user' })
   } catch (error) {
+    resetParentFirstRuntimeForAccessBoundary('')
     resetC55StaffHrRuntimeForAccessBoundary('')
     resetC56InventoryRuntimeForAccessBoundary('')
     resetC57CalendarNotesRuntimeForAccessBoundary('')
@@ -23156,7 +23588,7 @@ function bindEvents() {
   })
 
   document.querySelector('[data-parent-crm-action="refresh"]')?.addEventListener('click', () => {
-    void refreshC53CrmSharedTruth({ reason: 'manual-refresh' })
+    void refreshModuleAuthoritativeUpstreams('khach-hang-tu-van', { reason: 'manual-refresh' })
   })
 
   document.querySelectorAll('[data-parent-note-history-contact-id]').forEach((button) => {
@@ -23180,7 +23612,6 @@ function bindEvents() {
       }
 
       parentContactDetailId = row.dataset.parentContactRowId || null
-      parentConvertPreviewState = null
       render()
     })
 
@@ -23195,7 +23626,6 @@ function bindEvents() {
 
       event.preventDefault()
       parentContactDetailId = row.dataset.parentContactRowId || null
-      parentConvertPreviewState = null
       render()
     })
   })
@@ -23203,7 +23633,6 @@ function bindEvents() {
   document.querySelectorAll('[data-parent-contact-action="detail"]').forEach((button) => {
     button.addEventListener('click', () => {
       parentContactDetailId = button.dataset.contactId || null
-      parentConvertPreviewState = null
       render()
     })
   })
@@ -23211,167 +23640,92 @@ function bindEvents() {
   document.querySelectorAll('[data-parent-contact-action="close-detail"]').forEach((button) => {
     button.addEventListener('click', () => {
       parentContactDetailId = null
-      parentConvertPreviewState = null
       render()
     })
   })
 
-  document.querySelectorAll('[data-parent-convert-preview-action="open"]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-
-      const contactId = button.dataset.contactId || ''
-      const contact = parentConsultations.find((item) => item.id === contactId)
-
-      if (!contact) {
-        return
-      }
-
-      const bridgeEnvelope = getStoredConversionEnvelope(getCurrentResolvedCenterId(), contactId)
-      parentConvertPreviewState = {
-        contactId,
-        mode: 'create',
-        selectedCandidateKey: '',
-        birthDate: '',
-        bridgeEnvelope,
-        bridgeResult: bridgeEnvelope?.safeProjection ? { projection: bridgeEnvelope.safeProjection } : null,
-        bridgeBusy: false,
-        bridgeError: '',
-        totpFactors: [],
-      }
-      render()
-      if (bridgeEnvelope?.bridgeSessionId) await refreshParentCanonicalConversion()
+  document.querySelectorAll('[data-parent-link-action="open-derived"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openParentLinkReviewForDerivedContact(button.dataset.contactId, button.dataset.studentId)
     })
   })
 
-  document.querySelectorAll('[data-parent-convert-preview-action="close"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      parentConvertPreviewState = null
+  document.querySelectorAll('[data-parent-link-action="open-contact"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openParentLinkReviewForContact(button.dataset.contactId)
+    })
+  })
+
+  document.querySelectorAll('[data-parent-link-action="edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openParentLinkReviewForExistingLink(button.dataset.linkId, 'update')
+    })
+  })
+
+  document.querySelectorAll('[data-parent-link-action="end"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openParentLinkReviewForExistingLink(button.dataset.linkId, 'end')
+    })
+  })
+
+  document.querySelectorAll('[data-parent-link-action="cancel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (parentLinkReviewState?.isSaving) return
+      parentLinkReviewState = null
       render()
     })
   })
 
-  document.querySelectorAll('[data-parent-convert-preview-action="mode"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-
-      if (!parentConvertPreviewState) {
-        return
+  document.querySelectorAll('[data-parent-link-field]').forEach((control) => {
+    const eventName = control.type === 'text' || control.type === 'tel' || control.type === 'email' ? 'input' : 'change'
+    control.addEventListener(eventName, () => {
+      if (!parentLinkReviewState || parentLinkReviewState.isSaving) return
+      const field = control.dataset.parentLinkField
+      const value = control.type === 'checkbox' ? control.checked : control.value
+      parentLinkReviewState = {
+        ...parentLinkReviewState,
+        [field]: value,
+        error: '',
+        message: '',
+        ...(field === 'contactChoice' ? { selectedContactId: '', contactCreateCommand: null } : {}),
+        ...(['newContactName', 'newContactPhone', 'newContactEmail'].includes(field) ? { contactCreateCommand: null } : {}),
       }
+      if (field === 'contactChoice') render()
+    })
+  })
 
-      parentConvertPreviewState = {
-        ...parentConvertPreviewState,
-        mode: button.dataset.previewMode || 'create',
-      }
+  document.querySelector('[data-parent-link-action="save"]')?.addEventListener('click', () => {
+    void saveParentLinkReview()
+  })
+
+  document.querySelectorAll('[data-parent-identity-action="open"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openParentIdentityEditor(button.dataset.contactId)
+    })
+  })
+
+  document.querySelectorAll('[data-parent-identity-action="cancel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (parentIdentityEditState?.isSaving) return
+      parentIdentityEditState = null
       render()
     })
   })
 
-  document.querySelectorAll('[data-parent-convert-preview-action="candidate"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-
-      if (!parentConvertPreviewState) {
-        return
+  document.querySelectorAll('[data-parent-identity-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!parentIdentityEditState || parentIdentityEditState.isSaving) return
+      parentIdentityEditState = {
+        ...parentIdentityEditState,
+        [control.dataset.parentIdentityField]: control.value,
+        error: '',
+        message: '',
       }
-
-      parentConvertPreviewState = {
-        ...parentConvertPreviewState,
-        mode: 'merge',
-        selectedCandidateKey: button.dataset.candidateKey || '',
-      }
-      render()
     })
   })
 
-  document.querySelector('[data-p4b-conversion-field="birth-date"]')?.addEventListener('change', (event) => {
-    if (!parentConvertPreviewState) return
-    parentConvertPreviewState = { ...parentConvertPreviewState, birthDate: event.target.value || '' }
-  })
-
-  document.querySelectorAll('[data-p4b-conversion-action]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      event.preventDefault()
-      if (!parentConvertPreviewState || parentConvertPreviewState.bridgeBusy) return
-      const action = button.dataset.p4bConversionAction
-      const contact = parentConsultations.find((item) => item.id === parentConvertPreviewState.contactId)
-      const centerId = getCurrentResolvedCenterId()
-      if (!contact || !centerId) {
-        parentConvertPreviewState = { ...parentConvertPreviewState, bridgeError: 'Chưa xác định được khách hoặc cơ sở hiện tại.' }
-        render()
-        return
-      }
-      if (action === 'refresh') {
-        parentConvertPreviewState = { ...parentConvertPreviewState, bridgeBusy: true, bridgeError: '' }
-        render()
-        await refreshParentCanonicalConversion()
-        return
-      }
-
-      const currentState = parentConvertPreviewState
-      parentConvertPreviewState = { ...currentState, bridgeBusy: true, bridgeError: '' }
-      render()
-      try {
-        if (action === 'prepare') {
-          const birthDate = currentState.birthDate || ''
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) throw new Error('Vui lòng nhập ngày sinh đầy đủ trước khi chuẩn bị.')
-          const prepared = await prepareCanonicalConversion({ centerId, contact, birthDate })
-          parentConvertPreviewState = {
-            ...parentConvertPreviewState,
-            bridgeResult: prepared.result,
-            bridgeEnvelope: prepared.envelope,
-            studentSearch: prepared.result.student_search,
-            guardianSearch: prepared.result.guardian_search,
-            bridgeBusy: false,
-          }
-        } else if (action === 'review') {
-          const student = parseCanonicalReviewDecision(document.querySelector('[data-p4b-conversion-field="student-decision"]')?.value)
-          const guardian = parseCanonicalReviewDecision(document.querySelector('[data-p4b-conversion-field="guardian-decision"]')?.value)
-          let relationshipDecision = document.querySelector('[data-p4b-conversion-field="relationship-decision"]')?.value || 'CREATE_RELATIONSHIP'
-          if (student.decision === 'DO_NOT_CREATE' || guardian.decision === 'DO_NOT_CREATE') relationshipDecision = 'DO_NOT_CREATE_RELATIONSHIP'
-          const reviewed = await reviewCanonicalConversion({
-            centerId,
-            sourceRecordId: contact.id,
-            envelope: currentState.bridgeEnvelope,
-            decisions: { student, guardian, relationshipDecision },
-          })
-          let factors = []
-          const binding = resolveAppCenterBinding(cloudStatus)
-          if (['owner', 'center_admin'].includes(binding.role)) factors = await listVerifiedTotpFactors()
-          parentConvertPreviewState = {
-            ...parentConvertPreviewState,
-            bridgeResult: reviewed.result,
-            bridgeEnvelope: reviewed.envelope,
-            totpFactors: factors,
-            bridgeBusy: false,
-          }
-        } else if (action === 'execute') {
-          const factorId = document.querySelector('[data-p4b-conversion-field="totp-factor"]')?.value || ''
-          const code = document.querySelector('[data-p4b-conversion-field="totp-code"]')?.value || ''
-          await verifyFreshTotp({ factorId, code })
-          const executed = await approveAndExecuteCanonicalConversion({
-            centerId,
-            sourceRecordId: contact.id,
-            envelope: currentState.bridgeEnvelope,
-          })
-          parentConvertPreviewState = {
-            ...parentConvertPreviewState,
-            bridgeResult: executed.result,
-            bridgeEnvelope: executed.envelope,
-            bridgeBusy: false,
-          }
-        }
-      } catch (error) {
-        parentConvertPreviewState = {
-          ...parentConvertPreviewState,
-          bridgeBusy: false,
-          bridgeError: crmConversionBridgeErrorMessage(error),
-        }
-      }
-      render()
-    })
+  document.querySelector('[data-parent-identity-action="save"]')?.addEventListener('click', () => {
+    void saveParentIdentityEdit()
   })
 
   document.querySelectorAll('[data-parent-linked-student-id]').forEach((button) => {
@@ -23391,7 +23745,6 @@ function bindEvents() {
       }
 
       parentContactDetailId = null
-      parentConvertPreviewState = null
       openStudentDetailWindowFromChildInteraction(studentId)
     })
   })
@@ -23490,8 +23843,8 @@ function bindEvents() {
     let command
     try {
       command = buildC53AppendCareLogCommand(existingContact, careLog)
-    } catch (error) {
-      parentQuickNoteState = { ...parentQuickNoteState, error: String(error?.message || error) }
+    } catch {
+      parentQuickNoteState = { ...parentQuickNoteState, error: 'Chưa thể chuẩn bị ghi chú. Vui lòng kiểm tra nội dung.' }
       render()
       return
     }
@@ -23499,7 +23852,7 @@ function bindEvents() {
     if (!result.ok) {
       parentQuickNoteState = {
         ...parentQuickNoteState,
-        error: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+        error: getParentFriendlyCrmOutcomeMessage(result),
       }
       render()
       return
@@ -23752,10 +24105,10 @@ function bindEvents() {
       let command
       try {
         command = buildC53UpsertAppointmentCommand(existingContact, updatedAppointment)
-      } catch (error) {
+      } catch {
         c53CrmSharedTruthState = {
           ...c53CrmSharedTruthState,
-          message: String(error?.message || error),
+          message: 'Chưa thể chuẩn bị lịch hẹn. Vui lòng kiểm tra thông tin.',
           messageTone: 'error',
         }
         render()
@@ -23851,10 +24204,10 @@ function bindEvents() {
       let command
       try {
         command = buildC53ArchiveCaseCommand(contact)
-      } catch (error) {
+      } catch {
         c53CrmSharedTruthState = {
           ...c53CrmSharedTruthState,
-          message: String(error?.message || error),
+          message: 'Chưa thể chuẩn bị thao tác lưu trữ hồ sơ. Vui lòng làm mới và thử lại.',
           messageTone: 'error',
         }
         render()
@@ -23873,10 +24226,6 @@ function bindEvents() {
 
       if (parentNoteHistoryContactId === contact.id) {
         parentNoteHistoryContactId = null
-      }
-
-      if (parentConvertPreviewState?.contactId === contact.id) {
-        parentConvertPreviewState = null
       }
 
       render()
@@ -23930,10 +24279,10 @@ function bindEvents() {
               appointment: findChangedTrialAppointment(existingContact, nextContact),
             })
           : buildC53CreateLeadCommand(nextContact)
-      } catch (error) {
+      } catch {
         parentConsultationFormState = {
           ...parentConsultationFormState,
-          errors: { ...parentConsultationFormState.errors, summary: String(error?.message || error) },
+          errors: { ...parentConsultationFormState.errors, summary: 'Chưa thể chuẩn bị hồ sơ để lưu. Vui lòng kiểm tra các trường đã nhập.' },
         }
         render()
         return
@@ -23946,7 +24295,7 @@ function bindEvents() {
           ...parentConsultationFormState,
           errors: {
             ...parentConsultationFormState.errors,
-            summary: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+            summary: getParentFriendlyCrmOutcomeMessage(result),
           },
         }
         render()
@@ -23959,7 +24308,7 @@ function bindEvents() {
         if (!refreshedContact) {
           parentConsultationFormState = {
             ...parentConsultationFormState,
-            errors: { ...parentConsultationFormState.errors, summary: 'Case đã commit nhưng chưa tìm thấy projection để gán consultant.' },
+            errors: { ...parentConsultationFormState.errors, summary: 'Hồ sơ đã được lưu nhưng chưa tải lại được người phụ trách. Hãy làm mới trước khi tiếp tục.' },
           }
           render()
           return
@@ -23967,10 +24316,10 @@ function bindEvents() {
         let assignmentCommand
         try {
           assignmentCommand = buildC53AssignCaseCommand(refreshedContact, requestedConsultantId)
-        } catch (error) {
+        } catch {
           parentConsultationFormState = {
             ...parentConsultationFormState,
-            errors: { ...parentConsultationFormState.errors, summary: String(error?.message || error) },
+            errors: { ...parentConsultationFormState.errors, summary: 'Chưa thể cập nhật người phụ trách. Vui lòng làm mới và thử lại.' },
           }
           render()
           return
@@ -23981,7 +24330,7 @@ function bindEvents() {
             ...parentConsultationFormState,
             errors: {
               ...parentConsultationFormState.errors,
-              summary: assignmentResult.error || getC53CrmOutcomeMessage(assignmentResult.outcome_code),
+              summary: getParentFriendlyCrmOutcomeMessage(assignmentResult),
             },
           }
           render()
@@ -24033,10 +24382,10 @@ function bindEvents() {
     let command
     try {
       command = buildC53AppendCareLogCommand(existingContact, careLog)
-    } catch (error) {
+    } catch {
       parentConsultationFormState = {
         ...parentConsultationFormState,
-        careLogDraft: { ...draft, errors: { content: String(error?.message || error) } },
+        careLogDraft: { ...draft, errors: { content: 'Chưa thể chuẩn bị ghi chú. Vui lòng kiểm tra nội dung.' } },
       }
       render()
       return
@@ -24047,7 +24396,7 @@ function bindEvents() {
         ...parentConsultationFormState,
         careLogDraft: {
           ...draft,
-          errors: { content: result.error || getC53CrmOutcomeMessage(result.outcome_code) },
+          errors: { content: getParentFriendlyCrmOutcomeMessage(result) },
         },
       }
       render()
@@ -24104,10 +24453,10 @@ function bindEvents() {
     let command
     try {
       command = buildC53UpsertAppointmentCommand(existingContact, appointment)
-    } catch (error) {
+    } catch {
       parentConsultationFormState = {
         ...parentConsultationFormState,
-        appointmentDraft: { ...draft, errors: { scheduledAt: String(error?.message || error) } },
+        appointmentDraft: { ...draft, errors: { scheduledAt: 'Chưa thể chuẩn bị lịch hẹn. Vui lòng kiểm tra ngày giờ.' } },
       }
       render()
       return
@@ -24118,7 +24467,7 @@ function bindEvents() {
         ...parentConsultationFormState,
         appointmentDraft: {
           ...draft,
-          errors: { scheduledAt: result.error || getC53CrmOutcomeMessage(result.outcome_code) },
+          errors: { scheduledAt: getParentFriendlyCrmOutcomeMessage(result) },
         },
       }
       render()
@@ -27369,10 +27718,10 @@ async function saveParentEnrollmentDraft(markReady = false) {
     command = buildC53SaveCaseCommand(updatedContact, {
       appointment: findChangedTrialAppointment(existingContact, updatedContact),
     })
-  } catch (error) {
+  } catch {
     parentConsultationFormState = {
       ...parentConsultationFormState,
-      enrollmentMessage: String(error?.message || error),
+      enrollmentMessage: 'Chưa thể chuẩn bị thông tin học viên dự kiến. Vui lòng kiểm tra nội dung.',
     }
     render()
     return
@@ -27383,7 +27732,7 @@ async function saveParentEnrollmentDraft(markReady = false) {
   if (!result.ok) {
     parentConsultationFormState = {
       ...parentConsultationFormState,
-      enrollmentMessage: result.error || getC53CrmOutcomeMessage(result.outcome_code),
+      enrollmentMessage: getParentFriendlyCrmOutcomeMessage(result),
     }
     render()
     return

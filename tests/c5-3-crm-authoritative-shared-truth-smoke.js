@@ -180,8 +180,11 @@ const writeSlice = functionSlice(content.main, 'async function writeC53CrmComman
 includesAll(refreshSlice, [
   'pullC53CrmSharedTruth',
   'parentConsultations = result.records',
-  "['CENTER_ACCESS_DENIED', 'CRM_READ_NOT_ACTIVE'].includes(result.outcome_code)",
+  'parentConsultations = []',
 ], 'C5.3 authoritative refresh')
+assert(refreshSlice.indexOf('parentConsultations = []')
+  < refreshSlice.indexOf('pullC53CrmSharedTruth'),
+  'C5.3 projection must clear unconditionally before the authoritative pull')
 includesAll(writeSlice, [
   'mutateC53CrmSharedTruth',
   "refreshC53CrmSharedTruth({ reason: 'after-server-commit'",
@@ -191,9 +194,9 @@ assert(writeSlice.indexOf('mutateC53CrmSharedTruth')
   < writeSlice.indexOf("refreshC53CrmSharedTruth({ reason: 'after-server-commit'"), 'Server commit must precede projection')
 assert.equal((content.main.match(/saveStoredParentConsultations\(/g) || []).length, 0, 'CRM disk cache write bypasses user/role ACL')
 includesAll(content.main, [
-  "refreshC53CrmSharedTruth({ reason: 'module-open' })",
-  "refreshC53CrmSharedTruth({ reason: 'module-reopen' })",
-  "refreshC53CrmSharedTruth({ reason: 'manual-refresh' })",
+  "case 'crm':",
+  'return refreshC53CrmSharedTruth({ reason, silent: true })',
+  "refreshModuleAuthoritativeUpstreams('khach-hang-tu-van', { reason: 'manual-refresh' })",
   'buildC53CreateLeadCommand(nextContact)',
   'buildC53SaveCaseCommand(nextContact',
   'buildC53AppendCareLogCommand(existingContact, careLog)',
@@ -202,23 +205,24 @@ includesAll(content.main, [
   'buildC53ArchiveCaseCommand(contact)',
   'await writeC53CrmCommand(',
   'let parentConsultations = []',
-  'clearStoredParentConsultations()',
   '// account\'s center-scoped disk projection before this session completes an',
 ], 'C5.3 UI integration')
 assert(!content.main.includes('getStoredParentConsultations'), 'CRM disk cache must not render before per-session server authorization')
 assert((content.main.match(/parentConsultations = \[\]/g) || []).length >= 3, 'CRM projection must clear at startup/reload/center switch')
 includesAll(content.storage, [
   'export function clearStoredParentConsultations()',
-  'localStorage.removeItem(PARENT_CONSULTATIONS_KEY)',
+  'Deprecated non-destructive compatibility shim',
+  'return false',
 ], 'C5.3 disk-cache purge')
 assert(writeSlice.lastIndexOf('c53CrmRetryCommands.delete(retryScope)')
   > writeSlice.indexOf('if (!projection.ok)'), 'Retry key must survive committed projection-refresh failure')
 includesAll(content.module, [
   'data-parent-crm-action="refresh"',
-  'C5.3 · CRM authoritative',
+  'Dữ liệu dùng chung',
   'identityReadOnly',
-  'canonical assignment',
+  'Tư vấn phụ trách',
 ], 'C5.3 module projection UX')
+assert(!content.main.includes("from './crm-conversion-bridge.js'"), 'Frozen conversion bridge must not be reachable from Parent runtime')
 
 assert.equal(canWriteC53CrmSharedTruth({ role: 'owner', canWrite: true }).ok, true)
 assert.equal(canWriteC53CrmSharedTruth({ role: 'teacher', canWrite: true }).ok, false)

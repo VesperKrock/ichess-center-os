@@ -97,9 +97,11 @@ assert(
 )
 
 assert(
-  parent.includes('normalizePhone(phone)') &&
-    parent.includes('fallback:${normalizeText(parentName)}'),
-  'Parent contacts must group by phone or stable fallback.',
+  parent.includes('const contactId = String(contact.canonicalContactId') &&
+    parent.includes('linksByContactId.get(contactId)') &&
+    parent.includes('requiresExplicitCrmLink: true') &&
+    !parent.includes('fallback:${normalizeText(parentName)}'),
+  'Parent/Student presentation must use explicit exact identifiers, never fuzzy phone/name grouping.',
 )
 
 assert(

@@ -77,6 +77,9 @@ const html = renderParentConsultationModule(
   null,
   null,
   'old-consulting',
+  null,
+  { lastLoadedAt: '2026-08-25T00:00:00.000Z', messageTone: 'success' },
+  { status: 'ready', moduleRefreshStatus: 'fresh', links: [] },
 )
 
 assert(html.includes('Phụ huynh / Tư vấn'))
@@ -93,8 +96,8 @@ assert(html.includes('Next action'), 'CRM list shows next action column.')
 assert(html.includes('student-existing-1') || html.includes('1 học viên liên kết'))
 assert(html.includes('Ghi chú chăm sóc'), 'Detail shows CRM care notes.')
 assert(html.includes('data-parent-quick-note-contact-id="old-consulting"'), 'Detail can add a CRM care note.')
-assert(html.includes('Chuyển đổi khách hàng'), 'Convert preview box is present.')
-assert(html.includes('data-parent-convert-preview-action="open"'), 'Convert preview action is present and local-safe.')
+assert(!html.includes('Chuyển đổi khách hàng'), 'Frozen conversion UI is not rendered.')
+assert(!html.includes('data-parent-convert-preview-action="open"'), 'Frozen conversion action is inaccessible.')
 
 const createHtml = renderParentConsultationModule(
   [oldLead],
@@ -142,6 +145,12 @@ const createHtml = renderParentConsultationModule(
     scrollTop: 0,
     errors: {},
   },
+  null,
+  null,
+  null,
+  null,
+  { lastLoadedAt: '2026-08-25T00:00:00.000Z', messageTone: 'success' },
+  { status: 'ready', moduleRefreshStatus: 'fresh', links: [] },
 )
 
 assert(createHtml.includes('parent-child-consultation-layout'), 'Step 2 uses polished child consultation layout.')
@@ -276,7 +285,7 @@ for (const buttonMatch of parentModuleSource.matchAll(/<button\b[^>]*>/g)) {
 assert(!parentModuleSource.includes('saveStoredStudents'), 'CRM module must not write students.')
 assert(!parentModuleSource.includes('tuitionRecords'), 'CRM module must not touch tuition records.')
 assert(!parentModuleSource.toLowerCase().includes('supabase'), 'CRM module must not add Supabase behavior.')
-assert(!parentModuleSource.toLowerCase().includes('auth'), 'CRM module must not add Auth behavior.')
+assert(!html.toLowerCase().includes('authenticator'), 'Frozen conversion authentication UI must not be reachable.')
 assert(!mainSource.includes('teacher-workspace-module'), 'F23.3B must not touch Teacher Workspace.')
 
 console.log('F23.3B CRM shell Phụ huynh/Tư vấn local-safe smoke passed')

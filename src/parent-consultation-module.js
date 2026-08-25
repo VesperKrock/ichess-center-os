@@ -860,45 +860,55 @@ export function deriveParentCustomerStage(contact = {}) {
   return 'lead'
 }
 
-export function mergeParentContactsWithStudents(contacts = [], students = []) {
-  const contactsByGroupKey = new Map()
+export function mergeParentContactsWithStudents(contacts = [], students = [], links = []) {
+  const activeStudents = (students ?? []).filter((student) => student && !student.isDeleted)
+  const studentsById = new Map(activeStudents.map((student) => [student.id, student]))
+  const activeLinks = (links ?? []).filter((link) => link?.linkStatus === 'ACTIVE')
+  const linksByContactId = new Map()
+  const linkedStudentIds = new Set()
 
-  ;(contacts ?? []).forEach((contact) => {
-    const groupKey = getParentContactGroupKey(contact)
-      contactsByGroupKey.set(groupKey, {
-        ...contact,
-        groupKey,
-        customerStage: deriveParentCustomerStage(contact),
-        consultantName: getConsultantDisplayName(contact),
-        linkedStudentIds: normalizeLinkedStudentIds(contact.linkedStudentIds, contact.studentId),
-        relatedStudents: contact.studentId
-          ? students.filter((student) => student.id === contact.studentId)
-          : [],
+  activeLinks.forEach((link) => {
+    if (!link.contactId || !link.studentId) return
+    const contactLinks = linksByContactId.get(link.contactId) || []
+    contactLinks.push(link)
+    linksByContactId.set(link.contactId, contactLinks)
+    linkedStudentIds.add(link.studentId)
+  })
+
+  const exactContacts = (contacts ?? []).map((contact) => {
+    const contactId = String(contact.canonicalContactId || '').trim()
+    const contactLinks = contactId ? linksByContactId.get(contactId) || [] : []
+    const identity = contactLinks.find((link) => link.contactIdentityAvailable) || null
+    const exactStudents = contactLinks
+      .map((link) => studentsById.get(link.studentId))
+      .filter(Boolean)
+    const exactStudentIds = contactLinks.map((link) => link.studentId)
+    return {
+      ...contact,
+      groupKey: contactId ? `contact:${contactId}` : `case:${contact.id}`,
+      customerStage: deriveParentCustomerStage({ ...contact, linkedStudentIds: exactStudentIds }),
+      consultantName: getConsultantDisplayName(contact),
+      parentName: identity?.contactDisplayName || contact.parentName,
+      phone: identity?.contactPhones?.[0] || contact.phone || '',
+      secondaryPhone: identity?.contactPhones?.[1] || contact.secondaryPhone || '',
+      email: identity?.contactEmails?.[0] || contact.email || '',
+      contactVersion: identity?.contactVersion || contact.contactVersion || 0,
+      contactIdentityAvailable: Boolean(identity?.contactIdentityAvailable),
+      parentStudentLinks: contactLinks,
+      linkedStudentIds: exactStudentIds,
+      relatedStudents: exactStudents,
+      studentName: exactStudents[0]?.fullName || contact.leadStudentName || '',
+      studentNames: exactStudents.map((student) => student.fullName || student.name || '').filter(Boolean).join(', '),
+      studentCount: exactStudents.length,
       sourceLabel: parentContactSourceLabels[contact.source] ?? 'Chưa rõ',
-    })
-  })
-
-  buildDerivedParentContactsFromStudents(students).forEach((derivedContact) => {
-    const existingContact = contactsByGroupKey.get(derivedContact.groupKey)
-
-    if (existingContact) {
-      contactsByGroupKey.set(derivedContact.groupKey, {
-        ...existingContact,
-        relatedStudents: mergeRelatedStudents(
-          existingContact.relatedStudents,
-          derivedContact.relatedStudents,
-        ),
-        studentNames: derivedContact.studentNames,
-        studentCount: derivedContact.studentCount,
-        sourceLabel: existingContact.sourceLabel || 'Từ hồ sơ học viên',
-      })
-      return
     }
-
-    contactsByGroupKey.set(derivedContact.groupKey, derivedContact)
   })
 
-  return Array.from(contactsByGroupKey.values()).sort(
+  const derivedContacts = buildDerivedParentContactsFromStudents(
+    activeStudents.filter((student) => !linkedStudentIds.has(student.id)),
+  )
+
+  return [...exactContacts, ...derivedContacts].sort(
     (firstContact, secondContact) =>
       compareContactText(firstContact.parentName, secondContact.parentName) ||
       compareContactText(firstContact.phone, secondContact.phone),
@@ -906,27 +916,20 @@ export function mergeParentContactsWithStudents(contacts = [], students = []) {
 }
 
 export function buildDerivedParentContactsFromStudents(students = []) {
-  const contactsByGroupKey = new Map()
-
-  ;(students ?? [])
+  return (students ?? [])
     .filter((student) => student && !student.isDeleted)
-    .forEach((student) => {
+    .map((student) => {
       const parentName = getStudentParentName(student)
       const phone = getStudentParentPhone(student)
 
       if (!parentName && !phone) {
-        return
+        return null
       }
 
-      const groupKey = phone
-        ? `phone:${normalizePhone(phone)}`
-        : `fallback:${normalizeText(parentName)}:${normalizeText(student.fullName || student.name || student.id)}`
-      const existing = contactsByGroupKey.get(groupKey)
-      const relatedStudents = mergeRelatedStudents(existing?.relatedStudents, [student])
-      const studentNames = relatedStudents.map((item) => item.fullName || item.name || '').filter(Boolean)
-
-      contactsByGroupKey.set(groupKey, {
-        id: `student-parent-${groupKey.replace(/[^a-z0-9]+/g, '-')}`,
+      const groupKey = `student:${student.id}`
+      const studentName = student.fullName || student.name || ''
+      return {
+        id: `student-parent-${String(student.id).replace(/[^a-z0-9_-]+/gi, '-')}`,
         groupKey,
         contactType: 'currentParent',
         customerStage: 'converted',
@@ -934,9 +937,9 @@ export function buildDerivedParentContactsFromStudents(students = []) {
         phone,
         secondaryPhone: getStudentSecondaryParentPhone(student, phone),
         email: '',
-        studentName: studentNames[0] || '',
-        studentNames: studentNames.join(', '),
-        studentId: relatedStudents[0]?.id || '',
+        studentName,
+        studentNames: studentName,
+        studentId: student.id,
         leadStudentName: '',
         studentBirthYear: '',
         leadStudentAge: '',
@@ -950,26 +953,26 @@ export function buildDerivedParentContactsFromStudents(students = []) {
         locationArea: '',
         consultedAt: '',
         registeredAt: '',
-        lastContactAt: getLatestStudentCareNoteAt(relatedStudents),
-        lastNote: getLatestStudentCareNoteContent(relatedStudents),
+        lastContactAt: getLatestStudentCareNoteAt([student]),
+        lastNote: getLatestStudentCareNoteContent([student]),
         nextAction: '',
         careLogs: [],
         appointments: [],
         enrollmentDraft: {},
         consultantName: '',
         consultantId: '',
-        linkedStudentIds: relatedStudents.map((student) => student.id).filter(Boolean),
+        linkedStudentIds: [],
         nextFollowUpAt: '',
         potentialLevel: '',
-        relatedStudents,
-        studentCount: relatedStudents.length,
+        relatedStudents: [student],
+        studentCount: 1,
         isDerivedFromStudents: true,
+        requiresExplicitCrmLink: true,
         createdAt: student.createdAt || new Date().toISOString(),
         updatedAt: student.updatedAt || new Date().toISOString(),
-      })
+      }
     })
-
-  return Array.from(contactsByGroupKey.values())
+    .filter(Boolean)
 }
 
 export function renderParentConsultationModule(
@@ -980,107 +983,103 @@ export function renderParentConsultationModule(
   quickNoteState = null,
   noteHistoryContactId = null,
   detailContactId = null,
-  convertPreviewState = null,
+  _convertPreviewState = null,
   sharedTruthState = {},
+  integrationState = {},
 ) {
-  const mergedContacts = mergeParentContactsWithStudents(contacts, students)
+  const mergedContacts = mergeParentContactsWithStudents(contacts, students, integrationState.links)
   const stats = getParentConsultationStats(mergedContacts)
   const filteredContacts = getFilteredParentConsultations(mergedContacts, filters)
   const detailContact = detailContactId
     ? mergedContacts.find((contact) => contact.id === detailContactId)
     : null
 
+  const loading = integrationState.status === 'loading'
+    || sharedTruthState.isLoading
+    || ['idle', 'loading'].includes(integrationState.moduleRefreshStatus)
+  const unavailable = integrationState.status === 'unavailable'
+  const failed = integrationState.status === 'failed' || (sharedTruthState.messageTone === 'error' && !sharedTruthState.lastLoadedAt)
+  const ready = !loading && !unavailable && !failed && integrationState.status === 'ready'
+  const failureMessage = integrationState.status === 'failed'
+    ? integrationState.message
+    : sharedTruthState.messageTone === 'error'
+      ? sharedTruthState.message
+      : ''
+  const visibleStats = ready ? stats : { total: 0, leads: 0, consulting: 0, callbacks: 0, converted: 0 }
+  const body = loading
+    ? renderParentFirstState('Đang tải hồ sơ phụ huynh và học viên liên quan...', 'is-loading')
+    : unavailable
+      ? renderParentFirstState('Hồ sơ Phụ huynh / Tư vấn hiện chưa khả dụng.', 'is-unavailable')
+      : failed
+        ? renderParentFirstState(failureMessage || 'Dữ liệu phụ huynh hiện chưa tải được. Vui lòng thử lại.', 'is-error')
+        : renderParentConsultationReadyBody(filteredContacts, mergedContacts, filters, sharedTruthState)
+
   return `
     <section class="parent-consultation-module" aria-label="Danh sách phụ huynh và tư vấn">
       <div class="parent-consultation-topbar">
         <div class="parent-consultation-stats" aria-label="Tổng quan tư vấn">
-          ${renderStatCard('Tổng khách', stats.total)}
-          ${renderStatCard('Khách mới', stats.leads)}
-          ${renderStatCard('Đang tư vấn', stats.consulting, 'is-active')}
-          ${renderStatCard('Cần follow-up', stats.callbacks, 'is-warning')}
-          ${renderStatCard('Đã chuyển đổi', stats.converted, 'is-success')}
+          ${renderStatCard('Tổng khách', visibleStats.total)}
+          ${renderStatCard('Khách mới', visibleStats.leads)}
+          ${renderStatCard('Đang tư vấn', visibleStats.consulting, 'is-active')}
+          ${renderStatCard('Cần follow-up', visibleStats.callbacks, 'is-warning')}
+          ${renderStatCard('Đã chuyển đổi', visibleStats.converted, 'is-success')}
         </div>
         <div class="parent-consultation-topbar-actions">
           <button
             type="button"
             data-parent-crm-action="refresh"
-            ${sharedTruthState.isLoading || sharedTruthState.isSaving ? 'disabled' : ''}
+            ${!ready || sharedTruthState.isLoading || sharedTruthState.isSaving ? 'disabled' : ''}
           >${sharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}</button>
           <button
             class="parent-consultation-add-button"
             type="button"
             data-parent-contact-action="open-create"
-            ${sharedTruthState.isSaving ? 'disabled' : ''}
+            ${!ready || sharedTruthState.isSaving ? 'disabled' : ''}
           >+ Thêm khách mới</button>
         </div>
       </div>
 
-      ${sharedTruthState.message
+      ${!loading && sharedTruthState.message
         ? `<div class="parent-contact-form-${sharedTruthState.messageTone === 'error' ? 'error' : 'message'}" data-parent-crm-sync-message>${escapeHtml(sharedTruthState.message)}</div>`
         : ''}
-
-      <section class="parent-consultation-list-section" aria-label="Bảng liên hệ phụ huynh và khách tư vấn mới">
-        <div class="parent-consultation-list-header">
-          <div>
-            <h3>Phụ huynh / Tư vấn</h3>
-            <span>${filteredContacts.length}/${mergedContacts.length} liên hệ</span>
-          </div>
-          <span class="parent-consultation-phase">C5.3 · CRM authoritative${sharedTruthState.lastLoadedAt ? ` · ${escapeHtml(formatDateTime(sharedTruthState.lastLoadedAt, true))}` : ''}</span>
-        </div>
-
-        <div class="parent-consultation-toolbar">
-          <label class="parent-consultation-search-field">
-            <span>Tìm kiếm</span>
-            <input
-              type="search"
-              value="${escapeAttribute(filters.query)}"
-              placeholder="Tên phụ huynh, số điện thoại, học viên, mong muốn..."
-              data-parent-consultation-filter="query"
-            />
-          </label>
-          ${renderFilterSelect(
-            'Stage khách hàng',
-            'customerStage',
-            filters.customerStage || 'all',
-            { all: 'Tất cả', ...parentCustomerStageLabels },
-          )}
-          ${renderFilterSelect(
-            'Loại liên hệ',
-            'contactType',
-            filters.contactType,
-            { all: 'Tất cả loại', ...parentContactTypeLabels },
-          )}
-          ${renderFilterSelect(
-            'Trạng thái',
-            'consultationStatus',
-            filters.consultationStatus,
-            { all: 'Tất cả trạng thái', ...parentConsultationStatusLabels },
-          )}
-          ${renderFilterSelect(
-            'Nguồn',
-            'source',
-            filters.source,
-            { all: 'Tất cả nguồn', ...parentContactSourceLabels },
-          )}
-        </div>
-
-        ${
-          filteredContacts.length
-            ? renderContactsTable(filteredContacts)
-            : `
-              <div class="parent-consultation-empty">
-                Không tìm thấy liên hệ phù hợp với bộ lọc hiện tại.
-              </div>
-            `
-        }
-      </section>
-      ${detailContact ? renderParentContactDetailPanel(detailContact) : ''}
-      ${formState ? renderParentContactForm(formState, students, sharedTruthState.eligibleConsultants) : ''}
-      ${noteHistoryContactId ? renderNoteHistoryModal(mergedContacts, noteHistoryContactId) : ''}
-      ${quickNoteState ? renderQuickNoteModal(mergedContacts, quickNoteState) : ''}
-      ${convertPreviewState ? renderParentConvertPreviewModal(mergedContacts, students, convertPreviewState) : ''}
+      ${body}
+      ${ready && detailContact ? renderParentContactDetailPanel(detailContact) : ''}
+      ${ready && formState ? renderParentContactForm(formState, students, sharedTruthState.eligibleConsultants) : ''}
+      ${ready && noteHistoryContactId ? renderNoteHistoryModal(mergedContacts, noteHistoryContactId) : ''}
+      ${ready && quickNoteState ? renderQuickNoteModal(mergedContacts, quickNoteState) : ''}
+      ${ready && integrationState.linkReviewState ? renderParentLinkReviewModal(integrationState.linkReviewState, mergedContacts, students) : ''}
+      ${ready && integrationState.identityEditState ? renderParentIdentityEditModal(integrationState.identityEditState) : ''}
     </section>
   `
+}
+
+function renderParentConsultationReadyBody(filteredContacts, mergedContacts, filters, sharedTruthState) {
+  return `
+    <section class="parent-consultation-list-section" aria-label="Bảng liên hệ phụ huynh và khách tư vấn mới">
+      <div class="parent-consultation-list-header">
+        <div>
+          <h3>Phụ huynh / Tư vấn</h3>
+          <span>${filteredContacts.length}/${mergedContacts.length} liên hệ</span>
+        </div>
+        <span class="parent-consultation-phase">Dữ liệu dùng chung${sharedTruthState.lastLoadedAt ? ` · cập nhật ${escapeHtml(formatDateTime(sharedTruthState.lastLoadedAt, true))}` : ''}</span>
+      </div>
+      <div class="parent-consultation-toolbar">
+        <label class="parent-consultation-search-field">
+          <span>Tìm kiếm</span>
+          <input type="search" value="${escapeAttribute(filters.query)}" placeholder="Tên phụ huynh, số điện thoại, học viên, mong muốn..." data-parent-consultation-filter="query" />
+        </label>
+        ${renderFilterSelect('Giai đoạn', 'customerStage', filters.customerStage || 'all', { all: 'Tất cả', ...parentCustomerStageLabels })}
+        ${renderFilterSelect('Loại liên hệ', 'contactType', filters.contactType, { all: 'Tất cả loại', ...parentContactTypeLabels })}
+        ${renderFilterSelect('Trạng thái', 'consultationStatus', filters.consultationStatus, { all: 'Tất cả trạng thái', ...parentConsultationStatusLabels })}
+        ${renderFilterSelect('Nguồn', 'source', filters.source, { all: 'Tất cả nguồn', ...parentContactSourceLabels })}
+      </div>
+      ${filteredContacts.length ? renderContactsTable(filteredContacts) : '<div class="parent-consultation-empty">Không tìm thấy liên hệ phù hợp với bộ lọc hiện tại.</div>'}
+    </section>
+  `
+}
+
+function renderParentFirstState(message, stateClass) {
+  return `<section class="parent-first-state ${stateClass}" role="status"><p>${escapeHtml(message)}</p></section>`
 }
 
 function renderStatCard(label, value, variant = '') {
@@ -1185,14 +1184,9 @@ function renderContactRow(contact) {
         </div>
       </td>
       <td>
-        <button
-          type="button"
-          class="parent-note-cell parent-note-history-trigger"
-          data-parent-note-history-contact-id="${escapeAttribute(contact.id)}"
-        >
-          <span>${escapeHtml(latestNote)}</span>
-          ${lastContactTime ? `<small>${escapeHtml(lastContactTime)}</small>` : ''}
-        </button>
+        ${contact.isDerivedFromStudents
+          ? `<div class="parent-note-cell"><span>${escapeHtml(latestNote)}</span><small>Chỉ đọc từ hồ sơ học viên</small></div>`
+          : `<button type="button" class="parent-note-cell parent-note-history-trigger" data-parent-note-history-contact-id="${escapeAttribute(contact.id)}"><span>${escapeHtml(latestNote)}</span>${lastContactTime ? `<small>${escapeHtml(lastContactTime)}</small>` : ''}</button>`}
       </td>
     </tr>
   `
@@ -1212,9 +1206,12 @@ function renderParentContactDetailPanel(contact) {
             <p>${escapeHtml(contact.phone || 'Chưa có số điện thoại')} · ${escapeHtml(contact.sourceLabel || 'Từ hồ sơ học viên')}</p>
           </div>
           <div class="parent-note-modal-header-actions">
-            ${contact.isDerivedFromStudents ? '' : `
-              <button type="button" data-parent-contact-action="edit" data-contact-id="${escapeAttribute(contact.id)}">Sửa nhẹ</button>
-            `}
+            ${contact.isDerivedFromStudents
+              ? `<button type="button" data-parent-link-action="open-derived" data-contact-id="${escapeAttribute(contact.id)}" data-student-id="${escapeAttribute(contact.studentId)}">Tạo/ghép hồ sơ CRM</button>`
+              : `
+                ${contact.contactIdentityAvailable ? `<button type="button" data-parent-identity-action="open" data-contact-id="${escapeAttribute(contact.id)}">Sửa thông tin liên hệ</button>` : ''}
+                <button type="button" data-parent-contact-action="edit" data-contact-id="${escapeAttribute(contact.id)}">Sửa hồ sơ tư vấn</button>
+              `}
           <button type="button" data-parent-contact-action="close-detail" aria-label="Đóng">X</button>
           </div>
         </div>
@@ -1245,20 +1242,18 @@ function renderParentContactDetailPanel(contact) {
               <strong>${escapeHtml(contact.lastNote || 'Chưa có ghi chú')}</strong>
             </article>
           </div>
-          ${renderParentConvertEntry(contact, customerStage, relatedStudents)}
           <div class="parent-linked-students" aria-label="Học viên liên quan">
-            <h4>Học viên liên quan</h4>
+            <div class="parent-detail-section-heading">
+              <h4>Học viên liên quan</h4>
+              ${!contact.isDerivedFromStudents && contact.canonicalContactId
+                ? `<button type="button" data-parent-link-action="open-contact" data-contact-id="${escapeAttribute(contact.id)}">+ Liên kết học viên</button>`
+                : ''}
+            </div>
             <div class="parent-linked-students-list">
               ${
                 relatedStudents.length
                   ? relatedStudents.map((student) => `
-                    <button
-                      type="button"
-                      data-parent-linked-student-id="${escapeAttribute(student.id)}"
-                    >
-                      <strong>${escapeHtml(student.fullName || student.name || 'Học viên')}</strong>
-                      <span>${escapeHtml([student.parentName, student.parentPhone || student.motherPhone || student.fatherPhone].filter(Boolean).join(' · ') || 'Từ hồ sơ học viên')}</span>
-                    </button>
+                    ${renderLinkedStudentCard(student, contact.parentStudentLinks?.find((link) => link.studentId === student.id))}
                   `).join('')
                   : '<p>Chưa có học viên liên quan.</p>'
               }
@@ -1282,6 +1277,24 @@ function renderParentContactDetailPanel(contact) {
         </div>
       </section>
     </div>
+  `
+}
+
+function renderLinkedStudentCard(student, link = null) {
+  return `
+    <article class="parent-linked-student-card">
+      <button type="button" data-parent-linked-student-id="${escapeAttribute(student.id)}">
+        <strong>${escapeHtml(student.fullName || student.name || 'Học viên')}</strong>
+        <span>${escapeHtml([student.parentName, student.parentPhone || student.motherPhone || student.fatherPhone].filter(Boolean).join(' · ') || 'Từ hồ sơ học viên')}</span>
+      </button>
+      ${link ? `
+        <div class="parent-linked-student-actions">
+          <span>${escapeHtml(getRelationshipTypeLabel(link.relationshipType))}${link.isPrimaryContact ? ' · Liên hệ chính' : ''}</span>
+          <button type="button" data-parent-link-action="edit" data-link-id="${escapeAttribute(link.linkId)}">Sửa liên kết</button>
+          <button type="button" class="is-danger" data-parent-link-action="end" data-link-id="${escapeAttribute(link.linkId)}">Ngắt liên kết</button>
+        </div>
+      ` : ''}
+    </article>
   `
 }
 
@@ -1589,6 +1602,168 @@ function renderParentConvertPlan(preview) {
   `
 }
 
+function renderParentLinkReviewModal(state, contacts = [], students = []) {
+  const canonicalContacts = contacts.filter((contact) => !contact.isDerivedFromStudents && contact.canonicalContactId)
+  const activeStudents = students.filter((student) => student && !student.isDeleted)
+  const isUpdate = state.mode === 'update'
+  const isEnd = state.mode === 'end'
+  const isExistingLink = isUpdate || isEnd
+  const fixedContact = state.fixedContactId
+    ? canonicalContacts.find((contact) => contact.id === state.fixedContactId)
+    : null
+  const selectedContactId = state.selectedContactId || fixedContact?.canonicalContactId || ''
+  const selectedStudent = activeStudents.find((student) => student.id === state.studentId)
+
+  return `
+    <div class="parent-contact-form-backdrop" role="presentation">
+      <section class="parent-contact-form parent-link-review-modal" role="dialog" aria-modal="true" aria-label="Kiểm tra liên kết phụ huynh và học viên">
+        <div class="parent-contact-form-header">
+          <div>
+            <h3>${isEnd ? 'Ngắt liên kết học viên' : isUpdate ? 'Sửa liên kết học viên' : 'Tạo/ghép hồ sơ CRM'}</h3>
+            <span>Chỉ lưu sau khi bạn kiểm tra và xác nhận</span>
+          </div>
+          <button type="button" data-parent-link-action="cancel" aria-label="Đóng">X</button>
+        </div>
+        <div class="parent-contact-form-scroll parent-link-review-body">
+          ${state.error ? `<div class="parent-contact-form-error" role="alert">${escapeHtml(state.error)}</div>` : ''}
+          ${state.message ? `<div class="parent-contact-form-message" role="status">${escapeHtml(state.message)}</div>` : ''}
+          <section>
+            <h4>Học viên</h4>
+            ${selectedStudent
+              ? `<div class="parent-link-review-summary"><strong>${escapeHtml(selectedStudent.fullName || selectedStudent.name)}</strong><span>${escapeHtml([selectedStudent.parentName, selectedStudent.motherPhone || selectedStudent.fatherPhone || selectedStudent.phone].filter(Boolean).join(' · ') || 'Chưa có thông tin người chăm sóc')}</span></div>`
+              : renderParentLinkStudentSelect(activeStudents, state.studentId, isExistingLink)}
+          </section>
+          ${!isExistingLink ? `
+            <section>
+              <h4>Hồ sơ phụ huynh</h4>
+              ${fixedContact
+                ? `<div class="parent-link-review-summary"><strong>${escapeHtml(fixedContact.parentName || 'Phụ huynh')}</strong><span>${escapeHtml(fixedContact.phone || fixedContact.email || 'Thông tin liên hệ được bảo vệ')}</span></div>`
+                : `
+                  <div class="parent-link-choice" role="radiogroup" aria-label="Chọn cách ghép hồ sơ">
+                    <label><input type="radio" name="parent-link-contact-choice" value="existing" data-parent-link-field="contactChoice" ${state.contactChoice === 'existing' ? 'checked' : ''}> Chọn hồ sơ đã có</label>
+                    <label><input type="radio" name="parent-link-contact-choice" value="new" data-parent-link-field="contactChoice" ${state.contactChoice !== 'existing' ? 'checked' : ''}> Tạo hồ sơ mới sau khi kiểm tra</label>
+                  </div>
+                  ${state.contactChoice === 'existing'
+                    ? renderParentLinkContactSelect(canonicalContacts, selectedContactId)
+                    : renderParentLinkNewContactFields(state)}
+                `}
+            </section>
+          ` : ''}
+          <section class="${isEnd ? 'parent-link-end-warning' : ''}">
+            <h4>Vai trò với học viên</h4>
+            ${isEnd ? '<p>Liên kết sẽ được kết thúc và giữ lại trong lịch sử; không xóa hồ sơ phụ huynh hoặc học viên.</p>' : ''}
+            <div class="parent-contact-form-grid">
+              ${renderParentLinkSelect('Mối quan hệ', 'relationshipType', state.relationshipType || 'PARENT', {
+                PARENT: 'Phụ huynh',
+                LEGAL_GUARDIAN: 'Người giám hộ',
+                CAREGIVER: 'Người chăm sóc',
+                EMERGENCY_CONTACT: 'Liên hệ khẩn cấp',
+                OTHER_REVIEWED: 'Quan hệ khác đã kiểm tra',
+              }, isEnd)}
+              ${renderParentLinkSelect('Liên hệ học phí', 'financialContactRole', state.financialContactRole || 'PRIMARY', { NONE: 'Không', PRIMARY: 'Chính', SECONDARY: 'Phụ' }, isEnd)}
+              ${renderParentLinkSelect('Liên hệ học tập', 'academicContactRole', state.academicContactRole || 'PRIMARY', { NONE: 'Không', PRIMARY: 'Chính', SECONDARY: 'Phụ' }, isEnd)}
+              <label class="parent-link-checkbox"><input type="checkbox" data-parent-link-field="isPrimaryContact" ${state.isPrimaryContact ? 'checked' : ''} ${isEnd ? 'disabled' : ''}> Đặt là người liên hệ chính</label>
+            </div>
+          </section>
+        </div>
+        <div class="parent-contact-form-footer">
+          <span>Hồ sơ học viên không bị sửa khi thực hiện thao tác này.</span>
+          <div class="parent-contact-form-footer-actions">
+            <button type="button" data-parent-link-action="cancel" ${state.isSaving ? 'disabled' : ''}>Hủy</button>
+            <button type="button" class="${isEnd ? 'is-danger' : ''}" data-parent-link-action="save" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : isEnd ? 'Xác nhận ngắt liên kết' : isUpdate ? 'Lưu liên kết' : 'Xác nhận và liên kết'}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderParentLinkStudentSelect(students, selectedStudentId, disabled = false) {
+  return `
+    <label>
+      <span>Chọn học viên có sẵn</span>
+      <select data-parent-link-field="studentId" ${disabled ? 'disabled' : ''}>
+        <option value="">Chọn học viên</option>
+        ${students.map((student) => `<option value="${escapeAttribute(student.id)}" ${student.id === selectedStudentId ? 'selected' : ''}>${escapeHtml(student.fullName || student.name || student.id)}</option>`).join('')}
+      </select>
+    </label>
+  `
+}
+
+function renderParentLinkContactSelect(contacts, selectedContactId) {
+  return `
+    <label>
+      <span>Hồ sơ phụ huynh đã có</span>
+      <select data-parent-link-field="selectedContactId">
+        <option value="">Chọn hồ sơ</option>
+        ${contacts.map((contact) => `<option value="${escapeAttribute(contact.canonicalContactId)}" ${contact.canonicalContactId === selectedContactId ? 'selected' : ''}>${escapeHtml(contact.parentName || contact.id)}</option>`).join('')}
+      </select>
+    </label>
+  `
+}
+
+function renderParentLinkNewContactFields(state) {
+  return `
+    <div class="parent-contact-form-grid">
+      <label><span>Tên phụ huynh</span><input type="text" value="${escapeAttribute(state.newContactName || '')}" data-parent-link-field="newContactName"></label>
+      <label><span>Số điện thoại</span><input type="tel" value="${escapeAttribute(state.newContactPhone || '')}" data-parent-link-field="newContactPhone"></label>
+      <label><span>Email</span><input type="email" value="${escapeAttribute(state.newContactEmail || '')}" data-parent-link-field="newContactEmail"></label>
+      <small>Thông tin này chỉ được tạo sau khi bạn bấm xác nhận. Hệ thống không tự sao chép từ hồ sơ học viên.</small>
+    </div>
+  `
+}
+
+function renderParentLinkSelect(label, field, selectedValue, options, disabled = false) {
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+      <select data-parent-link-field="${escapeAttribute(field)}" ${disabled ? 'disabled' : ''}>
+        ${Object.entries(options).map(([value, optionLabel]) => `<option value="${escapeAttribute(value)}" ${value === selectedValue ? 'selected' : ''}>${escapeHtml(optionLabel)}</option>`).join('')}
+      </select>
+    </label>
+  `
+}
+
+function renderParentIdentityEditModal(state) {
+  return `
+    <div class="parent-contact-form-backdrop" role="presentation">
+      <section class="parent-contact-form parent-identity-edit-modal" role="dialog" aria-modal="true" aria-label="Sửa thông tin liên hệ phụ huynh">
+        <div class="parent-contact-form-header">
+          <div><h3>Sửa thông tin liên hệ</h3><span>Kiểm tra kỹ trước khi lưu</span></div>
+          <button type="button" data-parent-identity-action="cancel" aria-label="Đóng">X</button>
+        </div>
+        <div class="parent-contact-form-scroll">
+          ${state.error ? `<div class="parent-contact-form-error" role="alert">${escapeHtml(state.error)}</div>` : ''}
+          ${state.message ? `<div class="parent-contact-form-message" role="status">${escapeHtml(state.message)}</div>` : ''}
+          <div class="parent-contact-form-grid">
+            <label><span>Tên phụ huynh</span><input type="text" value="${escapeAttribute(state.displayName || '')}" data-parent-identity-field="displayName"></label>
+            <label><span>Số điện thoại chính</span><input type="tel" value="${escapeAttribute(state.primaryPhone || '')}" data-parent-identity-field="primaryPhone"></label>
+            <label><span>Số điện thoại phụ</span><input type="tel" value="${escapeAttribute(state.secondaryPhone || '')}" data-parent-identity-field="secondaryPhone"></label>
+            <label><span>Email</span><input type="email" value="${escapeAttribute(state.email || '')}" data-parent-identity-field="email"></label>
+          </div>
+        </div>
+        <div class="parent-contact-form-footer">
+          <span>Nếu thông tin đã thay đổi ở nơi khác, hệ thống sẽ yêu cầu làm mới thay vì ghi đè.</span>
+          <div class="parent-contact-form-footer-actions">
+            <button type="button" data-parent-identity-action="cancel" ${state.isSaving ? 'disabled' : ''}>Hủy</button>
+            <button type="button" data-parent-identity-action="save" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : 'Lưu thông tin'}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function getRelationshipTypeLabel(value) {
+  return ({
+    PARENT: 'Phụ huynh',
+    LEGAL_GUARDIAN: 'Người giám hộ',
+    CAREGIVER: 'Người chăm sóc',
+    EMERGENCY_CONTACT: 'Liên hệ khẩn cấp',
+    OTHER_REVIEWED: 'Quan hệ khác',
+  })[value] || 'Người liên hệ'
+}
+
 function renderQuickNoteModal(contacts, quickNoteState) {
   const contact = contacts.find((item) => item.id === quickNoteState.contactId)
 
@@ -1811,7 +1986,7 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
           ${renderFormInput('Số điện thoại', 'phone', values.phone, errors.phone, 'text', values.identityReadOnly)}
           ${renderFormInput('Số phụ', 'secondaryPhone', values.secondaryPhone, '', 'text', values.identityReadOnly)}
           ${renderFormInput('Email', 'email', values.email, '', 'email', values.identityReadOnly)}
-          ${values.identityReadOnly ? '<small>Identity Contact được canonical CRM bảo vệ; C5.3 không merge/ghi đè im lặng.</small>' : ''}
+          ${values.identityReadOnly ? '<small>Tên, số điện thoại và email được bảo vệ. Dùng nút “Sửa thông tin liên hệ” trong chi tiết hồ sơ để cập nhật.</small>' : ''}
           ${renderFormInput('Khu vực', 'locationArea', values.locationArea)}
         </div>
       </section>
@@ -1833,7 +2008,10 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
               ${renderFormTextarea('Phụ huynh nhận xét về bé (nếu có)', 'parentFeedbackAboutChild', values.parentFeedbackAboutChild)}
             </div>
           </div>
-          ${renderStudentPicker(values, students)}
+          <div class="parent-student-picker parent-student-picker-guidance">
+            <strong>Đã có hồ sơ học viên?</strong>
+            <p>Hãy lưu hồ sơ phụ huynh trước, sau đó mở chi tiết và chọn “Liên kết học viên”. Liên kết chỉ được tạo sau một bước kiểm tra riêng.</p>
+          </div>
         </div>
       </section>
     `
@@ -2095,7 +2273,7 @@ function renderFormSelect(label, field, selectedValue, optionsByValue, error = '
 function renderConsultantAssignmentSelect(selectedUserId = '', eligibleConsultants = []) {
   const normalizedSelected = String(selectedUserId || '')
   const options = [
-    `<option value="" ${normalizedSelected ? 'disabled' : 'selected'}>Chưa gán canonical consultant</option>`,
+    `<option value="" ${normalizedSelected ? 'disabled' : 'selected'}>Chưa gán người phụ trách</option>`,
     ...(Array.isArray(eligibleConsultants) ? eligibleConsultants : []).map((consultant) => {
       const userId = String(consultant?.userId || '')
       const label = String(consultant?.label || userId)
@@ -2104,9 +2282,9 @@ function renderConsultantAssignmentSelect(selectedUserId = '', eligibleConsultan
   ].join('')
   return `
     <label>
-      <span>Tư vấn phụ trách (canonical assignment)</span>
+      <span>Tư vấn phụ trách</span>
       <select data-parent-contact-field="consultantId">${options}</select>
-      <small>Chỉ active membership role consultant cùng cơ sở; C5.3 hỗ trợ gán/gán lại, chưa hỗ trợ bỏ gán.</small>
+      <small>Chỉ hiển thị người phụ trách đang hoạt động tại cùng cơ sở.</small>
     </label>
   `
 }
