@@ -30,7 +30,14 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
   entry('nhom-tai-chinh', [], ['C5.4 Finance/Cashbook wrapper'], ['finance']),
   entry('thu-chi', ['C5.4 Finance'], [], ['finance']),
   entry('so-quy', ['C5.4 Cashbook'], ['C5.4 Finance ledger'], ['finance']),
-  entry('kho-hang', ['C5.6 Inventory'], ['C5.1 Student reference'], ['inventory', 'core']),
+  entry(
+    'kho-hang',
+    ['C5.6 Inventory'],
+    ['C5.1 Student reference'],
+    ['inventory'],
+    ['core'],
+    { 'student-link': ['core'] },
+  ),
   entry('bao-cao', [], ['C5.1 Student', 'C5.2 Attendance', 'C5.4 Finance'], ['core', 'attendance', 'finance']),
   entry('cai-dat-co-so', [], ['canonical active center', 'C5.1 Class/Student', 'C5.2 Tuition packages'], ['core', 'tuition']),
   entry(

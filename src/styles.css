@@ -7974,6 +7974,10 @@ h3 {
   font-size: 0.8rem;
 }
 
+.inventory-field .inventory-field-help {
+  color: var(--ichess-muted);
+}
+
 .inventory-form-errors {
   display: grid;
   gap: 4px;

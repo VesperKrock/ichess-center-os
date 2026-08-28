@@ -67,10 +67,14 @@ import {
   buildC56PostMovementCommand,
   buildC56SaveItemCommand,
   buildC56UpdateRequestStatusCommand,
+  C56_INVENTORY_CAPABILITY_STATUS,
   canWriteC56InventorySharedTruth,
+  createC56InventoryCapabilityState,
   createC56InventoryIdempotencyKey,
   createC56InventoryRetryFingerprint,
   getC56InventoryOutcomeMessage,
+  isC56InventoryBackendUnavailable,
+  isC56InventoryCapabilityReady,
   mutateC56InventorySharedTruth,
   pullC56InventorySharedTruth,
 } from './cloud-authoritative-inventory.js'
@@ -761,6 +765,7 @@ let c56InventorySharedTruthState = {
   legacyManifestKey: '',
   legacySummary: null,
 }
+let c56InventoryCapabilityState = createC56InventoryCapabilityState()
 let c56InventorySyncRunId = 0
 const c56InventoryRetryCommands = new Map()
 let c57CalendarNotesSharedTruthState = {
@@ -1048,6 +1053,12 @@ function isProductionModuleAvailable(moduleId) {
   if (moduleId === 'khach-hang-tu-van') {
     return isParentFirstCapabilityReady(parentFirstCapabilityState, getCurrentCanonicalCenterContext().centerId)
   }
+  if (moduleId === 'kho-hang') {
+    return isC56InventoryCapabilityReady(
+      c56InventoryCapabilityState,
+      getCurrentCanonicalCenterContext().centerId,
+    )
+  }
   return isStaticProductionModuleAvailable(moduleId)
 }
 
@@ -1057,6 +1068,14 @@ function getUnavailableModuleLabel(moduleId) {
     && parentFirstCapabilityState.status === PARENT_FIRST_CAPABILITY_STATUS.LOADING
   ) {
     return 'Đang kiểm tra...'
+  }
+  if (moduleId === 'kho-hang') {
+    if (c56InventoryCapabilityState.status === C56_INVENTORY_CAPABILITY_STATUS.LOADING) {
+      return 'Đang kiểm tra...'
+    }
+    if (c56InventoryCapabilityState.status === C56_INVENTORY_CAPABILITY_STATUS.FAILED) {
+      return 'Chưa tải được'
+    }
   }
   return 'Chưa khả dụng'
 }
@@ -1484,6 +1503,7 @@ function resetC56InventoryRuntimeForAccessBoundary(centerId = '') {
     legacyManifestKey: '',
     legacySummary: null,
   }
+  c56InventoryCapabilityState = createC56InventoryCapabilityState({ centerId })
 }
 
 function clearC57CalendarNotesProjection() {
@@ -1573,7 +1593,7 @@ function resetTransientStateForCenterSwitch() {
     legacySummary: null,
   }
   resetC55StaffHrRuntimeForAccessBoundary(getCurrentResolvedCenterId())
-  resetC56InventoryRuntimeForAccessBoundary(getCurrentResolvedCenterId())
+  resetC56InventoryRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetC57CalendarNotesRuntimeForAccessBoundary('')
   scheduleFormState = null
   scheduleCalendarItemState = null
@@ -8868,6 +8888,7 @@ async function handleInternalOpenCenter(centerId) {
   }
 
   await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
+  await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
   await loadCenterMemberProfiles(switchSyncId)
   await loadCurrentMonthCloudAttachments(switchSyncId)
   await startStudentRealtimeSubscription(switchSyncId)
@@ -10945,6 +10966,8 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'kho-hang') {
+    const coreStatus = getModuleUpstreamStatus('kho-hang', 'core')
+    const coreCurrent = isModuleUpstreamCurrent('kho-hang', 'core')
     return renderInventoryModule(
       inventoryItems,
       inventoryFilters,
@@ -10960,8 +10983,12 @@ function renderWindowBody(windowItem) {
       inventoryRequestFormState,
       selectedInventoryRequestId,
       inventoryRequestStatusFormState,
-      students,
+      coreCurrent ? students : [],
       c56InventorySharedTruthState,
+      {
+        coreStatus,
+        coreCurrent,
+      },
     )
   }
 
@@ -12194,6 +12221,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   const lastFreshAt = new Date().toISOString()
   const limitedMessages = evaluation.nonBlockingFailures.map((upstream) => {
     const label = ({
+      core: moduleId === 'kho-hang' ? 'Danh sách học viên liên kết' : 'Dữ liệu cơ sở',
       attendance: 'Dữ liệu điểm danh bổ sung',
       staff: 'Thông tin nhân sự',
       tuition: 'Đối chiếu học phí',
@@ -12312,8 +12340,15 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
 }
 
 async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-open') {
-  const upstreams = ['core', 'crm', 'tuition', 'inventory']
   const centerContext = getCurrentCanonicalCenterContext()
+  const upstreams = [
+    'core',
+    'crm',
+    'tuition',
+    ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerContext.centerId)
+      ? ['inventory']
+      : []),
+  ]
   const refreshId = ++notificationRefreshRunId
   notificationRefreshState = createModuleRefreshState({
     status: centerContext.ok ? 'loading' : 'failed',
@@ -13952,6 +13987,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
 
   if (cloudStatus.membershipStatus === 'loaded') {
     await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
+    await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
@@ -15776,16 +15812,47 @@ function isC54RetryableFinanceFailure(result = {}) {
 }
 
 async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silent = false } = {}) {
-  const centerId = getCurrentResolvedCenterId()
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
   const runId = ++c56InventorySyncRunId
+  if (!centerContext.ok) {
+    inventoryItems = []
+    inventoryMovements = []
+    inventoryRequests = []
+    const error = 'Chưa xác định được cơ sở đang hoạt động; chưa thể tải Kho hàng.'
+    c56InventoryCapabilityState = createC56InventoryCapabilityState({
+      centerId: '',
+      status: C56_INVENTORY_CAPABILITY_STATUS.FAILED,
+      message: error,
+      messageTone: 'error',
+    })
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      centerId: '',
+      isLoading: false,
+      isSaving: false,
+      message: error,
+      messageTone: 'error',
+    }
+    render()
+    return { ok: false, outcome_code: 'INVALID_CENTER_CONTEXT', error }
+  }
+
+  c56InventoryCapabilityState = createC56InventoryCapabilityState({
+    centerId,
+    status: C56_INVENTORY_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    message: 'Đang kiểm tra Kho hàng...',
+  })
   const legacy = await inspectAndQuarantineC56LegacyInventory({
     storage: globalThis.localStorage,
     centerId,
   })
-  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
   if (!legacy.ok) {
+    const legacyError = 'Không thể kiểm tra an toàn dữ liệu Kho hàng cũ. Dữ liệu chưa bị thay đổi; vui lòng liên hệ quản trị.'
     inventoryItems = []
     inventoryMovements = []
     inventoryRequests = []
@@ -15794,19 +15861,30 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
       centerId,
       isLoading: false,
       isSaving: false,
-      message: legacy.error,
+      message: legacyError,
       messageTone: 'error',
       legacyMigrationRequired: true,
     }
+    c56InventoryCapabilityState = createC56InventoryCapabilityState({
+      centerId,
+      status: C56_INVENTORY_CAPABILITY_STATUS.FAILED,
+      message: legacyError,
+      messageTone: 'error',
+    })
     render()
-    return { ok: false, outcome_code: 'LEGACY_PRESERVATION_FAILED', error: legacy.error }
+    return {
+      ok: false,
+      outcome_code: 'LEGACY_PRESERVATION_FAILED',
+      error: legacyError,
+      detail: legacy.error,
+    }
   }
 
   c56InventorySharedTruthState = {
     ...c56InventorySharedTruthState,
     centerId,
     isLoading: true,
-    message: silent ? c56InventorySharedTruthState.message : 'Đang tải authoritative Inventory...',
+    message: silent ? c56InventorySharedTruthState.message : 'Đang tải dữ liệu Kho hàng...',
     messageTone: '',
     legacyMigrationRequired: legacy.migrationRequired,
     legacyManifestKey: legacy.manifestKey || '',
@@ -15818,19 +15896,25 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
     inventoryItems = []
     inventoryMovements = []
     inventoryRequests = []
-    const error = 'Cần đăng nhập và có active membership để đọc authoritative Inventory.'
+    const error = 'Cần đăng nhập và có quyền tại cơ sở hiện tại để xem Kho hàng.'
     c56InventorySharedTruthState = {
       ...c56InventorySharedTruthState,
       isLoading: false,
       message: error,
       messageTone: 'error',
     }
+    c56InventoryCapabilityState = createC56InventoryCapabilityState({
+      centerId,
+      status: C56_INVENTORY_CAPABILITY_STATUS.FAILED,
+      message: error,
+      messageTone: 'error',
+    })
     render()
     return { ok: false, outcome_code: 'CLIENT_NOT_READY', error }
   }
 
   const readiness = await checkCloudDbReadiness(centerId)
-  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
   if (!readiness.ok || readiness.centerId !== centerId) {
@@ -15840,16 +15924,23 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
       message: readiness.error || getC56InventoryOutcomeMessage('INVENTORY_SHARED_TRUTH_READ_FAILED'),
       messageTone: 'error',
     }
+    c56InventoryCapabilityState = createC56InventoryCapabilityState({
+      centerId,
+      status: C56_INVENTORY_CAPABILITY_STATUS.FAILED,
+      message: readiness.error || getC56InventoryOutcomeMessage('INVENTORY_SHARED_TRUTH_READ_FAILED'),
+      messageTone: 'error',
+    })
     render()
     return readiness
   }
 
   const result = await pullC56InventorySharedTruth({ supabase: readiness.supabase, centerId })
-  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
   if (!result.ok) {
-    if (['CENTER_ACCESS_DENIED', 'NOT_AUTHENTICATED'].includes(result.outcome_code)) {
+    const unavailable = isC56InventoryBackendUnavailable(result)
+    if (unavailable || ['CENTER_ACCESS_DENIED', 'NOT_AUTHENTICATED'].includes(result.outcome_code)) {
       inventoryItems = []
       inventoryMovements = []
       inventoryRequests = []
@@ -15857,9 +15948,21 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
     c56InventorySharedTruthState = {
       ...c56InventorySharedTruthState,
       isLoading: false,
-      message: result.error || getC56InventoryOutcomeMessage(result.outcome_code),
-      messageTone: 'error',
+      message: unavailable
+        ? getC56InventoryOutcomeMessage('BACKEND_NOT_DEPLOYED')
+        : result.error || getC56InventoryOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? 'warning' : 'error',
     }
+    c56InventoryCapabilityState = createC56InventoryCapabilityState({
+      centerId,
+      status: unavailable
+        ? C56_INVENTORY_CAPABILITY_STATUS.UNAVAILABLE
+        : C56_INVENTORY_CAPABILITY_STATUS.FAILED,
+      message: unavailable
+        ? getC56InventoryOutcomeMessage('BACKEND_NOT_DEPLOYED')
+        : result.error || getC56InventoryOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? 'warning' : 'error',
+    })
     render()
     return result
   }
@@ -15876,17 +15979,40 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
     isLoading: false,
     isSaving: false,
     message: reason === 'after-server-commit'
-      ? 'Inventory đã commit server và projection đã được làm mới.'
-      : `Đã tải authoritative Inventory (${inventoryItems.length} vật tư, ${inventoryRequests.length} đề xuất).`,
+      ? 'Thay đổi đã được lưu và danh sách Kho hàng đã được cập nhật.'
+      : `Đã tải dữ liệu Kho hàng mới nhất (${inventoryItems.length} vật tư, ${inventoryRequests.length} đề xuất).`,
     messageTone: 'success',
     lastLoadedAt: new Date().toISOString(),
   }
+  c56InventoryCapabilityState = createC56InventoryCapabilityState({
+    centerId,
+    status: C56_INVENTORY_CAPABILITY_STATUS.READY,
+    message: '',
+    messageTone: 'success',
+    lastLoadedAt: c56InventorySharedTruthState.lastLoadedAt,
+  })
   render()
   return result
 }
 
 async function writeC56InventoryCommand(command, { reason = 'inventory-save' } = {}) {
-  const centerId = getCurrentResolvedCenterId()
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerId)) {
+    const result = {
+      ok: false,
+      outcome_code: 'CLIENT_NOT_READY',
+      error: 'Kho hàng chưa tải xong dữ liệu mới nhất; thay đổi chưa được lưu.',
+    }
+    c56InventorySharedTruthState = {
+      ...c56InventorySharedTruthState,
+      centerId,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
   const access = canWriteC56InventorySharedTruth(buildCurrentOnlineAccessState({
     cloudReady: cloudDbState.readinessStatus === 'ready',
   }))
@@ -15916,13 +16042,13 @@ async function writeC56InventoryCommand(command, { reason = 'inventory-save' } =
     ...c56InventorySharedTruthState,
     centerId,
     isSaving: true,
-    message: 'Đang commit authoritative Inventory...',
+    message: 'Đang lưu thay đổi Kho hàng...',
     messageTone: '',
   }
   render()
 
   const readiness = await checkCloudDbReadiness(centerId)
-  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId
     || !readiness.ok || readiness.centerId !== centerId) {
     const result = readiness.ok
       ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED') }
@@ -15945,14 +16071,14 @@ async function writeC56InventoryCommand(command, { reason = 'inventory-save' } =
     command: pending.command,
     idempotencyKey: pending.idempotencyKey,
   })
-  if (runId !== c56InventorySyncRunId || centerId !== getCurrentResolvedCenterId()) {
+  if (runId !== c56InventorySyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
     return {
       ...result,
       ok: false,
       committed: Boolean(result.ok),
       outcome_code: 'CENTER_CONTEXT_CHANGED',
       error: result.ok
-        ? 'Inventory đã commit tại cơ sở trước; view cơ sở hiện tại không nhận projection đó.'
+        ? 'Thay đổi đã được lưu tại cơ sở trước; màn hình hiện tại không nhận dữ liệu của cơ sở đó.'
         : getC56InventoryOutcomeMessage('CENTER_CONTEXT_CHANGED'),
     }
   }
@@ -20609,6 +20735,12 @@ function bindEvents() {
     }
 
     const errors = validateInventoryRequestForm(inventoryRequestFormState.values)
+    if (
+      String(inventoryRequestFormState.values.linkedStudentId || '').trim()
+      && !areModuleActionUpstreamsCurrent('kho-hang', 'student-link')
+    ) {
+      errors.linkedStudentId = 'Chưa tải được danh sách học viên mới nhất. Hãy bỏ liên kết hoặc Làm mới rồi thử lại.'
+    }
 
     if (Object.keys(errors).length) {
       inventoryRequestFormState = {
@@ -20846,7 +20978,7 @@ function bindEvents() {
       return
     }
 
-    if (!window.confirm('Bạn muốn xóa vật tư này khỏi danh sách kho?')) {
+    if (!window.confirm('Bạn muốn lưu trữ vật tư này khỏi danh sách đang sử dụng? Lịch sử nhập/xuất vẫn được giữ nguyên.')) {
       return
     }
 

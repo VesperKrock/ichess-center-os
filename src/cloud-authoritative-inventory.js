@@ -1,6 +1,23 @@
 export const C56_INVENTORY_SHARED_TRUTH_SOURCE_VERSION =
   'c5.6-inventory-authoritative-shared-truth-v1'
 
+export const C56_INVENTORY_CAPABILITY_STATUS = Object.freeze({
+  IDLE: 'idle',
+  LOADING: 'loading',
+  READY: 'ready',
+  UNAVAILABLE: 'unavailable',
+  FAILED: 'failed',
+})
+
+const C56_BACKEND_UNAVAILABLE_CODES = new Set([
+  '42P01',
+  '42883',
+  'PGRST202',
+  'PGRST205',
+  'BACKEND_NOT_DEPLOYED',
+  'SCHEMA_NOT_READY',
+])
+
 const WRITE_ROLES = new Set(['owner', 'admin', 'center_admin', 'qtv'])
 const MOVEMENT_TYPES = new Set(['in', 'out'])
 const REQUEST_STATUSES = new Set([
@@ -31,9 +48,44 @@ const REQUEST_USAGE_MODES = new Set([
   'other',
 ])
 
+export function createC56InventoryCapabilityState(overrides = {}) {
+  return {
+    centerId: '',
+    status: C56_INVENTORY_CAPABILITY_STATUS.IDLE,
+    isLoading: false,
+    message: '',
+    messageTone: '',
+    lastLoadedAt: '',
+    ...overrides,
+  }
+}
+
+export function isC56InventoryCapabilityReady(state = {}, centerId = '') {
+  const normalizedCenterId = cleanText(centerId)
+  return Boolean(
+    normalizedCenterId
+      && state.status === C56_INVENTORY_CAPABILITY_STATUS.READY
+      && state.centerId === normalizedCenterId,
+  )
+}
+
+export function isC56InventoryBackendUnavailable(result = {}) {
+  const code = cleanText(result.outcome_code || result.code).toUpperCase()
+  const detail = [result.error, result.message, result.details, result.hint]
+    .map(cleanText)
+    .join(' ')
+    .toUpperCase()
+  return C56_BACKEND_UNAVAILABLE_CODES.has(code)
+    || [...C56_BACKEND_UNAVAILABLE_CODES].some((candidate) => detail.includes(candidate))
+    || (
+      detail.includes('C5_6_LIST_INVENTORY_SHARED_TRUTH')
+      && (detail.includes('NOT FIND') || detail.includes('NOT FOUND'))
+    )
+}
+
 export function createC56InventoryIdempotencyKey() {
   if (!globalThis.crypto?.randomUUID) {
-    throw new Error('Trình duyệt không hỗ trợ crypto.randomUUID cho lệnh Inventory C5.6.')
+    throw new Error('Trình duyệt không thể tạo mã an toàn cho thao tác Kho hàng.')
   }
   return globalThis.crypto.randomUUID()
 }
@@ -47,7 +99,7 @@ export function canWriteC56InventorySharedTruth(accessState = {}) {
     role,
     error: canWrite
       ? ''
-      : 'Vai trò hiện tại chỉ được đọc Inventory; dữ liệu chưa được lưu.',
+      : 'Vai trò hiện tại chỉ được xem Kho hàng; dữ liệu chưa được lưu.',
   }
 }
 
@@ -62,7 +114,7 @@ export async function pullC56InventorySharedTruth({ supabase, centerId } = {}) {
     const { data, error } = await supabase.rpc('c5_6_list_inventory_shared_truth', {
       p_center_id: normalizedCenterId,
     })
-    if (error) return failure('INVENTORY_SHARED_TRUTH_READ_FAILED', String(error.message || error), error)
+    if (error) return c56InventoryRpcFailure(error, 'INVENTORY_SHARED_TRUTH_READ_FAILED')
     if (!data?.ok || !Array.isArray(data.items) || !Array.isArray(data.movements)
       || !Array.isArray(data.requests)) {
       return failure(String(data?.outcome_code || 'INVALID_SERVER_RESULT'), '', data)
@@ -89,7 +141,7 @@ export async function pullC56InventorySharedTruth({ supabase, centerId } = {}) {
       requests,
     }
   } catch (error) {
-    return failure('INVENTORY_SHARED_TRUTH_READ_FAILED', String(error?.message || error), error)
+    return c56InventoryRpcFailure(error, 'INVENTORY_SHARED_TRUTH_READ_FAILED')
   }
 }
 
@@ -112,7 +164,7 @@ export async function mutateC56InventorySharedTruth({
       p_command: command,
       p_idempotency_key: idempotencyKey,
     })
-    if (error) return failure('SERVER_COMMAND_FAILED', String(error.message || error), error, idempotencyKey)
+    if (error) return c56InventoryRpcFailure(error, 'SERVER_COMMAND_FAILED', idempotencyKey)
     if (!data?.ok) {
       return failure(String(data?.outcome_code || 'SERVER_COMMAND_FAILED'), '', data, idempotencyKey)
     }
@@ -122,7 +174,7 @@ export async function mutateC56InventorySharedTruth({
     }
     return { ...data, ok: true, idempotencyKey }
   } catch (error) {
-    return failure('SERVER_COMMAND_FAILED', String(error?.message || error), error, idempotencyKey)
+    return c56InventoryRpcFailure(error, 'SERVER_COMMAND_FAILED', idempotencyKey)
   }
 }
 
@@ -131,7 +183,7 @@ export function buildC56SaveItemCommand(item = {}) {
   const command = {
     operation: version > 0 ? 'UPDATE_ITEM' : 'CREATE_ITEM',
     item_id: version > 0
-      ? requireUuid(item.id, 'Thiếu item_id authoritative.')
+      ? requireUuid(item.id, 'Không xác định được vật tư cần cập nhật.')
       : createC56InventoryIdempotencyKey(),
     expected_version: version,
     name: requireText(item.name, 'Tên vật tư không được trống.'),
@@ -151,8 +203,8 @@ export function buildC56SaveItemCommand(item = {}) {
 export function buildC56ArchiveItemCommand(item = {}) {
   return {
     operation: 'ARCHIVE_ITEM',
-    item_id: requireUuid(item.id, 'Thiếu item_id authoritative.'),
-    expected_version: requirePositiveVersion(item, 'Item'),
+    item_id: requireUuid(item.id, 'Không xác định được vật tư cần lưu trữ.'),
+    expected_version: requirePositiveVersion(item, 'Vật tư'),
   }
 }
 
@@ -162,8 +214,8 @@ export function buildC56PostMovementCommand(movement = {}, item = {}) {
   return {
     operation: 'POST_MOVEMENT',
     movement_id: createC56InventoryIdempotencyKey(),
-    item_id: requireUuid(item.id || movement.itemId, 'Vật tư authoritative không hợp lệ.'),
-    expected_version: requirePositiveVersion(item, 'Item'),
+    item_id: requireUuid(item.id || movement.itemId, 'Vật tư cần nhập/xuất không hợp lệ.'),
+    expected_version: requirePositiveVersion(item, 'Vật tư'),
     movement_type: type.toUpperCase(),
     quantity: requirePositiveInteger(movement.quantity, 'Số lượng nhập/xuất không hợp lệ.'),
     movement_date: requireDate(movement.movementDate),
@@ -209,8 +261,8 @@ export function buildC56UpdateRequestStatusCommand(request = {}, values = {}) {
   if (!REQUEST_STATUSES.has(status)) throw new Error('Trạng thái đề xuất không hợp lệ.')
   return {
     operation: 'UPDATE_REQUEST_STATUS',
-    request_id: requireUuid(request.id, 'Thiếu request_id authoritative.'),
-    expected_version: requirePositiveVersion(request, 'Request'),
+    request_id: requireUuid(request.id, 'Không xác định được đề xuất cần cập nhật.'),
+    expected_version: requirePositiveVersion(request, 'Đề xuất'),
     status: status.toUpperCase(),
     admin_note: cleanText(values.adminNote),
   }
@@ -349,40 +401,41 @@ export function projectC56InventoryRequest(row = {}, expectedCenterId = '') {
 
 export function getC56InventoryOutcomeMessage(outcomeCode) {
   const messages = {
-    NOT_AUTHENTICATED: 'Phiên đăng nhập không hợp lệ; Inventory chưa được lưu.',
-    CLIENT_NOT_READY: 'Không kết nối được cloud; Inventory chưa được lưu.',
-    INVALID_CENTER: 'Cơ sở không hợp lệ; Inventory chưa được lưu.',
-    CENTER_ACCESS_DENIED: 'Tài khoản không có quyền đọc Inventory tại cơ sở này.',
-    WRITE_ROLE_REQUIRED: 'Vai trò hiện tại không được thay đổi Inventory.',
-    INVALID_COMMAND: 'Lệnh Inventory không hợp lệ.',
-    INVALID_OPERATION: 'Thao tác không thuộc authoritative Inventory C5.6.',
-    INVALID_PAYLOAD: 'Dữ liệu Inventory không hợp lệ.',
-    RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy dữ liệu Inventory trong đúng cơ sở.',
-    VERSION_STALE: 'Inventory đã được tài khoản khác cập nhật; hãy Làm mới trước khi lưu.',
+    NOT_AUTHENTICATED: 'Phiên đăng nhập không hợp lệ; dữ liệu Kho hàng chưa được lưu.',
+    CLIENT_NOT_READY: 'Chưa kết nối được dữ liệu Kho hàng; thay đổi chưa được lưu.',
+    INVALID_CENTER: 'Chưa xác định được cơ sở hợp lệ; thay đổi chưa được lưu.',
+    CENTER_ACCESS_DENIED: 'Tài khoản không có quyền xem Kho hàng tại cơ sở này.',
+    WRITE_ROLE_REQUIRED: 'Vai trò hiện tại không được thay đổi Kho hàng.',
+    INVALID_COMMAND: 'Yêu cầu cập nhật Kho hàng không hợp lệ.',
+    INVALID_OPERATION: 'Thao tác Kho hàng này không được hỗ trợ.',
+    INVALID_PAYLOAD: 'Dữ liệu Kho hàng không hợp lệ.',
+    RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy dữ liệu Kho hàng trong cơ sở hiện tại.',
+    VERSION_STALE: 'Dữ liệu đã được tài khoản khác cập nhật; hãy Làm mới trước khi lưu.',
     ITEM_ARCHIVED: 'Vật tư đã lưu trữ; không thể nhập/xuất kho.',
-    NEGATIVE_STOCK: 'Xuất kho vượt tồn hiện tại; server không commit thay đổi.',
+    NEGATIVE_STOCK: 'Số lượng xuất vượt tồn hiện tại; thay đổi chưa được lưu.',
     INVALID_WORKFLOW_TRANSITION: 'Chuyển trạng thái đề xuất không hợp lệ.',
     STUDENT_REFERENCE_DENIED: 'Học viên liên kết không tồn tại trong đúng cơ sở.',
-    IDEMPOTENCY_CONFLICT: 'Khóa retry đã được dùng cho một lệnh Inventory khác.',
-    CONCURRENT_CONFLICT: 'Có lệnh Inventory đồng thời; hãy Làm mới rồi thử lại.',
-    INVALID_SERVER_RESULT: 'Server trả Inventory không hợp lệ; projection chưa thay đổi.',
-    CENTER_CONTEXT_CHANGED: 'Cơ sở đã đổi; view hiện tại không nhận dữ liệu cơ sở trước.',
-    INVENTORY_SHARED_TRUTH_READ_FAILED: 'Không đọc được authoritative Inventory; projection chưa thay đổi.',
-    SERVER_COMMAND_FAILED: 'Không commit được Inventory lên server; projection chưa thay đổi.',
-    COMMITTED_PROJECTION_REFRESH_FAILED: 'Inventory đã commit server nhưng chưa tải lại được projection.',
+    IDEMPOTENCY_CONFLICT: 'Yêu cầu lưu này không còn khớp với nội dung hiện tại; hãy Làm mới rồi thử lại.',
+    CONCURRENT_CONFLICT: 'Dữ liệu đang được cập nhật ở nơi khác; hãy Làm mới rồi thử lại.',
+    INVALID_SERVER_RESULT: 'Dữ liệu Kho hàng nhận được không hợp lệ; danh sách hiện tại không được thay thế.',
+    CENTER_CONTEXT_CHANGED: 'Cơ sở đã đổi; màn hình hiện tại không nhận dữ liệu của cơ sở trước.',
+    BACKEND_NOT_DEPLOYED: 'Kho hàng hiện chưa khả dụng.',
+    INVENTORY_SHARED_TRUTH_READ_FAILED: 'Chưa tải được dữ liệu Kho hàng. Dữ liệu đang hiển thị có thể chưa phải bản mới nhất.',
+    SERVER_COMMAND_FAILED: 'Chưa thể lưu thay đổi Kho hàng. Nội dung đang nhập vẫn được giữ nguyên.',
+    COMMITTED_PROJECTION_REFRESH_FAILED: 'Thay đổi đã được lưu nhưng chưa tải lại được danh sách mới nhất. Hãy bấm Làm mới.',
   }
-  return messages[String(outcomeCode || '')] || 'Không thể cập nhật authoritative Inventory.'
+  return messages[String(outcomeCode || '')] || 'Chưa thể cập nhật Kho hàng lúc này.'
 }
 
 function authoritativeVersion(value = {}) {
   const version = Number(value.cloudVersion ?? value.version ?? 0)
-  if (!Number.isSafeInteger(version) || version < 0) throw new Error('Version Inventory không hợp lệ.')
+  if (!Number.isSafeInteger(version) || version < 0) throw new Error('Phiên bản dữ liệu Kho hàng không hợp lệ.')
   return version
 }
 
 function requirePositiveVersion(value, label) {
   const version = authoritativeVersion(value)
-  if (version < 1) throw new Error(`${label} chưa có version authoritative.`)
+  if (version < 1) throw new Error(`${label} chưa có phiên bản dữ liệu hợp lệ.`)
   return version
 }
 
@@ -400,10 +453,10 @@ function requirePositiveInteger(value, message) {
 
 function requireDate(value) {
   const date = cleanText(value)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Ngày Inventory không hợp lệ.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Ngày Kho hàng không hợp lệ.')
   const parsed = new Date(`${date}T00:00:00.000Z`)
   if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-    throw new Error('Ngày Inventory không hợp lệ.')
+    throw new Error('Ngày Kho hàng không hợp lệ.')
   }
   return date
 }
@@ -460,4 +513,15 @@ function failure(outcomeCode, detail = '', raw = null, idempotencyKey = '') {
     raw,
     idempotencyKey,
   }
+}
+
+function c56InventoryRpcFailure(error, fallbackCode, idempotencyKey = '') {
+  const unavailable = isC56InventoryBackendUnavailable({
+    outcome_code: error?.code,
+    error: error?.message,
+    details: error?.details,
+    hint: error?.hint,
+  })
+  const outcomeCode = unavailable ? 'BACKEND_NOT_DEPLOYED' : fallbackCode
+  return failure(outcomeCode, getC56InventoryOutcomeMessage(outcomeCode), error, idempotencyKey)
 }

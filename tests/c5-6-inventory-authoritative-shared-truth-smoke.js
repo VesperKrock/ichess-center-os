@@ -111,7 +111,7 @@ includesAll(content.main, [
   "reason: 'module-reopen'",
   "reason: 'manual-refresh'",
   'writeC56InventoryCommand',
-  'Inventory đã commit server và projection đã được làm mới.',
+  'Thay đổi đã được lưu và danh sách Kho hàng đã được cập nhật.',
   'inventoryItems = result.items.filter((item) => !item.isArchived)',
   "resetC56InventoryRuntimeForAccessBoundary('')",
 ], 'C5.6 runtime')
@@ -135,8 +135,8 @@ assert(!tuitionPaymentOpenBlock.includes('refreshC56InventorySharedTruth'),
   'Tuition form must not trigger an unrelated Inventory refresh')
 includesAll(content.inventoryModule, [
   'data-inventory-action="refresh-authoritative"',
-  'Chỉ thay đổi bằng lệnh Nhập/Xuất kho có movement server.',
-  'Tài khoản đăng nhập hiện tại (server xác nhận)',
+  'Chỉ thay đổi qua thao tác Nhập/Xuất kho.',
+  'Tài khoản đang đăng nhập',
   'không tự trừ tồn kho hoặc tạo nhập/xuất kho',
 ], 'C5.6 Inventory UX boundary')
 
