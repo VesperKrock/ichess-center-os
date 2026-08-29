@@ -276,3 +276,35 @@ export function isProductionModuleVisible(moduleId, moduleItems = modules) {
 export function getProductionLauncherModules(moduleItems = modules) {
   return moduleItems.filter((moduleItem) => isProductionModuleVisible(moduleItem.id, moduleItems))
 }
+
+export function resolveCapabilityDrivenLauncherPresentation({ canOpen = false, capabilityStatus = '' } = {}) {
+  if (canOpen) {
+    return {
+      state: 'ready',
+      isUnavailable: false,
+      label: '',
+    }
+  }
+
+  const normalizedStatus = String(capabilityStatus || '').trim().toLowerCase()
+  if (normalizedStatus === 'unavailable') {
+    return {
+      state: 'unavailable',
+      isUnavailable: true,
+      label: 'Chưa khả dụng',
+    }
+  }
+  if (normalizedStatus === 'failed') {
+    return {
+      state: 'failed',
+      isUnavailable: true,
+      label: 'Chưa tải được',
+    }
+  }
+
+  return {
+    state: normalizedStatus === 'loading' ? 'loading' : 'idle',
+    isUnavailable: false,
+    label: '',
+  }
+}

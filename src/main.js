@@ -11,6 +11,7 @@ import {
   isProductionModuleAvailable as isStaticProductionModuleAvailable,
   isProductionModuleVisible,
   modules,
+  resolveCapabilityDrivenLauncherPresentation,
 } from './modules.js'
 import {
   applyModuleUpstreamRefreshResult,
@@ -1062,22 +1063,33 @@ function isProductionModuleAvailable(moduleId) {
   return isStaticProductionModuleAvailable(moduleId)
 }
 
-function getUnavailableModuleLabel(moduleId) {
-  if (
-    moduleId === 'khach-hang-tu-van'
-    && parentFirstCapabilityState.status === PARENT_FIRST_CAPABILITY_STATUS.LOADING
-  ) {
-    return 'Đang kiểm tra...'
+function getProductionModuleLauncherPresentation(moduleId) {
+  const canOpen = isProductionModuleAvailable(moduleId)
+  if (moduleId === 'khach-hang-tu-van') {
+    return {
+      canOpen,
+      ...resolveCapabilityDrivenLauncherPresentation({
+        canOpen,
+        capabilityStatus: parentFirstCapabilityState.status,
+      }),
+    }
   }
   if (moduleId === 'kho-hang') {
-    if (c56InventoryCapabilityState.status === C56_INVENTORY_CAPABILITY_STATUS.LOADING) {
-      return 'Đang kiểm tra...'
-    }
-    if (c56InventoryCapabilityState.status === C56_INVENTORY_CAPABILITY_STATUS.FAILED) {
-      return 'Chưa tải được'
+    return {
+      canOpen,
+      ...resolveCapabilityDrivenLauncherPresentation({
+        canOpen,
+        capabilityStatus: c56InventoryCapabilityState.status,
+      }),
     }
   }
-  return 'Chưa khả dụng'
+  return {
+    canOpen,
+    ...resolveCapabilityDrivenLauncherPresentation({
+      canOpen,
+      capabilityStatus: canOpen ? 'ready' : 'unavailable',
+    }),
+  }
 }
 
 function getStudentsWithCanonicalProjections() {
@@ -10264,25 +10276,29 @@ function renderDashboard() {
     .map(
       (moduleItem) => {
         const unreadCount = unreadCountsByModule[moduleItem.id] || 0
-        const canOpen = isProductionModuleAvailable(moduleItem.id)
+        const presentation = getProductionModuleLauncherPresentation(moduleItem.id)
+        const canOpen = presentation.canOpen
 
         return `
           <button
-            class="module-button designer-theme-hook ${canOpen ? '' : 'is-unavailable'}"
+            class="module-button designer-theme-hook ${presentation.isUnavailable ? 'is-unavailable' : ''}"
             type="button"
             data-module-id="${moduleItem.id}"
             data-module-title="${escapeAttribute(moduleItem.name)}"
+            data-module-capability-state="${presentation.state}"
             data-designer-hook="module-card"
             ${
               canOpen
                 ? `data-module-launcher="desktop" data-shortcut-id="${moduleItem.id}"`
-                : 'data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled'
+                : presentation.isUnavailable
+                  ? 'data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled'
+                  : 'data-module-capability-pending="true" aria-disabled="true" tabindex="-1" disabled'
             }
           >
             <span class="module-card-icon-slot designer-image-slot" aria-hidden="true"></span>
             <span class="module-card-label">${moduleItem.name}</span>
             <span class="module-card-visual-slot module-visual-placeholder" aria-hidden="true"></span>
-            ${canOpen ? '' : `<span class="module-availability-label">${getUnavailableModuleLabel(moduleItem.id)}</span>`}
+            ${presentation.label ? `<span class="module-availability-label">${presentation.label}</span>` : ''}
             ${
               canOpen && unreadCount
                 ? `<span class="module-notification-badge" aria-label="${unreadCount} thông báo chưa đọc">${unreadCount}</span>`
@@ -11965,20 +11981,24 @@ function renderStartMenu() {
   const moduleItems = getProductionLauncherModules()
     .map(
       (moduleItem) => {
-        const canOpen = isProductionModuleAvailable(moduleItem.id)
+        const presentation = getProductionModuleLauncherPresentation(moduleItem.id)
+        const canOpen = presentation.canOpen
         return `
           <button
-            class="start-menu-module ${canOpen ? '' : 'is-unavailable'}"
+            class="start-menu-module ${presentation.isUnavailable ? 'is-unavailable' : ''}"
             type="button"
             data-module-id="${moduleItem.id}"
+            data-module-capability-state="${presentation.state}"
             ${
               canOpen
                 ? 'data-module-launcher="start-menu"'
-                : 'data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled'
+                : presentation.isUnavailable
+                  ? 'data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled'
+                  : 'data-module-capability-pending="true" aria-disabled="true" tabindex="-1" disabled'
             }
           >
             <span>${moduleItem.name}</span>
-            ${canOpen ? '' : `<span class="start-menu-availability-label">${getUnavailableModuleLabel(moduleItem.id)}</span>`}
+            ${presentation.label ? `<span class="start-menu-availability-label">${presentation.label}</span>` : ''}
           </button>
         `
       },

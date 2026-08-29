@@ -6,6 +6,7 @@ import {
   isProductionModuleAvailable,
   isProductionModuleVisible,
   modules,
+  resolveCapabilityDrivenLauncherPresentation,
 } from '../src/modules.js'
 
 const root = process.cwd()
@@ -95,11 +96,13 @@ for (const token of [
   'getProductionLauncherModules',
   'isProductionModuleAvailable',
   'isProductionModuleVisible',
+  'resolveCapabilityDrivenLauncherPresentation',
   'getProductionLauncherModules().map((moduleItem) => moduleItem.id)',
   '.filter((moduleItem) => isProductionModuleVisible(moduleItem?.id))',
   'data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled',
-  '<span class="module-availability-label">${getUnavailableModuleLabel(moduleItem.id)}</span>',
-  '<span class="start-menu-availability-label">${getUnavailableModuleLabel(moduleItem.id)}</span>',
+  'data-module-capability-pending="true" aria-disabled="true" tabindex="-1" disabled',
+  '<span class="module-availability-label">${presentation.label}</span>',
+  '<span class="start-menu-availability-label">${presentation.label}</span>',
   'if (!isProductionModuleAvailable(moduleId))',
   'if (!openModuleWindow(moduleId))',
   'summary.canOpen && isProductionModuleAvailable(summary.sourceModule)',
@@ -113,17 +116,26 @@ const dashboardSource = main.slice(
   main.indexOf('function renderDashboard()'),
   main.indexOf('function renderOpenWindows()'),
 )
-assert(dashboardSource.includes('const canOpen = isProductionModuleAvailable(moduleItem.id)'))
+assert(dashboardSource.includes('const presentation = getProductionModuleLauncherPresentation(moduleItem.id)'))
+assert(dashboardSource.includes('const canOpen = presentation.canOpen'))
 assert(dashboardSource.includes('? `data-module-launcher="desktop" data-shortcut-id="${moduleItem.id}"`'))
+assert(dashboardSource.includes(': presentation.isUnavailable'))
 assert(dashboardSource.includes('canOpen && unreadCount'), 'Unavailable tiles must not expose active badges')
 
 const startMenuSource = main.slice(
   main.indexOf('function renderStartMenu()'),
   main.indexOf('function renderNotificationRefreshNotice()'),
 )
-assert(startMenuSource.includes('const canOpen = isProductionModuleAvailable(moduleItem.id)'))
+assert(startMenuSource.includes('const presentation = getProductionModuleLauncherPresentation(moduleItem.id)'))
+assert(startMenuSource.includes('const canOpen = presentation.canOpen'))
 assert(startMenuSource.includes('? \'data-module-launcher="start-menu"\''))
 assert(startMenuSource.includes('data-module-unavailable="true" aria-disabled="true" tabindex="-1" disabled'))
+assert(startMenuSource.includes('data-module-capability-pending="true" aria-disabled="true" tabindex="-1" disabled'))
+
+assert.deepEqual(
+  resolveCapabilityDrivenLauncherPresentation({ canOpen: false, capabilityStatus: 'loading' }),
+  { state: 'loading', isUnavailable: false, label: '' },
+)
 
 const openModuleSource = main.slice(
   main.indexOf('function openModuleWindow(moduleId)'),
