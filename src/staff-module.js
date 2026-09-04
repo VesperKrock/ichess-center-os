@@ -608,7 +608,7 @@ export function resolveStaffAccountLink({
     return createStaffAccountLinkResult(
       'malformed',
       null,
-      'Thiếu accountUserId hoặc membershipId trong hồ sơ nhân viên.',
+      'Thông tin liên kết tài khoản chưa đầy đủ.',
     )
   }
 
@@ -629,8 +629,8 @@ export function resolveStaffAccountLink({
       'malformed',
       null,
       membershipMatches.length > 1
-        ? 'Có nhiều membership trùng stable ID.'
-        : 'Membership không còn tồn tại hoặc chưa đọc được từ cơ sở hiện tại.',
+        ? 'Có nhiều quyền tại cơ sở trùng mã liên kết.'
+        : 'Quyền tại cơ sở không còn tồn tại hoặc chưa tải được.',
     )
   }
 
@@ -639,7 +639,7 @@ export function resolveStaffAccountLink({
     return createStaffAccountLinkResult(
       'malformed',
       membership,
-      'Membership thuộc cơ sở khác.',
+      'Quyền tài khoản thuộc cơ sở khác.',
     )
   }
 
@@ -647,7 +647,7 @@ export function resolveStaffAccountLink({
     return createStaffAccountLinkResult(
       'malformed',
       membership,
-      'Membership không thuộc accountUserId đang lưu trên hồ sơ nhân viên.',
+      'Quyền tại cơ sở không khớp với tài khoản đang liên kết.',
     )
   }
 
@@ -655,7 +655,7 @@ export function resolveStaffAccountLink({
     return createStaffAccountLinkResult(
       'malformed',
       membership,
-      'Membership có quyền hệ thống không hợp lệ.',
+      'Quyền tài khoản không hợp lệ.',
     )
   }
 
@@ -663,7 +663,7 @@ export function resolveStaffAccountLink({
     return createStaffAccountLinkResult(
       'malformed',
       membership,
-      'Membership có trạng thái không hợp lệ.',
+      'Trạng thái quyền tài khoản không hợp lệ.',
     )
   }
 
@@ -673,7 +673,7 @@ export function resolveStaffAccountLink({
     return createStaffAccountLinkResult(
       'malformed',
       membership,
-      'Có nhiều hồ sơ nhân viên đang dùng cùng tài khoản hoặc membership.',
+      'Có nhiều hồ sơ nhân viên đang dùng cùng một tài khoản hoặc quyền tại cơ sở.',
     )
   }
 
@@ -821,6 +821,8 @@ export function renderStaffModule({
   administrativeAccessAllowed = false,
   administrativeStorageHealthy = true,
   currentCenterId = '',
+  coreAvailable = true,
+  attendanceAvailable = true,
   notice = '',
   syncState = {},
 } = {}) {
@@ -839,7 +841,7 @@ export function renderStaffModule({
       <div class="staff-toolbar">
         <div>
           <h3>Nhân viên</h3>
-          <p>Hồ sơ nhân sự và phòng ban dùng chung authoritative truth theo đúng cơ sở. Liên kết Giáo viên/tài khoản chỉ là reference tường minh.</p>
+          <p>Quản lý hồ sơ nhân sự và phòng ban của cơ sở hiện tại.</p>
         </div>
         <div class="staff-toolbar-actions">
           <button type="button" data-staff-action="refresh" ${syncState.isLoading || syncState.isSaving ? 'disabled' : ''}>Làm mới</button>
@@ -849,6 +851,8 @@ export function renderStaffModule({
       </div>
 
       ${notice ? `<p class="staff-notice" role="status">${escapeHtml(notice)}</p>` : ''}
+      ${!coreAvailable ? '<p class="staff-notice is-warning" role="status">Thông tin liên kết Giáo viên và tài khoản hiện chưa tải được. Hồ sơ Nhân sự vẫn có thể xem và cập nhật.</p>' : ''}
+      ${!attendanceAvailable ? '<p class="staff-notice is-warning" role="status">Tổng hợp chấm công hiện chưa tải được. Hồ sơ Nhân sự vẫn có thể xem và cập nhật.</p>' : ''}
 
       <div class="staff-filters" aria-label="Bộ lọc nhân viên">
         <label>
@@ -919,6 +923,7 @@ export function renderStaffModule({
                 administrativeAccessAllowed,
                 administrativeStorageHealthy,
                 currentCenterId,
+                coreAvailable,
               )
             : staffMembers.length
               ? `<div class="staff-empty is-filtered-empty"><p>Không có hồ sơ phù hợp với bộ lọc hiện tại.</p><button type="button" data-staff-action="clear-filters">Xóa bộ lọc</button></div>`
@@ -938,6 +943,7 @@ export function renderStaffModule({
               administrativeAccessAllowed,
               administrativeStorageHealthy,
               currentCenterId,
+              referenceActionsAvailable: coreAvailable,
             })
           : ''
       }
@@ -1027,6 +1033,7 @@ function renderStaffProfileTable(
   administrativeAccessAllowed,
   administrativeStorageHealthy,
   currentCenterId,
+  referenceActionsAvailable,
 ) {
   const departmentLookup = createDepartmentLookup(departments)
   const teacherLookup = createTeacherLookup(teachers)
@@ -1061,6 +1068,7 @@ function renderStaffProfileTable(
             administrativeAccessAllowed,
             administrativeStorageHealthy,
             currentCenterId,
+            referenceActionsAvailable,
           )).join('')}
         </tbody>
       </table>
@@ -1079,10 +1087,13 @@ function renderStaffProfileRow(
   administrativeAccessAllowed,
   administrativeStorageHealthy,
   currentCenterId,
+  referenceActionsAvailable,
 ) {
   const department = staffMember.departmentId ? departmentLookup.get(staffMember.departmentId) : null
   const status = getEmploymentStatusMeta(getStaffEmploymentStatus(staffMember))
-  const teacherStatus = getTeacherLinkStatus(staffMember, teacherLookup)
+  const teacherStatus = referenceActionsAvailable
+    ? getTeacherLinkStatus(staffMember, teacherLookup)
+    : { label: 'Chưa tải liên kết', tone: 'is-warning', title: 'Thông tin Giáo viên chưa sẵn sàng.' }
   const accountStatus = getStaffAccountListStatus(
     staffMember,
     staffMembers,
@@ -1118,7 +1129,7 @@ function renderStaffProfileRow(
       <td>
         <span class="staff-link-status ${teacherStatus.tone}" title="${escapeAttribute(teacherStatus.title)}">${escapeHtml(teacherStatus.label)}</span>
         ${
-          teacherStatus.teacherId
+          referenceActionsAvailable && teacherStatus.teacherId
             ? `<div class="staff-row-actions staff-link-actions">
                 <button type="button" data-staff-action="open-linked-teacher" data-teacher-id="${escapeAttribute(teacherStatus.teacherId)}">Mở hồ sơ Giáo viên</button>
                 <button type="button" data-staff-action="unlink-teacher" data-staff-id="${escapeAttribute(staffMember.id)}" data-teacher-id="${escapeAttribute(teacherStatus.teacherId)}">Gỡ liên kết</button>
@@ -1275,6 +1286,7 @@ function renderStaffLifecycleCard({
   teachers = [],
   accountMemberships = [],
   accountDirectoryState = {},
+  referenceActionsAvailable = true,
 } = {}) {
   if (formState.mode !== 'edit' || !staffMember) {
     return ''
@@ -1308,7 +1320,7 @@ function renderStaffLifecycleCard({
         ${renderStaffAccountMetaRow('Nhân viên', employmentMeta.label)}
         ${renderStaffAccountMetaRow('Hồ sơ Giáo viên', getLifecycleTeacherStatusLabel(staffMember, teacher))}
         ${renderStaffAccountMetaRow('Tài khoản', getLifecycleAccountStatusLabel(accountLink))}
-        ${renderStaffAccountMetaRow('Membership', getLifecycleMembershipStatusLabel(accountLink))}
+        ${renderStaffAccountMetaRow('Quyền tại cơ sở', getLifecycleMembershipStatusLabel(accountLink))}
         ${renderStaffAccountMetaRow('Lưu trữ hồ sơ', isArchived ? 'Đã lưu trữ' : 'Đang sử dụng')}
       </dl>
       ${warnings.map((warning) => `<p class="staff-lifecycle-warning" role="alert">${escapeHtml(warning)}</p>`).join('')}
@@ -1320,12 +1332,12 @@ function renderStaffLifecycleCard({
             : ''
         }
         ${
-          teacher
+          referenceActionsAvailable && teacher
             ? `<button type="button" data-staff-action="open-linked-teacher" data-teacher-id="${escapeAttribute(teacher.id)}">Mở hồ sơ Giáo viên</button>`
             : ''
         }
         ${
-          canOpenAccount
+          referenceActionsAvailable && canOpenAccount
             ? `<button type="button" data-staff-account-action="open-management" data-staff-id="${escapeAttribute(staffMember.id)}">Mở quản lý tài khoản</button>`
             : ''
         }
@@ -1565,6 +1577,7 @@ function renderStaffAccountCard({
   teachers = [],
   accountMemberships = [],
   accountDirectoryState = {},
+  referenceActionsAvailable = true,
 } = {}) {
   const hasStoredLink = Boolean(staffMember?.accountUserId || staffMember?.membershipId)
   const isDirectoryLoading = ['idle', 'loading'].includes(accountDirectoryState.status)
@@ -1587,6 +1600,18 @@ function renderStaffAccountCard({
     `
   }
 
+  if (!referenceActionsAvailable) {
+    return `
+      <section class="staff-account-card" aria-labelledby="staff-account-card-title">
+        <div class="staff-account-card-heading">
+          <h5 id="staff-account-card-title">Tài khoản và quyền</h5>
+          <span class="staff-link-status is-warning">Chưa sẵn sàng</span>
+        </div>
+        <p class="staff-account-note" role="status">Tải lại thông tin liên kết trước khi mở hoặc thay đổi tài khoản.</p>
+      </section>
+    `
+  }
+
   if (isDirectoryLoading) {
     return `
       <section class="staff-account-card" aria-labelledby="staff-account-card-title">
@@ -1594,7 +1619,7 @@ function renderStaffAccountCard({
           <h5 id="staff-account-card-title">Tài khoản và quyền</h5>
           <span class="staff-link-status ${hasStoredLink ? 'is-linked' : 'is-unlinked'}">${hasStoredLink ? 'Đã lưu liên kết' : 'Chưa liên kết'}</span>
         </div>
-        <p class="staff-account-note" role="status">Đang đọc account và membership mới nhất...</p>
+        <p class="staff-account-note" role="status">Đang tải tài khoản và quyền tại cơ sở...</p>
       </section>
     `
   }
@@ -1614,7 +1639,7 @@ function renderStaffAccountCard({
                 ${renderStaffAccountMetaRow('Quyền hệ thống', 'Chưa có')}
               </dl>`
         }
-        <p class="staff-account-warning" role="alert">${escapeHtml(accountDirectoryState.error || 'Không đọc được dữ liệu account/membership hiện tại.')}</p>
+        <p class="staff-account-warning" role="alert">${escapeHtml(accountDirectoryState.error || 'Chưa tải được tài khoản và quyền tại cơ sở.')}</p>
         <button type="button" data-staff-account-action="reload-directory">Tải lại</button>
       </section>
     `
@@ -1657,7 +1682,7 @@ function renderStaffAccountCard({
         </div>
         <strong>Liên kết tài khoản cần kiểm tra</strong>
         <p class="staff-account-warning" role="alert">${escapeHtml(link.reason)}</p>
-        <p class="staff-account-note">Hệ thống không tự sửa hoặc tự gỡ reference đang lưu.</p>
+        <p class="staff-account-note">Hệ thống không tự sửa hoặc tự gỡ liên kết đang lưu.</p>
       </section>
     `
   }
@@ -1671,13 +1696,13 @@ function renderStaffAccountCard({
     <section class="staff-account-card ${link.status === 'linked-inactive' ? 'is-warning' : ''}" aria-labelledby="staff-account-card-title">
       <div class="staff-account-card-heading">
         <h5 id="staff-account-card-title">Tài khoản và quyền</h5>
-        <span class="staff-link-status ${link.status === 'linked' ? 'is-linked' : 'is-warning'}">${link.status === 'linked' ? 'Đã liên kết' : 'Membership không hoạt động'}</span>
+        <span class="staff-link-status ${link.status === 'linked' ? 'is-linked' : 'is-warning'}">${link.status === 'linked' ? 'Đã liên kết' : 'Quyền tại cơ sở không hoạt động'}</span>
       </div>
       <dl class="staff-account-meta">
         ${renderStaffAccountMetaRow('Email đăng nhập', membership.email || 'Chưa có dữ liệu email')}
         ${membership.displayName ? renderStaffAccountMetaRow('Tên hiển thị', membership.displayName) : ''}
         ${renderStaffAccountMetaRow('Trạng thái tài khoản', getStaffAccountStatusLabel(membership.accountStatus))}
-        ${renderStaffAccountMetaRow('Trạng thái membership', getStaffMembershipStatusLabel(membership.status))}
+        ${renderStaffAccountMetaRow('Trạng thái quyền tại cơ sở', getStaffMembershipStatusLabel(membership.status))}
         ${renderStaffAccountMetaRow('Cơ sở', accountDirectoryState.centerName || membership.centerId || 'Chưa xác định')}
         ${renderStaffAccountMetaRow('Quyền hệ thống', `${roleLabel} (${membership.role || 'unknown'})`)}
         ${renderStaffAccountMetaRow('Chức danh', staffMember.positionTitle || 'Chưa cập nhật')}
@@ -1724,9 +1749,9 @@ function renderStaffAccountLinkModal({
         ${state.message ? `<p class="staff-form-message" role="alert">${escapeHtml(state.message)}</p>` : ''}
         ${
           directoryState.status === 'loading'
-            ? '<p class="staff-account-note" role="status">Đang tải membership mới nhất...</p>'
+            ? '<p class="staff-account-note" role="status">Đang tải quyền tài khoản mới nhất...</p>'
             : directoryState.status === 'error'
-              ? `<p class="staff-account-warning" role="alert">${escapeHtml(directoryState.error || 'Không đọc được membership.')}</p>`
+              ? `<p class="staff-account-warning" role="alert">${escapeHtml(directoryState.error || 'Chưa tải được quyền tài khoản.')}</p>`
               : renderStaffAccountMembershipPicker(availability, selectedMembership, state, staffMember, directoryState)
         }
         <div class="staff-account-actions">
@@ -1746,7 +1771,7 @@ function renderStaffAccountMembershipPicker(
   directoryState,
 ) {
   if (availability.hasMalformedDuplicate) {
-    return '<p class="staff-account-warning" role="alert">Liên kết tài khoản cần kiểm tra: đang có account hoặc membership được gắn với nhiều hồ sơ nhân viên. Không thể tạo liên kết mới.</p>'
+    return '<p class="staff-account-warning" role="alert">Liên kết tài khoản cần kiểm tra: một tài khoản hoặc quyền tại cơ sở đang gắn với nhiều hồ sơ nhân viên. Không thể tạo liên kết mới.</p>'
   }
 
   if (selectedMembership) {
@@ -1761,8 +1786,8 @@ function renderStaffAccountMembershipPicker(
           ${renderStaffAccountMetaRow('Trạng thái membership', getStaffMembershipStatusLabel(selectedMembership.status))}
           ${renderStaffAccountMetaRow('Cơ sở', directoryState.centerName || selectedMembership.centerId)}
         </dl>
-        ${canConfirmSelectedMembership ? '' : '<p class="staff-account-warning" role="alert">Membership hiện không hoạt động</p>'}
-        <p class="staff-account-note">Chỉ reference stable ID được lưu trên hồ sơ Nhân viên. Account, membership và role không bị thay đổi.</p>
+        ${canConfirmSelectedMembership ? '' : '<p class="staff-account-warning" role="alert">Quyền tại cơ sở hiện không hoạt động</p>'}
+        <p class="staff-account-note">Chỉ thông tin liên kết được lưu trên hồ sơ Nhân viên. Tài khoản và quyền đăng nhập không bị thay đổi.</p>
         <div class="staff-account-actions">
           <button type="button" data-staff-account-action="cancel-confirm" ${state.isSaving ? 'disabled' : ''}>Quay lại</button>
           <button type="button" data-staff-account-action="confirm-link" ${state.isSaving || !canConfirmSelectedMembership ? 'disabled' : ''}>${state.isSaving ? 'Đang liên kết...' : 'Liên kết tài khoản'}</button>
@@ -1776,12 +1801,12 @@ function renderStaffAccountMembershipPicker(
       <span>Tìm theo email hoặc tên hiển thị</span>
       <input type="search" value="${escapeAttribute(state.query || '')}" data-staff-account-query />
     </label>
-    ${availability.invalid.length ? `<p class="staff-account-warning">${availability.invalid.length.toLocaleString('vi-VN')} membership thiếu stable ID hoặc sai cơ sở đã bị loại khỏi danh sách.</p>` : ''}
+    ${availability.invalid.length ? `<p class="staff-account-warning">${availability.invalid.length.toLocaleString('vi-VN')} quyền tài khoản thiếu mã liên kết hoặc sai cơ sở đã bị loại khỏi danh sách.</p>` : ''}
     ${renderStaffAccountMembershipSection('Membership đang hoạt động', availability.active, true)}
     ${renderStaffAccountMembershipSection('Membership không hoạt động', availability.inactive, false)}
     ${
       !availability.active.length && !availability.inactive.length
-        ? '<p class="staff-account-note">Không có account/membership current center chưa liên kết với hồ sơ nhân viên khác.</p>'
+        ? '<p class="staff-account-note">Không có tài khoản khả dụng tại cơ sở này để liên kết.</p>'
         : ''
     }
   `
@@ -1809,8 +1834,8 @@ function renderStaffAccountMembershipOption(membership, canLink) {
       <div>
         <strong>${escapeHtml(membership.email || 'Chưa có dữ liệu email')}</strong>
         <span>${escapeHtml([membership.displayName, getStaffAccountRoleLabel(membership.role)].filter(Boolean).join(' · '))}</span>
-        <small>Membership: ${escapeHtml(getStaffMembershipStatusLabel(membership.status))} · Tài khoản: ${escapeHtml(getStaffAccountStatusLabel(membership.accountStatus))}</small>
-        ${canLink ? '' : '<small class="staff-account-warning">Membership hiện không hoạt động</small>'}
+        <small>Quyền tại cơ sở: ${escapeHtml(getStaffMembershipStatusLabel(membership.status))} · Tài khoản: ${escapeHtml(getStaffAccountStatusLabel(membership.accountStatus))}</small>
+        ${canLink ? '' : '<small class="staff-account-warning">Quyền tại cơ sở hiện không hoạt động</small>'}
       </div>
       <button type="button" data-staff-account-action="select-membership" data-membership-id="${escapeAttribute(membership.id)}" ${canLink ? '' : 'disabled'}>${canLink ? 'Chọn' : 'Không thể liên kết'}</button>
     </article>

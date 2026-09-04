@@ -8,7 +8,13 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
     ['core'],
     ['attendance', 'staff'],
   ),
-  entry('nhan-vien', ['C5.5 Staff/HR'], ['C5.1 Teacher/Schedule', 'C5.2 Attendance/Session Report'], ['staff', 'core', 'attendance']),
+  entry(
+    'nhan-vien',
+    ['C5.5 Staff/HR'],
+    ['C5.1 Teacher/Schedule', 'C5.2 Attendance/Session Report'],
+    ['staff'],
+    ['core', 'attendance'],
+  ),
   entry(
     'thoi-khoa-bieu',
     ['C5.1 Schedule/Class', 'C5.7 custom Calendar'],

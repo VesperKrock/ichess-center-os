@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { randomUUID, webcrypto } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import {
   buildC55StaffHrUpsertCommand,
   mutateC55StaffHrSharedTruth,
   pullC55StaffHrSharedTruth,
+  readC55StaffAdministrativeProfile,
   recordC55StaffHrAccessAudit,
 } from '../src/cloud-authoritative-staff-hr.js'
 
@@ -14,6 +16,8 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto
 const projectSlug = 'ichess-center-os'
 const expectedContainer = 'supabase_db_ichess-center-os'
 const consentFlag = 'ICHESS_C5_5_LOCAL_QA_ALLOW_RESET'
+const existingDatabaseFlag = 'ICHESS_C5_5_LOCAL_QA_USE_EXISTING'
+const useExistingLocalDatabase = process.env[existingDatabaseFlag] === 'YES'
 assert.equal(process.argv.length, 2, 'This runner accepts no arguments')
 assert.equal(process.env[consentFlag], 'YES', `${consentFlag}=YES is required`)
 assert(!process.env.SUPABASE_PROJECT_REF, 'Linked Supabase project references are forbidden')
@@ -100,11 +104,14 @@ const ids = {
   request: `staff-deletion-request-${randomUUID()}`,
   teacher: `teacher-${randomUUID()}`,
 }
-const emails = Object.fromEntries(['a', 'b', 'c', 'teacher']
+const emails = Object.fromEntries(['a', 'b', 'rawAdmin', 'c', 'teacher']
   .map((key) => [key, `c5.5.${key}.${suffix}@example.invalid`]))
 let admin
+let users = {}
 let fixtureCreated = false
 let finalResetVerified = false
+let inactiveCenterId = ''
+let attachmentObjectPath = ''
 
 const makeClient = () => createClient(localStatus.API_URL, localStatus.ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -134,6 +141,14 @@ const accessAudit = (client, overrides = {}) => recordC55StaffHrAccessAudit({
   staffMemberId: ids.staff,
   administrativeProfileId: ids.profile,
   noteSummary: 'explicit-open',
+  idempotencyKey: randomUUID(),
+  ...overrides,
+})
+const readSensitiveProfile = (client, overrides = {}) => readC55StaffAdministrativeProfile({
+  supabase: client,
+  centerId: ids.center,
+  staffMemberId: ids.staff,
+  administrativeProfileId: ids.profile,
   idempotencyKey: randomUUID(),
   ...overrides,
 })
@@ -178,13 +193,26 @@ const documentPayload = (overrides = {}) => ({
 console.log('C5_5_QA_LOCAL_SAFETY_GUARD: PASS')
 
 try {
-  runReset()
-  containerId = discoverContainer()
-  localStatus = getLocalStatus()
+  if (useExistingLocalDatabase) {
+    assert.equal(scalar(`select count(*) from supabase_migrations.schema_migrations where version='202608140008';`), '1')
+    psql(readFileSync(
+      'supabase/migrations/202608290001_hr_1_staff_hr_privacy_capability_forward_fix.sql',
+      'utf8',
+    ))
+  } else {
+    runReset()
+    containerId = discoverContainer()
+    localStatus = getLocalStatus()
+  }
   fixtureCreated = true
 
   assert.equal(scalar(`select count(*) from supabase_migrations.schema_migrations where version='202608140007' and name='c5_5_staff_hr_authoritative_shared_truth';`), '1')
   assert.equal(scalar(`select count(*) from supabase_migrations.schema_migrations where version='202608140008' and name='c5_5_independent_review_access_projection_attachment_hardening';`), '1')
+  if (useExistingLocalDatabase) {
+    assert.equal(scalar(`select to_regprocedure('public.hr_1_read_staff_administrative_profile(text,text,text,uuid)') is not null;`), 't')
+  } else {
+    assert.equal(scalar(`select count(*) from supabase_migrations.schema_migrations where version='202608290001' and name='hr_1_staff_hr_privacy_capability_forward_fix';`), '1')
+  }
   const protectedTables = [
     'center_staff_departments', 'center_staff_hr_members',
     'center_staff_administrative_profiles', 'center_staff_documents',
@@ -204,15 +232,18 @@ try {
   assert.equal(scalar(`select has_function_privilege('authenticated','public.c5_5_record_staff_hr_access_audit(text,text,text,text,text,uuid)','EXECUTE')::text;`), 'true')
   assert.equal(scalar(`select has_function_privilege('anon','public.c5_5_record_staff_hr_access_audit(text,text,text,text,text,uuid)','EXECUTE')::text;`), 'false')
   assert.equal(scalar(`select has_function_privilege('authenticated','public.c5_5_list_staff_hr_shared_truth_v1(text)','EXECUTE')::text;`), 'false')
+  assert.equal(scalar(`select has_function_privilege('authenticated','public.hr_1_read_staff_administrative_profile(text,text,text,uuid)','EXECUTE')::text;`), 'true')
+  assert.equal(scalar(`select has_function_privilege('anon','public.hr_1_read_staff_administrative_profile(text,text,text,uuid)','EXECUTE')::text;`), 'false')
   assert.equal(scalar(`select count(*) from information_schema.columns where table_schema='public' and table_name='center_staff_administrative_profiles' and column_name='profile_payload';`), '0')
   console.log('C5_5_QA_SCHEMA_TYPED_RLS_ACL: PASS')
 
   admin = createClient(localStatus.API_URL, localStatus.SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
-  const users = {
+  users = {
     a: await makeUser(emails.a),
     b: await makeUser(emails.b),
+    rawAdmin: await makeUser(emails.rawAdmin),
     c: await makeUser(emails.c),
     teacher: await makeUser(emails.teacher),
   }
@@ -223,11 +254,12 @@ insert into public.center_members(center_id,user_id,role,status) values
     (${q(ids.center)},${u(users.a.id)},'owner','active'),
     (${q(ids.otherCenter)},${u(users.a.id)},'owner','active'),
     (${q(ids.center)},${u(users.b.id)},'center_admin','active'),
+    (${q(ids.center)},${u(users.rawAdmin.id)},'admin','active'),
     (${q(ids.otherCenter)},${u(users.c.id)},'owner','active'),
     (${q(ids.center)},${u(users.teacher.id)},'teacher','active');`)
 
-  const [clientA, clientB, clientC, clientTeacher, freshClientA] = await Promise.all([
-    signIn(emails.a), signIn(emails.b), signIn(emails.c),
+  const [clientA, clientB, clientRawAdmin, clientC, clientTeacher, freshClientA] = await Promise.all([
+    signIn(emails.a), signIn(emails.b), signIn(emails.rawAdmin), signIn(emails.c),
     signIn(emails.teacher), signIn(emails.a),
   ])
   const initial = await pull(clientA)
@@ -248,6 +280,18 @@ insert into public.center_members(center_id,user_id,role,status) values
   assert.equal(departmentCreate.ok, true, JSON.stringify(departmentCreate))
   const afterDepartmentB = await pull(clientB)
   assert.equal(afterDepartmentB.departments.length, 1)
+  const rawAdminDepartmentId = `department-${randomUUID()}`
+  const rawAdminDepartmentCreate = await mutate(
+    clientRawAdmin,
+    buildC55StaffHrUpsertCommand('department', departmentPayload({
+      id: rawAdminDepartmentId,
+      name: 'Vận hành raw Admin',
+      code: `RAW-${suffix.slice(0, 6)}`,
+    })),
+  )
+  assert.equal(rawAdminDepartmentCreate.ok, true, JSON.stringify(rawAdminDepartmentCreate))
+  assert((await pull(clientA)).departments.some((item) => item.id === rawAdminDepartmentId))
+  console.log('HR_1_QA_OWNER_CENTER_ADMIN_RAW_ADMIN_ORDINARY_PARITY: PASS')
 
   const staffCreate = await mutate(
     clientA, buildC55StaffHrUpsertCommand('staff_member', staffPayload()),
@@ -318,7 +362,38 @@ insert into public.center_members(center_id,user_id,role,status) values
   const profilePullA = await pull(clientA)
   assert.equal(profilePullA.ok, true, JSON.stringify(profilePullA))
   const profileAtA = profilePullA.administrativeProfiles[0]
-  assert.equal(profileAtA.identityDocument.number, 'C55-SENSITIVE-001')
+  assert.equal(profileAtA.sensitiveFieldsWithheld, true)
+  assert.equal(profileAtA.legalFullName, '')
+  assert.equal(profileAtA.identityDocument.number, '')
+  assert.equal(profileAtA.bankInformation.accountNumber, '')
+  assert.equal(JSON.stringify(profilePullA).includes('C55-SENSITIVE-001'), false)
+
+  const sensitiveReadKey = randomUUID()
+  const sensitiveAtOwner = await readSensitiveProfile(clientA, { idempotencyKey: sensitiveReadKey })
+  const sensitiveReplay = await readSensitiveProfile(clientA, { idempotencyKey: sensitiveReadKey })
+  assert.equal(sensitiveAtOwner.ok, true, JSON.stringify(sensitiveAtOwner))
+  assert.deepEqual(sensitiveReplay, sensitiveAtOwner)
+  assert.equal(sensitiveAtOwner.profile.sensitiveFieldsWithheld, false)
+  assert.equal(sensitiveAtOwner.profile.identityDocument.number, 'C55-SENSITIVE-001')
+  assert.equal(sensitiveAtOwner.auditEvent.action, 'administrative-profile.open')
+  assert.equal(sensitiveAtOwner.auditEvent.actorRole, 'owner')
+  const sensitiveAtCenterAdmin = await readSensitiveProfile(clientB)
+  const sensitiveAtRawAdmin = await readSensitiveProfile(clientRawAdmin)
+  assert.equal(sensitiveAtCenterAdmin.ok, true, JSON.stringify(sensitiveAtCenterAdmin))
+  assert.equal(sensitiveAtRawAdmin.ok, true, JSON.stringify(sensitiveAtRawAdmin))
+  assert.equal(sensitiveAtCenterAdmin.profile.identityDocument.number, 'C55-SENSITIVE-001')
+  assert.equal(sensitiveAtRawAdmin.profile.identityDocument.number, 'C55-SENSITIVE-001')
+  assert.equal(sensitiveAtRawAdmin.auditEvent.actorRole, 'center_admin')
+  const crossCenterSensitive = await readSensitiveProfile(clientC)
+  assert.equal(crossCenterSensitive.ok, false)
+  assert.equal(crossCenterSensitive.outcome_code, 'CENTER_ACCESS_DENIED')
+  const wrongProfileSensitive = await readSensitiveProfile(clientA, {
+    administrativeProfileId: `profile-${randomUUID()}`,
+  })
+  assert.equal(wrongProfileSensitive.ok, false)
+  assert.equal(wrongProfileSensitive.outcome_code, 'RESOURCE_NOT_FOUND_OR_DENIED')
+  assert.equal(Object.hasOwn(wrongProfileSensitive, 'profile'), false)
+  console.log('HR_1_QA_MASKED_SNAPSHOT_AUDITED_SENSITIVE_READ: PASS')
 
   const accessAuditKey = randomUUID()
   const accessOpen = await accessAudit(clientB, { idempotencyKey: accessAuditKey })
@@ -338,6 +413,20 @@ insert into public.center_members(center_id,user_id,role,status) values
   })
   assert.equal(invalidSensitiveSummary.ok, false)
   assert.equal(invalidSensitiveSummary.outcome_code, 'INVALID_PAYLOAD')
+  const rejectedSensitiveReadKey = randomUUID()
+  const conflictingAudit = await accessAudit(clientB, {
+    action: 'administrative-profile.reveal-sensitive',
+    noteSummary: 'identityDocument.number',
+    idempotencyKey: rejectedSensitiveReadKey,
+  })
+  assert.equal(conflictingAudit.ok, true)
+  const rejectedSensitiveRead = await readSensitiveProfile(clientB, {
+    idempotencyKey: rejectedSensitiveReadKey,
+  })
+  assert.equal(rejectedSensitiveRead.ok, false)
+  assert.equal(rejectedSensitiveRead.outcome_code, 'IDEMPOTENCY_CONFLICT')
+  assert.equal('profile' in rejectedSensitiveRead, false)
+  assert.equal('documents' in rejectedSensitiveRead, false)
   const auditPullA = await pull(clientA)
   assert(auditPullA.auditEvents.some((event) =>
     event.id === accessAuditKey && event.action === 'administrative-profile.open'))
@@ -350,7 +439,7 @@ insert into public.center_members(center_id,user_id,role,status) values
   assert.equal(documentCreate.ok, true, JSON.stringify(documentCreate))
   const attachmentId = randomUUID()
   const orphanAttachmentId = randomUUID()
-  const attachmentObjectPath = `centers/${ids.center}/staff/${ids.staff}/documents/${ids.document}/${attachmentId}/attachment.pdf`
+  attachmentObjectPath = `centers/${ids.center}/staff/${ids.staff}/documents/${ids.document}/${attachmentId}/attachment.pdf`
   psql(`insert into public.center_staff_document_attachments(
     id,center_id,staff_member_id,administrative_profile_id,document_id,bucket_id,
     object_path,original_file_name,safe_file_name,mime_type,size_bytes,state,
@@ -399,7 +488,9 @@ insert into public.center_members(center_id,user_id,role,status) values
       'orphan.pdf','attachment.pdf','application/pdf',4,'available',true,1,${u(users.a.id)});
     alter table public.center_staff_document_attachments enable trigger c5_5_guard_staff_document_attachment_parent;
     commit;`)
-  const documentAtB = (await pull(clientB)).documents[0]
+  const ordinaryAfterDocument = await pull(clientB)
+  assert.deepEqual(ordinaryAfterDocument.documents, [])
+  const documentAtB = (await readSensitiveProfile(clientB)).documents[0]
   assert.deepEqual(documentAtB.attachmentIds, [attachmentId])
   assert(!documentAtB.attachmentIds.includes(orphanAttachmentId))
   const objectUpload = await admin.storage.from('staff-administrative-documents').upload(
@@ -418,6 +509,10 @@ insert into public.center_members(center_id,user_id,role,status) values
   const teacherSigned = await clientTeacher.storage.from('staff-administrative-documents')
     .createSignedUrl(attachmentObjectPath, 60)
   assert(teacherSigned.error || !teacherSigned.data?.signedUrl)
+  const rawAdminSigned = await clientRawAdmin.storage.from('staff-administrative-documents')
+    .createSignedUrl(attachmentObjectPath, 60)
+  assert.equal(rawAdminSigned.error, null, rawAdminSigned.error?.message)
+  assert(rawAdminSigned.data?.signedUrl)
   console.log('C5_5_QA_PROFILE_DOCUMENT_PRIVATE_BINDING_DOWNLOAD_REBIND: PASS')
 
   const policy = {
@@ -432,10 +527,24 @@ insert into public.center_members(center_id,user_id,role,status) values
   )
   assert.equal(adminPolicyDenied.ok, false)
   assert.equal(adminPolicyDenied.outcome_code, 'WRITE_ROLE_REQUIRED')
+  const rawAdminPolicyDenied = await mutate(
+    clientRawAdmin, buildC55StaffHrUpsertCommand('retention_policy', policy),
+  )
+  assert.equal(rawAdminPolicyDenied.ok, false)
+  assert.equal(rawAdminPolicyDenied.outcome_code, 'WRITE_ROLE_REQUIRED')
   const policyCommit = await mutate(
     clientA, buildC55StaffHrUpsertCommand('retention_policy', policy),
   )
   assert.equal(policyCommit.ok, true, JSON.stringify(policyCommit))
+  const rawAdminLegalHoldDenied = await clientRawAdmin.rpc(
+    'place_staff_document_attachment_legal_hold', {
+      p_center_id: ids.center,
+      p_attachment_id: attachmentId,
+      p_reason_code: 'audit',
+    },
+  )
+  assert(rawAdminLegalHoldDenied.error)
+  assert.match(rawAdminLegalHoldDenied.error.message, /owner_access_denied/)
   const legalHold = await clientA.rpc('place_staff_document_attachment_legal_hold', {
     p_center_id: ids.center,
     p_attachment_id: attachmentId,
@@ -502,6 +611,15 @@ insert into public.center_members(center_id,user_id,role,status) values
   assert.equal(downgradedAudit.outcome_code, 'WRITE_ROLE_REQUIRED')
   psql(`update public.center_members set role='center_admin' where center_id=${q(ids.center)} and user_id=${u(users.b.id)};`)
   assert.equal((await pull(clientB)).ok, true)
+  psql(`update public.center_members set status='inactive' where center_id=${q(ids.center)} and user_id=${u(users.b.id)};`)
+  const inactiveMembershipPull = await pull(clientB)
+  assert.equal(inactiveMembershipPull.ok, false)
+  assert.equal(inactiveMembershipPull.outcome_code, 'CENTER_ACCESS_DENIED')
+  const inactiveMembershipSensitiveRead = await readSensitiveProfile(clientB)
+  assert.equal(inactiveMembershipSensitiveRead.ok, false)
+  assert.equal(inactiveMembershipSensitiveRead.outcome_code, 'CENTER_ACCESS_DENIED')
+  psql(`update public.center_members set status='active' where center_id=${q(ids.center)} and user_id=${u(users.b.id)};`)
+  assert.equal((await pull(clientB)).ok, true)
   console.log('C5_5_QA_SAME_TOKEN_ROLE_DOWNGRADE_FAIL_CLOSED: PASS')
 
   const crossRead = await pull(clientC, ids.center)
@@ -526,26 +644,61 @@ insert into public.center_members(center_id,user_id,role,status) values
   assert(ownerBack.staffMembers.some((item) => item.id === ids.staff))
   const fresh = await pull(freshClientA)
   assert.equal(fresh.staffMembers.find((item) => item.id === ids.staff).positionTitle, 'Quản lý vận hành')
-  assert.equal(fresh.documents[0].attachmentIds[0], attachmentId)
+  assert.deepEqual(fresh.documents, [])
+  assert.equal((await readSensitiveProfile(freshClientA)).documents[0].attachmentIds[0], attachmentId)
   assert.equal(fresh.deletionRequests[0].status, 'execution-pending')
   console.log('C5_5_QA_FRESH_CROSS_CENTER_OWNER_SWITCH_ROLE: PASS')
 
-  const inactiveCenter = `c5-5-${randomUUID()}`
-  psql(`insert into public.centers(id,name,status) values (${q(inactiveCenter)},'Paused','paused');
+  inactiveCenterId = `c5-5-${randomUUID()}`
+  psql(`insert into public.centers(id,name,status) values (${q(inactiveCenterId)},'Paused','paused');
 insert into public.center_members(center_id,user_id,role,status)
-values (${q(inactiveCenter)},${u(users.a.id)},'owner','active');`)
-  const inactiveRead = await pull(clientA, inactiveCenter)
+values (${q(inactiveCenterId)},${u(users.a.id)},'owner','active');`)
+  const inactiveRead = await pull(clientA, inactiveCenterId)
   assert.equal(inactiveRead.ok, false)
   assert.equal(inactiveRead.outcome_code, 'CENTER_ACCESS_DENIED')
   console.log('C5_5_QA_ACTIVE_CENTER_FAIL_CLOSED: PASS')
 } finally {
   if (fixtureCreated) {
-    runReset()
-    containerId = discoverContainer()
+    if (useExistingLocalDatabase) {
+      if (admin && attachmentObjectPath) {
+        const removal = await admin.storage.from('staff-administrative-documents')
+          .remove([attachmentObjectPath])
+        assert.equal(removal.error, null, removal.error?.message)
+      }
+      assert.equal(
+        scalar(`select count(*) from storage.objects where name=${q(attachmentObjectPath)};`),
+        '0',
+      )
+      const exactCenterIds = [ids.center, ids.otherCenter, inactiveCenterId].filter(Boolean)
+      psql(`begin;
+alter table public.crm_contact_lookup_control
+  disable trigger f23_3e_p4a_lookup_control_guard;
+delete from public.centers
+where id in (${exactCenterIds.map(q).join(',')});
+alter table public.crm_contact_lookup_control
+  enable trigger f23_3e_p4a_lookup_control_guard;
+commit;`)
+      assert.equal(
+        scalar(`select count(*) from public.centers where id in (${exactCenterIds.map(q).join(',')});`),
+        '0',
+      )
+      for (const user of Object.values(users)) {
+        // Durable access-audit rows intentionally retain actor identity. Use
+        // GoTrue's supported soft-delete so the synthetic login is revoked
+        // without breaking immutable audit provenance.
+        const deletion = await admin.auth.admin.deleteUser(user.id, true)
+        assert.equal(deletion.error, null, deletion.error?.message)
+      }
+    } else {
+      runReset()
+      containerId = discoverContainer()
+    }
     finalResetVerified = true
   }
 }
 
 assert.equal(finalResetVerified, true)
-console.log('C5_5_QA_FINAL_LOCAL_RESET: PASS')
+console.log(useExistingLocalDatabase
+  ? 'C5_5_QA_EXISTING_LOCAL_DB_EXACT_FIXTURE_CLEANUP: PASS'
+  : 'C5_5_QA_FINAL_LOCAL_RESET: PASS')
 console.log('C5_5_STAFF_HR_AUTHORITATIVE_SHARED_TRUTH_LOCAL_DB_QA: PASS')

@@ -710,7 +710,7 @@ export function renderStaffDocumentAttachmentPanel({
   if ((status === 'checking' || status === 'idle') && !attachment) {
     return renderAttachmentMessage(
       'Đang kiểm tra kho tệp riêng tư',
-      'Quyền và readiness backend đang được xác minh.',
+      'Quyền truy cập và trạng thái kho tệp đang được kiểm tra.',
       'is-loading',
     )
   }
@@ -724,14 +724,14 @@ export function renderStaffDocumentAttachmentPanel({
   if (status === 'unavailable') {
     return renderAttachmentMessage(
       'Kho tệp riêng tư chưa sẵn sàng.',
-      'Migration và chính sách quyền cần được review, apply thủ công trước khi bật upload.',
+      'Kho tệp chưa được quản trị viên hệ thống bật cho cơ sở này.',
       'is-warning',
     )
   }
   if (status === 'denied') {
     return renderAttachmentMessage(
       'Bạn không có quyền truy cập tệp này.',
-      'Dữ liệu tệp không được render khi membership không còn hợp lệ.',
+      'Tệp được ẩn khi quyền tại cơ sở không còn hợp lệ.',
       'is-warning',
     )
   }
@@ -818,7 +818,7 @@ export function renderStaffDocumentAttachmentPanel({
               isProcessing,
               processingAction,
             })
-          : '<p class="staff-document-replacement-readiness">Thay tệp và lịch sử phiên bản đang chờ migration F23.11E.1; Xem và Tải xuống phiên bản hiện hành vẫn hoạt động.</p>'}
+          : '<p class="staff-document-replacement-readiness">Thay tệp và lịch sử phiên bản hiện chưa khả dụng; bạn vẫn có thể xem hoặc tải phiên bản hiện hành.</p>'}
       </div>
     `
   }
@@ -826,7 +826,7 @@ export function renderStaffDocumentAttachmentPanel({
   if (attachment?.state === 'pending') {
     return renderAttachmentMessage(
       'Tệp đang chờ hoàn tất',
-      'Backend chưa xác nhận object ở trạng thái sẵn sàng. Không có kết quả giả được hiển thị.',
+      'Hệ thống chưa xác nhận tệp ở trạng thái sẵn sàng.',
       'is-loading',
     )
   }
@@ -1217,7 +1217,7 @@ function renderStaffDocumentForm({ state, readOnly }) {
       </div>
       <div class="staff-document-attachment-state">
         <strong>Chưa có tệp đính kèm</strong>
-        <p>Backend lưu trữ riêng tư chưa được bật. Không có thao tác tải tệp trong phase này.</p>
+        <p>Kho tệp riêng tư hiện chưa được bật. Chưa thể tải tệp ở trạng thái này.</p>
       </div>
       ${errors.form ? `<p class="staff-documents-notice is-warning" role="alert">${escapeHtml(errors.form)}</p>` : ''}
       <div class="staff-administrative-form-actions">

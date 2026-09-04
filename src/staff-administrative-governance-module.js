@@ -590,7 +590,7 @@ function createRetentionResult(status, activeRequest, profileReviewDate, documen
       'review-due-soon': 'Sắp đến hạn rà soát',
       'review-due': 'Đến hạn rà soát',
       'deletion-request-active': 'Đang có yêu cầu xóa',
-      'backend-execution-pending': 'Chờ thực thi backend',
+      'backend-execution-pending': 'Chờ hệ thống xử lý',
     }[status] || 'Cần kiểm tra',
     activeRequest,
     profileReviewDate,
@@ -832,9 +832,9 @@ export function getStaffAdministrativeDeletionStatusLabel(status) {
     approved: 'Đã phê duyệt',
     denied: 'Đã từ chối',
     cancelled: 'Đã hủy',
-    'execution-pending': 'Đã phê duyệt — chờ thực thi backend',
-    executed: 'Trạng thái future-only',
-    failed: 'Thực thi backend thất bại',
+    'execution-pending': 'Đã phê duyệt — chờ hệ thống xử lý',
+    executed: 'Đã xử lý',
+    failed: 'Hệ thống xử lý thất bại',
   }[status] || 'Cần kiểm tra'
 }
 
@@ -868,7 +868,7 @@ export function renderStaffAdministrativeGovernanceSection({
       <div class="staff-governance-heading">
         <div><h4>Quyền &amp; lưu trữ</h4><p>Quyền theo hành động, audit đã lược bỏ dữ liệu nhạy cảm và workflow không xóa vật lý.</p></div>
       </div>
-      ${!storageHealthy ? '<p class="staff-governance-notice is-warning" role="alert">Dữ liệu quản trị quyền và lưu trữ cần kiểm tra. Hệ thống đã khóa mutation.</p>' : ''}
+      ${!storageHealthy ? '<p class="staff-governance-notice is-warning" role="alert">Dữ liệu quản trị cần được kiểm tra. Các thao tác thay đổi đang tạm khóa.</p>' : ''}
       ${state.message ? `<p class="staff-governance-notice" role="status">${escapeHtml(state.message)}</p>` : ''}
       ${renderAccessPanel(access)}
       ${renderAuditPanel(scopedEvents, state)}
@@ -978,7 +978,7 @@ function renderPolicySummary(policy) {
   return `<div class="staff-governance-policy-summary">
     <span>Hồ sơ: ${policy.profileRetentionDaysAfterEmploymentEnd} ngày</span>
     <span>Tài liệu: ${policy.documentRetentionDaysAfterEmploymentEnd} ngày</span>
-    <span>Chờ backend: ${policy.deletionReviewGraceDays} ngày</span>
+    <span>Thời gian chờ xử lý: ${policy.deletionReviewGraceDays} ngày</span>
     <span>${policy.enabled ? 'Đang áp dụng' : 'Đang tạm tắt'}</span>
   </div>`
 }
@@ -1032,7 +1032,7 @@ function renderDeletionRequests(requests, access, storageHealthy) {
         <p>${escapeHtml(getDeletionScopeLabel(request.scope))} · ${escapeHtml(getDeletionReasonLabel(request.reasonCode))}</p>
         <p>${escapeHtml(request.reasonNote)}</p>
         <small>Người yêu cầu: ${escapeHtml(getActorRoleLabel(request.requestedByRole))}${request.reviewedAt ? ` · Người xem xét: ${escapeHtml(getActorRoleLabel(request.reviewedByRole))} lúc ${escapeHtml(formatDateTime(request.reviewedAt))}` : ''}</small>
-        ${request.executionEligibleAt ? `<small>Có thể thực thi backend từ: ${escapeHtml(formatDateTime(request.executionEligibleAt))} · Chờ thực thi backend</small>` : ''}
+        ${request.executionEligibleAt ? `<small>Có thể xử lý từ: ${escapeHtml(formatDateTime(request.executionEligibleAt))} · Đang chờ hệ thống xử lý</small>` : ''}
         ${request.status === 'pending-review' && access.role === 'owner' && isCreator ? `<p class="staff-governance-separation">${STAFF_ADMINISTRATIVE_SEPARATION_MESSAGE}</p>` : ''}
         <div class="staff-governance-request-actions">
           ${canCancel ? `<button type="button" data-staff-governance-action="cancel-request" data-request-id="${escapeAttribute(request.id)}">Hủy yêu cầu</button>` : ''}
@@ -1127,10 +1127,10 @@ function getAuditReasonLabel(reasonCode) {
     'validation-failed': 'Dữ liệu nhập chưa hợp lệ',
     'stale-revision': 'Revision mới nhất không khớp',
     'attachment-upload-start': 'Bắt đầu lượt tải tệp rõ ràng',
-    'attachment-upload-success': 'Backend xác nhận tệp sẵn sàng',
+    'attachment-upload-success': 'Hệ thống xác nhận tệp sẵn sàng',
     'attachment-upload-failed': 'Lượt tải tệp chưa hoàn tất',
-    'attachment-replacement-prepared': 'Backend đã tạo metadata phiên bản mới',
-    'attachment-replacement-completed': 'Backend đã chuyển phiên bản mới thành hiện hành',
+    'attachment-replacement-prepared': 'Hệ thống đã chuẩn bị phiên bản mới',
+    'attachment-replacement-completed': 'Hệ thống đã chuyển phiên bản mới thành hiện hành',
     'attachment-version-view': 'Yêu cầu URL xem phiên bản ngắn hạn',
     'attachment-version-download': 'Yêu cầu URL tải phiên bản ngắn hạn',
     'attachment-view': 'Yêu cầu URL xem ngắn hạn',

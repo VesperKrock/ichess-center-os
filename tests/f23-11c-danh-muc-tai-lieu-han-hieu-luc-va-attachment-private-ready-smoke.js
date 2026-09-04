@@ -337,7 +337,7 @@ const detailHtml = renderStaffDocumentsSection({
   today: '2026-07-27',
 })
 assert(detailHtml.includes('Kho tệp riêng tư chưa sẵn sàng.'))
-assert(detailHtml.includes('apply thủ công trước khi bật upload'))
+assert(detailHtml.includes('Kho tệp chưa được quản trị viên hệ thống bật cho cơ sở này.'))
 assert(!detailHtml.includes('type="file"'))
 
 const formHtml = renderStaffDocumentsSection({

@@ -9893,6 +9893,38 @@ h3 {
   white-space: nowrap;
 }
 
+.teacher-main-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.teacher-staff-management-button {
+  min-height: 40px;
+  border: 1px solid rgba(148, 177, 216, 0.48);
+  border-radius: 7px;
+  padding: 9px 14px;
+  color: #e7effa;
+  background: rgba(37, 59, 86, 0.82);
+  cursor: pointer;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.teacher-staff-management-button:hover:not(:disabled),
+.teacher-staff-management-button:focus-visible:not(:disabled) {
+  border-color: rgba(180, 216, 255, 0.88);
+  outline: none;
+  background: rgba(48, 79, 116, 0.95);
+}
+
+.teacher-staff-management-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .schedule-calendar-add-button {
   border-color: rgba(234, 179, 8, 0.34) !important;
   color: #fff7d6 !important;
@@ -21619,6 +21651,11 @@ h3 {
   }
 
   .teacher-add-button {
+    width: 100%;
+  }
+
+  .teacher-main-actions,
+  .teacher-staff-management-button {
     width: 100%;
   }
 

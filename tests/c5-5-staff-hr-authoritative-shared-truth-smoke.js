@@ -143,7 +143,7 @@ includesAll(content.main, [
   "reason: 'module-reopen'",
   "reason: 'manual-refresh'",
   'writeC55StaffHrCommand',
-  'Staff/HR đã commit server nhưng chưa tải lại được projection',
+  'Thay đổi đã được lưu nhưng chưa tải lại được danh sách mới nhất',
   'staffMembers = result.staffMembers',
   'staffAdministrativeProfiles = result.administrativeProfiles',
   "resetC55StaffHrRuntimeForAccessBoundary('')",
@@ -218,6 +218,7 @@ excludesAll(content.legacy, [
 
 assert.equal(canWriteC55StaffHrSharedTruth({ role: 'owner' }).ok, true)
 assert.equal(canWriteC55StaffHrSharedTruth({ role: 'center_admin' }).ok, true)
+assert.equal(canWriteC55StaffHrSharedTruth({ role: 'admin' }).ok, true)
 assert.equal(canWriteC55StaffHrSharedTruth({ role: 'teacher' }).ok, false)
 assert.equal(canWriteC55StaffHrSharedTruth({ role: 'consultant' }).ok, false)
 

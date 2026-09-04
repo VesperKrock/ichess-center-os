@@ -179,7 +179,6 @@ assert(teacherHtml.includes('data-teacher-action="open-linked-staff"'))
 
 for (const forbidden of [
   'teacher.staffMemberId',
-  'staffMemberId:',
   'auth.signUp(',
   'create table',
   'alter table',

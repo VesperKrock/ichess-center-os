@@ -19,6 +19,23 @@ import {
 export const C55_STAFF_HR_SHARED_TRUTH_SOURCE_VERSION =
   'c5.5-staff-hr-authoritative-shared-truth-v1'
 
+export const C55_STAFF_HR_CAPABILITY_STATUS = Object.freeze({
+  IDLE: 'idle',
+  LOADING: 'loading',
+  READY: 'ready',
+  UNAVAILABLE: 'unavailable',
+  FAILED: 'failed',
+})
+
+const C55_BACKEND_UNAVAILABLE_CODES = new Set([
+  '42P01',
+  '42883',
+  'PGRST202',
+  'PGRST205',
+  'BACKEND_NOT_DEPLOYED',
+  'SCHEMA_NOT_READY',
+])
+
 const WRITE_ROLES = new Set(['owner', 'center_admin'])
 const ENTITY_TYPES = new Set([
   'department',
@@ -28,6 +45,47 @@ const ENTITY_TYPES = new Set([
   'retention_policy',
   'deletion_request',
 ])
+
+export function createC55StaffHrCapabilityState(overrides = {}) {
+  return {
+    centerId: '',
+    status: C55_STAFF_HR_CAPABILITY_STATUS.IDLE,
+    isLoading: false,
+    message: '',
+    messageTone: '',
+    lastLoadedAt: '',
+    ...overrides,
+  }
+}
+
+export function isC55StaffHrCapabilityReady(state = {}, centerId = '') {
+  const normalizedCenterId = cleanText(centerId)
+  return Boolean(
+    normalizedCenterId
+      && state.status === C55_STAFF_HR_CAPABILITY_STATUS.READY
+      && state.centerId === normalizedCenterId,
+  )
+}
+
+export function isC55StaffHrBackendUnavailable(result = {}) {
+  const code = cleanText(result.outcome_code || result.code).toUpperCase()
+  const detail = [
+    result.error,
+    result.message,
+    result.details,
+    result.hint,
+    result.detail?.code,
+    result.detail?.message,
+    result.detail?.details,
+    result.detail?.hint,
+  ].map(cleanText).join(' ').toUpperCase()
+  return C55_BACKEND_UNAVAILABLE_CODES.has(code)
+    || [...C55_BACKEND_UNAVAILABLE_CODES].some((candidate) => detail.includes(candidate))
+    || (
+      detail.includes('C5_5_LIST_STAFF_HR_SHARED_TRUTH')
+      && (detail.includes('NOT FIND') || detail.includes('NOT FOUND'))
+    )
+}
 
 export function createC55StaffHrIdempotencyKey() {
   if (!globalThis.crypto?.randomUUID) {
@@ -124,6 +182,7 @@ export async function pullC55StaffHrSharedTruth({ supabase, centerId } = {}) {
       || (data.retention_policy !== null && !retentionPolicy)
     const invalidProjection = countMismatch
       || profileIssues.length > 0
+      || !administrativeProfiles.every((profile) => profile.sensitiveFieldsWithheld === true)
       || documentIssues.length > 0
       || relationshipIssues.length > 0
       || deletionIssues.length > 0
@@ -140,6 +199,8 @@ export async function pullC55StaffHrSharedTruth({ supabase, centerId } = {}) {
         validationFailures: {
           countMismatch,
           profileIssues,
+          sensitiveProfileLeak: !administrativeProfiles
+            .every((profile) => profile.sensitiveFieldsWithheld === true),
           documentIssues,
           relationshipIssues,
           deletionIssues,
@@ -262,6 +323,87 @@ export async function recordC55StaffHrAccessAudit({
   }
 }
 
+export async function readC55StaffAdministrativeProfile({
+  supabase,
+  centerId,
+  staffMemberId,
+  administrativeProfileId,
+  idempotencyKey = createC55StaffHrIdempotencyKey(),
+} = {}) {
+  if (!supabase || typeof supabase.rpc !== 'function') {
+    return failure('CLIENT_NOT_READY', null, idempotencyKey)
+  }
+  const normalizedCenterId = cleanText(centerId)
+  const normalizedStaffMemberId = cleanText(staffMemberId)
+  const normalizedProfileId = cleanText(administrativeProfileId)
+  if (!normalizedCenterId || !normalizedStaffMemberId || !normalizedProfileId) {
+    return failure('INVALID_COMMAND', null, idempotencyKey)
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('hr_1_read_staff_administrative_profile', {
+      p_center_id: normalizedCenterId,
+      p_staff_member_id: normalizedStaffMemberId,
+      p_administrative_profile_id: normalizedProfileId,
+      p_idempotency_key: idempotencyKey,
+    })
+    if (error) return failure('SERVER_COMMAND_FAILED', error, idempotencyKey)
+    if (!data?.ok || data.outcome_code !== 'SENSITIVE_PROFILE_READ'
+      || cleanText(data.center_id) !== normalizedCenterId
+      || !Array.isArray(data.documents)) {
+      return failure(String(data?.outcome_code || 'INVALID_SERVER_RESULT'), data, idempotencyKey)
+    }
+
+    const profile = normalizeStaffAdministrativeProfiles(
+      [projectScopedEntity(data.profile, normalizedCenterId)],
+      { currentCenterId: normalizedCenterId },
+    )[0]
+    const auditEvent = data.audit_event
+    const documents = normalizeStaffDocuments(
+      projectScopedCollection(data.documents, normalizedCenterId),
+      { currentCenterId: normalizedCenterId },
+    )
+    const profileIssues = profile
+      ? getStaffAdministrativeProfileCollectionIssues([profile], normalizedCenterId)
+      : ['profile:missing']
+    const documentIssues = getStaffDocumentCollectionIssues(documents, normalizedCenterId)
+    const relationshipIssues = profile
+      ? getStaffDocumentRelationshipIssues(documents, {
+          centerId: normalizedCenterId,
+          staffMembers: [{ id: normalizedStaffMemberId, centerId: normalizedCenterId }],
+          administrativeProfiles: [profile],
+        })
+      : ['profile:missing']
+    if (!profile
+      || profile.sensitiveFieldsWithheld === true
+      || profile.staffMemberId !== normalizedStaffMemberId
+      || profile.id !== normalizedProfileId
+      || profileIssues.length
+      || documents.length !== data.documents.length
+      || documentIssues.length
+      || relationshipIssues.length
+      || !auditEvent || typeof auditEvent !== 'object' || Array.isArray(auditEvent)
+      || cleanText(auditEvent.centerId) !== normalizedCenterId
+      || cleanText(auditEvent.staffMemberId) !== normalizedStaffMemberId
+      || cleanText(auditEvent.administrativeProfileId) !== normalizedProfileId
+      || cleanText(auditEvent.action) !== 'administrative-profile.open'
+      || !cleanText(auditEvent.id) || !cleanText(auditEvent.createdAt)) {
+      return failure('INVALID_SERVER_RESULT', data, idempotencyKey)
+    }
+
+    return {
+      ...data,
+      ok: true,
+      profile,
+      documents,
+      auditEvent: normalizeIsoAtFields(auditEvent),
+      idempotencyKey,
+    }
+  } catch (error) {
+    return failure('SERVER_COMMAND_FAILED', error, idempotencyKey)
+  }
+}
+
 export function buildC55StaffHrUpsertCommand(entityType, entity, {
   auditAction = '',
   operation = 'UPSERT',
@@ -297,29 +439,31 @@ export function createC55StaffHrRetryFingerprint(command = {}) {
 
 export function getC55StaffHrOutcomeMessage(outcomeCode) {
   const messages = {
-    NOT_AUTHENTICATED: 'Phiên đăng nhập không hợp lệ; Staff/HR chưa được lưu.',
-    CLIENT_NOT_READY: 'Không kết nối được cloud; Staff/HR chưa được lưu.',
-    INVALID_CENTER: 'Cơ sở không hợp lệ; Staff/HR chưa được lưu.',
-    CENTER_ACCESS_DENIED: 'Tài khoản không có active membership tại cơ sở này.',
-    WRITE_ROLE_REQUIRED: 'Chỉ Owner hoặc Quản trị viên cơ sở được ghi Staff/HR.',
-    INVALID_COMMAND: 'Lệnh Staff/HR không hợp lệ.',
-    INVALID_ENTITY_TYPE: 'Loại bản ghi Staff/HR không hợp lệ.',
-    INVALID_PAYLOAD: 'Dữ liệu Staff/HR không hợp lệ.',
-    INVALID_REFERENCE: 'Liên kết Staff/Teacher/account/document không hợp lệ hoặc sai cơ sở.',
-    RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy bản ghi Staff/HR trong đúng cơ sở.',
+    NOT_AUTHENTICATED: 'Phiên đăng nhập không còn hợp lệ; thay đổi chưa được lưu.',
+    CLIENT_NOT_READY: 'Chưa kết nối được dữ liệu nhân sự; thay đổi chưa được lưu.',
+    INVALID_CENTER: 'Chưa xác định được cơ sở; thay đổi chưa được lưu.',
+    CENTER_ACCESS_DENIED: 'Tài khoản không có quyền tại cơ sở này.',
+    WRITE_ROLE_REQUIRED: 'Chỉ Owner hoặc Quản trị viên cơ sở được cập nhật nhân sự.',
+    INVALID_COMMAND: 'Yêu cầu cập nhật nhân sự không hợp lệ.',
+    INVALID_ENTITY_TYPE: 'Loại bản ghi nhân sự không hợp lệ.',
+    INVALID_PAYLOAD: 'Dữ liệu nhân sự không hợp lệ.',
+    INVALID_REFERENCE: 'Liên kết nhân viên, giáo viên, tài khoản hoặc tài liệu không hợp lệ.',
+    RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy hồ sơ trong cơ sở hiện tại.',
     VERSION_STALE: 'Dữ liệu đã được tài khoản khác cập nhật; hãy Làm mới trước khi lưu.',
-    IDEMPOTENCY_CONFLICT: 'Khóa retry đã được dùng cho một ý định Staff/HR khác.',
-    UNIQUE_CONFLICT: 'Mã hoặc liên kết Staff/HR đã tồn tại trong cơ sở này.',
+    IDEMPOTENCY_CONFLICT: 'Yêu cầu thử lại không khớp với thay đổi trước đó.',
+    UNIQUE_CONFLICT: 'Mã hoặc liên kết nhân sự đã tồn tại trong cơ sở này.',
     SEPARATION_OF_DUTIES_REQUIRED: 'Yêu cầu xóa cần một Owner khác phê duyệt.',
-    INVALID_STATE_TRANSITION: 'Chuyển trạng thái quản trị Staff/HR không hợp lệ.',
-    CONCURRENT_CONFLICT: 'Có lệnh Staff/HR đồng thời; hãy Làm mới rồi thử lại.',
-    INVALID_SERVER_RESULT: 'Server trả kết quả Staff/HR không hợp lệ; projection chưa thay đổi.',
-    CENTER_CONTEXT_CHANGED: 'Cơ sở đã đổi; view hiện tại không nhận dữ liệu từ cơ sở trước.',
-    STAFF_HR_SHARED_TRUTH_READ_FAILED: 'Không đọc được authoritative Staff/HR; projection chưa thay đổi.',
-    SERVER_COMMAND_FAILED: 'Không commit được Staff/HR lên server; projection chưa thay đổi.',
+    INVALID_STATE_TRANSITION: 'Chuyển trạng thái quản trị nhân sự không hợp lệ.',
+    CONCURRENT_CONFLICT: 'Dữ liệu đang được cập nhật; hãy Làm mới rồi thử lại.',
+    INVALID_SERVER_RESULT: 'Dữ liệu nhân sự nhận về không hợp lệ; danh sách cũ đã được ẩn.',
+    CENTER_CONTEXT_CHANGED: 'Cơ sở đã thay đổi; dữ liệu của cơ sở trước đã được ẩn.',
+    STAFF_HR_SHARED_TRUTH_READ_FAILED: 'Chưa tải được dữ liệu nhân sự.',
+    BACKEND_NOT_DEPLOYED: 'Quản lý nhân sự hiện chưa khả dụng.',
+    ACCESS_AUDIT_FAILED: 'Không thể ghi nhật ký truy cập; hồ sơ nhạy cảm không được mở.',
+    SERVER_COMMAND_FAILED: 'Không lưu được thay đổi; nội dung đang nhập vẫn được giữ nguyên.',
   }
   return messages[String(outcomeCode || '')]
-    || 'Không thể cập nhật authoritative Staff/HR.'
+    || 'Không thể cập nhật dữ liệu nhân sự.'
 }
 
 function projectScopedCollection(rows, centerId) {

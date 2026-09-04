@@ -190,6 +190,7 @@ export function normalizeStaffAdministrativeProfile(profile, { currentCenterId =
     updatedAt: normalizeText(profile.updatedAt),
     archivedAt: normalizeText(profile.archivedAt),
     revision: Number(profile.revision),
+    sensitiveFieldsWithheld: profile.sensitiveFieldsWithheld === true,
   }
 
   if (!explicitCenterId && !scopedCenterId) {
@@ -233,7 +234,11 @@ export function getStaffAdministrativeProfileIntegrityIssues(profile, { currentC
   if (!isIsoDateTime(profile.createdAt)) issues.push('createdAt:invalid')
   if (!isIsoDateTime(profile.updatedAt)) issues.push('updatedAt:invalid')
   if (profile.archivedAt && !isIsoDateTime(profile.archivedAt)) issues.push('archivedAt:invalid')
+  if (profile.sensitiveFieldsWithheld === true && hasAdministrativePii(profile)) {
+    issues.push('sensitiveSummary:contains-pii')
+  }
   if (
+    profile.sensitiveFieldsWithheld !== true &&
     profile.completionStatus === 'complete' &&
     (
       !isIsoDateTime(profile.completionReview?.reviewedAt) ||
@@ -245,6 +250,28 @@ export function getStaffAdministrativeProfileIntegrityIssues(profile, { currentC
   }
 
   return [...new Set(issues)]
+}
+
+function hasAdministrativePii(profile) {
+  const directValues = [
+    profile.legalFullName,
+    profile.dateOfBirth,
+    profile.gender,
+    profile.nationality,
+    profile.note,
+  ]
+  const nestedValues = [
+    profile.permanentAddress,
+    profile.currentAddress,
+    profile.emergencyContact,
+    profile.identityDocument,
+    profile.taxInformation,
+    profile.insuranceInformation,
+    profile.bankInformation,
+    profile.employmentAdministration,
+    profile.completionReview,
+  ].flatMap((section) => Object.values(section || {}))
+  return [...directValues, ...nestedValues].some((value) => normalizeText(value))
 }
 
 export function getStaffAdministrativeProfileCollectionIssues(profiles, currentCenterId) {
@@ -892,7 +919,7 @@ function renderAdministrativeOverview({
     return `
       <div class="staff-administrative-empty">
         <h4>Chưa có Hồ sơ hành chính.</h4>
-        <p>Hồ sơ này tách khỏi dữ liệu vận hành, có thể chứa dữ liệu nhạy cảm và chỉ người có quyền mới được truy cập. Việc mở cửa sổ không tự ghi local storage.</p>
+        <p>Hồ sơ này tách khỏi dữ liệu vận hành, có thể chứa dữ liệu nhạy cảm và chỉ người có quyền mới được truy cập. Thông tin chỉ được giữ trong phiên xem hiện tại.</p>
         ${isArchivedStaff ? '' : `<button type="button" data-staff-administrative-action="start-create" data-window-id="${escapeAttribute(windowId)}">Tạo hồ sơ hành chính</button>`}
       </div>
     `

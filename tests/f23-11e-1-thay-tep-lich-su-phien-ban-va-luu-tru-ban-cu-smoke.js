@@ -363,7 +363,7 @@ const schemaOnePanel = renderStaffDocumentAttachmentPanel({
   },
 })
 assert(!schemaOnePanel.includes('data-staff-document-attachment-replacement-input'))
-assert(schemaOnePanel.includes('đang chờ migration F23.11E.1'))
+assert(schemaOnePanel.includes('Thay tệp và lịch sử phiên bản hiện chưa khả dụng'))
 assert(schemaOnePanel.includes('data-staff-document-action="attachment-view"'))
 assert(schemaOnePanel.includes('data-staff-document-action="attachment-download"'))
 

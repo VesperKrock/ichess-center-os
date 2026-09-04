@@ -298,6 +298,8 @@ export function renderTeacherModule(
   const staffLinkState = staffContext.staffLinkState || null
   const attendanceAvailable = staffContext.attendanceAvailable !== false
   const staffAvailable = staffContext.staffAvailable !== false
+  const staffCapabilityStatus = String(staffContext.staffCapabilityStatus || 'idle')
+  const staffManagementAvailable = staffContext.staffManagementAvailable === true
 
   return `
     <section class="teacher-module ${formState || selectedTeacher ? 'panel-open' : ''}" aria-label="Giáo viên">
@@ -308,12 +310,24 @@ export function renderTeacherModule(
           ${renderTeacherStat('Tạm nghỉ', stats.pausedTeachers, 'warning')}
           ${renderTeacherStat('Cộng tác viên', stats.collaboratorTeachers, 'collaborator')}
         </div>
-        <button class="teacher-add-button" type="button" data-teacher-action="open-create">
-          + Thêm giáo viên
-        </button>
+        <div class="teacher-main-actions">
+          <button
+            class="teacher-staff-management-button"
+            type="button"
+            data-teacher-action="open-staff-management"
+            ${staffManagementAvailable ? '' : 'disabled aria-disabled="true"'}
+          >${escapeHtml(getStaffManagementEntryLabel(staffCapabilityStatus))}</button>
+          <button class="teacher-add-button" type="button" data-teacher-action="open-create">
+            + Thêm giáo viên
+          </button>
+        </div>
       </div>
 
-      ${renderTeacherOptionalAvailability({ attendanceAvailable, staffAvailable })}
+      ${renderTeacherOptionalAvailability({
+        attendanceAvailable,
+        staffAvailable,
+        staffCapabilityStatus,
+      })}
 
       <section class="teacher-list-section" aria-label="Danh sách giáo viên">
         <div class="teacher-list-filters" aria-label="Tìm kiếm và lọc giáo viên">
@@ -392,10 +406,25 @@ export function renderTeacherModule(
   `
 }
 
-function renderTeacherOptionalAvailability({ attendanceAvailable = true, staffAvailable = true } = {}) {
+function getStaffManagementEntryLabel(status) {
+  if (status === 'loading') return 'Nhân sự & hồ sơ · Đang tải'
+  if (status === 'unavailable') return 'Nhân sự & hồ sơ · Chưa khả dụng'
+  if (status === 'failed') return 'Nhân sự & hồ sơ · Chưa tải được'
+  return 'Nhân sự & hồ sơ'
+}
+
+function renderTeacherOptionalAvailability({
+  attendanceAvailable = true,
+  staffAvailable = true,
+  staffCapabilityStatus = 'idle',
+} = {}) {
   const messages = [
     attendanceAvailable ? '' : 'Báo cáo buổi học hiện chưa tải được.',
-    staffAvailable ? '' : 'Thông tin nhân sự hiện chưa khả dụng.',
+    staffAvailable || ['idle', 'loading'].includes(staffCapabilityStatus)
+      ? ''
+      : staffCapabilityStatus === 'unavailable'
+        ? 'Quản lý nhân sự hiện chưa khả dụng.'
+        : 'Thông tin nhân sự hiện chưa tải được.',
   ].filter(Boolean)
   return messages.length
     ? `<p class="teacher-staff-link-warning" role="status">${escapeHtml(messages.join(' '))}</p>`

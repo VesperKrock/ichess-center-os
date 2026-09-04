@@ -21,7 +21,11 @@ assert(staffSource.includes('export function findStaffMemberByTeacherId'))
 assert(teacherSource.includes('findStaffMemberByTeacherId'))
 assert(!storageSource.includes('staffMemberId'))
 assert(!teacherSource.includes('teacher.staffMemberId'))
-assert(!main.includes('staffMemberId:'))
+// The former global `staffMemberId:` ban became stale when C5.5 introduced
+// authoritative Staff/HR commands that legitimately identify a Staff row.
+// The durable non-duplication invariant is narrower: Teacher never owns or
+// persists a staffMemberId field; links stay explicit on the Staff authority.
+assert(!main.includes('teacher.staffMemberId'))
 
 for (const marker of [
   'data-teacher-action="open-staff-link"',
