@@ -11,6 +11,12 @@ const out = (status: number, body: JsonRecord) => new Response(JSON.stringify(bo
 const val = (body: JsonRecord, key: string) => typeof body[key] === 'string' ? String(body[key]).trim() : ''
 const tokenOf = (req: Request) => req.headers.get('Authorization')?.match(/^Bearer\s+(.+)$/i)?.[1] || ''
 const validEmail = (email: string) => email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+const scopeMessage = (count: unknown) => {
+  const normalized = Number(count)
+  return Number.isInteger(normalized) && normalized > 0
+    ? `Khôi phục Owner sẽ áp dụng đồng thời cho ${normalized} cơ sở.`
+    : 'Chưa xác định được phạm vi cơ sở cần khôi phục.'
+}
 function secret(length = 32) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()-_=+'
   const chars = Array.from(crypto.getRandomValues(new Uint8Array(length)), (byte) => alphabet[byte % alphabet.length])
@@ -67,32 +73,80 @@ Deno.serve(async (req) => {
       p_expires_at: expiresAt,
     })
     if (error || !data?.ok) return out(403, { ok: false, code: error?.message || 'recovery_request_denied' })
-    return out(200, { ok: true, code: 'owner_recovery_requested', command_id: data.command_id, replayed: data.replayed })
+    return out(200, {
+      ok: true,
+      code: 'owner_recovery_requested',
+      command_id: data.command_id,
+      replayed: data.replayed,
+      affected_center_count: data.affected_center_count,
+      affected_centers: data.affected_centers,
+      recovery_scope_digest: data.recovery_scope_digest,
+      scope_message: scopeMessage(data.affected_center_count),
+    })
   }
 
   const commandId = val(body, 'command_id')
   if (!commandId) return out(400, { ok: false, code: 'invalid_request' })
+  if (mode === 'inspect') {
+    const { data: context, error } = await admin.rpc('arg2_get_command_execution_context', {
+      p_command_id: commandId, p_actor_user_id: actorId,
+    })
+    if (error || !context?.ok || context.action !== 'owner_recovery') {
+      return out(403, { ok: false, code: 'command_read_denied' })
+    }
+    return out(200, {
+      ok: true,
+      code: 'owner_recovery_scope_ready',
+      command_id: commandId,
+      state: context.state,
+      stage: context.stage,
+      approval_count: context.recovery_approval_count,
+      affected_center_count: context.affected_center_count,
+      affected_centers: context.affected_centers,
+      recovery_scope_digest: context.recovery_scope_digest,
+      scope_message: scopeMessage(context.affected_center_count),
+    })
+  }
   if (mode === 'approve') {
     const authorityVersion = Number(body.expected_authority_version)
-    if (!Number.isInteger(authorityVersion)) return out(400, { ok: false, code: 'invalid_request' })
+    const expectedScopeDigest = val(body, 'recovery_scope_digest').toLowerCase()
+    if (!Number.isInteger(authorityVersion) || !/^[0-9a-f]{64}$/.test(expectedScopeDigest)) {
+      return out(400, { ok: false, code: 'scope_confirmation_required' })
+    }
+    const { data: context, error: contextError } = await admin.rpc('arg2_get_command_execution_context', {
+      p_command_id: commandId, p_actor_user_id: actorId,
+    })
+    if (contextError || !context?.ok || context.action !== 'owner_recovery' ||
+        context.recovery_scope_digest !== expectedScopeDigest) {
+      return out(409, { ok: false, code: 'recovery_scope_changed' })
+    }
     const { data, error } = await admin.rpc('arg2_approve_owner_recovery', {
       p_command_id: commandId,
       p_custodian_user_id: actorId,
       p_expected_authority_version: authorityVersion,
     })
     if (error || !data?.ok) return out(403, { ok: false, code: error?.message || 'recovery_approval_denied' })
-    return out(200, { ok: true, code: 'owner_recovery_approved', ...data })
+    return out(200, {
+      ok: true,
+      code: 'owner_recovery_approved',
+      ...data,
+      scope_message: scopeMessage(data.affected_center_count),
+    })
   }
 
   if (mode === 'create_candidate') {
     const email = val(body, 'target_email').toLowerCase()
     const displayName = val(body, 'display_name')
-    if (!validEmail(email)) return out(400, { ok: false, code: 'invalid_request' })
+    const expectedScopeDigest = val(body, 'recovery_scope_digest').toLowerCase()
+    if (!validEmail(email) || !/^[0-9a-f]{64}$/.test(expectedScopeDigest)) {
+      return out(400, { ok: false, code: 'scope_confirmation_required' })
+    }
     const { data: context, error: contextError } = await admin.rpc('arg2_get_command_execution_context', {
       p_command_id: commandId, p_actor_user_id: actorId,
     })
     if (contextError || !context?.ok || context.action !== 'owner_recovery' ||
         Number(context.recovery_approval_count) < 2 ||
+        context.recovery_scope_digest !== expectedScopeDigest ||
         !['prepared', 'awaiting_credential'].includes(String(context.stage)) ||
         (context.target_user_id && body.repair !== true) ||
         (context.state === 'repair_required' && body.repair !== true)) {
@@ -171,18 +225,34 @@ Deno.serve(async (req) => {
     return out(200, {
       ok: true, code: 'owner_recovery_candidate_created', command_id: commandId,
       email, temporary_password: password, password_display_once: true,
+      affected_center_count: registered.affected_center_count,
+      affected_centers: registered.affected_centers,
+      scope_message: scopeMessage(registered.affected_center_count),
     })
   }
 
   if (mode === 'execute') {
+    const expectedScopeDigest = val(body, 'recovery_scope_digest').toLowerCase()
+    if (!/^[0-9a-f]{64}$/.test(expectedScopeDigest)) {
+      return out(400, { ok: false, code: 'scope_confirmation_required' })
+    }
     const { data: context, error: contextError } = await admin.rpc('arg2_get_command_execution_context', {
       p_command_id: commandId, p_actor_user_id: actorId,
     })
-    if (contextError || !context?.ok || context.action !== 'owner_recovery') {
+    if (contextError || !context?.ok || context.action !== 'owner_recovery' ||
+        context.recovery_scope_digest !== expectedScopeDigest) {
       return out(403, { ok: false, code: 'command_read_denied' })
     }
     if (context.state === 'finalized' && context.stage === 'complete') {
-      return out(200, { ok: true, code: 'owner_recovery_complete', command_id: commandId, replayed: true })
+      return out(200, {
+        ok: true,
+        code: 'owner_recovery_complete',
+        command_id: commandId,
+        replayed: true,
+        affected_center_count: context.affected_center_count,
+        affected_centers: context.affected_centers,
+        scope_message: scopeMessage(context.affected_center_count),
+      })
     }
     let swapped = context
     if (!(context.state === 'repair_required' && context.stage === 'authority_swapped')) {
@@ -223,7 +293,14 @@ Deno.serve(async (req) => {
       p_repair_code: invalidateError ? 'former_owner_session_invalidation_failed' : null,
     })
     if (invalidateError || finalError || !finalized?.ok) return out(500, { ok: false, code: 'repair_required' })
-    return out(200, { ok: true, code: 'owner_recovery_complete', command_id: commandId })
+    return out(200, {
+      ok: true,
+      code: 'owner_recovery_complete',
+      command_id: commandId,
+      affected_center_count: swapped.affected_center_count || context.affected_center_count,
+      affected_centers: swapped.affected_centers || context.affected_centers,
+      scope_message: scopeMessage(swapped.affected_center_count || context.affected_center_count),
+    })
   }
 
   if (mode === 'cancel') {
@@ -234,7 +311,15 @@ Deno.serve(async (req) => {
       return out(403, { ok: false, code: 'recovery_cancel_denied' })
     }
     if (context.state === 'cancelled') {
-      return out(200, { ok: true, code: 'owner_recovery_cancelled', command_id: commandId, replayed: true })
+      return out(200, {
+        ok: true,
+        code: 'owner_recovery_cancelled',
+        command_id: commandId,
+        replayed: true,
+        affected_center_count: context.affected_center_count,
+        affected_centers: context.affected_centers,
+        scope_message: scopeMessage(context.affected_center_count),
+      })
     }
     let candidateUserId = typeof context.target_user_id === 'string' ? context.target_user_id : ''
     for (let page = 1; page <= 10 && !candidateUserId; page += 1) {
@@ -261,7 +346,14 @@ Deno.serve(async (req) => {
     if (cancelError || !cancelled?.ok) {
       return out(409, { ok: false, code: cancelError?.message || 'recovery_cancel_failed' })
     }
-    return out(200, { ok: true, code: 'owner_recovery_cancelled', command_id: commandId })
+    return out(200, {
+      ok: true,
+      code: 'owner_recovery_cancelled',
+      command_id: commandId,
+      affected_center_count: cancelled.affected_center_count,
+      affected_centers: cancelled.affected_centers,
+      scope_message: scopeMessage(cancelled.affected_center_count),
+    })
   }
 
   return out(400, { ok: false, code: 'invalid_mode' })
