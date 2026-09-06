@@ -397,6 +397,18 @@ verify_jwt = true
 [functions.list-center-admin-accounts]
 verify_jwt = true
 
+[functions.provision-center-admin-account]
+verify_jwt = true
+
+[functions.complete-account-credential-change]
+verify_jwt = true
+
+[functions.manage-owner-handoff]
+verify_jwt = true
+
+[functions.manage-owner-recovery]
+verify_jwt = true
+
 [functions.crm-conversion-bridge]
 verify_jwt = true
 

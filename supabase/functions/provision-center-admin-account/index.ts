@@ -2,425 +2,284 @@ import { createClient } from '@supabase/supabase-js'
 
 type JsonRecord = Record<string, unknown>
 
-const FUNCTION_BUSINESS_NAME = 'provision_center_admin_account'
-const AUDIT_ACTION = 'account.provision_center_admin'
-const ADMIN_EMAIL_DOMAIN = 'ichess.vn'
-const FORBIDDEN_CLIENT_FIELDS = new Set([
-  'role',
-  'email',
-  'password',
-  'temporary_password',
-  'actor_user_id',
-  'actor_email',
-])
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': Deno.env.get('CORS_ALLOWED_ORIGIN') || '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',
 }
-
-function jsonResponse(status: number, body: JsonRecord) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: corsHeaders,
-  })
+const json = (status: number, body: JsonRecord) => new Response(JSON.stringify(body), { status, headers: corsHeaders })
+const fail = (status: number, code: string) => json(status, { ok: false, code })
+const bearer = (req: Request) => req.headers.get('Authorization')?.match(/^Bearer\s+(.+)$/i)?.[1] || ''
+const text = (body: JsonRecord, key: string) => typeof body[key] === 'string' ? String(body[key]).trim() : ''
+const normalizeEmail = (value: string) => value.trim().toLowerCase()
+const validEmail = (value: string) => value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+const maskEmail = (value: string) => {
+  const [name, domain] = value.split('@')
+  return `${name.slice(0, 2)}***@${domain}`
 }
 
-function safeError(status: number, code: string, message?: string, extra: JsonRecord = {}) {
-  return jsonResponse(status, {
-    ok: false,
-    code,
-    ...(message ? { message } : {}),
-    ...extra,
-  })
-}
-
-function safeLog(step: string, code: string, details: JsonRecord = {}) {
-  console.error(
-    JSON.stringify({
-      function: FUNCTION_BUSINESS_NAME,
-      step,
-      code,
-      ...details,
-    }),
-  )
-}
-
-function getSafeSupabaseErrorDebug(step: string, context: JsonRecord, error: unknown) {
-  const typedError = error as { code?: string; message?: string; details?: string; hint?: string } | null
-  return {
-    step,
-    ...context,
-    error_code: typedError?.code || 'unknown',
-    error_message: typedError?.message || 'unknown',
-    error_details: typedError?.details || null,
-    error_hint: typedError?.hint || null,
-  }
-}
-
-function getBearerToken(req: Request) {
-  const authorization = req.headers.get('Authorization') || ''
-  const match = authorization.match(/^Bearer\s+(.+)$/i)
-  return match?.[1] || ''
-}
-
-async function readRequestBody(req: Request) {
-  try {
-    const body = await req.json()
-    return body && typeof body === 'object' && !Array.isArray(body) ? (body as JsonRecord) : null
-  } catch {
-    return null
-  }
-}
-
-function hasForbiddenClientField(body: JsonRecord) {
-  return Object.keys(body).some((key) => FORBIDDEN_CLIENT_FIELDS.has(key))
-}
-
-function getRequiredString(body: JsonRecord, key: string) {
-  const value = body[key]
-  return typeof value === 'string' && value.trim() ? value.trim() : ''
-}
-
-function getOptionalString(body: JsonRecord, key: string) {
-  const value = body[key]
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function isValidSlug(slug: string) {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
-}
-
-function makeAdminEmail(slug: string) {
-  return `admin.${slug}@${ADMIN_EMAIL_DOMAIN}`.toLowerCase()
-}
-
-function generateTemporaryPassword(length = 24) {
+function temporaryPassword() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()-_=+'
-  const bytes = new Uint8Array(length)
-  crypto.getRandomValues(bytes)
-
-  const password = Array.from(bytes, (byte) => alphabet[byte % alphabet.length])
-  password[0] = 'A'
-  password[1] = 'a'
-  password[2] = '7'
-  password[3] = '!'
-  return password.join('')
+  const bytes = crypto.getRandomValues(new Uint8Array(28))
+  const chars = Array.from(bytes, (byte) => alphabet[byte % alphabet.length])
+  chars.splice(0, 4, 'A', 'a', '7', '!')
+  return chars.join('')
 }
 
-function isDuplicateEmailError(error: unknown) {
-  const message = String((error as { message?: string } | null)?.message || error || '').toLowerCase()
-  return message.includes('already') || message.includes('exists') || message.includes('duplicate')
-}
-
-async function safeDeleteAuthUser(adminClient: ReturnType<typeof createClient>, userId: string | null) {
-  if (!userId) return { ok: true }
-  const { error } = await adminClient.auth.admin.deleteUser(userId)
-  if (error) {
-    safeLog('rollback.delete_auth_user', 'cleanup_failed', { target_user_id: userId })
-    return { ok: false, error }
-  }
-  return { ok: true }
-}
-
-async function safeDeleteMembership(
-  adminClient: ReturnType<typeof createClient>,
-  centerId: string,
-  userId: string | null,
-) {
-  if (!userId) return { ok: true }
-  const { error } = await adminClient
-    .from('center_members')
-    .delete()
-    .eq('center_id', centerId)
-    .eq('user_id', userId)
-    .eq('role', 'center_admin')
-
-  if (error) {
-    safeLog('rollback.delete_membership', 'cleanup_failed', { center_id: centerId, target_user_id: userId })
-    return { ok: false, error }
-  }
-  return { ok: true }
-}
-
-async function writeFailureAudit(
-  adminClient: ReturnType<typeof createClient>,
-  input: {
-    actorUserId: string
-    actorEmail: string | null
-    centerId: string
-    targetUserId?: string | null
-    targetEmail?: string | null
-    idempotencyKey: string
-    reason: string
-    centerSlug?: string
-  },
-) {
-  await adminClient.from('account_audit_logs').insert({
-    actor_user_id: input.actorUserId,
-    actor_email: input.actorEmail,
-    action: AUDIT_ACTION,
-    target_type: 'user',
-    target_user_id: input.targetUserId || null,
-    target_email: input.targetEmail || null,
-    center_id: input.centerId,
-    before_state: { center_admin_exists: false },
-    after_state: { status: 'failed', cleanup_required: true },
-    reason: input.reason,
-    request_id: input.idempotencyKey,
-    metadata: {
-      function: FUNCTION_BUSINESS_NAME,
-      center_slug: input.centerSlug || null,
-      credential_handoff_required: false,
-    },
-  })
+async function sha256(value: string) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders })
-  }
-
-  if (req.method !== 'POST') {
-    return safeError(405, 'method_not_allowed')
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders })
+  if (req.method !== 'POST') return fail(405, 'method_not_allowed')
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!supabaseUrl || !serviceKey) return fail(500, 'server_misconfigured')
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return safeError(500, 'server_misconfigured')
+  let body: JsonRecord
+  try { body = await req.json() } catch { return fail(400, 'invalid_request') }
+  if (['password', 'temporary_password', 'role', 'actor_user_id'].some((key) => key in body)) {
+    return fail(400, 'forbidden_client_fields')
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    global: {
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
+  const centerId = text(body, 'center_id')
+  const requestId = text(body, 'idempotency_key')
+  const email = normalizeEmail(text(body, 'target_email'))
+  const displayName = text(body, 'display_name')
+  const requestedMode = text(body, 'mode')
+  const repairSessionInvalidation = requestedMode === 'repair_session_invalidation'
+  const repairCommandId = text(body, 'command_id')
+  const mode = requestedMode === 'replace' ? 'replace_admin' : 'provision_admin'
+  const governanceVersion = Number(body.expected_governance_version)
+  const predecessorMembershipId = text(body, 'predecessor_membership_id') || null
+  const predecessorMembershipVersion = body.expected_membership_version == null
+    ? null
+    : Number(body.expected_membership_version)
+  if (repairSessionInvalidation ? !repairCommandId :
+      (!centerId || requestId.length < 8 || !validEmail(email) || !Number.isInteger(governanceVersion))) {
+    return fail(400, 'invalid_request')
+  }
+  if (!repairSessionInvalidation && mode === 'replace_admin' &&
+      (!predecessorMembershipId || !Number.isInteger(predecessorMembershipVersion))) {
+    return fail(400, 'replacement_predecessor_required')
+  }
+
+  const token = bearer(req)
+  if (!token) return fail(401, 'unauthorized')
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
   })
+  const { data: actorData, error: actorError } = await admin.auth.getUser(token)
+  const actor = actorData?.user
+  if (actorError || !actor?.id) return fail(401, 'unauthorized')
 
-  const token = getBearerToken(req)
-  if (!token) {
-    return safeError(401, 'unauthorized')
-  }
-
-  const body = await readRequestBody(req)
-  if (!body) {
-    return safeError(400, 'invalid_request')
-  }
-
-  if (hasForbiddenClientField(body)) {
-    return safeError(400, 'forbidden_client_fields')
-  }
-
-  const centerId = getRequiredString(body, 'center_id')
-  const idempotencyKey = getRequiredString(body, 'idempotency_key')
-  const displayName = getOptionalString(body, 'display_name')
-
-  if (!centerId || !idempotencyKey) {
-    return safeError(400, 'invalid_request')
-  }
-
-  const { data: actorData, error: actorError } = await adminClient.auth.getUser(token)
-  const actorUser = actorData?.user
-  if (actorError || !actorUser?.id) {
-    return safeError(401, 'unauthorized')
-  }
-
-  const actorEmail = actorUser.email || null
-
-  const { data: ownerMembership, error: ownerGuardError } = await adminClient
-    .from('center_members')
-    .select('user_id, center_id, role, status')
-    .eq('center_id', centerId)
-    .eq('user_id', actorUser.id)
-    .eq('role', 'owner')
-    .eq('status', 'active')
-    .maybeSingle()
-
-  if (ownerGuardError) {
-    const debug = getSafeSupabaseErrorDebug('owner_guard', {
-      center_id: centerId,
-      actor_user_id: actorUser.id,
-      actor_email: actorEmail,
-    }, ownerGuardError)
-
-    safeLog('owner_guard', 'owner_guard_query_failed', debug)
-    return safeError(500, 'owner_guard_query_failed', 'Owner guard query failed.', { debug })
-  }
-
-  if (!ownerMembership) {
-    return safeError(403, 'forbidden_owner_required', 'Owner role is required for this action.')
-  }
-
-  const { data: center, error: centerError } = await adminClient
-    .from('centers')
-    .select('id, name, slug, environment, status')
-    .eq('id', centerId)
-    .maybeSingle()
-
-  if (centerError) {
-    safeLog('center_validation', 'query_failed', { center_id: centerId })
-    return safeError(500, 'center_validation_failed')
-  }
-
-  if (!center) {
-    return safeError(404, 'center_not_found')
-  }
-
-  if (center.environment !== 'production' || center.status !== 'active') {
-    return safeError(409, 'center_not_production_active')
-  }
-
-  const slug = String(center.slug || '').trim().toLowerCase()
-  if (!isValidSlug(slug)) {
-    return safeError(422, 'invalid_center_slug')
-  }
-
-  const adminEmail = makeAdminEmail(slug)
-
-  const { data: existingAdmin, error: existingAdminError } = await adminClient
-    .from('center_members')
-    .select('user_id')
-    .eq('center_id', centerId)
-    .eq('role', 'center_admin')
-    .eq('status', 'active')
-    .limit(1)
-
-  if (existingAdminError) {
-    safeLog('duplicate_admin_check', 'query_failed', { center_id: centerId })
-    return safeError(500, 'duplicate_admin_check_failed')
-  }
-
-  if (Array.isArray(existingAdmin) && existingAdmin.length > 0) {
-    return safeError(409, 'center_admin_already_exists', 'Center already has an active admin.')
-  }
-
-  const { data: priorAudit, error: idempotencyError } = await adminClient
-    .from('account_audit_logs')
-    .select('id')
-    .eq('action', AUDIT_ACTION)
-    .eq('center_id', centerId)
-    .eq('request_id', idempotencyKey)
-    .limit(1)
-
-  if (idempotencyError) {
-    safeLog('idempotency_check', 'query_failed', { center_id: centerId })
-    return safeError(500, 'idempotency_check_failed')
-  }
-
-  if (Array.isArray(priorAudit) && priorAudit.length > 0) {
-    return safeError(
-      409,
-      'duplicate_request_already_processed',
-      'This request was already processed. The temporary password cannot be shown again.',
-    )
-  }
-
-  const temporaryPassword = generateTemporaryPassword()
-  let createdUserId: string | null = null
-  let membershipInserted = false
-
-  const { data: createdUserData, error: createUserError } = await adminClient.auth.admin.createUser({
-    email: adminEmail,
-    password: temporaryPassword,
-    email_confirm: true,
-    user_metadata: {
-      display_name: displayName || `Admin ${center.name || slug}`,
-      center_id: centerId,
-      role: 'center_admin',
-      created_by: FUNCTION_BUSINESS_NAME,
-    },
-  })
-
-  if (createUserError || !createdUserData?.user?.id) {
-    if (isDuplicateEmailError(createUserError)) {
-      return safeError(409, 'admin_email_already_used', 'Expected admin email already exists.')
-    }
-
-    safeLog('auth_create_user', 'failed', { center_id: centerId })
-    return safeError(500, 'auth_create_failed')
-  }
-
-  createdUserId = createdUserData.user.id
-
-  const { error: membershipError } = await adminClient.from('center_members').insert({
-    center_id: centerId,
-    user_id: createdUserId,
-    role: 'center_admin',
-    status: 'active',
-  })
-
-  if (membershipError) {
-    safeLog('membership_insert', 'failed', { center_id: centerId, target_user_id: createdUserId })
-    await safeDeleteAuthUser(adminClient, createdUserId)
-    try {
-      await writeFailureAudit(adminClient, {
-        actorUserId: actorUser.id,
-        actorEmail,
-        centerId,
-        targetUserId: createdUserId,
-        targetEmail: adminEmail,
-        idempotencyKey,
-        reason: 'membership_insert_failed',
-        centerSlug: slug,
+  if (repairSessionInvalidation) {
+    const { data: context, error: contextError } = await admin.rpc('arg2_get_command_execution_context', {
+      p_command_id: repairCommandId,
+      p_actor_user_id: actor.id,
+    })
+    const predecessorUserId = typeof context?.predecessor_user_id === 'string'
+      ? context.predecessor_user_id
+      : ''
+    if (!contextError && context?.ok && context.action === 'replace_admin' &&
+        context.state === 'finalized' && context.stage === 'complete') {
+      return json(200, {
+        ok: true,
+        code: 'center_admin_replacement_complete',
+        command_id: repairCommandId,
+        replayed: true,
       })
-    } catch {
-      safeLog('failure_audit', 'failed_after_membership_insert_failed', { center_id: centerId })
     }
-    return safeError(500, 'provisioning_failed', 'Could not create center admin access.')
+    if (contextError || !context?.ok || context.action !== 'replace_admin' ||
+        context.state !== 'repair_required' || context.stage !== 'authority_swapped' || !predecessorUserId) {
+      return fail(409, 'repair_not_available')
+    }
+    const { data: predecessor, error: predecessorError } = await admin.auth.admin.getUserById(predecessorUserId)
+    const invalidationAlreadyCommitted = predecessor?.user?.user_metadata?.governance_command_id === repairCommandId &&
+      predecessor?.user?.user_metadata?.credential_state === 'revoked'
+    const invalidationResult = predecessorError || !predecessor?.user
+      ? { error: predecessorError || { message: 'predecessor_auth_state_unknown' } }
+      : invalidationAlreadyCommitted
+        ? { error: null }
+        : await admin.auth.admin.updateUserById(predecessorUserId, {
+            password: temporaryPassword(),
+            user_metadata: {
+              ...predecessor.user.user_metadata,
+              credential_state: 'revoked',
+              governance_command_id: repairCommandId,
+            },
+          })
+    const invalidateError = invalidationResult.error
+    const receipt = await sha256(`replace-admin-session:${predecessorUserId}:${repairCommandId}:${invalidateError ? 'failed' : 'succeeded'}`)
+    const { data: finalized, error: finalizeError } = await admin.rpc('arg2_finalize_session_invalidation', {
+      p_command_id: repairCommandId,
+      p_actor_user_id: actor.id,
+      p_session_invalidation_receipt_hash: receipt,
+      p_succeeded: !invalidateError,
+      p_repair_code: invalidateError ? 'predecessor_session_invalidation_failed' : null,
+    })
+    if (invalidateError || finalizeError || !finalized?.ok) return fail(500, 'repair_required')
+    return json(200, {
+      ok: true,
+      code: 'center_admin_replacement_complete',
+      command_id: repairCommandId,
+    })
   }
 
-  membershipInserted = true
+  const emailHash = await sha256(email)
+  const intentHash = await sha256(JSON.stringify([
+    mode, centerId, emailHash, displayName, governanceVersion,
+    predecessorMembershipId, predecessorMembershipVersion,
+  ]))
+  const { data: prepared, error: prepareError } = await admin.rpc('arg2_prepare_lifecycle_command', {
+    p_center_id: centerId,
+    p_request_id: requestId,
+    p_action: mode,
+    p_intent_hash: intentHash,
+    p_actor_user_id: actor.id,
+    p_expected_governance_version: governanceVersion,
+    p_target_membership_id: predecessorMembershipId,
+    p_expected_membership_version: predecessorMembershipVersion,
+    p_target_email_hash: emailHash,
+    p_target_email_masked: maskEmail(email),
+    p_expires_at: null,
+    p_safe_context: { display_name_present: Boolean(displayName) },
+  })
+  if (prepareError) return fail(409, prepareError.message || 'prepare_failed')
+  if (prepared?.replayed) {
+    if (!['prepared', 'repair_required'].includes(String(prepared.state)) || body.repair !== true) {
+      return fail(409, prepared.state === 'repair_required' ? 'repair_required' : 'duplicate_request_secret_not_replayable')
+    }
+    if (prepared.stage === 'authority_swapped' && mode === 'replace_admin') {
+      const { data: context, error: contextError } = await admin.rpc('arg2_get_command_execution_context', {
+        p_command_id: prepared.command_id, p_actor_user_id: actor.id,
+      })
+      const predecessorUserId = typeof context?.predecessor_user_id === 'string'
+        ? context.predecessor_user_id
+        : ''
+      if (contextError || !context?.ok || !predecessorUserId) return fail(403, 'repair_required')
+      const { data: predecessor, error: predecessorError } = await admin.auth.admin.getUserById(predecessorUserId)
+      const invalidationAlreadyCommitted = predecessor?.user?.user_metadata?.governance_command_id === prepared.command_id &&
+        predecessor?.user?.user_metadata?.credential_state === 'revoked'
+      const invalidationResult = predecessorError || !predecessor?.user
+        ? { error: predecessorError || { message: 'predecessor_auth_state_unknown' } }
+        : invalidationAlreadyCommitted
+          ? { error: null }
+          : await admin.auth.admin.updateUserById(predecessorUserId, {
+              password: temporaryPassword(),
+              user_metadata: {
+                ...predecessor.user.user_metadata,
+                credential_state: 'revoked',
+                governance_command_id: prepared.command_id,
+              },
+            })
+      const invalidateError = invalidationResult.error
+      const invalidationReceipt = await sha256(`replace-admin-session:${predecessorUserId}:${prepared.command_id}:${invalidateError ? 'failed' : 'succeeded'}`)
+      const { data: finalized, error: finalizeError } = await admin.rpc('arg2_finalize_session_invalidation', {
+        p_command_id: prepared.command_id,
+        p_actor_user_id: actor.id,
+        p_session_invalidation_receipt_hash: invalidationReceipt,
+        p_succeeded: !invalidateError,
+        p_repair_code: invalidateError ? 'predecessor_session_invalidation_failed' : null,
+      })
+      if (invalidateError || finalizeError || !finalized?.ok) return fail(500, 'repair_required')
+      return json(200, {
+        ok: true,
+        code: 'center_admin_replacement_complete',
+        command_id: prepared.command_id,
+        center_id: centerId,
+      })
+    }
+  }
 
-  const { data: auditData, error: auditError } = await adminClient
-    .from('account_audit_logs')
-    .insert({
-      actor_user_id: actorUser.id,
-      actor_email: actorEmail,
-      action: AUDIT_ACTION,
-      target_type: 'user',
-      target_user_id: createdUserId,
-      target_email: adminEmail,
-      center_id: centerId,
-      before_state: { center_admin_exists: false },
-      after_state: { role: 'center_admin', membership_status: 'active' },
-      reason: 'owner_provision_center_admin',
-      request_id: idempotencyKey,
-      metadata: {
-        function: FUNCTION_BUSINESS_NAME,
-        center_slug: slug,
-        credential_handoff_required: true,
+  const password = temporaryPassword()
+  let createdUser: { id: string; user_metadata?: Record<string, unknown> } | null = null
+  if (prepared?.replayed) {
+    if (prepared.target_user_id) {
+      const existing = await admin.auth.admin.getUserById(prepared.target_user_id)
+      createdUser = existing.data?.user || null
+    }
+    for (let page = 1; page <= 10 && !createdUser; page += 1) {
+      const { data: usersPage, error: usersError } = await admin.auth.admin.listUsers({ page, perPage: 100 })
+      if (usersError) return fail(500, 'repair_required')
+      createdUser = usersPage.users.find((user) => user.user_metadata?.governance_command_id === prepared.command_id) || null
+      if (usersPage.users.length < 100) break
+    }
+    if (createdUser && prepared.state !== 'repair_required') {
+      const repairReceipt = await sha256(`candidate-credential-reissue-prepared:${createdUser.id}:${prepared.command_id}`)
+      const { error: repairError } = await admin.rpc('arg2_mark_command_repair_required', {
+        p_command_id: prepared.command_id,
+        p_actor_user_id: actor.id,
+        p_repair_code: 'candidate_credential_reissue_required',
+        p_receipt_hash: repairReceipt,
+      })
+      if (repairError) return fail(500, 'repair_required')
+    }
+  }
+  let createError: { status?: number } | null = null
+  if (createdUser) {
+    const rotated = await admin.auth.admin.updateUserById(createdUser.id, {
+      password,
+      user_metadata: { ...createdUser.user_metadata, credential_state: 'temporary', governance_command_id: prepared.command_id },
+    })
+    createError = rotated.error
+  } else {
+    const created = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        display_name: displayName,
+        lifecycle: 'managed_center_account',
+        credential_state: 'temporary',
+        governance_command_id: prepared.command_id,
       },
     })
-    .select('id')
-    .maybeSingle()
-
-  if (auditError || !auditData?.id) {
-    safeLog('audit_insert', 'failed', { center_id: centerId, target_user_id: createdUserId })
-    if (membershipInserted) {
-      await safeDeleteMembership(adminClient, centerId, createdUserId)
-    }
-    await safeDeleteAuthUser(adminClient, createdUserId)
-    return safeError(500, 'provisioning_failed_audit_required', 'Could not write required audit log.')
+    createdUser = created.data?.user || null
+    createError = created.error
+  }
+  if (createError || !createdUser?.id) {
+    const receipt = await sha256(`auth-create-failed:${createError?.status || 'unknown'}:${requestId}`)
+    await admin.rpc('arg2_mark_command_repair_required', {
+      p_command_id: prepared.command_id,
+      p_actor_user_id: actor.id,
+      p_repair_code: 'auth_identity_create_failed',
+      p_receipt_hash: receipt,
+    })
+    return fail(createError?.status === 422 ? 409 : 500, 'auth_identity_create_failed_review_required')
   }
 
-  return jsonResponse(200, {
+  const receipt = await sha256(`auth-user-created:${createdUser.id}:${requestId}:${prepared?.replayed ? 'repair' : 'initial'}`)
+  const { data: registered, error: registerError } = await admin.rpc('arg2_register_created_identity', {
+    p_command_id: prepared.command_id,
+    p_target_user_id: createdUser.id,
+    p_target_email_hash: emailHash,
+    p_external_receipt_hash: receipt,
+  })
+  if (registerError || !registered?.ok) {
+    await admin.rpc('arg2_mark_command_repair_required', {
+      p_command_id: prepared.command_id,
+      p_actor_user_id: actor.id,
+      p_repair_code: 'identity_created_membership_finalize_failed',
+      p_receipt_hash: receipt,
+    })
+    return fail(500, 'repair_required')
+  }
+
+  return json(200, {
     ok: true,
-    code: 'center_admin_created',
+    code: mode === 'replace_admin' ? 'center_admin_replacement_prepared' : 'center_admin_credential_handoff_required',
+    command_id: prepared.command_id,
     center_id: centerId,
-    email: adminEmail,
-    temporary_password: temporaryPassword,
+    email,
+    temporary_password: password,
     password_display_once: true,
     credential_handoff_required: true,
-    audit_id: auditData.id,
+    membership_status: 'pending_credential',
   })
 })

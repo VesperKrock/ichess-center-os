@@ -1,4 +1,9 @@
 import { getSupabaseClient } from './supabase-client.js'
+import {
+  BLOCKED_MEMBERSHIP_STATES,
+  getCredentialGate,
+  isCredentialChangeRequired,
+} from './account-lifecycle.js'
 
 export const CURRENT_CENTER_ID = 'dreamhome'
 export const PRODUCTION_CENTER_ID = 'dreamhome_prod'
@@ -104,7 +109,7 @@ export async function listActiveCenterMemberships(userId) {
   const client = requireSupabaseClient()
   const { data, error } = await client
     .from('center_members')
-    .select('center_id, role, status')
+    .select('id, center_id, role, status, membership_version')
     .eq('user_id', userId)
     .eq('status', 'active')
     .order('center_id', { ascending: true })
@@ -124,7 +129,7 @@ export async function listCenterMemberships(userId) {
   const client = requireSupabaseClient()
   const { data, error } = await client
     .from('center_members')
-    .select('center_id, role, status')
+    .select('id, center_id, role, status, membership_version')
     .eq('user_id', userId)
     .order('center_id', { ascending: true })
 
@@ -152,6 +157,10 @@ function getAccessDeniedReason(memberships = []) {
     return 'paused'
   }
 
+  if (statuses.some((status) => BLOCKED_MEMBERSHIP_STATES.has(status))) {
+    return 'credential_change_required'
+  }
+
   return 'unknown'
 }
 
@@ -162,9 +171,11 @@ export async function resolveActiveCenterMembership(userId) {
   )
 
   if (activeMemberships.length === 0) {
+    const credentialGates = await getCurrentCredentialGates().catch(() => [])
+    const credentialGate = getCredentialGate(credentialGates)
     const accessDeniedReason = getAccessDeniedReason(memberships)
     const deniedMembership = memberships[0] || null
-    const centerId = deniedMembership?.center_id || ''
+    const centerId = deniedMembership?.center_id || credentialGate?.center_id || ''
 
     return {
       ok: false,
@@ -176,6 +187,8 @@ export async function resolveActiveCenterMembership(userId) {
       memberships,
       deniedMemberships: memberships,
       accessDeniedReason,
+      credentialChangeRequired: isCredentialChangeRequired(credentialGates),
+      credentialGate,
       message: getAccessDeniedMessage(accessDeniedReason),
     }
   }
@@ -201,6 +214,32 @@ export async function resolveActiveCenterMembership(userId) {
   }
 }
 
+export async function getCurrentCredentialGates() {
+  const client = requireSupabaseClient()
+  const { data, error } = await client.rpc('arg2_get_my_credential_gate')
+  if (error) {
+    const code = String(error.code || '')
+    if (code === 'PGRST202' || code === 'PGRST205' || code === '42883') {
+      return []
+    }
+    throw error
+  }
+  return Array.isArray(data?.gates) ? data.gates : []
+}
+
+export async function completeRequiredCredentialChange({ commandId, newPassword }) {
+  const client = requireSupabaseClient()
+  const { data, error } = await client.functions.invoke('complete-account-credential-change', {
+    body: {
+      command_id: String(commandId || '').trim(),
+      new_password: String(newPassword || ''),
+    },
+  })
+  if (error) throw error
+  if (!data?.ok) throw new Error(data?.code || 'credential_change_failed')
+  return data
+}
+
 function getAccessDeniedMessage(reason) {
   if (reason === 'revoked') {
     return 'Quyen truy cap cua tai khoan nay da duoc thu hoi.'
@@ -212,6 +251,10 @@ function getAccessDeniedMessage(reason) {
 
   if (reason === 'no_membership') {
     return 'Tai khoan nay chua duoc cap quyen truy cap co so.'
+  }
+
+  if (reason === 'credential_change_required') {
+    return 'Bạn cần đổi mật khẩu tạm trước khi sử dụng dữ liệu của cơ sở.'
   }
 
   return 'Tai khoan nay chua co quyen truy cap dang hoat dong.'
