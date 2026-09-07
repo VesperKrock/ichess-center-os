@@ -28,11 +28,26 @@ import {
   completeRequiredCredentialChange,
   getCurrentSupabaseUser,
   onSupabaseAuthStateChange,
-  PRODUCTION_CENTER_ID,
   resolveActiveCenterMembership,
   signInWithEmailPassword,
+  signUpWithEmailPassword,
   signOutSupabase,
 } from './supabase-auth.js'
+import {
+  INSTALLATION_CAPABILITY_STATUS,
+  armInstallationHandoff,
+  cancelInstallationHandoff,
+  claimFirstOwner,
+  createInstallationHandoffState,
+  drainBootstrapTargetSession,
+  ensureInstallationRequestId,
+  executeInstallationHandoff,
+  getInstallationErrorMessage,
+  inspectInstallationHandoff,
+  loadInstallationCapability,
+  prepareInstallationHandoff,
+  purgeInstallationHandoffState,
+} from './first-owner-bootstrap.js'
 import {
   createLifecycleRequestId,
   getAccountLifecycleErrorMessage,
@@ -40,7 +55,11 @@ import {
   normalizeAccountGovernanceCapability,
   validateReviewedAccountEmail,
 } from './account-lifecycle.js'
-import { getSupabaseClient, getSupabaseConfigStatus } from './supabase-client.js'
+import {
+  getSupabaseClient,
+  getSupabaseConfigStatus,
+  getSupabaseInstallationNamespace,
+} from './supabase-client.js'
 import {
   buildAttachmentFileName,
   buildTransactionCode,
@@ -150,6 +169,7 @@ import {
   createCloudDbPullBackup,
   saveDeletedNotificationIds,
   saveDesktopModuleOrder,
+  setCurrentInstallationStorageNamespace,
   setCurrentStorageCenterId,
   saveStoredNotifications,
   saveStoredSchedule,
@@ -918,6 +938,7 @@ let reportTransactionDrilldownState = null
 let reportTransactionDrilldownToken = 0
 let careNoteDrafts = {}
 let cloudStatus = createInitialCloudStatus(getSupabaseConfigStatus().status)
+let installationHandoffState = createInstallationHandoffState()
 let cloudDbState = createInitialCloudDbState()
 let cloudBootstrapState = createInitialCloudBootstrapState()
 let cloudUserSyncId = 0
@@ -1428,8 +1449,7 @@ function isProductionCenter(centerId = getCurrentResolvedCenterId()) {
   const normalizedCenterId = String(centerId || '').trim()
   const knownCenter = internalCentersListState.centers.find((center) => center.id === normalizedCenterId)
 
-  return normalizedCenterId === PRODUCTION_CENTER_ID ||
-    normalizedCenterId.endsWith('_prod') ||
+  return normalizedCenterId.endsWith('_prod') ||
     knownCenter?.environment === 'production'
 }
 
@@ -7389,7 +7409,7 @@ function render() {
         ${isLoginGateOpen
           ? cloudStatus.credentialChangeRequired
             ? renderRequiredCredentialChange()
-            : renderAppAuthEntry(cloudStatus, currentCenterBinding)
+            : renderAppAuthEntry({ ...cloudStatus, installationHandoffState }, currentCenterBinding)
           : ''}
         ${isLoginGateOpen ? '' : isInternalCentersRoute ? renderInternalCenterConsoleRoute(currentCenterBinding) : renderDashboard()}
         <div class="window-layer" aria-label="Các cửa sổ đang mở">
@@ -7823,6 +7843,7 @@ function renderInternalCenterConsoleSkeleton(centerBinding) {
         ${renderInternalAddCenterForm()}
         ${renderInternalCentersList()}
         ${renderInternalCenterAccountManagement()}
+        ${renderInstallationHandoffPanel()}
         <dl class="internal-console-meta">
           <div>
             <dt>Tài khoản</dt>
@@ -8324,6 +8345,82 @@ function hasDurableInternalAccountLifecycle(account) {
   ].includes(account?.state) || [
     'active', 'pending_credential', 'reset_required', 'revoke_pending', 'revoked', 'restore_pending',
   ].includes(account?.status)
+}
+
+function renderInstallationHandoffPanel() {
+  const capability = installationHandoffState.capability
+  if (installationHandoffState.capabilityStatus !== INSTALLATION_CAPABILITY_STATUS.READY ||
+      !capability || !capability.janitorAvailable && !capability.janitorInProgress) {
+    return ''
+  }
+  const busy = installationHandoffState.actionStatus === 'saving'
+  const review = installationHandoffState.review || null
+  const manifest = review?.manifest || {}
+  const commandId = installationHandoffState.commandId || review?.active_command_id || ''
+  const prepared = installationHandoffState.actionStatus === 'prepared' ||
+    review?.state === 'RESET_PREPARED'
+  const armed = installationHandoffState.actionStatus === 'armed' || review?.state === 'RESET_ARMED'
+
+  return `
+    <section class="installation-handoff-panel" aria-labelledby="installation-handoff-title">
+      <div class="installation-handoff-heading">
+        <div>
+          <p class="internal-console-eyebrow">Bàn giao một lần</p>
+          <h2 id="installation-handoff-title">Chuẩn bị bàn giao hệ thống</h2>
+        </div>
+        <span>${escapeHtml(capability.state === 'TESTER_ACTIVE' ? 'Chưa bắt đầu' : 'Đang chuẩn bị')}</span>
+      </div>
+      <p>Chức năng này lưu lại lịch sử nhưng thu hồi toàn bộ quyền và dữ liệu vận hành cũ. Sau khi thực thi, không thể mở lại.</p>
+      ${!review ? `
+        <button type="button" class="is-secondary" data-handoff-action="inspect" ${busy ? 'disabled' : ''}>
+          ${busy ? 'Đang kiểm tra...' : 'Xem kiểm tra bàn giao'}
+        </button>
+      ` : `
+        <dl class="installation-handoff-summary">
+          <div><dt>Số cơ sở trong phạm vi</dt><dd>${escapeHtml(manifest.center_count ?? '-')}</dd></div>
+          <div><dt>Tài khoản cần kết thúc phiên</dt><dd>${escapeHtml(manifest.auth_user_count ?? '-')}</dd></div>
+          <div><dt>Tệp đang được lưu giữ</dt><dd>${escapeHtml(manifest.storage_object_count ?? '-')}</dd></div>
+          <div><dt>Lệnh đang xử lý</dt><dd>${escapeHtml(manifest.active_command_count ?? '-')}</dd></div>
+        </dl>
+        ${!prepared && !armed ? `
+          <form class="installation-handoff-form" data-handoff-prepare-form>
+            <label><span>Email người nhận bàn giao đã xác nhận</span><input type="email" name="targetEmail" required /></label>
+            <label><span>Mã xác nhận bản sao lưu đã phục hồi</span><input type="text" name="restoreVerificationId" required /></label>
+            <label><span>Mật khẩu Owner hiện tại</span><input type="password" name="currentPassword" autocomplete="current-password" required /></label>
+            <button type="submit" class="is-danger" ${busy ? 'disabled' : ''}>Bắt đầu thời gian chờ 24 giờ</button>
+          </form>
+        ` : ''}
+      `}
+      ${installationHandoffState.displayOnceHandoffCode ? `
+        <div class="installation-handoff-display-once" role="alert">
+          <strong>Chỉ hiển thị trong phiên này</strong>
+          <p>Mã bàn giao cho người nhận: <code>${escapeHtml(installationHandoffState.displayOnceHandoffCode)}</code></p>
+          <p>Mã xác nhận để khóa yêu cầu sau 24 giờ: <code>${escapeHtml(installationHandoffState.displayOnceChallenge)}</code></p>
+          <small>Hãy chuyển mã bàn giao qua kênh riêng. Không lưu vào dữ liệu iChess.</small>
+        </div>
+      ` : ''}
+      ${prepared ? `
+        <form class="installation-handoff-form" data-handoff-arm-form>
+          <input type="hidden" name="commandId" value="${escapeAttribute(commandId)}" />
+          <label><span>Mã xác nhận đã nhận khi chuẩn bị</span><input type="password" name="challenge" required /></label>
+          <label><span>Nhập đúng cụm xác nhận</span><input type="text" name="confirmationPhrase" required placeholder="CHUẨN BỊ BÀN GIAO HỆ THỐNG" /></label>
+          <label><span>Mật khẩu Owner hiện tại</span><input type="password" name="currentPassword" autocomplete="current-password" required /></label>
+          <div class="installation-handoff-actions">
+            <button type="button" class="is-secondary" data-handoff-action="cancel" ${busy ? 'disabled' : ''}>Hủy yêu cầu</button>
+            <button type="submit" class="is-danger" ${busy ? 'disabled' : ''}>Khóa phạm vi bàn giao</button>
+          </div>
+        </form>
+      ` : ''}
+      ${armed ? `
+        <form class="installation-handoff-form" data-handoff-execute-form>
+          <p><strong>Phạm vi đã khóa.</strong> Bước tiếp theo sẽ niêm phong lịch sử và thu hồi quyền vận hành cũ.</p>
+          <label><span>Xác nhận mật khẩu Owner</span><input type="password" name="currentPassword" autocomplete="current-password" required /></label>
+          <button type="submit" class="is-danger" ${busy ? 'disabled' : ''}>Thực thi bàn giao một lần</button>
+        </form>
+      ` : ''}
+      ${installationHandoffState.message ? `<p class="installation-handoff-message" role="status">${escapeHtml(installationHandoffState.message)}</p>` : ''}
+    </section>
+  `
 }
 
 function mergeInternalAccountSnapshots(endpointAdminsByCenterId = {}, localSnapshotsByCenterId = {}) {
@@ -9332,6 +9429,7 @@ function resetCloudRuntimeStateForOwnerCenterSwitch() {
   isCenterProfilePopoverOpen = false
   internalCenterAdminAccountsRunId += 1
   internalCenterAdminAccountsState = createInternalCenterAdminAccountsState()
+  installationHandoffState = purgeInstallationHandoffState()
 }
 
 async function handleInternalOpenCenter(centerId) {
@@ -9381,6 +9479,12 @@ async function handleInternalOpenCenter(centerId) {
   internalCenterSwitchState = createInternalCenterSwitchState()
   window.location.hash = ''
   render()
+
+  await refreshInstallationHandoffCapability(switchSyncId)
+
+  if (cloudUserSyncId !== switchSyncId) {
+    return
+  }
 
   await bootstrapCoreCloudDataForCurrentCenter(switchSyncId)
 
@@ -14558,14 +14662,39 @@ function shouldSkipDuplicateCloudUserSync(user, reason = '') {
   return isSameUser && hasSettledMembership && reason !== 'manual-sign-in'
 }
 
+async function refreshInstallationHandoffCapability(syncId = cloudUserSyncId) {
+  installationHandoffState = {
+    ...installationHandoffState,
+    capabilityStatus: INSTALLATION_CAPABILITY_STATUS.LOADING,
+    capability: null,
+  }
+  const result = await loadInstallationCapability()
+  if (syncId !== cloudUserSyncId) return false
+  installationHandoffState = {
+    ...installationHandoffState,
+    capabilityStatus: result.status,
+    capability: result.capability,
+  }
+  if (result.status === INSTALLATION_CAPABILITY_STATUS.READY &&
+      Number.isInteger(result.capability?.installationEpoch)) {
+    setCurrentInstallationStorageNamespace(
+      `${getSupabaseInstallationNamespace()}-e${result.capability.installationEpoch}`,
+    )
+  }
+  return true
+}
+
 async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   if (!force && shouldSkipDuplicateCloudUserSync(user, reason)) {
     return
   }
 
   const syncId = ++cloudUserSyncId
+  setCurrentStorageCenterId('')
+  setCurrentInstallationStorageNamespace(`${getSupabaseInstallationNamespace()}-unresolved`)
 
   if (!user) {
+    installationHandoffState = purgeInstallationHandoffState()
     internalCenterAdminAccountsRunId += 1
     internalCenterAdminAccountsState = createInternalCenterAdminAccountsState()
     resetParentFirstRuntimeForAccessBoundary('')
@@ -14623,6 +14752,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
       profileMessageTone: '',
     }
     render()
+    await refreshInstallationHandoffCapability(syncId)
+    render()
     return
   }
 
@@ -14638,6 +14769,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   resetC55StaffHrRuntimeForAccessBoundary('')
   resetC56InventoryRuntimeForAccessBoundary('')
   resetC57CalendarNotesRuntimeForAccessBoundary('')
+  installationHandoffState = purgeInstallationHandoffState()
 
   cloudStatus = {
     ...cloudStatus,
@@ -14685,6 +14817,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
 
   try {
     const resolvedMembership = await resolveActiveCenterMembership(user.id)
+    await refreshInstallationHandoffCapability(syncId)
 
     if (syncId !== cloudUserSyncId) {
       return
@@ -20388,6 +20521,7 @@ function bindEvents() {
   document
     .querySelector('[data-internal-console-action="return-dashboard"]')
     ?.addEventListener('click', () => {
+      installationHandoffState = purgeInstallationHandoffState()
       if (window.location.hash === INTERNAL_CENTERS_ROUTE_HASH) {
         window.location.hash = ''
         return
@@ -20744,6 +20878,96 @@ function bindEvents() {
       applyUiTheme()
       render()
     })
+
+  document.querySelector('[data-handoff-action="inspect"]')?.addEventListener('click', async () => {
+    installationHandoffState = { ...installationHandoffState, actionStatus: 'saving', message: '' }
+    render()
+    try {
+      const review = await inspectInstallationHandoff()
+      installationHandoffState = {
+        ...installationHandoffState,
+        actionStatus: 'review',
+        review,
+        commandId: review.active_command_id || '',
+      }
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'error',
+        message: getInstallationErrorMessage(error, 'Chưa thể tải kiểm tra bàn giao.') }
+    }
+    render()
+  })
+
+  document.querySelector('[data-handoff-prepare-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const values = new FormData(event.currentTarget)
+    installationHandoffState = ensureInstallationRequestId({
+      ...installationHandoffState,
+      actionStatus: 'saving',
+      message: '',
+    }, 'handoff-reset')
+    render()
+    try {
+      installationHandoffState = await prepareInstallationHandoff(installationHandoffState, {
+        targetEmail: values.get('targetEmail'),
+        restoreVerificationId: values.get('restoreVerificationId'),
+        currentPassword: values.get('currentPassword'),
+        controlVersion: installationHandoffState.capability?.controlVersion,
+      })
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'error',
+        message: getInstallationErrorMessage(error, 'Chưa thể chuẩn bị bàn giao.') }
+    }
+    render()
+  })
+
+  document.querySelector('[data-handoff-arm-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const values = new FormData(event.currentTarget)
+    installationHandoffState = { ...installationHandoffState, actionStatus: 'saving', message: '' }
+    render()
+    try {
+      installationHandoffState = await armInstallationHandoff(installationHandoffState, {
+        commandId: values.get('commandId'),
+        challenge: values.get('challenge'),
+        confirmationPhrase: values.get('confirmationPhrase'),
+        currentPassword: values.get('currentPassword'),
+      })
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'prepared',
+        message: getInstallationErrorMessage(error, 'Chưa thể khóa yêu cầu bàn giao.') }
+    }
+    render()
+  })
+
+  document.querySelector('[data-handoff-execute-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const values = new FormData(event.currentTarget)
+    installationHandoffState = { ...installationHandoffState, actionStatus: 'saving', message: '' }
+    render()
+    try {
+      installationHandoffState = await executeInstallationHandoff(
+        installationHandoffState,
+        values.get('currentPassword'),
+      )
+      await signOutSupabase().catch(() => {})
+      await syncCloudUser(null, { force: true, reason: 'handoff-reset-history-sealed' })
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'armed',
+        message: getInstallationErrorMessage(error, 'Bàn giao chưa hoàn tất; quyền không được tự động khôi phục.') }
+    }
+    render()
+  })
+
+  document.querySelector('[data-handoff-action="cancel"]')?.addEventListener('click', async () => {
+    try {
+      installationHandoffState = await cancelInstallationHandoff(installationHandoffState)
+      await refreshInstallationHandoffCapability()
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState,
+        message: getInstallationErrorMessage(error, 'Không thể hủy yêu cầu ở trạng thái hiện tại.') }
+    }
+    render()
+  })
   })
 
   document.querySelector('[data-action="toggle-center-profile"]')?.addEventListener('click', () => {
@@ -20997,6 +21221,86 @@ function bindEvents() {
         credentialChangeStatus: 'error',
         credentialChangeMessage: getAccountLifecycleErrorMessage(error, 'Không đổi được mật khẩu. Vui lòng thử lại.'),
       }
+      render()
+    }
+  })
+
+  document.querySelector('[data-first-owner-signup-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const email = String(formData.get('email') || '').trim()
+    const password = String(formData.get('password') || '')
+    const confirmPassword = String(formData.get('confirmPassword') || '')
+    if (password.length < 12 || password !== confirmPassword) {
+      installationHandoffState = { ...installationHandoffState,
+        message: password !== confirmPassword
+          ? 'Hai lần nhập mật khẩu chưa khớp.'
+          : 'Mật khẩu cần có ít nhất 12 ký tự.' }
+      render()
+      return
+    }
+    installationHandoffState = { ...installationHandoffState, actionStatus: 'saving', message: '' }
+    render()
+    try {
+      const result = await signUpWithEmailPassword(email, password)
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'idle',
+        message: result.user?.email_confirmed_at
+          ? 'Tài khoản đã sẵn sàng. Hãy đăng nhập để tiếp tục.'
+          : 'Đã tạo tài khoản. Hãy xác nhận email rồi đăng nhập để tiếp tục.' }
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'error',
+        message: getInstallationErrorMessage(error, 'Chưa thể tạo tài khoản nhận bàn giao.') }
+    }
+    render()
+  })
+
+  document.querySelector('[data-first-owner-action="drain-session"]')?.addEventListener('click', async () => {
+    installationHandoffState = { ...installationHandoffState, actionStatus: 'saving', message: '' }
+    render()
+    try {
+      const result = await drainBootstrapTargetSession()
+      if (result.sign_in_again !== false) {
+        await signOutSupabase().catch(() => {})
+        await syncCloudUser(null, { force: true, reason: 'handoff-target-session-drained' })
+      } else {
+        await refreshInstallationHandoffCapability()
+        installationHandoffState = {
+          ...installationHandoffState,
+          actionStatus: 'idle',
+          message: result.code === 'initialization_ready'
+            ? 'Hệ thống đã sẵn sàng để khởi tạo cơ sở đầu tiên.'
+            : 'Phiên cũ đã kết thúc. Hãy chờ hết thời gian an toàn rồi kiểm tra lại.',
+        }
+        render()
+      }
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'error',
+        message: getInstallationErrorMessage(error, 'Chưa thể kết thúc phiên cũ.') }
+      render()
+    }
+  })
+
+  document.querySelector('[data-first-owner-bootstrap-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    installationHandoffState = ensureInstallationRequestId({
+      ...installationHandoffState,
+      actionStatus: 'saving',
+      message: '',
+    }, 'first-owner')
+    render()
+    try {
+      const result = await claimFirstOwner(installationHandoffState, {
+        centerName: formData.get('centerName'),
+        handoffCode: formData.get('handoffCode'),
+        currentPassword: formData.get('currentPassword'),
+      })
+      installationHandoffState = result.state
+      const user = await getCurrentSupabaseUser()
+      await syncCloudUser(user, { force: true, reason: 'first-owner-bootstrap-complete' })
+    } catch (error) {
+      installationHandoffState = { ...installationHandoffState, actionStatus: 'error',
+        message: getInstallationErrorMessage(error, 'Chưa thể hoàn tất khởi tạo.') }
       render()
     }
   })

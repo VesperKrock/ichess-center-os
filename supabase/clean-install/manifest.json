@@ -1,0 +1,40 @@
+{
+  "package": "ichess-center-os-clean-install",
+  "version": "CHB-1",
+  "cleanliness": "FRESH_INSTANCE_CLEAN",
+  "schemaSource": "read-only linked production physical schema",
+  "schemaFile": "supabase/clean-install/schema.sql",
+  "schemaSha256": "9EA29A0074B910556939E360E893CCECC737FC76184BE4D57D58759E9FB29774",
+  "overlayMigration": "supabase/migrations/202609070001_chb_1_first_owner_bootstrap_governance.sql",
+  "overlayMigrationSha256": "7F16D16D09DE81D274E5BAD5BAB3F8EB5CD7BB9BD828FE8F8F5E3351670589A3",
+  "applyOrder": [
+    "create a fresh hosted Supabase project with platform Auth, Storage, Vault and extensions",
+    "apply schema.sql through reviewed controlled SQL",
+    "apply the CHB-1 overlay migration, which also provisions only empty application Storage buckets and policies",
+    "verify must-zero classes",
+    "generate a new installation CRM lookup key in supported server-side secret storage without exposing its bytes",
+    "configure a target-bound bootstrap digest server-side",
+    "deploy the allowlisted Edge Functions and frontend"
+  ],
+  "excludedHistoricalMigrations": [
+    "202608120003_f23_3e_p3d_atomic_real_conversion_executor_and_integrated_backend_qa.sql",
+    "202608130002_f23_3e_p4b_safe_server_bridge_auth_step_up_conversion_ui_legacy_projection.sql",
+    "202608210001_ov1_2_targeted_attendance_tuition_runtime_closure.sql",
+    "202608210004_ov1_4_dreamhome_prod_schedule_identity_normalization.sql"
+  ],
+  "mustZero": [
+    "auth identities except the exact confirmed bootstrap target after configuration",
+    "centers and center memberships",
+    "active governance subjects, commands, custodians and approvals",
+    "all business, audit, outbox, fixture, legacy and quarantine rows",
+    "Storage objects",
+    "copied Vault secret bytes"
+  ],
+  "notes": [
+    "schema.sql contains schema only and no production rows",
+    "the CHB-1 overlay depends on hosted Storage and never recreates platform-owned Storage objects",
+    "dormant inherited helper definitions are not deployment authority",
+    "P3D and P4B executable contracts remain excluded",
+    "a new per-installation server secret must be generated; secrets are never copied"
+  ]
+}

@@ -26,7 +26,7 @@ export const emptyCashflowFormValues = {
   transactionDate: getTodayDate(),
   method: 'Tiền mặt',
   personName: '',
-  recordedBy: 'Admin DreamHome',
+  recordedBy: 'Admin',
   note: '',
   attachment: null,
 }
@@ -81,7 +81,7 @@ export function createEditCashflowFormState(
       transactionDate: transaction.transactionDate ?? getTodayDate(),
       method: transaction.method ?? 'Tiền mặt',
       personName: transaction.personName ?? '',
-      recordedBy: transaction.recordedBy ?? 'Admin DreamHome',
+      recordedBy: transaction.recordedBy ?? 'Admin',
       note: transaction.note ?? '',
       attachment: legacyAttachment,
     },
@@ -183,7 +183,7 @@ export function renderCashflowModule(
       <div class="cashflow-toolbar">
         <div>
           <h3 id="cashflow-title">Thu chi</h3>
-          <p>Ghi nhận giao dịch thu/chi của cơ sở DreamHome, bao gồm khoản thu học phí được đồng bộ tự động.</p>
+          <p>Ghi nhận giao dịch thu/chi của cơ sở hiện tại, bao gồm khoản thu học phí được đồng bộ tự động.</p>
         </div>
         <div class="cashflow-toolbar-actions">
           <button
@@ -441,7 +441,7 @@ export function buildCashflowCsvExport(transactions, filters = initialCashflowFi
   const stats = getCashflowStats(filteredTransactions)
   const periodLabel = getCashflowPeriodLabel(activeFilters) || 'Tất cả'
   const rows = [
-    ['Báo cáo Thu chi - DreamHome'],
+    ['Báo cáo Thu chi'],
     ['Kỳ', periodLabel],
     ['Tổng thu', stats.totalIncome],
     ['Tổng chi', stats.totalExpense],
@@ -1311,7 +1311,7 @@ function renderCloudGallery(state) {
         <header class="cloud-gallery-header">
           <div>
             <h4 id="cloud-gallery-title">Kho ảnh giao dịch cloud</h4>
-            <p>DreamHome · Tháng ${escapeHtml(state.monthKey)}</p>
+            <p>Cơ sở hiện tại · Tháng ${escapeHtml(state.monthKey)}</p>
           </div>
           <button type="button" data-cloud-gallery-action="close" aria-label="Đóng">×</button>
         </header>
@@ -1340,7 +1340,7 @@ function renderCloudGallery(state) {
             state.status === 'loading'
               ? '<p class="cloud-gallery-empty">Đang tải kho ảnh cloud...</p>'
               : state.status === 'error'
-                ? `<p class="cloud-gallery-error">${escapeHtml(state.error || 'Không thể tải kho ảnh cloud. Vui lòng kiểm tra đăng nhập/quyền DreamHome.')}</p>`
+                ? `<p class="cloud-gallery-error">${escapeHtml(state.error || 'Không thể tải kho ảnh cloud. Vui lòng kiểm tra đăng nhập và quyền tại cơ sở hiện tại.')}</p>`
                 : !state.attachments.length
                   ? '<p class="cloud-gallery-empty">Chưa có ảnh giao dịch cloud trong tháng này.</p>'
                   : !filteredAttachments.length
@@ -1535,7 +1535,7 @@ function getTransactionSourceExportLabel(sourceModule) {
 function getCashflowCsvFilename(filters = initialCashflowFilters) {
   const activeFilters = { ...initialCashflowFilters, ...filters }
   const safePart = getCashflowFilenamePeriodPart(activeFilters)
-  return `thu-chi-dreamhome-${safePart}.csv`
+  return `thu-chi-${safePart}.csv`
 }
 
 function getCashflowFilenamePeriodPart(filters) {

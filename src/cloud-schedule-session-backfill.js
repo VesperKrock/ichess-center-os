@@ -7,7 +7,7 @@ import { SCHEDULE_SESSION_CLOUD_ENTITY_TYPE } from './cloud-schedule-sessions.js
 
 export const SCHEDULE_SESSION_BACKFILL_CONFIRM_TOKEN = 'BACKFILL_SCHEDULE_SESSION'
 
-const DEFAULT_CENTER_ID = 'dreamhome'
+const DEFAULT_CENTER_ID = ''
 const ADMIN_BACKFILL_ROLES = new Set(['owner', 'qtv', 'center_admin', 'admin'])
 
 export async function backfillLocalScheduleSessionsToCloud({

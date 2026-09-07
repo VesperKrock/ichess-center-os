@@ -1308,6 +1308,121 @@ h3 {
   min-height: 78px;
 }
 
+.installation-handoff-panel {
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, #b42318 45%, var(--border-color, #d9dee8));
+  border-radius: 14px;
+  background: color-mix(in srgb, #b42318 5%, var(--surface, #fff));
+}
+
+.installation-handoff-heading,
+.installation-handoff-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.installation-handoff-heading h2,
+.installation-handoff-panel p {
+  margin: 0;
+}
+
+.installation-handoff-panel > p {
+  margin: 10px 0 18px;
+  line-height: 1.55;
+}
+
+.installation-handoff-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.installation-handoff-summary div,
+.installation-handoff-display-once {
+  padding: 12px;
+  border: 1px solid var(--border-color, #d9dee8);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.installation-handoff-summary dt,
+.installation-handoff-display-once small {
+  color: var(--text-secondary, #475467);
+}
+
+.installation-handoff-summary dd {
+  margin: 5px 0 0;
+  font-weight: 700;
+}
+
+.installation-handoff-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.installation-handoff-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.installation-handoff-form input {
+  min-height: 42px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-color, #cfd6e4);
+  border-radius: 8px;
+  color: var(--text-primary, #101828);
+  background: var(--surface, #fff);
+}
+
+.installation-handoff-panel .is-danger {
+  color: #fff;
+  border-color: #b42318;
+  background: #b42318;
+}
+
+.installation-handoff-display-once {
+  margin-top: 16px;
+  border-color: #dc6803;
+}
+
+.installation-handoff-display-once code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.installation-handoff-message {
+  margin-top: 12px !important;
+  font-weight: 600;
+}
+
+.app-auth-bootstrap-intro {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #d9dee8);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+
+.app-auth-bootstrap-intro h3,
+.app-auth-bootstrap-intro p,
+.first-owner-bootstrap-form h3,
+.first-owner-bootstrap-form p {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .installation-handoff-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .module-button.is-unavailable {
   border-color: rgba(160, 184, 214, 0.2);
   color: #d0d9e5;

@@ -88,12 +88,12 @@ export async function writeC53AuditLogEntry({
 }
 
 export function buildC53AuditLogCloudEntity({
-  centerId = 'dreamhome',
+  centerId = '',
   userId = null,
   accessState,
   entry = {},
 } = {}) {
-  const normalizedCenterId = normalizeText(centerId) || 'dreamhome'
+  const normalizedCenterId = normalizeText(centerId)
   const access = canWriteC53AuditLogEntry({
     ...accessState,
     centerId: accessState?.centerId || normalizedCenterId,
@@ -176,7 +176,7 @@ export function buildC53AuditLogCloudEntity({
 }
 
 export function createAuditLogEntryLocalId({
-  centerId = 'dreamhome',
+  centerId = '',
   entityType = '',
   entityLocalId = '',
   createdAt = new Date().toISOString(),

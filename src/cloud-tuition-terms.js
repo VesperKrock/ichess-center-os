@@ -4,9 +4,9 @@ export const TUITION_TERM_CLOUD_ENTITY_TYPE = 'tuition_term'
 export const TUITION_PAYMENT_CLOUD_ENTITY_TYPE = 'tuition_payment'
 export const TUITION_TERM_PAYMENT_CLOUD_SOURCE_VERSION = 'f19h-tuition-term-payment-alpha-v1'
 export const TUITION_TERM_PAYMENT_CLOUD_STATUS_NEEDS_PATCH = 'NEEDS SQL/ALLOWLIST PATCH'
-export const TUITION_RECORD_STORAGE_KEY = 'ichessCenterOS.tuition.dreamhome'
+export const TUITION_RECORD_STORAGE_KEY = 'ichessCenterOS.tuition.unbound'
 
-const DEFAULT_CENTER_ID = 'dreamhome'
+const DEFAULT_CENTER_ID = ''
 const ALLOWED_TUITION_TERM_PAYMENT_ENTITY_TYPES = new Set([
   TUITION_TERM_CLOUD_ENTITY_TYPE,
   TUITION_PAYMENT_CLOUD_ENTITY_TYPE,
@@ -640,7 +640,7 @@ function normalizeText(value) {
 }
 
 function getTuitionRecordStorageKey(centerId = DEFAULT_CENTER_ID) {
-  return `ichessCenterOS.tuition.${slugifyIdPart(centerId || DEFAULT_CENTER_ID)}`
+  return `ichessCenterOS.tuition.${slugifyIdPart(centerId || 'unbound')}`
 }
 
 function getLocalStorage() {

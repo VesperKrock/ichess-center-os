@@ -8,9 +8,9 @@ import { sanitizeCloudPayload } from './cloud-db-entities.js'
 export const ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE = 'attendance_record'
 export const ATTENDANCE_RECORD_CLOUD_SOURCE_VERSION = 'f19h-attendance-alpha-v1'
 export const ATTENDANCE_RECORD_CLOUD_STATUS_NEEDS_PATCH = 'NEEDS SQL/ALLOWLIST PATCH'
-export const ATTENDANCE_RECORD_STORAGE_KEY = 'ichessCenterOS.attendanceRecords.dreamhome'
+export const ATTENDANCE_RECORD_STORAGE_KEY = 'ichessCenterOS.attendanceRecords.unbound'
 
-const DEFAULT_CENTER_ID = 'dreamhome'
+const DEFAULT_CENTER_ID = ''
 const ALLOWED_ATTENDANCE_RECORD_CLOUD_ENTITY_TYPES = new Set([
   ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE,
 ])
@@ -296,7 +296,7 @@ export function createAttendanceRecordsPullBackup(
 
   const createdAt = new Date().toISOString()
   const backupKey = `ichessCenterOS.backup.beforeAttendanceRecordPull.${createdAt.replace(/[:.]/g, '-')}`
-  const attendanceKey = `ichessCenterOS.attendanceRecords.${slugifyIdPart(centerId || DEFAULT_CENTER_ID)}`
+  const attendanceKey = `ichessCenterOS.attendanceRecords.${slugifyIdPart(centerId || 'unbound')}`
 
   storage.setItem(
     backupKey,

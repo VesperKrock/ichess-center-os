@@ -29,6 +29,17 @@ export function getSupabaseConfigStatus(env = import.meta.env) {
   }
 }
 
+export function getSupabaseInstallationNamespace(env = import.meta.env) {
+  const config = resolveSupabaseConfig(env)
+  if (config.status !== 'configured') return 'local'
+  try {
+    const host = new URL(config.url).hostname.toLowerCase()
+    return host.split('.')[0].replace(/[^a-z0-9_-]/g, '') || 'configured'
+  } catch {
+    return 'configured'
+  }
+}
+
 export function isSupabaseConfigured(env = import.meta.env) {
   return getSupabaseConfigStatus(env).status === 'configured'
 }

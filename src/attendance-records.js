@@ -2,7 +2,7 @@ const DEMO_ATTENDANCE_SOURCE_MODULE = 'bang-diem-danh-demo'
 const DEMO_ATTENDANCE_BATCH_ID = 'attendance-board-demo-foundation'
 
 const COUNTED_ATTENDANCE_STATUSES = new Set(['present', 'makeup'])
-const DEFAULT_ATTENDANCE_CENTER_ID = 'dreamhome'
+const DEFAULT_ATTENDANCE_CENTER_ID = 'unbound'
 const ATTENDANCE_RECORDS_STORAGE_KEY_PREFIX = 'ichessCenterOS.attendanceRecords'
 const ATTENDANCE_BASELINE_STATE_STORAGE_KEY_PREFIX = 'ichessCenterOS.attendanceBaselineState'
 

@@ -409,6 +409,12 @@ verify_jwt = true
 [functions.manage-owner-recovery]
 verify_jwt = true
 
+[functions.manage-installation-handoff]
+verify_jwt = true
+
+[functions.bootstrap-first-owner]
+verify_jwt = true
+
 [functions.crm-conversion-bridge]
 verify_jwt = true
 

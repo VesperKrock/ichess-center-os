@@ -93,7 +93,7 @@ export function normalizeCenterCalendarStorageCenterId(centerId) {
     .replace(/[^a-z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '')
 
-  return normalized || 'dreamhome'
+  return normalized || 'unbound'
 }
 
 export function getCenterCalendarItemsStorageKey(centerId) {

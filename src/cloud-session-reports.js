@@ -4,10 +4,10 @@ export const ATTENDANCE_BASELINE_STATE_CLOUD_ENTITY_TYPE = 'attendance_baseline_
 export const SESSION_REPORT_CLOUD_ENTITY_TYPE = 'session_report'
 export const BASELINE_SESSION_REPORT_CLOUD_STATUS_NEEDS_PATCH = 'NEEDS SQL/ALLOWLIST PATCH'
 export const BASELINE_SESSION_REPORT_CLOUD_SOURCE_VERSION = 'f19h-baseline-session-report-alpha-v1'
-export const ATTENDANCE_BASELINE_STATE_STORAGE_KEY = 'ichessCenterOS.attendanceBaselineState.dreamhome'
-export const SESSION_REPORTS_STORAGE_KEY = 'ichessCenterOS.sessionReports.dreamhome'
+export const ATTENDANCE_BASELINE_STATE_STORAGE_KEY = 'ichessCenterOS.attendanceBaselineState.unbound'
+export const SESSION_REPORTS_STORAGE_KEY = 'ichessCenterOS.sessionReports.unbound'
 
-const DEFAULT_CENTER_ID = 'dreamhome'
+const DEFAULT_CENTER_ID = ''
 const ALLOWED_BASELINE_SESSION_REPORT_ENTITY_TYPES = new Set([
   ATTENDANCE_BASELINE_STATE_CLOUD_ENTITY_TYPE,
   SESSION_REPORT_CLOUD_ENTITY_TYPE,
@@ -451,7 +451,7 @@ function createSessionReportId(sessionId, occurrenceDate) {
 }
 
 function getBaselineStateStorageKey(centerId = DEFAULT_CENTER_ID) {
-  return `ichessCenterOS.attendanceBaselineState.${slugifyIdPart(centerId || DEFAULT_CENTER_ID)}`
+  return `ichessCenterOS.attendanceBaselineState.${slugifyIdPart(centerId || 'unbound')}`
 }
 
 function parseJsonArray(rawValue) {

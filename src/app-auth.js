@@ -3,6 +3,7 @@ export function renderAppAuthEntry(status, centerBinding = null) {
   const isSignedIn = status.authStatus === 'signed-in' && status.user
   const isBusy = status.authStatus === 'loading' || status.authStatus === 'signing-in'
   const statusText = getAuthStatusText(status, isConfigured, isSignedIn, isBusy)
+  const handoffEntry = renderInstallationHandoffEntry(status, isSignedIn, isBusy)
 
   return `
     <section class="app-auth-entry" aria-labelledby="app-auth-title">
@@ -16,6 +17,8 @@ export function renderAppAuthEntry(status, centerBinding = null) {
       ${
         !isConfigured
           ? '<p class="app-auth-message">Chưa cấu hình Supabase. Thêm URL và publishable key vào .env.local rồi khởi động lại app.</p>'
+          : handoffEntry
+            ? handoffEntry
           : isSignedIn
             ? centerBinding?.status === 'denied'
               ? renderAccessDeniedState(status, centerBinding)
@@ -23,6 +26,62 @@ export function renderAppAuthEntry(status, centerBinding = null) {
             : renderLoginForm(status, isBusy)
       }
     </section>
+  `
+}
+
+function renderInstallationHandoffEntry(status, isSignedIn, isBusy) {
+  const handoff = status.installationHandoffState || {}
+  const capability = handoff.capability || {}
+  if (handoff.capabilityStatus === 'LOADING' && isSignedIn && status.membershipStatus !== 'loaded') {
+    return '<p class="app-auth-message">Đang kiểm tra trạng thái khởi tạo hệ thống...</p>'
+  }
+  if (!isSignedIn && ['FRESH_UNINITIALIZED', 'UNINITIALIZED_NEXT_EPOCH'].includes(capability.state)) {
+    return `
+      <div class="app-auth-bootstrap-intro">
+        <h3>iChess chưa được khởi tạo</h3>
+        <p>Người nhận bàn giao cần tự tạo tài khoản, xác nhận email rồi đăng nhập để khởi tạo cơ sở đầu tiên.</p>
+      </div>
+      <form class="app-auth-form" data-first-owner-signup-form>
+        <label><span>Email của bạn</span><input type="email" name="email" autocomplete="username" required /></label>
+        <label><span>Mật khẩu do bạn tự đặt</span><input type="password" name="password" autocomplete="new-password" minlength="12" required /></label>
+        <label><span>Nhập lại mật khẩu</span><input type="password" name="confirmPassword" autocomplete="new-password" minlength="12" required /></label>
+        <button type="submit">Tạo tài khoản nhận bàn giao</button>
+      </form>
+      ${renderLoginForm(status, isBusy)}
+      ${renderMessage(handoff.message)}
+    `
+  }
+  if (!isSignedIn || !capability.targetSessionDrainRequired && !capability.bootstrapAvailable) return ''
+  if (capability.targetSessionDrainRequired) {
+    const drainCompleted = capability.targetSessionDrainCompleted === true
+    return `
+      <div class="app-auth-bootstrap-intro">
+        <h3>${drainCompleted ? 'Chờ hoàn tất bàn giao' : 'Kết thúc phiên cũ trước khi bàn giao'}</h3>
+        <p>${drainCompleted
+          ? 'Phiên cũ đã kết thúc. Hãy kiểm tra lại khi thời gian an toàn hoàn tất.'
+          : 'Quyền dữ liệu cũ đã được thu hồi. Hãy kết thúc phiên này, sau đó đăng nhập lại khi thời gian an toàn hoàn tất.'}</p>
+        <button type="button" data-first-owner-action="drain-session" ${handoff.actionStatus === 'saving' ? 'disabled' : ''}>
+          ${handoff.actionStatus === 'saving'
+            ? drainCompleted ? 'Đang kiểm tra...' : 'Đang kết thúc phiên...'
+            : drainCompleted ? 'Kiểm tra trạng thái bàn giao' : 'Kết thúc phiên cũ'}
+        </button>
+        ${renderMessage(handoff.message)}
+      </div>
+    `
+  }
+  return `
+    <form class="app-auth-form first-owner-bootstrap-form" data-first-owner-bootstrap-form>
+      <h3>Khởi tạo iChess lần đầu</h3>
+      <p>Hành động này chỉ thực hiện một lần. Tài khoản đang đăng nhập sẽ trở thành Owner đầu tiên.</p>
+      <label><span>Tên cơ sở đầu tiên</span><input type="text" name="centerName" minlength="2" maxlength="100" required /></label>
+      <label><span>Mã bàn giao một lần</span><input type="password" name="handoffCode" autocomplete="off" minlength="32" required /></label>
+      <label><span>Xác nhận mật khẩu hiện tại</span><input type="password" name="currentPassword" autocomplete="current-password" required /></label>
+      <button type="submit" ${handoff.actionStatus === 'saving' ? 'disabled' : ''}>
+        ${handoff.actionStatus === 'saving' ? 'Đang khởi tạo...' : 'Khởi tạo cơ sở và Owner đầu tiên'}
+      </button>
+      ${renderMessage(handoff.message)}
+      <button type="button" data-cloud-action="logout">Đăng xuất</button>
+    </form>
   `
 }
 
@@ -47,7 +106,7 @@ function renderLoginForm(status, isBusy) {
 
 function renderSignedInState(status, centerBinding) {
   const email = status.user?.email || 'Không có email'
-  const centerName = centerBinding?.centerName || 'DreamHome'
+  const centerName = centerBinding?.centerName || 'Chưa xác định'
   const bindingMessage =
     centerBinding?.status === 'error'
       ? centerBinding.message

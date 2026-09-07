@@ -3,7 +3,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import {
-  NEEDS_MEMBERSHIP_SQL_PATCH,
   buildOnlineAccessState,
   canReadModule,
   canWriteEntity,
@@ -99,7 +98,10 @@ const missingMembershipAccess = buildOnlineAccessState({
 assert.equal(missingMembershipAccess.canRead, false)
 assert.equal(missingMembershipAccess.canWrite, false)
 assert.equal(missingMembershipAccess.needsMembershipPatch, true)
-assert.equal(getOnlineAccessMessage(missingMembershipAccess), NEEDS_MEMBERSHIP_SQL_PATCH)
+assert.equal(
+  getOnlineAccessMessage(missingMembershipAccess),
+  'Chưa thể kiểm tra quyền của tài khoản tại cơ sở này.',
+)
 
 const cloudNotReadyAccess = buildOnlineAccessState({
   ...baseInput,

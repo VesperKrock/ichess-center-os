@@ -279,7 +279,7 @@ export function mergeC52TuitionCloudRecordsIntoLocal({
 }
 
 export function buildTuitionRecordPackageCloudEntity({
-  centerId = 'dreamhome',
+  centerId = '',
   tuitionRecord = {},
   userId = null,
 } = {}) {
@@ -314,7 +314,7 @@ export function createTuitionRecordPackageLocalId(tuitionRecord = {}) {
   return id ? `${TUITION_RECORD_PACKAGE_ENTITY_TYPE}::${slugifyIdPart(id)}` : ''
 }
 
-export function normalizeTuitionRecordPackagePayload(tuitionRecord = {}, { centerId = 'dreamhome' } = {}) {
+export function normalizeTuitionRecordPackagePayload(tuitionRecord = {}, { centerId = '' } = {}) {
   if (!tuitionRecord || typeof tuitionRecord !== 'object' || Array.isArray(tuitionRecord)) {
     return { ok: false, error: 'Tuition record package payload is not a valid object.' }
   }
@@ -339,7 +339,7 @@ export function normalizeTuitionRecordPackagePayload(tuitionRecord = {}, { cente
       id,
       studentId,
       localId: createTuitionRecordPackageLocalId({ id }),
-      centerId: String(centerId || '').trim() || 'dreamhome',
+      centerId: String(centerId || '').trim(),
       packageName: String(tuitionRecord.packageName || ''),
       totalSessions: normalizeNonNegativeNumber(tuitionRecord.totalSessions),
       usedSessions: normalizeNonNegativeNumber(tuitionRecord.usedSessions),
@@ -382,7 +382,7 @@ function mergeTuitionRecordPackageCloudRecord(tuitionRecords = [], cloudRecord =
 
   const payload = cloudRecord.payload
   const validation = normalizeTuitionRecordPackagePayload(payload, {
-    centerId: cloudRecord.center_id || payload?.centerId || 'dreamhome',
+    centerId: cloudRecord.center_id || payload?.centerId || '',
   })
 
   if (!validation.ok) {

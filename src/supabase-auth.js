@@ -5,13 +5,7 @@ import {
   isCredentialChangeRequired,
 } from './account-lifecycle.js'
 
-export const CURRENT_CENTER_ID = 'dreamhome'
-export const PRODUCTION_CENTER_ID = 'dreamhome_prod'
-
-const CENTER_DISPLAY_NAMES = Object.freeze({
-  dreamhome: 'DreamHome staging',
-  dreamhome_prod: 'DreamHome',
-})
+export const CURRENT_CENTER_ID = ''
 
 function requireSupabaseClient() {
   const client = getSupabaseClient()
@@ -35,6 +29,16 @@ export async function signInWithEmailPassword(email, password) {
   }
 
   return data.user
+}
+
+export async function signUpWithEmailPassword(email, password) {
+  const client = requireSupabaseClient()
+  const { data, error } = await client.auth.signUp({
+    email: String(email ?? '').trim(),
+    password: String(password ?? ''),
+  })
+  if (error) throw error
+  return data
 }
 
 export async function signOutSupabase() {
@@ -77,7 +81,7 @@ export function onSupabaseAuthStateChange(callback) {
 }
 
 export async function getCurrentCenterMembership(userId, centerId = CURRENT_CENTER_ID) {
-  if (!userId) {
+  if (!userId || !String(centerId || '').trim()) {
     return null
   }
 
@@ -98,7 +102,7 @@ export async function getCurrentCenterMembership(userId, centerId = CURRENT_CENT
 }
 
 export function getCenterDisplayName(centerId) {
-  return CENTER_DISPLAY_NAMES[String(centerId ?? '').trim()] || String(centerId ?? '').trim()
+  return String(centerId ?? '').trim()
 }
 
 export async function listActiveCenterMemberships(userId) {
@@ -109,7 +113,7 @@ export async function listActiveCenterMemberships(userId) {
   const client = requireSupabaseClient()
   const { data, error } = await client
     .from('center_members')
-    .select('id, center_id, role, status, membership_version')
+    .select('id, center_id, role, status, membership_version, centers(name, status)')
     .eq('user_id', userId)
     .eq('status', 'active')
     .order('center_id', { ascending: true })
@@ -118,7 +122,7 @@ export async function listActiveCenterMemberships(userId) {
     throw error
   }
 
-  return Array.isArray(data) ? data : []
+  return Array.isArray(data) ? data.map(normalizeMembershipCenter) : []
 }
 
 export async function listCenterMemberships(userId) {
@@ -129,7 +133,7 @@ export async function listCenterMemberships(userId) {
   const client = requireSupabaseClient()
   const { data, error } = await client
     .from('center_members')
-    .select('id, center_id, role, status, membership_version')
+    .select('id, center_id, role, status, membership_version, centers(name, status)')
     .eq('user_id', userId)
     .order('center_id', { ascending: true })
 
@@ -137,7 +141,17 @@ export async function listCenterMemberships(userId) {
     throw error
   }
 
-  return Array.isArray(data) ? data : []
+  return Array.isArray(data) ? data.map(normalizeMembershipCenter) : []
+}
+
+function normalizeMembershipCenter(membership) {
+  const relation = Array.isArray(membership?.centers) ? membership.centers[0] : membership?.centers
+  const { centers: _relation, ...safeMembership } = membership || {}
+  return {
+    ...safeMembership,
+    center_name: String(relation?.name || membership?.center_id || '').trim(),
+    center_status: String(relation?.status || '').trim(),
+  }
 }
 
 function getAccessDeniedReason(memberships = []) {
@@ -181,7 +195,7 @@ export async function resolveActiveCenterMembership(userId) {
       ok: false,
       status: 'denied',
       centerId,
-      centerName: centerId ? getCenterDisplayName(centerId) : '',
+      centerName: deniedMembership?.center_name || (centerId ? getCenterDisplayName(centerId) : ''),
       role: null,
       membership: null,
       memberships,
@@ -200,7 +214,7 @@ export async function resolveActiveCenterMembership(userId) {
     ok: true,
     status: activeMemberships.length > 1 ? 'multiple' : 'loaded',
     centerId,
-    centerName: getCenterDisplayName(centerId),
+    centerName: membership.center_name || getCenterDisplayName(centerId),
     role: membership.role ?? null,
     membership,
     memberships: activeMemberships,

@@ -3,9 +3,9 @@ import { sanitizeCloudPayload } from './cloud-db-entities.js'
 export const SCHEDULE_SESSION_CLOUD_ENTITY_TYPE = 'schedule_session'
 export const SCHEDULE_SESSION_CLOUD_SOURCE_VERSION = 'f19h-schedule-session-alpha-v1'
 export const SCHEDULE_SESSION_CLOUD_STATUS_NEEDS_PATCH = 'NEEDS SQL/ALLOWLIST PATCH'
-export const SCHEDULE_STORAGE_KEY = 'ichessCenterOS.schedule.dreamhome'
+export const SCHEDULE_STORAGE_KEY = 'ichessCenterOS.schedule.unbound'
 
-const DEFAULT_CENTER_ID = 'dreamhome'
+const DEFAULT_CENTER_ID = ''
 const VALID_SCHEDULE_TYPES = new Set(['recurring', 'oneOff'])
 const VALID_SCHEDULE_DAYS = new Set([
   'monday',
@@ -471,7 +471,7 @@ function getDayOfWeekFromDate(value) {
 }
 
 function getScheduleStorageKey(centerId = DEFAULT_CENTER_ID) {
-  return `ichessCenterOS.schedule.${slugifyIdPart(centerId || DEFAULT_CENTER_ID)}`
+  return `ichessCenterOS.schedule.${slugifyIdPart(centerId || 'unbound')}`
 }
 
 function getLocalStorage() {

@@ -19,8 +19,9 @@ import {
 const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 export const UI_THEME_KEY = 'ichess-center-os:theme'
 const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
-const DEFAULT_STORAGE_CENTER_ID = 'dreamhome'
+const DEFAULT_STORAGE_CENTER_ID = 'unbound'
 let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
+let currentInstallationStorageNamespace = 'legacy'
 const staffAdministrativeProfileReadStatuses = new Map()
 const staffDocumentReadStatuses = new Map()
 const staffAdministrativeAuditReadStatuses = new Map()
@@ -46,10 +47,26 @@ export function getCurrentStorageCenterId() {
   return currentStorageCenterId
 }
 
+export function setCurrentInstallationStorageNamespace(namespace) {
+  const normalized = String(namespace || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  currentInstallationStorageNamespace = normalized || 'legacy'
+  return currentInstallationStorageNamespace
+}
+
+export function getCurrentInstallationStorageNamespace() {
+  return currentInstallationStorageNamespace
+}
+
 function createCenterScopedStorageKey(scope) {
   return {
     toString() {
-      return `ichessCenterOS.${scope}.${currentStorageCenterId}`
+      return currentInstallationStorageNamespace === 'legacy'
+        ? `ichessCenterOS.${scope}.${currentStorageCenterId}`
+        : `ichessCenterOS.${currentInstallationStorageNamespace}.${scope}.${currentStorageCenterId}`
     },
     valueOf() {
       return this.toString()

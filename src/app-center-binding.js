@@ -3,8 +3,8 @@ import { CURRENT_CENTER_ID } from './supabase-auth.js'
 export function getDefaultAppCenter() {
   return {
     id: CURRENT_CENTER_ID,
-    name: 'DreamHome staging',
-    source: 'single-center-default',
+    name: '',
+    source: 'unbound',
   }
 }
 
@@ -83,8 +83,8 @@ export function resolveAppCenterBinding(authState) {
   return {
     status: 'signed-out',
     currentCenterId: '',
-    centerName: getDefaultAppCenter().name,
-    source: 'signed-out-default-only',
+    centerName: '',
+    source: 'none',
     message: '',
   }
 }

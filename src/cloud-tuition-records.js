@@ -4,10 +4,10 @@ export const TUITION_RECORD_CLOUD_ENTITY_TYPE = 'tuition_record'
 export const TUITION_PACKAGE_CLOUD_ENTITY_TYPE = 'tuition_package'
 export const TUITION_CLOUD_SOURCE_VERSION = 'f19h-tuition-alpha-v1'
 export const TUITION_CLOUD_STATUS_NEEDS_PATCH = 'NEEDS SQL/ALLOWLIST PATCH'
-export const TUITION_RECORD_STORAGE_KEY = 'ichessCenterOS.tuition.dreamhome'
-export const TUITION_PACKAGE_STORAGE_KEY = 'ichessCenterOS.tuitionPackages.dreamhome'
+export const TUITION_RECORD_STORAGE_KEY = 'ichessCenterOS.tuition.unbound'
+export const TUITION_PACKAGE_STORAGE_KEY = 'ichessCenterOS.tuitionPackages.unbound'
 
-const DEFAULT_CENTER_ID = 'dreamhome'
+const DEFAULT_CENTER_ID = ''
 const ALLOWED_TUITION_CLOUD_ENTITY_TYPES = new Set([
   TUITION_RECORD_CLOUD_ENTITY_TYPE,
   TUITION_PACKAGE_CLOUD_ENTITY_TYPE,
@@ -563,11 +563,11 @@ function normalizeText(value) {
 }
 
 function getTuitionRecordStorageKey(centerId = DEFAULT_CENTER_ID) {
-  return `ichessCenterOS.tuition.${slugifyIdPart(centerId || DEFAULT_CENTER_ID)}`
+  return `ichessCenterOS.tuition.${slugifyIdPart(centerId || 'unbound')}`
 }
 
 function getTuitionPackageStorageKey(centerId = DEFAULT_CENTER_ID) {
-  return `ichessCenterOS.tuitionPackages.${slugifyIdPart(centerId || DEFAULT_CENTER_ID)}`
+  return `ichessCenterOS.tuitionPackages.${slugifyIdPart(centerId || 'unbound')}`
 }
 
 function getLocalStorage() {

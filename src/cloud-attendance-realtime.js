@@ -365,7 +365,7 @@ export function mergeC51CloudRecordsIntoLocal({
 }
 
 export function createC51LocalSnapshot({
-  centerId = 'dreamhome',
+  centerId = '',
   attendanceRecords = loadStoredAttendanceRecords(centerId),
   baselineState = {},
   sessionReports = getStoredSessionReports(),

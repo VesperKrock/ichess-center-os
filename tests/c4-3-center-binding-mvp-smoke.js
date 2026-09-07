@@ -64,8 +64,9 @@ for (const term of [
 }
 
 const defaultCenter = getDefaultAppCenter()
-assert.equal(defaultCenter.id, 'dreamhome')
-assert.equal(defaultCenter.name, 'DreamHome')
+assert.equal(defaultCenter.id, '')
+assert.equal(defaultCenter.name, '')
+assert.equal(defaultCenter.source, 'unbound')
 
 const signedOutBinding = resolveAppCenterBinding({ authStatus: 'signed-out', user: null })
 assert.equal(isCenterBindingReady(signedOutBinding), false)
@@ -73,10 +74,15 @@ assert.equal(isCenterBindingReady(signedOutBinding), false)
 const signedInBinding = resolveAppCenterBinding({
   authStatus: 'signed-in',
   user: { id: 'user-1', email: 'admin@example.test' },
+  membershipStatus: 'loaded',
+  centerId: 'center-from-membership',
+  centerName: 'Cơ sở từ quyền tài khoản',
+  membership: { id: 'membership-1', role: 'owner' },
+  memberships: [{ id: 'membership-1', center_id: 'center-from-membership', role: 'owner' }],
 })
 assert.equal(signedInBinding.status, 'bound')
-assert.equal(signedInBinding.currentCenterId, 'dreamhome')
-assert.equal(signedInBinding.source, 'single-center-fallback')
+assert.equal(signedInBinding.currentCenterId, 'center-from-membership')
+assert.equal(signedInBinding.source, 'account-membership')
 assert.equal(isCenterBindingReady(signedInBinding), true)
 assert.equal(
   isDashboardUnlockedByCenter({ authStatus: 'signed-in', user: { id: 'user-1' } }, signedInBinding),
@@ -88,23 +94,25 @@ assert.equal(
 )
 
 assert(binding.includes("import { CURRENT_CENTER_ID } from './supabase-auth.js'"))
-assert(binding.includes('single-center-fallback'))
+assert(!binding.includes('single-center-fallback'), 'Missing membership must never fall back to DreamHome.')
 assert(!binding.includes('centerOptions'), 'C4.3 must not create fake center options.')
 assert(!binding.includes('centerSelector'), 'C4.3 must not add center selector.')
 
 assert(gate.includes('isDashboardUnlockedByCenter'))
 assert(main.includes('resolveAppCenterBinding(cloudStatus)'))
 assert(main.includes('isDashboardUnlockedByCenter(cloudStatus, currentCenterBinding)'))
-assert(main.includes('renderAppAuthEntry(cloudStatus, currentCenterBinding)'))
+assert(main.includes('renderAppAuthEntry({ ...cloudStatus, installationHandoffState }, currentCenterBinding)'))
 assert(appAuth.includes('centerBinding'))
 assert(appAuth.includes('Cơ sở:'))
 
-assert(!appAuth.includes('Đăng ký'), 'Login box must not include signup action.')
-assert(!appAuth.includes('Tạo tài khoản'), 'Login box must not include create-account action.')
+assert(appAuth.includes('data-first-owner-signup-form'), 'Signup must exist only for first-Owner bootstrap.')
+assert(appAuth.includes("['FRESH_UNINITIALIZED', 'UNINITIALIZED_NEXT_EPOCH']"),
+  'First-Owner signup must be scoped to an uninitialized installation.')
 assert(!appAuth.includes('Tạo cơ sở mới'), 'Login box must not include create-center action.')
 
 const runtimeSources = [binding, gate, appAuth, main].join('\n')
-assert(!/signUp\s*\(/.test(runtimeSources), 'C4.3 runtime must not call signUp.')
+assert(main.includes('signUpWithEmailPassword(email, password)'),
+  'Uninitialized installation must let the recipient create their own Auth identity.')
 assert(!/auth\.signUp\s*\(/.test(runtimeSources), 'C4.3 runtime must not call supabase.auth.signUp.')
 assert(!/password\s*[:=]\s*['"][^'"]+['"]/.test(runtimeSources), 'C4.3 must not hardcode password.')
 assert(!main.includes('seedCloud29'), 'C4.3 must not seed 29.')
