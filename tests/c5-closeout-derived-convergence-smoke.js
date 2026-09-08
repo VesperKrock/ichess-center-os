@@ -59,7 +59,7 @@ for (const entry of MODULE_AUTHORITY_REGISTRY.filter((item) => item.business)) {
   assert.equal(entry.crossCenter, 'EXACT_CENTER_ISOLATED')
 }
 assert.deepEqual(getModuleRefreshUpstreams('bao-cao'), ['core', 'attendance', 'finance'])
-assert.deepEqual(getModuleRefreshUpstreams('cai-dat-co-so'), ['core', 'tuition'])
+assert.deepEqual(getModuleRefreshUpstreams('cai-dat-co-so'), ['core', 'center-settings'])
 assert.deepEqual(getModuleRefreshUpstreams('bang-diem-danh'), ['core', 'attendance', 'tuition', 'calendar-notes'])
 assert.deepEqual(getModuleRefreshUpstreams('nhom-tai-chinh'), ['finance'])
 assert.deepEqual(getModuleRefreshUpstreams('hoc-vien'), ['core-student'])
@@ -85,7 +85,7 @@ assert.deepEqual(
 )
 
 assert.equal(assertNoBrowserBusinessAuthority().ok, true)
-assert.equal(BROWSER_STORAGE_REGISTRY.length, 43)
+assert.equal(BROWSER_STORAGE_REGISTRY.length, 44)
 assert.deepEqual(BROWSER_STORAGE_CLASSIFICATIONS, [
   'ACTIVE_AUTHORITY', 'CACHE_PROJECTION', 'PERSONAL_UI_STATE', 'UNSAVED_DRAFT',
   'FIXTURE_SAMPLE', 'REAL_LOCAL_ONLY', 'UNCERTAIN', 'QUARANTINED_NOT_ACTIVE',
@@ -94,7 +94,7 @@ assert.deepEqual(BROWSER_STORAGE_CLASSIFICATIONS, [
 const storageCounts = countBrowserStorageClassifications()
 assert.equal(storageCounts.ACTIVE_AUTHORITY || 0, 0)
 assert.equal(storageCounts.CACHE_PROJECTION, 12)
-assert.equal(storageCounts.PERSONAL_UI_STATE, 4)
+assert.equal(storageCounts.PERSONAL_UI_STATE, 5)
 assert.equal(storageCounts.QUARANTINED_NOT_ACTIVE, 27)
 const declaredCenterScopes = [...storageSource.matchAll(/createCenterScopedStorageKey\(\s*'([^']+)'/g)]
   .map((match) => match[1])
@@ -241,6 +241,7 @@ const allowedPostC5AdditiveMigrations = new Set([
   'supabase/migrations/202608210003_ov1_4_tuition_payment_identity_compatibility_hardening.sql',
   'supabase/migrations/202608210004_c5_1_dreamhome_prod_schedule_identity_normalization.sql',
   'supabase/migrations/202608250001_ph_1_authoritative_parent_student_link_and_contact_identity_update.sql',
+  'supabase/migrations/202609080001_v2_1_center_settings_foundation.sql',
 ])
 const changedMigrationPaths = migrationStatus.stdout.trim().split(/\r?\n/)
   .filter(Boolean)

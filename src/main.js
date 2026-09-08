@@ -106,6 +106,25 @@ import {
   mutateC56InventorySharedTruth,
   pullC56InventorySharedTruth,
 } from './cloud-authoritative-inventory.js'
+import {
+  buildV21ClearSharedWallpaperCommand,
+  buildV21SetSharedWallpaperCommand,
+  buildV21SetTuitionPackageStatusCommand,
+  buildV21UpdateCenterProfileCommand,
+  buildV21UpsertTuitionPackageCommand,
+  canWriteV21CenterSettings,
+  createV21CenterSettingsCapabilityState,
+  createV21SettingsIdempotencyKey,
+  createV21SettingsRetryFingerprint,
+  downloadV21SharedWallpaper,
+  getV21CenterSettingsOutcomeMessage,
+  isV21CenterSettingsBackendUnavailable,
+  isV21CenterSettingsCapabilityReady,
+  mutateV21CenterSettings,
+  pullV21CenterSettings,
+  uploadV21SharedWallpaper,
+  V21_CENTER_SETTINGS_CAPABILITY_STATUS,
+} from './cloud-authoritative-center-settings.js'
 import { inspectAndQuarantineC56LegacyInventory } from './legacy-inventory-quarantine.js'
 import {
   buildC57ArchiveCalendarItemCommand,
@@ -611,13 +630,26 @@ import {
 import {
   buildSettingsClassSessionFromForm,
   buildClassSessionAutoName,
+  createEditSettingsTuitionPackageFormState,
   createEditSettingsClassSessionFormState,
+  createEmptySettingsTuitionPackageFormState,
   createEmptySettingsClassSessionFormState,
+  createSettingsCenterProfileFormState,
   getClassSessionStudentCount,
   initialSettingsFilters,
   renderSettingsModule,
+  validateSettingsCenterProfileForm,
   validateSettingsClassSessionForm,
+  validateSettingsTuitionPackageForm,
 } from './settings-module.js'
+import {
+  buildPersonalWallpaperKey,
+  loadPersonalWallpaperBlob,
+  prepareWallpaperImage,
+  removePersonalWallpaperBlob,
+  resolveWallpaperPriority,
+  savePersonalWallpaperBlob,
+} from './wallpaper-preferences.js'
 import {
   buildTuitionRows,
   createEditTuitionFormState,
@@ -887,6 +919,26 @@ let studentFormState = null
 let settingsFilters = { ...initialSettingsFilters }
 let settingsActiveTab = 'class-sessions'
 let settingsClassSessionFormState = null
+let settingsCenterProfileFormState = null
+let settingsTuitionPackageFormState = null
+let v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState()
+let v21CenterSettingsSyncRunId = 0
+let v21CenterProfile = null
+let v21TuitionPackages = []
+let v21SharedWallpaper = null
+let v21SharedWallpaperVersion = 0
+const v21CenterSettingsRetryCommands = new Map()
+let wallpaperRuntimeState = {
+  userId: '',
+  hasPersonal: false,
+  personalUrl: '',
+  sharedUrl: '',
+  source: 'default',
+  message: '',
+  messageTone: '',
+}
+let personalWallpaperRuntimeRunId = 0
+let sharedWallpaperRuntimeRunId = 0
 let tuitionFilters = { ...initialTuitionFilters }
 let tuitionFormState = null
 let tuitionPeriodActionConfirmationState = null
@@ -1085,7 +1137,15 @@ function getCurrentCanonicalCenterContext() {
   return {
     ok,
     centerId: ok ? centerId : '',
-    centerName: ok ? (centerName || centerId) : '',
+    centerName: ok
+      ? (
+          isV21CenterSettingsCapabilityReady(v21CenterSettingsCapabilityState, centerId)
+            && v21CenterProfile?.centerId === centerId
+            && v21CenterProfile.displayName
+            ? v21CenterProfile.displayName
+            : centerName || centerId
+        )
+      : '',
     role: ok ? String(binding.role || cloudStatus.role || '') : '',
   }
 }
@@ -1660,6 +1720,126 @@ function resetC57CalendarNotesRuntimeForAccessBoundary(centerId = '') {
   }
 }
 
+function revokeWallpaperRuntimeUrl(key) {
+  const url = wallpaperRuntimeState[key]
+  if (typeof url === 'string' && url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+function applyWallpaperRuntimeState() {
+  const resolved = resolveWallpaperPriority({
+    personalUrl: wallpaperRuntimeState.personalUrl,
+    sharedUrl: wallpaperRuntimeState.sharedUrl,
+  })
+  wallpaperRuntimeState = { ...wallpaperRuntimeState, source: resolved.source }
+  document.documentElement.style.setProperty(
+    '--ichess-desktop-wallpaper',
+    resolved.url ? `url("${resolved.url}")` : 'none',
+  )
+  document.documentElement.dataset.wallpaperSource = resolved.source
+}
+
+function resetWallpaperRuntimeForAccessBoundary(userId = '') {
+  personalWallpaperRuntimeRunId += 1
+  sharedWallpaperRuntimeRunId += 1
+  revokeWallpaperRuntimeUrl('personalUrl')
+  revokeWallpaperRuntimeUrl('sharedUrl')
+  wallpaperRuntimeState = {
+    userId,
+    hasPersonal: false,
+    personalUrl: '',
+    sharedUrl: '',
+    source: 'default',
+    message: '',
+    messageTone: '',
+  }
+  applyWallpaperRuntimeState()
+}
+
+function resetV21CenterSettingsRuntimeForAccessBoundary(centerId = '') {
+  v21CenterSettingsSyncRunId += 1
+  sharedWallpaperRuntimeRunId += 1
+  v21CenterSettingsRetryCommands.clear()
+  v21CenterProfile = null
+  v21TuitionPackages = []
+  v21SharedWallpaper = null
+  v21SharedWallpaperVersion = 0
+  settingsCenterProfileFormState = null
+  settingsTuitionPackageFormState = null
+  revokeWallpaperRuntimeUrl('sharedUrl')
+  wallpaperRuntimeState = { ...wallpaperRuntimeState, sharedUrl: '' }
+  applyWallpaperRuntimeState()
+  v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState({ centerId })
+}
+
+function getPersonalWallpaperScope(userId = cloudStatus.user?.id || '') {
+  return {
+    installationNamespace: getSupabaseInstallationNamespace(),
+    userId,
+  }
+}
+
+async function refreshPersonalWallpaperForCurrentUser(userId = cloudStatus.user?.id || '') {
+  const normalizedUserId = String(userId || '').trim()
+  const runId = ++personalWallpaperRuntimeRunId
+  revokeWallpaperRuntimeUrl('personalUrl')
+  wallpaperRuntimeState = {
+    ...wallpaperRuntimeState,
+    userId: normalizedUserId,
+    hasPersonal: false,
+    personalUrl: '',
+    message: '',
+    messageTone: '',
+  }
+  applyWallpaperRuntimeState()
+  if (!normalizedUserId || !buildPersonalWallpaperKey(getPersonalWallpaperScope(normalizedUserId))) return true
+  try {
+    const blob = await loadPersonalWallpaperBlob(getPersonalWallpaperScope(normalizedUserId))
+    if (runId !== personalWallpaperRuntimeRunId || cloudStatus.user?.id !== normalizedUserId) return false
+    if (blob instanceof Blob) {
+      wallpaperRuntimeState = {
+        ...wallpaperRuntimeState,
+        hasPersonal: true,
+        personalUrl: URL.createObjectURL(blob),
+      }
+      applyWallpaperRuntimeState()
+    }
+    return true
+  } catch {
+    if (runId !== personalWallpaperRuntimeRunId || cloudStatus.user?.id !== normalizedUserId) return false
+    wallpaperRuntimeState = {
+      ...wallpaperRuntimeState,
+      message: 'Chưa đọc được hình nền riêng trên thiết bị này.',
+      messageTone: 'error',
+    }
+    return false
+  }
+}
+
+async function refreshSharedWallpaperForCurrentContext(supabase, centerId, wallpaper) {
+  const runId = ++sharedWallpaperRuntimeRunId
+  revokeWallpaperRuntimeUrl('sharedUrl')
+  wallpaperRuntimeState = { ...wallpaperRuntimeState, sharedUrl: '' }
+  applyWallpaperRuntimeState()
+  if (!wallpaper) return true
+  const result = await downloadV21SharedWallpaper({ supabase, wallpaper })
+  if (runId !== sharedWallpaperRuntimeRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) return false
+  if (!result.ok) {
+    wallpaperRuntimeState = {
+      ...wallpaperRuntimeState,
+      message: result.error,
+      messageTone: 'error',
+    }
+    return false
+  }
+  wallpaperRuntimeState = {
+    ...wallpaperRuntimeState,
+    sharedUrl: URL.createObjectURL(result.blob),
+  }
+  applyWallpaperRuntimeState()
+  return true
+}
+
 function resetTransientStateForCenterSwitch() {
   moduleRefreshRunIds.clear()
   authoritativeRefreshInFlight.clear()
@@ -1672,6 +1852,7 @@ function resetTransientStateForCenterSwitch() {
   parentConsultations = []
   settingsFilters = { ...initialSettingsFilters }
   settingsActiveTab = 'class-sessions'
+  settingsClassSessionFormState = null
   tuitionFilters = { ...initialTuitionFilters }
   cashflowFilters = { ...initialCashflowFilters }
   inventoryFilters = { ...initialInventoryFilters }
@@ -1722,6 +1903,7 @@ function resetTransientStateForCenterSwitch() {
   resetC55StaffHrRuntimeForAccessBoundary(getCurrentResolvedCenterId())
   resetC56InventoryRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetC57CalendarNotesRuntimeForAccessBoundary('')
+  resetV21CenterSettingsRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -9494,6 +9676,7 @@ async function handleInternalOpenCenter(centerId) {
 
   await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
   await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
+  await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
   await loadCenterMemberProfiles(switchSyncId)
   await loadCurrentMonthCloudAttachments(switchSyncId)
   await startStudentRealtimeSubscription(switchSyncId)
@@ -11759,7 +11942,15 @@ function renderWindowBody(windowItem) {
       getSettingsCloudDbPanelState(),
       {
         activeTab: settingsActiveTab,
-        tuitionRecords,
+        tuitionPackages: v21TuitionPackages,
+        centerProfileFormState: settingsCenterProfileFormState,
+        tuitionPackageFormState: settingsTuitionPackageFormState,
+        centerSettingsState: {
+          ...v21CenterSettingsCapabilityState,
+          centerProfile: v21CenterProfile,
+          sharedWallpaper: v21SharedWallpaper,
+        },
+        wallpaperState: wallpaperRuntimeState,
         centerInfo: {
           ok: centerInfo.ok,
           name: centerInfo.centerName,
@@ -13109,9 +13300,15 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
       'calendar-notes': moduleId === 'thoi-khoa-bieu'
         ? 'Lịch hoạt động bổ sung'
         : 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh',
+      'center-settings': 'Cài đặt dùng chung và danh mục gói học phí',
     })[upstream] || 'Một phần dữ liệu bổ sung'
     const outcomeCode = evaluation.health?.[upstream]?.outcomeCode || ''
-    return upstream === 'calendar-notes' && isUnavailableCalendarNotesOutcome(outcomeCode)
+    return (
+      upstream === 'calendar-notes' && isUnavailableCalendarNotesOutcome(outcomeCode)
+    ) || (
+      upstream === 'center-settings'
+      && ['BACKEND_NOT_DEPLOYED', 'SCHEMA_NOT_READY', 'PGRST202', 'PGRST205', '42P01', '42883'].includes(outcomeCode)
+    )
       ? `${label} hiện chưa khả dụng`
       : `${label} hiện chưa tải được`
   })
@@ -13214,6 +13411,8 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
       return refreshC56InventorySharedTruth({ reason, silent: true })
     case 'calendar-notes':
       return refreshC57CalendarNotesSharedTruth({ reason, silent: true })
+    case 'center-settings':
+      return refreshV21CenterSettings({ reason, silent: true })
     default:
       return { ok: false, outcome_code: 'UNKNOWN_UPSTREAM', error: `Unknown upstream: ${upstream}` }
   }
@@ -14701,6 +14900,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     resetC55StaffHrRuntimeForAccessBoundary('')
     resetC56InventoryRuntimeForAccessBoundary('')
     resetC57CalendarNotesRuntimeForAccessBoundary('')
+    resetV21CenterSettingsRuntimeForAccessBoundary('')
+    resetWallpaperRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
     stopScheduleSessionRealtimeSubscription()
@@ -14769,6 +14970,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   resetC55StaffHrRuntimeForAccessBoundary('')
   resetC56InventoryRuntimeForAccessBoundary('')
   resetC57CalendarNotesRuntimeForAccessBoundary('')
+  resetV21CenterSettingsRuntimeForAccessBoundary('')
+  resetWallpaperRuntimeForAccessBoundary(user.id)
   installationHandoffState = purgeInstallationHandoffState()
 
   cloudStatus = {
@@ -14926,6 +15129,8 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   }
 
   render()
+  await refreshPersonalWallpaperForCurrentUser(user.id)
+  if (syncId !== cloudUserSyncId) return
   if (cloudStatus.membershipStatus === 'loaded') {
     void refreshInstallationHandoffCapability(syncId).then((isCurrent) => {
       if (isCurrent) render()
@@ -14936,6 +15141,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   if (cloudStatus.membershipStatus === 'loaded') {
     await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
     await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
+    await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
@@ -17064,6 +17270,147 @@ function isC56RetryableInventoryFailure(result = {}) {
     'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
     'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
   ].includes(result.outcome_code)
+}
+
+async function refreshV21CenterSettings({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++v21CenterSettingsSyncRunId
+  if (!centerContext.ok) {
+    resetV21CenterSettingsRuntimeForAccessBoundary('')
+    const error = getV21CenterSettingsOutcomeMessage('INVALID_CENTER')
+    v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState({
+      status: V21_CENTER_SETTINGS_CAPABILITY_STATUS.FAILED,
+      message: error,
+      messageTone: 'error',
+    })
+    render()
+    return { ok: false, outcome_code: 'INVALID_CENTER', error }
+  }
+
+  v21CenterProfile = null
+  v21TuitionPackages = []
+  v21SharedWallpaper = null
+  v21SharedWallpaperVersion = 0
+  settingsCenterProfileFormState = null
+  settingsTuitionPackageFormState = null
+  v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState({
+    centerId,
+    status: V21_CENTER_SETTINGS_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    message: silent ? '' : 'Đang tải cài đặt dùng chung...',
+  })
+  if (!silent) render()
+
+  const supabase = getSupabaseClient()
+  const result = await pullV21CenterSettings({ supabase, centerId })
+  if (runId !== v21CenterSettingsSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getV21CenterSettingsOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+
+  if (!result.ok) {
+    const unavailable = isV21CenterSettingsBackendUnavailable(result)
+    v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState({
+      centerId,
+      status: unavailable
+        ? V21_CENTER_SETTINGS_CAPABILITY_STATUS.UNAVAILABLE
+        : V21_CENTER_SETTINGS_CAPABILITY_STATUS.FAILED,
+      message: unavailable
+        ? getV21CenterSettingsOutcomeMessage('BACKEND_NOT_DEPLOYED')
+        : result.error || getV21CenterSettingsOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? 'warning' : 'error',
+    })
+    render()
+    return result
+  }
+
+  v21CenterProfile = result.centerProfile
+  v21TuitionPackages = result.tuitionPackages
+  v21SharedWallpaper = result.sharedWallpaper
+  v21SharedWallpaperVersion = result.sharedWallpaperVersion
+  v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState({
+    centerId,
+    status: V21_CENTER_SETTINGS_CAPABILITY_STATUS.READY,
+    canManageSharedWallpaper: result.canManageSharedWallpaper,
+    sharedWallpaper: result.sharedWallpaper,
+    message: reason === 'after-server-commit' ? 'Đã lưu và tải lại cài đặt mới nhất.' : '',
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  })
+  await refreshSharedWallpaperForCurrentContext(supabase, centerId, result.sharedWallpaper)
+  if (runId !== v21CenterSettingsSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getV21CenterSettingsOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  render()
+  return result
+}
+
+async function writeV21CenterSettingsCommand(command, idempotencyKey) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV21CenterSettingsCapabilityReady(v21CenterSettingsCapabilityState, centerId)) {
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error: 'Cài đặt dùng chung chưa sẵn sàng; thay đổi chưa được lưu.' }
+  }
+  const access = canWriteV21CenterSettings(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.ok) return { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
+
+  const fingerprint = createV21SettingsRetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = v21CenterSettingsRetryCommands.get(retryScope) || {
+    command,
+    idempotencyKey: idempotencyKey || createV21SettingsIdempotencyKey(),
+  }
+  v21CenterSettingsRetryCommands.set(retryScope, pending)
+  const runId = ++v21CenterSettingsSyncRunId
+  v21CenterSettingsCapabilityState = {
+    ...v21CenterSettingsCapabilityState,
+    isSaving: true,
+    message: 'Đang lưu cài đặt...',
+    messageTone: '',
+  }
+  render()
+  const result = await mutateV21CenterSettings({
+    supabase: getSupabaseClient(),
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== v21CenterSettingsSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getV21CenterSettingsOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok) {
+    v21CenterSettingsCapabilityState = {
+      ...v21CenterSettingsCapabilityState,
+      isSaving: false,
+      message: result.error || getV21CenterSettingsOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+  v21CenterSettingsCapabilityState = { ...v21CenterSettingsCapabilityState, isSaving: false }
+  const projection = await refreshV21CenterSettings({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Thay đổi đã được lưu nhưng màn hình chưa tải lại được. Vui lòng làm mới.',
+    }
+  }
+  v21CenterSettingsRetryCommands.delete(retryScope)
+  return { ...result, projection }
 }
 
 function getCurrentC57AuthoritativeCenterId() {
@@ -24766,8 +25113,236 @@ function bindEvents() {
     button.addEventListener('click', () => {
       settingsActiveTab = button.dataset.settingsTab || 'class-sessions'
       settingsClassSessionFormState = null
+      settingsCenterProfileFormState = null
+      settingsTuitionPackageFormState = null
       render()
     })
+  })
+
+  document.querySelector('[data-settings-center-action="open-edit"]')?.addEventListener('click', () => {
+    const centerId = getCurrentCanonicalCenterContext().centerId
+    if (!isV21CenterSettingsCapabilityReady(v21CenterSettingsCapabilityState, centerId)
+      || !v21CenterProfile) return
+    settingsCenterProfileFormState = createSettingsCenterProfileFormState(v21CenterProfile)
+    render()
+  })
+
+  document.querySelectorAll('[data-settings-center-action="cancel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      settingsCenterProfileFormState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-settings-center-field]').forEach((control) => {
+    control.addEventListener('input', () => {
+      if (!settingsCenterProfileFormState) return
+      const field = control.dataset.settingsCenterField
+      settingsCenterProfileFormState = {
+        ...settingsCenterProfileFormState,
+        requestId: '',
+        pendingCommand: null,
+        values: { ...settingsCenterProfileFormState.values, [field]: control.value },
+        errors: { ...settingsCenterProfileFormState.errors, [field]: '' },
+      }
+    })
+  })
+
+  document.querySelector('[data-settings-center-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    if (!settingsCenterProfileFormState || !v21CenterProfile) return
+    const errors = validateSettingsCenterProfileForm(settingsCenterProfileFormState.values)
+    if (Object.keys(errors).length) {
+      settingsCenterProfileFormState = { ...settingsCenterProfileFormState, errors }
+      render()
+      return
+    }
+    try {
+      const command = settingsCenterProfileFormState.pendingCommand
+        || buildV21UpdateCenterProfileCommand(settingsCenterProfileFormState.values, v21CenterProfile)
+      const requestId = settingsCenterProfileFormState.requestId || createV21SettingsIdempotencyKey()
+      settingsCenterProfileFormState = {
+        ...settingsCenterProfileFormState,
+        requestId,
+        pendingCommand: command,
+      }
+      const result = await writeV21CenterSettingsCommand(command, requestId)
+      if (!result.ok) {
+        settingsCenterProfileFormState = {
+          ...settingsCenterProfileFormState,
+          errors: { ...settingsCenterProfileFormState.errors, form: result.error },
+        }
+        render()
+        return
+      }
+      settingsCenterProfileFormState = null
+      render()
+    } catch (error) {
+      settingsCenterProfileFormState = {
+        ...settingsCenterProfileFormState,
+        errors: { ...settingsCenterProfileFormState.errors, form: String(error?.message || error) },
+      }
+      render()
+    }
+  })
+
+  document.querySelectorAll('[data-settings-package-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = button.dataset.settingsPackageAction
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      if (action === 'cancel') {
+        settingsTuitionPackageFormState = null
+        render()
+        return
+      }
+      if (!isV21CenterSettingsCapabilityReady(v21CenterSettingsCapabilityState, centerId)) return
+      if (action === 'open-create') {
+        settingsTuitionPackageFormState = createEmptySettingsTuitionPackageFormState()
+        render()
+        return
+      }
+      const tuitionPackage = v21TuitionPackages.find((item) => item.id === button.dataset.settingsPackageId)
+      if (!tuitionPackage) return
+      if (action === 'open-edit') {
+        settingsTuitionPackageFormState = createEditSettingsTuitionPackageFormState(tuitionPackage)
+        render()
+        return
+      }
+      if (action === 'toggle-status') {
+        const result = await writeV21CenterSettingsCommand(
+          buildV21SetTuitionPackageStatusCommand(tuitionPackage, !tuitionPackage.isActive),
+          createV21SettingsIdempotencyKey(),
+        )
+        if (!result.ok) render()
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-settings-package-field]').forEach((control) => {
+    control.addEventListener(control.matches('select') ? 'change' : 'input', () => {
+      if (!settingsTuitionPackageFormState) return
+      const field = control.dataset.settingsPackageField
+      const value = field === 'isActive' ? control.value === 'true' : control.value
+      settingsTuitionPackageFormState = {
+        ...settingsTuitionPackageFormState,
+        requestId: '',
+        pendingCommand: null,
+        values: { ...settingsTuitionPackageFormState.values, [field]: value },
+        errors: { ...settingsTuitionPackageFormState.errors, [field]: '' },
+      }
+    })
+  })
+
+  document.querySelector('[data-settings-package-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    if (!settingsTuitionPackageFormState) return
+    const errors = validateSettingsTuitionPackageForm(settingsTuitionPackageFormState.values)
+    if (Object.keys(errors).length) {
+      settingsTuitionPackageFormState = { ...settingsTuitionPackageFormState, errors }
+      render()
+      return
+    }
+    try {
+      const current = settingsTuitionPackageFormState.packageId
+        ? v21TuitionPackages.find((item) => item.id === settingsTuitionPackageFormState.packageId)
+        : null
+      const command = settingsTuitionPackageFormState.pendingCommand
+        || buildV21UpsertTuitionPackageCommand(settingsTuitionPackageFormState.values, current)
+      const requestId = settingsTuitionPackageFormState.requestId || createV21SettingsIdempotencyKey()
+      settingsTuitionPackageFormState = {
+        ...settingsTuitionPackageFormState,
+        requestId,
+        pendingCommand: command,
+      }
+      const result = await writeV21CenterSettingsCommand(command, requestId)
+      if (!result.ok) {
+        settingsTuitionPackageFormState = {
+          ...settingsTuitionPackageFormState,
+          errors: { ...settingsTuitionPackageFormState.errors, form: result.error },
+        }
+        render()
+        return
+      }
+      settingsTuitionPackageFormState = null
+      render()
+    } catch (error) {
+      settingsTuitionPackageFormState = {
+        ...settingsTuitionPackageFormState,
+        errors: { ...settingsTuitionPackageFormState.errors, form: String(error?.message || error) },
+      }
+      render()
+    }
+  })
+
+  document.querySelector('[data-settings-wallpaper-file="personal"]')?.addEventListener('change', async (event) => {
+    const file = event.currentTarget.files?.[0]
+    const userId = cloudStatus.user?.id || ''
+    if (!file || !userId) return
+    try {
+      const blob = await prepareWallpaperImage(file)
+      await savePersonalWallpaperBlob(getPersonalWallpaperScope(userId), blob)
+      await refreshPersonalWallpaperForCurrentUser(userId)
+      wallpaperRuntimeState = { ...wallpaperRuntimeState, message: 'Đã lưu hình nền riêng trên thiết bị này.', messageTone: 'success' }
+    } catch (error) {
+      wallpaperRuntimeState = { ...wallpaperRuntimeState, message: String(error?.message || error), messageTone: 'error' }
+    }
+    applyWallpaperRuntimeState()
+    render()
+  })
+
+  document.querySelector('[data-settings-wallpaper-action="clear-personal"]')?.addEventListener('click', async () => {
+    const userId = cloudStatus.user?.id || ''
+    if (!userId) return
+    try {
+      await removePersonalWallpaperBlob(getPersonalWallpaperScope(userId))
+      await refreshPersonalWallpaperForCurrentUser(userId)
+      wallpaperRuntimeState = { ...wallpaperRuntimeState, message: 'Đã bỏ hình nền riêng.', messageTone: 'success' }
+    } catch (error) {
+      wallpaperRuntimeState = { ...wallpaperRuntimeState, message: String(error?.message || error), messageTone: 'error' }
+    }
+    applyWallpaperRuntimeState()
+    render()
+  })
+
+  document.querySelector('[data-settings-wallpaper-file="shared"]')?.addEventListener('change', async (event) => {
+    const file = event.currentTarget.files?.[0]
+    const centerId = getCurrentCanonicalCenterContext().centerId
+    if (!file || !isV21CenterSettingsCapabilityReady(v21CenterSettingsCapabilityState, centerId)
+      || v21CenterSettingsCapabilityState.canManageSharedWallpaper !== true) return
+    try {
+      wallpaperRuntimeState = { ...wallpaperRuntimeState, message: 'Đang cập nhật hình nền dùng chung...', messageTone: '' }
+      render()
+      const blob = await prepareWallpaperImage(file)
+      const path = `shared/${createV21SettingsIdempotencyKey()}.webp`
+      const upload = await uploadV21SharedWallpaper({ supabase: getSupabaseClient(), blob, path })
+      if (!upload.ok) throw new Error(upload.error)
+      const command = buildV21SetSharedWallpaperCommand(
+        { path: upload.path },
+        v21SharedWallpaperVersion,
+      )
+      const result = await writeV21CenterSettingsCommand(command, createV21SettingsIdempotencyKey())
+      if (!result.ok) throw new Error(result.error)
+      wallpaperRuntimeState = { ...wallpaperRuntimeState, message: 'Đã cập nhật hình nền dùng chung.', messageTone: 'success' }
+    } catch (error) {
+      wallpaperRuntimeState = { ...wallpaperRuntimeState, message: String(error?.message || error), messageTone: 'error' }
+    }
+    applyWallpaperRuntimeState()
+    render()
+  })
+
+  document.querySelector('[data-settings-wallpaper-action="clear-shared"]')?.addEventListener('click', async () => {
+    if (!v21SharedWallpaper || v21CenterSettingsCapabilityState.canManageSharedWallpaper !== true) return
+    const result = await writeV21CenterSettingsCommand(
+      buildV21ClearSharedWallpaperCommand(v21SharedWallpaperVersion),
+      createV21SettingsIdempotencyKey(),
+    )
+    wallpaperRuntimeState = {
+      ...wallpaperRuntimeState,
+      message: result.ok ? 'Đã trở về nền dùng chung mặc định.' : result.error,
+      messageTone: result.ok ? 'success' : 'error',
+    }
+    applyWallpaperRuntimeState()
+    render()
   })
 
   document.querySelector('[data-settings-class-session-action="open-create"]')?.addEventListener(

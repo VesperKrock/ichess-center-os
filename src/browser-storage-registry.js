@@ -14,6 +14,7 @@ export const BROWSER_STORAGE_REGISTRY = Object.freeze([
   local('ichess-center-os:view-mode', 'PERSONAL_UI_STATE', 'Desktop display preference'),
   local('ichess-center-os:theme', 'PERSONAL_UI_STATE', 'Light/dark appearance preference'),
   local('ichess-center-os:desktop-module-order', 'PERSONAL_UI_STATE', 'Desktop ordering preference'),
+  pattern('ichess-center-os-presentation-v2/personal-wallpapers/<project>:<auth-user>', 'IndexedDB', 'PERSONAL_UI_STATE', 'User/browser/device-only wallpaper override; never uploaded'),
   center('students', 'CACHE_PROJECTION', 'C5.1 Student projection; pre-C5 bytes preserved before replacement'),
   center('classSessions', 'CACHE_PROJECTION', 'C5.1 Class projection; pre-C5 bytes preserved before replacement'),
   center('notifications', 'CACHE_PROJECTION', 'Derived notification candidates plus browser-personal read state'),

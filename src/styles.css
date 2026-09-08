@@ -11,6 +11,7 @@
   --ichess-accent: #1f5d99;
   --ichess-accent-soft: rgba(31, 93, 153, 0.18);
   --ichess-designer-slot-border: rgba(160, 184, 214, 0.16);
+  --ichess-desktop-wallpaper: none;
   color: #f4f7fb;
   background: #050607;
   font-family:
@@ -65,6 +66,18 @@ button {
   height: calc(100vh - 48px);
   overflow: hidden;
   padding: 18px;
+  background-color: #050607;
+  background-image: var(--ichess-desktop-wallpaper);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+html[data-wallpaper-source='personal'] .desktop-area,
+html[data-wallpaper-source='shared'] .desktop-area {
+  background-image:
+    linear-gradient(135deg, rgba(4, 9, 15, 0.72), rgba(7, 16, 28, 0.48)),
+    var(--ichess-desktop-wallpaper);
 }
 
 .app-shell.is-login-gated {
@@ -13701,6 +13714,90 @@ h3 {
   margin: 0;
 }
 
+.settings-appearance-panel > div:first-child p {
+  margin: 4px 0 0;
+  color: #aebdd0;
+  font-size: 0.86rem;
+}
+
+.settings-wallpaper-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-wallpaper-actions button,
+.settings-wallpaper-file {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(160, 184, 214, 0.28);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #edf4fc;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.settings-wallpaper-file.is-shared {
+  border-color: rgba(118, 164, 231, 0.62);
+  background: rgba(31, 93, 153, 0.42);
+}
+
+.settings-wallpaper-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.settings-wallpaper-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-wallpaper-file:hover,
+.settings-wallpaper-file:focus-within,
+.settings-wallpaper-actions button:not(:disabled):hover,
+.settings-wallpaper-actions button:not(:disabled):focus-visible {
+  border-color: rgba(118, 164, 231, 0.76);
+  outline: none;
+  background: rgba(118, 164, 231, 0.16);
+}
+
+.settings-wallpaper-message,
+.settings-capability-notice,
+.settings-immutable-code,
+.settings-form-error {
+  margin: 0;
+  border: 1px solid rgba(118, 164, 231, 0.24);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #d7e5f5;
+  background: rgba(31, 93, 153, 0.12);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.settings-capability-notice.is-unavailable {
+  border-color: rgba(255, 178, 96, 0.36);
+  color: #ffe0b8;
+  background: rgba(168, 86, 18, 0.16);
+}
+
+.settings-wallpaper-message.is-error,
+.settings-capability-notice.is-failed,
+.settings-form-error {
+  border-color: rgba(255, 132, 132, 0.38);
+  color: #ffc3bc;
+  background: rgba(151, 60, 47, 0.15);
+}
+
 .settings-product-note {
   margin: 0;
   color: #aebdd0;
@@ -14337,6 +14434,12 @@ h3 {
   background: rgba(31, 93, 153, 0.52);
 }
 
+.settings-panel-header button:disabled,
+.settings-form-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .settings-panel-header button:hover,
 .settings-panel-header button:focus-visible,
 .settings-class-session-actions button:hover,
@@ -14370,7 +14473,8 @@ h3 {
 .settings-class-session-toolbar input,
 .settings-class-session-toolbar select,
 .settings-form-grid input,
-.settings-form-grid select {
+.settings-form-grid select,
+.settings-form-grid textarea {
   width: 100%;
   min-height: 36px;
   border: 1px solid rgba(160, 184, 214, 0.28);
@@ -15528,6 +15632,11 @@ h3 {
 
 .cashflow-table th:nth-child(1) {
   width: 96px;
+}
+
+.settings-form-grid textarea {
+  min-height: 82px;
+  resize: vertical;
 }
 
 .cashflow-table th:nth-child(2) {

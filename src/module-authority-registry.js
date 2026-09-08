@@ -45,7 +45,13 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
     { 'student-link': ['core'] },
   ),
   entry('bao-cao', [], ['C5.1 Student', 'C5.2 Attendance', 'C5.4 Finance'], ['core', 'attendance', 'finance']),
-  entry('cai-dat-co-so', [], ['canonical active center', 'C5.1 Class/Student', 'C5.2 Tuition packages'], ['core', 'tuition']),
+  entry(
+    'cai-dat-co-so',
+    ['V2.1 Center settings/package catalog'],
+    ['canonical active center', 'C5.1 Class/Student'],
+    ['core'],
+    ['center-settings'],
+  ),
   entry(
     'bang-diem-danh',
     [],

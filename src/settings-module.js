@@ -10,6 +10,79 @@ export const settingsTabOptions = [
   { id: 'sample-data', label: 'Danh mục nhập liệu' },
 ]
 
+export function createSettingsCenterProfileFormState(profile = {}) {
+  return {
+    values: {
+      displayName: String(profile.displayName || profile.name || '').trim(),
+      address: String(profile.address || '').trim(),
+      phone: String(profile.phone || '').trim(),
+      note: String(profile.note || '').trim(),
+    },
+    errors: {},
+    requestId: '',
+  }
+}
+
+export function validateSettingsCenterProfileForm(values = {}) {
+  const errors = {}
+  const displayName = String(values.displayName || '').trim()
+  if (!displayName) errors.displayName = 'Nhập tên hiển thị của cơ sở.'
+  if (displayName.length > 120) errors.displayName = 'Tên hiển thị tối đa 120 ký tự.'
+  if (String(values.address || '').trim().length > 300) errors.address = 'Địa chỉ tối đa 300 ký tự.'
+  if (String(values.phone || '').trim().length > 40) errors.phone = 'Số điện thoại tối đa 40 ký tự.'
+  if (String(values.note || '').trim().length > 500) errors.note = 'Ghi chú tối đa 500 ký tự.'
+  return errors
+}
+
+export function createEmptySettingsTuitionPackageFormState() {
+  return {
+    mode: 'create',
+    packageId: '',
+    values: {
+      packageName: '',
+      totalSessions: '',
+      defaultAmount: '',
+      isActive: true,
+      note: '',
+    },
+    errors: {},
+    requestId: '',
+  }
+}
+
+export function createEditSettingsTuitionPackageFormState(tuitionPackage = {}) {
+  return {
+    mode: 'edit',
+    packageId: tuitionPackage.id || '',
+    values: {
+      packageName: tuitionPackage.packageName || '',
+      totalSessions: String(tuitionPackage.totalSessions || ''),
+      defaultAmount: String(tuitionPackage.defaultAmount ?? ''),
+      isActive: tuitionPackage.isActive !== false,
+      note: tuitionPackage.note || '',
+    },
+    errors: {},
+    requestId: '',
+  }
+}
+
+export function validateSettingsTuitionPackageForm(values = {}) {
+  const errors = {}
+  const packageName = String(values.packageName || '').trim()
+  const totalSessions = Number(values.totalSessions)
+  const defaultAmount = Number(values.defaultAmount)
+  if (!packageName) errors.packageName = 'Nhập tên gói học phí.'
+  if (packageName.length > 120) errors.packageName = 'Tên gói tối đa 120 ký tự.'
+  if (!Number.isSafeInteger(totalSessions) || totalSessions < 1 || totalSessions > 1000) {
+    errors.totalSessions = 'Số buổi cần là số nguyên từ 1 đến 1.000.'
+  }
+  if (!Number.isSafeInteger(defaultAmount) || defaultAmount < 0) {
+    errors.defaultAmount = 'Học phí mặc định cần là số nguyên không âm.'
+  }
+  if (String(values.note || '').trim().length > 500) errors.note = 'Ghi chú tối đa 500 ký tự.'
+  return errors
+}
+
 const classSessionStatusOptions = [
   { value: 'active', label: 'Đang dùng' },
   { value: 'inactive', label: 'Đã ngưng' },
@@ -130,8 +203,9 @@ export function renderSettingsModule(
   const activeTab = settingsTabOptions.some((tab) => tab.id === options.activeTab)
     ? options.activeTab
     : 'class-sessions'
-  const tuitionPackages = buildSettingsTuitionPackages(options.tuitionRecords ?? [])
-  const centerInfo = buildCenterInfo(options.centerInfo)
+  const centerSettingsState = options.centerSettingsState ?? {}
+  const tuitionPackages = Array.isArray(options.tuitionPackages) ? options.tuitionPackages : []
+  const centerInfo = buildCenterInfo(centerSettingsState.centerProfile || options.centerInfo)
   const filteredClassSessions = getFilteredSettingsClassSessions(
     classSessions,
     students,
@@ -167,8 +241,16 @@ export function renderSettingsModule(
           .join('')}
       </div>
 
-      ${activeTab === 'center-info' ? renderCenterInfoPanel(centerInfo, cloudDbPanelState) : ''}
-      ${activeTab === 'tuition-packages' ? renderTuitionPackagePanel(tuitionPackages) : ''}
+      ${activeTab === 'center-info' ? renderCenterInfoPanel(centerInfo, cloudDbPanelState, {
+        centerSettingsState,
+        centerProfileFormState: options.centerProfileFormState,
+        wallpaperState: options.wallpaperState,
+      }) : ''}
+      ${activeTab === 'tuition-packages' ? renderTuitionPackagePanel(
+        tuitionPackages,
+        centerSettingsState,
+        options.tuitionPackageFormState,
+      ) : ''}
       ${activeTab === 'sample-data' ? renderSampleDataPanel() : ''}
       ${activeTab === 'class-sessions' ? `
       <section class="settings-class-session-panel" aria-label="Quản lý Ca học / Lớp">
@@ -235,75 +317,102 @@ export function renderSettingsModule(
   `
 }
 
-function renderCenterInfoPanel(centerInfo, cloudDbPanelState) {
+function renderCenterInfoPanel(centerInfo, cloudDbPanelState, options = {}) {
+  const state = options.centerSettingsState || {}
+  const ready = state.status === 'ready'
   return `
     <section class="settings-class-session-panel settings-info-panel" aria-label="Thông tin cơ sở">
       <div class="settings-panel-header">
         <div>
           <h4>Thông tin cơ sở</h4>
-          <p>Thông tin vận hành dùng chung trong các module admin.</p>
+          <p>Tên hiển thị và thông tin liên hệ dùng chung trong đúng cơ sở hiện tại.</p>
         </div>
+        <button type="button" data-settings-center-action="open-edit" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>Chỉnh sửa</button>
       </div>
+      ${renderCenterSettingsCapabilityNotice(state)}
       <div class="settings-info-grid">
-        ${renderInfoItem('Tên cơ sở', centerInfo.name)}
+        ${renderInfoItem('Tên hiển thị', centerInfo.name)}
         ${renderInfoItem('Mã cơ sở', centerInfo.code)}
         ${renderInfoItem('Môi trường', centerInfo.environment)}
         ${renderInfoItem('Trạng thái', centerInfo.status)}
         ${renderInfoItem('Địa chỉ', centerInfo.address)}
         ${renderInfoItem('Số điện thoại', centerInfo.phone)}
       </div>
-      <p class="settings-product-note">Thông tin pháp lý/địa chỉ chi tiết sẽ được owner cập nhật sau nếu cần.</p>
-      ${renderCenterAppearancePanel()}
+      <p class="settings-product-note">Mã cơ sở là định danh hệ thống và không thể sửa tại đây.</p>
+      ${renderCenterAppearancePanel(options.wallpaperState, state)}
       ${renderCloudDbPanel(cloudDbPanelState, centerInfo)}
+      ${options.centerProfileFormState ? renderCenterProfileForm(options.centerProfileFormState, centerInfo, state) : ''}
     </section>
   `
 }
 
-function renderCenterAppearancePanel() {
+function renderCenterAppearancePanel(wallpaperState = {}, centerSettingsState = {}) {
+  const sourceLabels = {
+    personal: 'Hình nền riêng trên thiết bị này',
+    shared: 'Hình nền dùng chung của hệ thống',
+    default: 'Nền mặc định của hệ thống',
+  }
+  const source = wallpaperState.source || 'default'
+  const canManageShared = centerSettingsState.status === 'ready'
+    && centerSettingsState.canManageSharedWallpaper === true
+    && centerSettingsState.isSaving !== true
   return `
     <section class="settings-appearance-panel" aria-label="Giao diện cơ sở">
       <div>
-        <h4>Giao diện cơ sở</h4>
-        <p>Foundation an toàn cho hình nền cơ sở, chưa tải ảnh lên trong phase này.</p>
+        <h4>Hình nền desktop</h4>
+        <p>Ưu tiên nền riêng trên thiết bị, sau đó nền dùng chung, cuối cùng là nền mặc định.</p>
       </div>
       <div class="settings-appearance-grid">
         <article>
-          <span>Nền hiện tại</span>
-          <strong>Nền mặc định</strong>
+          <span>Đang hiển thị</span>
+          <strong>${escapeHtml(sourceLabels[source] || sourceLabels.default)}</strong>
         </article>
         <article>
-          <span>Lớp phủ đọc chữ</span>
-          <strong>Vừa</strong>
+          <span>Nền dùng chung</span>
+          <strong>${centerSettingsState.sharedWallpaper ? 'Đã thiết lập' : 'Chưa thiết lập'}</strong>
         </article>
         <article>
-          <span>Lưu trữ ảnh</span>
-          <strong>Bật sau</strong>
+          <span>Nền riêng</span>
+          <strong>${wallpaperState.hasPersonal ? 'Chỉ trên tài khoản/thiết bị này' : 'Chưa đặt'}</strong>
         </article>
       </div>
-      <p class="settings-product-note">Tùy chỉnh hình nền sẽ được bật sau khi cấu hình lưu trữ ảnh; các module vẫn dùng panel tối và lớp phủ để không chìm vào nền.</p>
+      <div class="settings-wallpaper-actions">
+        <label class="settings-wallpaper-file"><span>Chọn nền riêng</span><input type="file" accept="image/png,image/jpeg,image/webp" data-settings-wallpaper-file="personal" /></label>
+        <button type="button" data-settings-wallpaper-action="clear-personal" ${wallpaperState.hasPersonal ? '' : 'disabled'}>Bỏ nền riêng</button>
+        ${canManageShared ? `
+          <label class="settings-wallpaper-file is-shared"><span>Đổi nền dùng chung</span><input type="file" accept="image/png,image/jpeg,image/webp" data-settings-wallpaper-file="shared" /></label>
+          <button type="button" data-settings-wallpaper-action="clear-shared" ${centerSettingsState.sharedWallpaper ? '' : 'disabled'}>Bỏ nền dùng chung</button>
+        ` : ''}
+      </div>
+      ${wallpaperState.message ? `<p class="settings-wallpaper-message ${wallpaperState.messageTone === 'error' ? 'is-error' : ''}" role="status">${escapeHtml(wallpaperState.message)}</p>` : ''}
+      <p class="settings-product-note">Nền riêng không rời khỏi trình duyệt này. Chỉ Owner quản lý nền dùng chung; lớp phủ tương phản luôn được giữ để chữ dễ đọc.</p>
     </section>
   `
 }
 
-function renderTuitionPackagePanel(tuitionPackages) {
+function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null) {
+  const ready = state.status === 'ready'
   return `
     <section class="settings-class-session-panel settings-tuition-package-panel" aria-label="Gói học phí">
       <div class="settings-panel-header">
         <div>
           <h4>Gói học phí</h4>
-          <p>Danh mục gói dùng chung với Module Học phí khi nhập học phí và gia hạn cho học viên.</p>
+          <p>Danh mục độc lập để Học viên và Học phí tham chiếu ở các bước V2 tiếp theo.</p>
         </div>
+        <button type="button" data-settings-package-action="open-create" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>+ Thêm gói</button>
       </div>
-      <p class="settings-product-note">Gói tạo/cập nhật trong Module Học phí sẽ xuất hiện tại đây; danh mục này là nguồn tham chiếu chung cho vận hành học phí.</p>
+      ${renderCenterSettingsCapabilityNotice(state)}
+      <p class="settings-product-note">Danh mục này không được tự tạo từ hồ sơ học phí học viên. Việc gán gói và tự động hóa chu kỳ thuộc bước V2-4.</p>
       <div class="settings-class-session-table-wrap">
         <table class="settings-class-session-table">
           <thead>
             <tr>
               <th>Tên gói</th>
               <th>Số buổi</th>
-              <th>Học phí</th>
-              <th>Đang dùng</th>
+              <th>Mức mặc định</th>
+              <th>Trạng thái</th>
               <th>Ghi chú</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -312,19 +421,90 @@ function renderTuitionPackagePanel(tuitionPackages) {
                 ? tuitionPackages.map((tuitionPackage) => `
                   <tr>
                     <td><strong>${escapeHtml(tuitionPackage.packageName)}</strong></td>
-                    <td>${escapeHtml(tuitionPackage.totalSessions || 'Linh hoạt')}</td>
-                    <td>${escapeHtml(formatMoney(tuitionPackage.totalAmount))}</td>
-                    <td>${tuitionPackage.usageCount} hồ sơ</td>
-                    <td>${escapeHtml(tuitionPackage.note || 'Từ dữ liệu học phí hiện có')}</td>
+                    <td>${escapeHtml(tuitionPackage.totalSessions)}</td>
+                    <td>${escapeHtml(formatMoney(tuitionPackage.defaultAmount))}</td>
+                    <td><span class="settings-status-badge ${tuitionPackage.isActive ? '' : 'inactive'}">${tuitionPackage.isActive ? 'Đang dùng' : 'Đã ngưng'}</span></td>
+                    <td>${escapeHtml(tuitionPackage.note || '—')}</td>
+                    <td><div class="settings-class-session-actions"><button type="button" data-settings-package-action="open-edit" data-settings-package-id="${escapeAttribute(tuitionPackage.id)}" ${state.isSaving ? 'disabled' : ''}>Sửa</button><button type="button" data-settings-package-action="toggle-status" data-settings-package-id="${escapeAttribute(tuitionPackage.id)}" ${state.isSaving ? 'disabled' : ''}>${tuitionPackage.isActive ? 'Ngưng dùng' : 'Kích hoạt'}</button></div></td>
                   </tr>
                 `).join('')
-                : '<tr><td class="settings-empty" colspan="5">Chưa có gói học phí. Khi nhập học phí cho học viên, danh mục này sẽ tự hiển thị.</td></tr>'
+                : `<tr><td class="settings-empty" colspan="6">${ready ? 'Chưa có gói học phí nào trong danh mục.' : 'Danh mục gói học phí chưa tải.'}</td></tr>`
             }
           </tbody>
         </table>
       </div>
+      ${formState ? renderTuitionPackageForm(formState, state) : ''}
     </section>
   `
+}
+
+function renderCenterSettingsCapabilityNotice(state = {}) {
+  const status = state.status || 'idle'
+  if (status === 'ready' && !state.message) return ''
+  const messages = {
+    idle: 'Cài đặt dùng chung chưa được kiểm tra.',
+    loading: 'Đang tải cài đặt dùng chung...',
+    unavailable: 'Cài đặt dùng chung hiện chưa khả dụng. Ca học và lớp vẫn sử dụng bình thường.',
+    failed: 'Chưa tải được cài đặt dùng chung. Ca học và lớp vẫn sử dụng bình thường.',
+    ready: state.message || '',
+  }
+  return `<p class="settings-capability-notice is-${escapeAttribute(status)}" role="status">${escapeHtml(state.message || messages[status] || messages.failed)}</p>`
+}
+
+function renderCenterProfileForm(formState, centerInfo, state) {
+  const values = formState.values || {}
+  const errors = formState.errors || {}
+  return `
+    <div class="settings-form-backdrop" role="presentation">
+      <form class="settings-class-session-form" data-settings-center-form aria-label="Chỉnh sửa thông tin cơ sở">
+        <div class="settings-form-header"><h4>Chỉnh sửa thông tin cơ sở</h4><button type="button" data-settings-center-action="cancel" aria-label="Đóng">×</button></div>
+        <p class="settings-immutable-code">Mã cơ sở: <strong>${escapeHtml(centerInfo.code)}</strong> — không thể thay đổi.</p>
+        <div class="settings-form-grid">
+          ${renderSettingsTextField('center', 'displayName', 'Tên hiển thị *', values.displayName, errors.displayName, { className: 'span-full' })}
+          ${renderSettingsTextField('center', 'address', 'Địa chỉ vận hành', values.address, errors.address)}
+          ${renderSettingsTextField('center', 'phone', 'Số điện thoại', values.phone, errors.phone)}
+          ${renderSettingsTextareaField('center', 'note', 'Ghi chú', values.note, errors.note)}
+        </div>
+        ${errors.form ? `<p class="settings-form-error">${escapeHtml(errors.form)}</p>` : ''}
+        <div class="settings-form-actions"><button type="button" data-settings-center-action="cancel">Hủy</button><button type="submit" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}</button></div>
+      </form>
+    </div>
+  `
+}
+
+function renderTuitionPackageForm(formState, state) {
+  const values = formState.values || {}
+  const errors = formState.errors || {}
+  const isEdit = formState.mode === 'edit'
+  return `
+    <div class="settings-form-backdrop" role="presentation">
+      <form class="settings-class-session-form" data-settings-package-form aria-label="${isEdit ? 'Sửa' : 'Thêm'} gói học phí">
+        <div class="settings-form-header"><h4>${isEdit ? 'Sửa' : 'Thêm'} gói học phí</h4><button type="button" data-settings-package-action="cancel" aria-label="Đóng">×</button></div>
+        <div class="settings-form-grid">
+          ${renderSettingsTextField('package', 'packageName', 'Tên gói *', values.packageName, errors.packageName, { className: 'span-full' })}
+          ${renderSettingsTextField('package', 'totalSessions', 'Tổng số buổi *', values.totalSessions, errors.totalSessions, { type: 'number', min: '1', max: '1000' })}
+          ${renderSettingsTextField('package', 'defaultAmount', 'Học phí mặc định (VNĐ) *', values.defaultAmount, errors.defaultAmount, { type: 'number', min: '0', step: '1000' })}
+          <label><span>Trạng thái</span><select data-settings-package-field="isActive"><option value="true" ${values.isActive !== false ? 'selected' : ''}>Đang dùng</option><option value="false" ${values.isActive === false ? 'selected' : ''}>Đã ngưng</option></select></label>
+          ${renderSettingsTextareaField('package', 'note', 'Ghi chú', values.note, errors.note)}
+        </div>
+        ${errors.form ? `<p class="settings-form-error">${escapeHtml(errors.form)}</p>` : ''}
+        <div class="settings-form-actions"><button type="button" data-settings-package-action="cancel">Hủy</button><button type="submit" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo gói'}</button></div>
+      </form>
+    </div>
+  `
+}
+
+function renderSettingsTextField(scope, name, label, value, error = '', options = {}) {
+  const attrs = [
+    options.min ? `min="${escapeAttribute(options.min)}"` : '',
+    options.max ? `max="${escapeAttribute(options.max)}"` : '',
+    options.step ? `step="${escapeAttribute(options.step)}"` : '',
+  ].filter(Boolean).join(' ')
+  return `<label class="${[options.className || '', error ? 'has-error' : ''].filter(Boolean).join(' ')}"><span>${escapeHtml(label)}</span><input type="${escapeAttribute(options.type || 'text')}" value="${escapeAttribute(value ?? '')}" data-settings-${scope}-field="${escapeAttribute(name)}" ${attrs}/>${error ? `<small>${escapeHtml(error)}</small>` : ''}</label>`
+}
+
+function renderSettingsTextareaField(scope, name, label, value, error = '') {
+  return `<label class="span-full ${error ? 'has-error' : ''}"><span>${escapeHtml(label)}</span><textarea data-settings-${scope}-field="${escapeAttribute(name)}" rows="3">${escapeHtml(value ?? '')}</textarea>${error ? `<small>${escapeHtml(error)}</small>` : ''}</label>`
 }
 
 function renderSampleDataPanel() {
@@ -367,41 +547,18 @@ function renderInfoItem(label, value) {
 }
 
 function buildCenterInfo(centerInfo = {}) {
-  const resolved = centerInfo.ok === true && /^[A-Za-z0-9_-]{1,160}$/.test(String(centerInfo.code || '').trim())
+  const code = centerInfo.centerCode || centerInfo.code || centerInfo.centerId
+  const name = centerInfo.displayName || centerInfo.name
+  const resolved = (centerInfo.ok === true || Number.isSafeInteger(Number(centerInfo.version)))
+    && /^[A-Za-z0-9_-]{1,160}$/.test(String(code || '').trim())
   return {
-    name: resolved ? (centerInfo.name || centerInfo.code) : 'Chưa xác định',
-    code: resolved ? centerInfo.code : 'Chưa xác định',
+    name: resolved ? (name || code) : 'Chưa xác định',
+    code: resolved ? code : 'Chưa xác định',
     environment: centerInfo.environment || 'Vận hành chính',
     status: centerInfo.status || 'Đang hoạt động',
     address: centerInfo.address || '',
     phone: centerInfo.phone || '',
   }
-}
-
-function buildSettingsTuitionPackages(tuitionRecords = []) {
-  const packagesByKey = new Map()
-
-  tuitionRecords.forEach((record) => {
-    const packageName = String(record.packageName || '').trim()
-
-    if (!packageName) {
-      return
-    }
-
-    const key = normalizeSearchText(`${packageName}|${record.totalSessions || ''}|${record.totalAmount || ''}`)
-    const existing = packagesByKey.get(key)
-    packagesByKey.set(key, {
-      packageName,
-      totalSessions: String(record.totalSessions || ''),
-      totalAmount: Number(record.totalAmount || 0),
-      note: String(record.note || ''),
-      usageCount: (existing?.usageCount || 0) + 1,
-    })
-  })
-
-  return Array.from(packagesByKey.values()).sort((firstPackage, secondPackage) =>
-    compareText(firstPackage.packageName, secondPackage.packageName),
-  )
 }
 
 export function getFilteredSettingsClassSessions(
