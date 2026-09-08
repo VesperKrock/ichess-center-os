@@ -12,16 +12,34 @@ begin
   insert into public.centers(id, name, environment, status)
   values
     ('v21a_center_a', 'V2.1 QA A', 'test', 'active'),
-    ('v21a_center_b', 'V2.1 QA B', 'test', 'active');
+    ('v21a_center_b', 'V2.1 QA B', 'test', 'active'),
+    ('v21a_center_ungoverned', 'V2.1 QA ungoverned', 'test', 'active');
 
   insert into public.center_members(center_id, user_id, role, status)
   values
     ('v21a_center_a', v_users[1], 'owner', 'active'),
     ('v21a_center_b', v_users[1], 'owner', 'active'),
-    ('v21a_center_a', v_users[2], 'admin', 'active'),
+    ('v21a_center_a', v_users[2], 'center_admin', 'active'),
     ('v21a_center_b', v_users[2], 'teacher', 'active'),
     ('v21a_center_b', v_users[3], 'center_admin', 'active'),
-    ('v21a_center_a', v_users[4], 'owner', 'active');
+    ('v21a_center_ungoverned', v_users[4], 'owner', 'active');
+
+  insert into public.center_access_governance(
+    center_id, status, canonical_owner_membership_id,
+    canonical_admin_membership_id, activated_at
+  ) values
+    (
+      'v21a_center_a', 'active',
+      (select id from public.center_members where center_id = 'v21a_center_a' and user_id = v_users[1]),
+      (select id from public.center_members where center_id = 'v21a_center_a' and user_id = v_users[2]),
+      pg_catalog.transaction_timestamp()
+    ),
+    (
+      'v21a_center_b', 'active',
+      (select id from public.center_members where center_id = 'v21a_center_b' and user_id = v_users[1]),
+      (select id from public.center_members where center_id = 'v21a_center_b' and user_id = v_users[3]),
+      pg_catalog.transaction_timestamp()
+    );
 end
 $$;
 
@@ -32,7 +50,7 @@ select set_config(
 );
 select set_config(
   'v2_1.qa.admin_user_id',
-  (select user_id::text from public.center_members where center_id = 'v21a_center_a' and role = 'admin'),
+  (select user_id::text from public.center_members where center_id = 'v21a_center_a' and role = 'center_admin'),
   true
 );
 select set_config(
@@ -42,7 +60,7 @@ select set_config(
 );
 select set_config(
   'v2_1.qa.subset_owner_user_id',
-  (select user_id::text from public.center_members where center_id = 'v21a_center_a' and role = 'owner' order by user_id desc limit 1),
+  (select user_id::text from public.center_members where center_id = 'v21a_center_ungoverned' and role = 'owner'),
   true
 );
 
@@ -203,23 +221,18 @@ select set_config('request.jwt.claim.sub', current_setting('v2_1.qa.subset_owner
 do $$
 begin
   if public.v2_1_can_manage_shared_wallpaper(auth.uid()) then
-    raise exception 'v2_1_qa_subset_owner_received_installation_wallpaper_authority';
+    raise exception 'v2_1_qa_ungoverned_owner_received_installation_wallpaper_authority';
   end if;
   begin
     perform public.v2_1_mutate_center_settings(
       'v21a_center_a',
-      jsonb_build_object(
-        'operation', 'SET_SHARED_WALLPAPER', 'expected_version', 0,
-        'storage_bucket', 'ichess-os-wallpapers',
-        'storage_path', 'shared/dddddddd-dddd-4ddd-8ddd-dddddddddddd.webp',
-        'mime_type', 'image/webp'
-      ),
+      jsonb_build_object('operation', 'CLEAR_SHARED_WALLPAPER', 'expected_version', 0),
       'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
     );
-    raise exception 'v2_1_qa_subset_owner_wallpaper_accepted';
+    raise exception 'v2_1_qa_ungoverned_owner_wallpaper_action_accepted';
   exception when others then
-    if sqlerrm = 'v2_1_qa_subset_owner_wallpaper_accepted' then raise; end if;
-    if position('v2_1_owner_required' in sqlerrm) = 0 then raise; end if;
+    if sqlerrm = 'v2_1_qa_ungoverned_owner_wallpaper_action_accepted' then raise; end if;
+    if position('v2_1_center_access_denied' in sqlerrm) = 0 then raise; end if;
   end;
 end
 $$;
