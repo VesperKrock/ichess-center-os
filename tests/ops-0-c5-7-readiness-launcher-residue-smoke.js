@@ -35,7 +35,7 @@ assert.deepEqual(
   'A stale READY state from another center must remain closed without masquerading as a real backend failure',
 )
 
-assert.equal(getProductionLauncherModules().length, 12)
+assert.equal(getProductionLauncherModules().length, 10)
 const launcherPresentationSource = main.slice(
   main.indexOf('function getProductionModuleLauncherPresentation(moduleId)'),
   main.indexOf('function getStudentsWithCanonicalProjections()'),

@@ -15,7 +15,8 @@ const styles = readFileSync(join(root, 'src/styles.css'), 'utf8')
 const tuitionModule = readFileSync(join(root, 'src/tuition-module.js'), 'utf8')
 
 const unavailableVisibleIds = ['khach-hang-tu-van', 'kho-hang']
-const hiddenIds = ['nhan-vien', 'dang-cap-nhat']
+const hiddenIds = ['nhan-vien', 'dang-cap-nhat', 'thu-chi', 'so-quy']
+const hiddenUnavailableIds = ['nhan-vien', 'dang-cap-nhat']
 const expectedActionableIds = [
   'hoc-vien',
   'giao-vien',
@@ -31,16 +32,14 @@ const expectedActionableIds = [
 const expectedVisibleIds = [
   'hoc-vien',
   'khach-hang-tu-van',
-  'giao-vien',
-  'thoi-khoa-bieu',
   'hoc-phi',
-  'nhom-tai-chinh',
-  'thu-chi',
-  'so-quy',
-  'kho-hang',
-  'bao-cao',
-  'cai-dat-co-so',
   'bang-diem-danh',
+  'thoi-khoa-bieu',
+  'giao-vien',
+  'nhom-tai-chinh',
+  'bao-cao',
+  'kho-hang',
+  'cai-dat-co-so',
 ]
 
 assert.equal(modules.length, 14)
@@ -58,8 +57,8 @@ const actionableIds = modules
   .map((moduleItem) => moduleItem.id)
 assert.deepEqual(visibleIds, expectedVisibleIds)
 assert.deepEqual(actionableIds, expectedActionableIds)
-assert.equal(visibleIds.length, 12, 'Launcher must contain twelve visible product tiles')
-assert.equal(actionableIds.length, 10, 'Exactly ten core product tiles must remain actionable')
+assert.equal(visibleIds.length, 10, 'V2 launcher must contain exactly ten visible product tiles')
+assert.equal(actionableIds.length, 10, 'Internal active-module registry must remain intact')
 
 for (const moduleId of unavailableVisibleIds) {
   assert.equal(isProductionModuleVisible(moduleId), true, `${moduleId} must remain visible`)
@@ -67,8 +66,13 @@ for (const moduleId of unavailableVisibleIds) {
 }
 for (const moduleId of hiddenIds) {
   assert.equal(isProductionModuleVisible(moduleId), false, `${moduleId} must stay hidden`)
-  assert.equal(isProductionModuleAvailable(moduleId), false, `${moduleId} must fail closed`)
   assert(!visibleIds.includes(moduleId))
+}
+for (const moduleId of hiddenUnavailableIds) {
+  assert.equal(isProductionModuleAvailable(moduleId), false, `${moduleId} must fail closed`)
+}
+for (const moduleId of ['thu-chi', 'so-quy']) {
+  assert.equal(isProductionModuleAvailable(moduleId), true, `${moduleId} internal route must remain available`)
 }
 
 // Launcher truth must be stable across role, login lifecycle, center switch and theme.

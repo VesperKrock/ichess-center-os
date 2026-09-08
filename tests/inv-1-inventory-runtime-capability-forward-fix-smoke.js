@@ -115,7 +115,7 @@ const readyPull = await pullC56InventorySharedTruth({
 assert.equal(readyPull.ok, true)
 
 const launcher = getProductionLauncherModules()
-assert.equal(launcher.length, 12, 'Visible launcher module count drifted')
+assert.equal(launcher.length, 10, 'Visible launcher module count drifted')
 const availableCount = (inventoryCapability) => launcher.filter((moduleItem) => {
   if (moduleItem.id === 'khach-hang-tu-van') return true // Parent is READY in production baseline.
   if (moduleItem.id === 'kho-hang') {
@@ -123,8 +123,8 @@ const availableCount = (inventoryCapability) => launcher.filter((moduleItem) => 
   }
   return isStaticProductionModuleAvailable(moduleItem.id)
 }).length
-assert.equal(availableCount(unavailable), 11, 'Absent C5.6 launcher must remain 12/11/1')
-assert.equal(availableCount(ready), 12, 'READY C5.6 launcher must become 12/12/0')
+assert.equal(availableCount(unavailable), 9, 'Absent C5.6 V2 launcher must remain 10/9/1')
+assert.equal(availableCount(ready), 10, 'READY C5.6 V2 launcher must become 10/10/0')
 
 const refreshContract = getModuleRefreshContract('kho-hang')
 assert.deepEqual(refreshContract.required, ['inventory'])

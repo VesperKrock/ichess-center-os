@@ -18,7 +18,7 @@ import {
 
 const VIEW_MODE_KEY = 'ichess-center-os:view-mode'
 export const UI_THEME_KEY = 'ichess-center-os:theme'
-const DESKTOP_ORDER_KEY = 'ichess-center-os:desktop-module-order'
+const DESKTOP_ORDER_KEY = 'ichess-center-os:v2-desktop-module-order'
 const DEFAULT_STORAGE_CENTER_ID = 'unbound'
 let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
 let currentInstallationStorageNamespace = 'legacy'

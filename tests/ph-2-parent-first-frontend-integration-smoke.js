@@ -263,12 +263,12 @@ const crmRefreshFailedHtml = renderParentConsultationModule(
 assert.match(crmRefreshFailedHtml, /Hồ sơ đã được lưu nhưng chưa tải lại/)
 assert.doesNotMatch(crmRefreshFailedHtml, /Đã tải liên kết/)
 
-// Default production-like launcher remains 12 visible / 10 actionable / 2 unavailable.
+// The V2 launcher keeps Parent capability-driven while reducing the product surface to ten tiles.
 const visibleModules = getProductionLauncherModules()
-assert.equal(visibleModules.length, 12)
-assert.equal(visibleModules.filter((item) => isProductionModuleAvailable(item.id)).length, 10)
+assert.equal(visibleModules.length, 10)
+assert.equal(visibleModules.filter((item) => isProductionModuleAvailable(item.id)).length, 8)
 assert.equal(isProductionModuleAvailable('khach-hang-tu-van'), false)
-assert.equal(10 + Number(isParentFirstCapabilityReady(ready, centerId)), 11)
+assert.equal(8 + Number(isParentFirstCapabilityReady(ready, centerId)), 9)
 
 // Runtime activation is capability-driven; switch boundaries clear old links before I/O.
 for (const token of [

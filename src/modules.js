@@ -259,6 +259,19 @@ export const modules = [
   },
 ]
 
+export const PRODUCT_LAUNCHER_MODULE_IDS = Object.freeze([
+  'hoc-vien',
+  'khach-hang-tu-van',
+  'hoc-phi',
+  'bang-diem-danh',
+  'thoi-khoa-bieu',
+  'giao-vien',
+  'nhom-tai-chinh',
+  'bao-cao',
+  'kho-hang',
+  'cai-dat-co-so',
+])
+
 export function isProductionModuleAvailable(moduleId, moduleItems = modules) {
   return moduleItems.some(
     (moduleItem) => moduleItem.id === moduleId && moduleItem.status === 'active',
@@ -266,7 +279,7 @@ export function isProductionModuleAvailable(moduleId, moduleItems = modules) {
 }
 
 export function isProductionModuleVisible(moduleId, moduleItems = modules) {
-  return moduleItems.some(
+  return PRODUCT_LAUNCHER_MODULE_IDS.includes(moduleId) && moduleItems.some(
     (moduleItem) =>
       moduleItem.id === moduleId &&
       (moduleItem.status === 'active' || moduleItem.launcherVisibility === 'unavailable'),
@@ -274,7 +287,11 @@ export function isProductionModuleVisible(moduleId, moduleItems = modules) {
 }
 
 export function getProductionLauncherModules(moduleItems = modules) {
-  return moduleItems.filter((moduleItem) => isProductionModuleVisible(moduleItem.id, moduleItems))
+  const modulesById = new Map(moduleItems.map((moduleItem) => [moduleItem.id, moduleItem]))
+
+  return PRODUCT_LAUNCHER_MODULE_IDS
+    .map((moduleId) => modulesById.get(moduleId))
+    .filter((moduleItem) => isProductionModuleVisible(moduleItem?.id, moduleItems))
 }
 
 export function resolveCapabilityDrivenLauncherPresentation({ canOpen = false, capabilityStatus = '' } = {}) {
