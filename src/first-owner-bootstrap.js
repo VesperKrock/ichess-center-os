@@ -15,6 +15,8 @@ const SERVER_STATES = new Set([
   'RESET_REPAIR_REQUIRED', 'LOCKED_EXISTING',
 ])
 
+const INSTALLATION_CAPABILITY_TIMEOUT_MS = 8000
+
 export function createInstallationHandoffState() {
   return {
     capabilityStatus: INSTALLATION_CAPABILITY_STATUS.IDLE,
@@ -59,10 +61,31 @@ function isContractUnavailable(error) {
   return ['PGRST202', 'PGRST205', '42883', '42P01'].includes(String(error?.code || ''))
 }
 
-export async function loadInstallationCapability() {
+export async function loadInstallationCapability({
+  timeoutMs = INSTALLATION_CAPABILITY_TIMEOUT_MS,
+} = {}) {
   const client = getSupabaseClient()
   if (!client) return { status: INSTALLATION_CAPABILITY_STATUS.UNAVAILABLE, capability: null }
-  const { data, error } = await client.rpc('chb1_get_handoff_capability')
+
+  let timeoutId = null
+  let response
+  try {
+    response = await Promise.race([
+      client.rpc('chb1_get_handoff_capability'),
+      new Promise((resolve) => {
+        timeoutId = globalThis.setTimeout(() => resolve({
+          data: null,
+          error: { code: 'HANDOFF_CAPABILITY_TIMEOUT' },
+        }), Math.max(1, Number(timeoutMs) || INSTALLATION_CAPABILITY_TIMEOUT_MS))
+      }),
+    ])
+  } catch {
+    response = { data: null, error: { code: 'HANDOFF_CAPABILITY_REQUEST_FAILED' } }
+  } finally {
+    if (timeoutId !== null) globalThis.clearTimeout(timeoutId)
+  }
+
+  const { data, error } = response || {}
   if (error) {
     return {
       status: isContractUnavailable(error)

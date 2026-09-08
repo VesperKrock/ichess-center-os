@@ -14817,7 +14817,13 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
 
   try {
     const resolvedMembership = await resolveActiveCenterMembership(user.id)
-    await refreshInstallationHandoffCapability(syncId)
+
+    // Existing members must enter the OS from authoritative membership truth.
+    // CHB is an independent capability and may not be installed yet, so only a
+    // genuine no-membership claimant waits for its bootstrap decision.
+    if (!resolvedMembership.ok) {
+      await refreshInstallationHandoffCapability(syncId)
+    }
 
     if (syncId !== cloudUserSyncId) {
       return
@@ -14920,6 +14926,11 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   }
 
   render()
+  if (cloudStatus.membershipStatus === 'loaded') {
+    void refreshInstallationHandoffCapability(syncId).then((isCurrent) => {
+      if (isCurrent) render()
+    })
+  }
   await bootstrapCoreCloudDataForCurrentCenter(syncId)
 
   if (cloudStatus.membershipStatus === 'loaded') {
@@ -21320,7 +21331,7 @@ function bindEvents() {
 
     try {
       const user = await signInWithEmailPassword(email, password)
-      await syncCloudUser(user)
+      await syncCloudUser(user, { force: true, reason: 'manual-sign-in' })
     } catch (error) {
       cloudStatus = {
         ...cloudStatus,
