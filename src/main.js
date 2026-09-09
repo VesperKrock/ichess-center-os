@@ -628,6 +628,22 @@ import {
   validateStudentForm,
 } from './student-module.js'
 import {
+  V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS,
+  createV22StudentEnrollmentCapabilityState,
+  getV22EnrollmentOutcomeMessage,
+  isV22StudentEnrollmentBackendUnavailable,
+  isV22StudentEnrollmentCapabilityReady,
+  mutateV22StudentWithEnrollments,
+  pullV22StudentEnrollments,
+} from './cloud-authoritative-student-enrollments.js'
+import {
+  deriveV22ScheduleRosters,
+  normalizeV22Enrollments,
+  projectStudentsWithV22Enrollments,
+  reconcileV22EnrollmentDayInput,
+  reconcileV22StudentFormValues,
+} from './student-recurring-enrollment.js'
+import {
   buildSettingsClassSessionFromForm,
   buildClassSessionAutoName,
   createEditSettingsTuitionPackageFormState,
@@ -928,6 +944,9 @@ let v21TuitionPackages = []
 let v21SharedWallpaper = null
 let v21SharedWallpaperVersion = 0
 const v21CenterSettingsRetryCommands = new Map()
+let v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState()
+let v22StudentEnrollmentSets = []
+let v22StudentEnrollmentSyncRunId = 0
 let wallpaperRuntimeState = {
   userId: '',
   hasPersonal: false,
@@ -1202,7 +1221,28 @@ function getStudentsWithCanonicalProjections() {
   // C5 closeout: the Student business list is exclusively the C5.1
   // authoritative projection. P4B session envelopes remain bridge-status
   // cache only while that phase is frozen; they cannot add Student rows.
-  return students
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  return projectStudentsWithV22Enrollments(
+    students,
+    v22StudentEnrollmentSets,
+    classSessions,
+    isV22StudentEnrollmentCapabilityReady(v22StudentEnrollmentCapabilityState, centerId),
+  )
+}
+
+function getVisibleScheduleSessionsWithCurrentEnrollmentRosters(
+  weekStartDate = scheduleWeekStartDate,
+) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  return deriveV22ScheduleRosters({
+    sessions: getVisibleScheduleSessions(scheduleSessions, weekStartDate, classSessions),
+    students,
+    enrollmentSets: v22StudentEnrollmentSets,
+    capabilityReady: isV22StudentEnrollmentCapabilityReady(
+      v22StudentEnrollmentCapabilityState,
+      centerId,
+    ),
+  })
 }
 
 function getCloudAttachmentAccessContext() {
@@ -1771,6 +1811,13 @@ function resetV21CenterSettingsRuntimeForAccessBoundary(centerId = '') {
   v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState({ centerId })
 }
 
+function resetV22StudentEnrollmentRuntimeForAccessBoundary(centerId = '') {
+  v22StudentEnrollmentSyncRunId += 1
+  v22StudentEnrollmentSets = []
+  v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState({ centerId })
+  studentFormState = null
+}
+
 function getPersonalWallpaperScope(userId = cloudStatus.user?.id || '') {
   return {
     installationNamespace: getSupabaseInstallationNamespace(),
@@ -1904,6 +1951,7 @@ function resetTransientStateForCenterSwitch() {
   resetC56InventoryRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetC57CalendarNotesRuntimeForAccessBoundary('')
   resetV21CenterSettingsRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
+  resetV22StudentEnrollmentRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -9677,6 +9725,7 @@ async function handleInternalOpenCenter(centerId) {
   await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
   await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
   await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
+  await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
   await loadCenterMemberProfiles(switchSyncId)
   await loadCurrentMonthCloudAttachments(switchSyncId)
   await startStudentRealtimeSubscription(switchSyncId)
@@ -10645,7 +10694,7 @@ function getScheduleAdminAttendanceOccurrence() {
     return null
   }
 
-  return getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
+  return getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
     (item) =>
       item.id === scheduleReportState.sessionId &&
       item.occurrenceDate === scheduleReportState.occurrenceDate,
@@ -11688,6 +11737,7 @@ function renderWindowBody(windowItem) {
       studentFormState,
       teachers,
       classSessions,
+      { enrollmentCapabilityStatus: v22StudentEnrollmentCapabilityState.status },
     )
   }
 
@@ -11774,6 +11824,11 @@ function renderWindowBody(windowItem) {
           'Lịch hoạt động bổ sung',
         ) || c57CalendarNotesSharedTruthState,
         classSessions,
+        recurringEnrollmentSets: v22StudentEnrollmentSets,
+        recurringRosterManaged: isV22StudentEnrollmentCapabilityReady(
+          v22StudentEnrollmentCapabilityState,
+          getCurrentCanonicalCenterContext().centerId,
+        ),
       },
     )
   }
@@ -11936,7 +11991,7 @@ function renderWindowBody(windowItem) {
     const centerInfo = getCurrentCanonicalCenterContext()
     return renderSettingsModule(
       classSessions,
-      students,
+      getStudentsWithCanonicalProjections(),
       settingsFilters,
       settingsClassSessionFormState,
       getSettingsCloudDbPanelState(),
@@ -13251,6 +13306,9 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, settledResult)
     return settledResult
   }))
+  if (moduleId === 'hoc-vien' || moduleId === 'thoi-khoa-bieu') {
+    await refreshV22StudentEnrollments({ reason: `${moduleId}:${reason}`, silent: true })
+  }
 
   const latestContext = getCurrentCanonicalCenterContext()
   const currentState = moduleRefreshStates.get(moduleId)
@@ -14901,6 +14959,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     resetC56InventoryRuntimeForAccessBoundary('')
     resetC57CalendarNotesRuntimeForAccessBoundary('')
     resetV21CenterSettingsRuntimeForAccessBoundary('')
+    resetV22StudentEnrollmentRuntimeForAccessBoundary('')
     resetWallpaperRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
@@ -14971,6 +15030,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   resetC56InventoryRuntimeForAccessBoundary('')
   resetC57CalendarNotesRuntimeForAccessBoundary('')
   resetV21CenterSettingsRuntimeForAccessBoundary('')
+  resetV22StudentEnrollmentRuntimeForAccessBoundary('')
   resetWallpaperRuntimeForAccessBoundary(user.id)
   installationHandoffState = purgeInstallationHandoffState()
 
@@ -15142,6 +15202,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
     await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
     await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
+    await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
@@ -15408,11 +15469,19 @@ function applyAuthoritativeCoreSaveUiResult(result) {
   render()
 }
 
-async function commitStudentProjection(student, reason, idempotencyKey) {
+async function commitLegacyStudentProjection(student, reason, idempotencyKey) {
   const commandCenterId = getCurrentCanonicalCenterContext().centerId
+  const {
+    recurringEnrollments: _recurringEnrollments,
+    enrollmentVersion: _enrollmentVersion,
+    enrollmentAuthority: _enrollmentAuthority,
+    enrollmentReview: _enrollmentReview,
+    useAuthoritativeEnrollment: _useAuthoritativeEnrollment,
+    ...legacyStudent
+  } = student || {}
   const result = await runAuthoritativeCoreSave({
     entityLabel: 'Học viên',
-    executeCommand: () => writeStudentThroughCloud(student, reason, idempotencyKey, commandCenterId),
+    executeCommand: () => writeStudentThroughCloud(legacyStudent, reason, idempotencyKey, commandCenterId),
     isContextCurrent: () => getCurrentCanonicalCenterContext().centerId === commandCenterId,
     installCommittedEntity: (entity) => {
       students = upsertCommittedCoreProjection(students, entity)
@@ -15426,6 +15495,28 @@ async function commitStudentProjection(student, reason, idempotencyKey) {
   })
   applyAuthoritativeCoreSaveUiResult(result)
   return result
+}
+
+async function commitStudentProjection(student, reason, idempotencyKey) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (isV22StudentEnrollmentCapabilityReady(v22StudentEnrollmentCapabilityState, centerId)) {
+    return commitV22StudentProjection(student, reason, idempotencyKey)
+  }
+  if (v22StudentEnrollmentCapabilityState.status === V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.UNAVAILABLE
+      && v22StudentEnrollmentCapabilityState.authorityEstablished !== true
+      && student?.useAuthoritativeEnrollment !== true) {
+    return commitLegacyStudentProjection(student, reason, idempotencyKey)
+  }
+  return {
+    ok: false,
+    committed: false,
+    outcome_code: v22StudentEnrollmentCapabilityState.status === V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.FAILED
+      ? 'ENROLLMENT_READ_FAILED'
+      : 'ENROLLMENT_LOADING',
+    error: v22StudentEnrollmentCapabilityState.status === V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.FAILED
+      ? getV22EnrollmentOutcomeMessage('ENROLLMENT_READ_FAILED')
+      : 'Đang kiểm tra đăng ký lịch học theo từng ngày. Nội dung đang nhập vẫn được giữ nguyên.',
+  }
 }
 
 async function commitTeacherProjection(teacher, reason, idempotencyKey) {
@@ -17345,6 +17436,141 @@ async function refreshV21CenterSettings({ reason = 'manual-refresh', silent = fa
   }
   render()
   return result
+}
+
+async function refreshV22StudentEnrollments({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++v22StudentEnrollmentSyncRunId
+  if (!centerContext.ok) {
+    resetV22StudentEnrollmentRuntimeForAccessBoundary('')
+    return { ok: false, outcome_code: 'INVALID_CENTER', error: getV22EnrollmentOutcomeMessage('INVALID_CENTER') }
+  }
+  const authorityEstablished = v22StudentEnrollmentCapabilityState.centerId === centerId
+    && v22StudentEnrollmentCapabilityState.authorityEstablished === true
+  if (!authorityEstablished) v22StudentEnrollmentSets = []
+  v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState({
+    centerId,
+    status: V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    authorityEstablished,
+    message: silent ? '' : 'Đang tải đăng ký lịch học theo từng ngày…',
+  })
+  if (!silent) render()
+  const result = await pullV22StudentEnrollments({ supabase: getSupabaseClient(), centerId })
+  if (runId !== v22StudentEnrollmentSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getV22EnrollmentOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    const unavailable = isV22StudentEnrollmentBackendUnavailable(result)
+    v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState({
+      centerId,
+      status: unavailable && !authorityEstablished
+        ? V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.UNAVAILABLE
+        : V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.FAILED,
+      authorityEstablished,
+      message: unavailable && !authorityEstablished
+        ? ''
+        : getV22EnrollmentOutcomeMessage('ENROLLMENT_READ_FAILED'),
+      messageTone: unavailable && !authorityEstablished ? '' : 'error',
+    })
+    render()
+    return result
+  }
+  v22StudentEnrollmentSets = result.enrollmentSets
+  v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState({
+    centerId,
+    status: V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.READY,
+    message: reason === 'after-server-commit' ? 'Đăng ký lịch học đã được cập nhật.' : '',
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+    authorityEstablished: true,
+  })
+  reconcileOpenStudentFormWithV22Authority()
+  render()
+  return result
+}
+
+function reconcileOpenStudentFormWithV22Authority() {
+  if (!studentFormState || studentFormState.values?.useAuthoritativeEnrollment === true) return
+
+  const values = studentFormState.values || {}
+  const rawStudent = studentFormState.mode === 'edit'
+    ? students.find((student) => student.id === studentFormState.studentId)
+    : null
+  const projectedStudent = studentFormState.mode === 'edit'
+    ? getStudentsWithCanonicalProjections().find((student) => student.id === studentFormState.studentId)
+    : null
+
+  studentFormState = {
+    ...studentFormState,
+    values: reconcileV22StudentFormValues({ values, rawStudent, projectedStudent, classSessions }),
+    errors: {
+      ...studentFormState.errors,
+      recurringEnrollments: undefined,
+    },
+  }
+}
+
+async function commitV22StudentProjection(student, reason, idempotencyKey) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV22StudentEnrollmentCapabilityReady(v22StudentEnrollmentCapabilityState, centerId)) {
+    return {
+      ok: false,
+      committed: false,
+      outcome_code: 'ENROLLMENT_NOT_READY',
+      error: 'Đăng ký lịch học chưa sẵn sàng; nội dung đang nhập vẫn được giữ nguyên.',
+    }
+  }
+  const enrollments = normalizeV22Enrollments(student.recurringEnrollments)
+  const commandIdempotencyKey = idempotencyKey || createCoreCommandIdempotencyKey()
+  const runId = ++v22StudentEnrollmentSyncRunId
+  v22StudentEnrollmentCapabilityState = {
+    ...v22StudentEnrollmentCapabilityState,
+    isSaving: true,
+    message: 'Đang lưu học viên và đăng ký lịch học…',
+    messageTone: '',
+  }
+  render()
+  const result = await mutateV22StudentWithEnrollments({
+    supabase: getSupabaseClient(),
+    centerId,
+    student,
+    enrollments,
+    expectedEnrollmentVersion: student.enrollmentVersion,
+    idempotencyKey: commandIdempotencyKey,
+  })
+  if (runId !== v22StudentEnrollmentSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ...result, ok: false, committed: Boolean(result.ok), outcome_code: 'CENTER_CONTEXT_CHANGED', error: getV22EnrollmentOutcomeMessage('CENTER_CONTEXT_CHANGED') }
+  }
+  if (!result.ok) {
+    v22StudentEnrollmentCapabilityState = {
+      ...v22StudentEnrollmentCapabilityState,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+  students = upsertCommittedCoreProjection(students, result.student)
+  const withoutCurrent = v22StudentEnrollmentSets.filter((set) => set.studentId !== result.enrollmentSet.studentId)
+  v22StudentEnrollmentSets = [...withoutCurrent, result.enrollmentSet]
+  saveStoredStudents(students)
+  v22StudentEnrollmentCapabilityState = { ...v22StudentEnrollmentCapabilityState, isSaving: false }
+  const projection = await refreshV22StudentEnrollments({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Học viên đã được lưu nhưng màn hình chưa tải lại được. Vui lòng làm mới.',
+    }
+  }
+  return { ...result, entity: result.student, projection }
 }
 
 async function writeV21CenterSettingsCommand(command, idempotencyKey) {
@@ -20410,6 +20636,7 @@ async function initializeSupabaseAuth() {
     resetC55StaffHrRuntimeForAccessBoundary('')
     resetC56InventoryRuntimeForAccessBoundary('')
     resetC57CalendarNotesRuntimeForAccessBoundary('')
+    resetV22StudentEnrollmentRuntimeForAccessBoundary('')
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -25380,7 +25607,10 @@ function bindEvents() {
         return
       }
 
-      const studentCount = getClassSessionStudentCount(classSession.id, students)
+      const studentCount = getClassSessionStudentCount(
+        classSession.id,
+        getStudentsWithCanonicalProjections(),
+      )
       const nextStatus = classSession.status === 'inactive' ? 'active' : 'inactive'
 
       if (nextStatus === 'inactive' && studentCount > 0) {
@@ -27410,7 +27640,7 @@ function bindEvents() {
     const openScheduleSession = () => {
       closeScheduleActivityPanels()
       const occurrenceDate = card.dataset.scheduleOccurrenceDate
-      const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
+      const occurrence = getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
         (item) => item.id === card.dataset.scheduleSessionId && item.occurrenceDate === occurrenceDate,
       )
       const session = occurrence?.assignmentId
@@ -28038,7 +28268,7 @@ function bindEvents() {
       }
 
       if (role === 'teacher') {
-        const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
+        const occurrence = getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
           (item) =>
             item.id === scheduleReportState.sessionId &&
             item.occurrenceDate === scheduleReportState.occurrenceDate,
@@ -28631,7 +28861,7 @@ function bindEvents() {
       return
     }
 
-    const occurrence = getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions).find(
+    const occurrence = getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
       (item) =>
         item.id === scheduleReportState.sessionId &&
         item.occurrenceDate === scheduleReportState.occurrenceDate,
@@ -29186,14 +29416,20 @@ function bindEvents() {
   })
 
   document.querySelector('[data-student-action="open-create"]')?.addEventListener('click', () => {
-    studentFormState = createEmptyStudentFormState()
+    studentFormState = createEmptyStudentFormState({
+      useAuthoritativeEnrollment: isV22StudentEnrollmentCapabilityReady(
+        v22StudentEnrollmentCapabilityState,
+        getCurrentCanonicalCenterContext().centerId,
+      ),
+    })
     render()
   })
 
   document.querySelectorAll('[data-student-action="open-edit"]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation()
-      const student = students.find((item) => item.id === button.dataset.studentEditId)
+      const student = getStudentsWithCanonicalProjections()
+        .find((item) => item.id === button.dataset.studentEditId)
 
       if (!student) {
         return
@@ -29320,6 +29556,54 @@ function bindEvents() {
         },
       }
       updateStudentFormSaveButton()
+    })
+  })
+
+  document.querySelectorAll('[data-student-enrollment-day]').forEach((control) => {
+    control.addEventListener('change', () => {
+      const enrollmentByClass = new Map()
+      document.querySelectorAll('[data-student-enrollment-day]:checked').forEach((checkbox) => {
+        const classSessionId = String(checkbox.dataset.classSessionId || '').trim()
+        if (!classSessionId) return
+        const weekdays = enrollmentByClass.get(classSessionId) || []
+        weekdays.push(checkbox.value)
+        enrollmentByClass.set(classSessionId, weekdays)
+      })
+      const recurringEnrollments = reconcileV22EnrollmentDayInput({
+        currentEnrollments: studentFormState.values.recurringEnrollments,
+        checkedEnrollments: [...enrollmentByClass]
+          .map(([classSessionId, weekdays]) => ({ classSessionId, weekdays })),
+        changedClassSessionId: control.dataset.classSessionId,
+      })
+      studentFormState = {
+        ...studentFormState,
+        values: {
+          ...studentFormState.values,
+          recurringEnrollments,
+          classSessionIds: recurringEnrollments.map((entry) => entry.classSessionId),
+        },
+        errors: { ...studentFormState.errors, recurringEnrollments: undefined },
+      }
+      updateStudentFormSaveButton()
+    })
+  })
+
+  document.querySelectorAll('[data-student-enrollment-remove-legacy]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const removedClassSessionId = String(button.dataset.studentEnrollmentRemoveLegacy || '').trim()
+      const recurringEnrollments = normalizeV22Enrollments(
+        studentFormState.values.recurringEnrollments,
+      ).filter((entry) => entry.classSessionId !== removedClassSessionId)
+      studentFormState = {
+        ...studentFormState,
+        values: {
+          ...studentFormState.values,
+          recurringEnrollments,
+          classSessionIds: recurringEnrollments.map((entry) => entry.classSessionId),
+        },
+        errors: { ...studentFormState.errors, recurringEnrollments: undefined },
+      }
+      render()
     })
   })
 
@@ -29543,16 +29827,16 @@ function bindEvents() {
       return
     }
 
-    if (!isStudentFormReady(studentFormState.values)) {
+    if (!isStudentFormReady(studentFormState.values, classSessions)) {
       studentFormState = {
         ...studentFormState,
-        errors: validateStudentForm(studentFormState.values),
+        errors: validateStudentForm(studentFormState.values, classSessions),
       }
       render()
       return
     }
 
-    const errors = validateStudentForm(studentFormState.values)
+    const errors = validateStudentForm(studentFormState.values, classSessions)
 
     if (Object.keys(errors).length) {
       studentFormState = {
@@ -29574,7 +29858,8 @@ function bindEvents() {
     studentFormState = command.formState
 
     if (studentFormState.mode === 'edit') {
-      const existingStudent = students.find((student) => student.id === studentFormState.studentId)
+      const existingStudent = getStudentsWithCanonicalProjections()
+        .find((student) => student.id === studentFormState.studentId)
       const updatedStudent = buildStudentFromForm(studentFormState.values, existingStudent)
       savedStudent = updatedStudent
     } else {
@@ -30769,7 +31054,15 @@ function updateStudentFormSaveButton() {
     return
   }
 
-  const disabledReason = getStudentFormSaveDisabledReason(studentFormState.values)
+  const enrollmentStatus = v22StudentEnrollmentCapabilityState.status
+  const enrollmentAuthorityPending = ['idle', 'loading', 'failed'].includes(enrollmentStatus)
+    || (enrollmentStatus === 'unavailable'
+      && studentFormState.values?.useAuthoritativeEnrollment === true)
+  const disabledReason = enrollmentAuthorityPending
+    ? enrollmentStatus === 'failed'
+      ? 'Chưa tải được đăng ký lịch học; nội dung đang nhập vẫn được giữ nguyên.'
+      : 'Đang kiểm tra đăng ký lịch học theo từng ngày.'
+    : getStudentFormSaveDisabledReason(studentFormState.values, classSessions)
   saveButton.disabled = Boolean(disabledReason || studentFormState.isSaving)
   saveButton.removeAttribute('aria-describedby')
 
@@ -31020,7 +31313,7 @@ function installManualCloudBackfillHelpers() {
       backfillLocalScheduleSessionsToCloud({
         ...options,
         scheduleSessions,
-        visibleScheduleSessions: getVisibleScheduleSessions(scheduleSessions, scheduleWeekStartDate, classSessions),
+        visibleScheduleSessions: getVisibleScheduleSessionsWithCurrentEnrollmentRosters(),
       }),
   }
 }

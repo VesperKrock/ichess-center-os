@@ -1,4 +1,5 @@
 import { buildStudentTuitionLink } from './student-tuition-links.js'
+import { V22_WEEKDAY_LABELS, normalizeV22Enrollments } from './student-recurring-enrollment.js'
 
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
@@ -427,6 +428,10 @@ function getStudentClassSessionLabel(student, classSessions = []) {
       .filter((classSession) => classSession && classSession.id)
       .map((classSession) => [String(classSession.id), classSession]),
   )
+  const enrollmentLookup = new Map(
+    normalizeV22Enrollments(student?.recurringEnrollments)
+      .map((entry) => [entry.classSessionId, entry]),
+  )
 
   return classSessionIds
     .map((classSessionId) => {
@@ -436,7 +441,16 @@ function getStudentClassSessionLabel(student, classSessions = []) {
       }
 
       const label = classSession.displayLabel || classSession.name || 'Ca học'
-      return classSession.status === 'inactive' ? `${label} (Đã ngưng)` : label
+      const enrollment = enrollmentLookup.get(classSessionId)
+      const weekdayLabel = (enrollment?.weekdays || [])
+        .map((day) => V22_WEEKDAY_LABELS[day] || day)
+        .join(' · ')
+      const withDays = weekdayLabel
+        ? `${label} · ${weekdayLabel}`
+        : enrollment?.legacyReviewRequired
+          ? `${label} · Cần chọn ngày`
+          : label
+      return classSession.status === 'inactive' ? `${withDays} (Đã ngưng)` : withDays
     })
     .join(', ')
 }

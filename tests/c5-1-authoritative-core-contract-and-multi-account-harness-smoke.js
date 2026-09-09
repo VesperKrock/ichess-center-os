@@ -160,13 +160,26 @@ assert(
   'Core save recovery must confirm the server command before installing cache',
 )
 for (const [name, saveMarker, nextName] of [
-  ['async function commitStudentProjection', 'saveStoredStudents(students)', 'async function commitTeacherProjection'],
+  // V2-2 keeps this C5.1 recovery path as the production-compatible fallback
+  // while the new enrollment capability is genuinely unavailable.
+  ['async function commitLegacyStudentProjection', 'saveStoredStudents(students)', 'async function commitStudentProjection'],
   ['async function commitClassSessionProjection', 'saveStoredClassSessions(classSessions)', 'async function commitScheduleSessionProjection'],
   ['async function commitScheduleSessionProjection', 'saveStoredSchedule(scheduleSessions)', 'async function writeStudentThroughCloud'],
 ]) {
   const block = functionSlice(content.main, name, nextName)
   includesAll(block, ['runAuthoritativeCoreSave', 'executeCommand:', saveMarker], `${name} recovery ordering`)
 }
+const studentAuthorityDispatcher = functionSlice(
+  content.main,
+  'async function commitStudentProjection',
+  'async function commitTeacherProjection',
+)
+includesAll(studentAuthorityDispatcher, [
+  'isV22StudentEnrollmentCapabilityReady',
+  'commitV22StudentProjection',
+  'V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.UNAVAILABLE',
+  'commitLegacyStudentProjection',
+], 'Student capability-driven atomic/fallback authority')
 const bootstrapBlock = functionSlice(content.main, 'function applyCloudBootstrapSnapshotToLocal', 'async function refreshCloudDbReadiness')
 includesAll(bootstrapBlock, [
   'students = Array.isArray(snapshot.students) ? snapshot.students : []',

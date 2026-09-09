@@ -1,4 +1,10 @@
 import { botMilestones, sampleStudents, studentStatuses } from './student-data.js'
+import {
+  V22_WEEKDAY_LABELS,
+  getV22ClassSessionWeekdays,
+  normalizeV22Enrollments,
+  validateV22EnrollmentSelection,
+} from './student-recurring-enrollment.js'
 
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
@@ -95,6 +101,9 @@ export const emptyStudentFormValues = {
   parentArea: '',
   level: 'Dolphin 1',
   classSessionIds: [],
+  recurringEnrollments: [],
+  enrollmentVersion: 0,
+  useAuthoritativeEnrollment: false,
   testScore: '',
   highestBotMilestone: 'Chưa có',
   personality: '',
@@ -114,12 +123,15 @@ const requiredFields = {
 const parentCareRequiredFields = ['parentName', 'fatherPhone', 'motherPhone']
 const studentParentCareRequiredHint = 'Cần nhập thông tin phụ huynh/chăm sóc'
 
-export function createEmptyStudentFormState() {
+export function createEmptyStudentFormState(options = {}) {
   return {
     mode: 'create',
     step: 1,
     studentId: null,
-    values: { ...emptyStudentFormValues },
+    values: {
+      ...emptyStudentFormValues,
+      useAuthoritativeEnrollment: options.useAuthoritativeEnrollment === true,
+    },
     errors: {},
   }
 }
@@ -150,6 +162,9 @@ export function createEditStudentFormState(student) {
       parentArea: student.parentArea ?? '',
       level: getLevelLabel(student.level),
       classSessionIds: normalizeClassSessionIds(student.classSessionIds),
+      recurringEnrollments: normalizeV22Enrollments(student.recurringEnrollments),
+      enrollmentVersion: Number(student.enrollmentVersion) || 0,
+      useAuthoritativeEnrollment: student.useAuthoritativeEnrollment === true,
       testScore: getTestScoreForForm(student.testScore),
       highestBotMilestone: student.highestBotMilestone ?? 'Chưa có',
       personality: student.personality ?? '',
@@ -167,6 +182,7 @@ export function renderStudentModule(
   formState,
   teachers = [],
   classSessions = [],
+  options = {},
 ) {
   const visibleStudents = getVisibleStudents(students)
   const filteredStudents = getFilteredStudents(students, filters, teachers, classSessions)
@@ -272,7 +288,7 @@ export function renderStudentModule(
           </div>
         </div>
       </div>
-      ${formState ? renderStudentForm(formState, teachers, classSessions) : ''}
+      ${formState ? renderStudentForm(formState, teachers, classSessions, options) : ''}
     </section>
   `
 }
@@ -331,7 +347,7 @@ export function getVisibleStudents(students = sampleStudents) {
   return students.filter((student) => !student.isDeleted)
 }
 
-export function validateStudentForm(values) {
+export function validateStudentForm(values, classSessions = []) {
   const errors = Object.entries(requiredFields).reduce((currentErrors, [field, label]) => {
     if (!String(values[field] ?? '').trim()) {
       currentErrors[field] = `${label} là bắt buộc.`
@@ -381,11 +397,20 @@ export function validateStudentForm(values) {
     }
   }
 
+  if (values.useAuthoritativeEnrollment === true) {
+    const selection = validateV22EnrollmentSelection(values.recurringEnrollments, classSessions)
+    if (!selection.ok) {
+      errors.recurringEnrollments = selection.errors.some((item) => item.code === 'WEEKDAY_REQUIRED')
+        ? 'Chọn ít nhất một ngày cho mỗi ca học cũ cần rà soát.'
+        : 'Đăng ký học có ngày hoặc ca học không còn hợp lệ. Hãy kiểm tra lại.'
+    }
+  }
+
   return errors
 }
 
-export function isStudentFormReady(values) {
-  return Object.keys(validateStudentForm(values)).length === 0
+export function isStudentFormReady(values, classSessions = []) {
+  return Object.keys(validateStudentForm(values, classSessions)).length === 0
 }
 
 export function isStudentParentCareInfoIncomplete(values) {
@@ -396,8 +421,8 @@ export function isStudentParentCareInfoIncomplete(values) {
   return !hasParentName || (!hasFatherPhone && !hasMotherPhone)
 }
 
-export function getStudentFormSaveDisabledReason(values) {
-  const errors = validateStudentForm(values)
+export function getStudentFormSaveDisabledReason(values, classSessions = []) {
+  const errors = validateStudentForm(values, classSessions)
   const errorFields = Object.keys(errors)
 
   if (!errorFields.length) {
@@ -447,12 +472,22 @@ function renderStudentForm(
   formState,
   teachers = [],
   classSessions = [],
+  options = {},
 ) {
   const isEdit = formState.mode === 'edit'
   const title = isEdit ? 'Sửa học viên' : 'Thêm học viên'
   const currentStep = formState.step ?? 1
-  const isReadyToSave = isStudentFormReady(formState.values)
-  const disabledReason = getStudentFormSaveDisabledReason(formState.values)
+  const enrollmentStatus = String(options.enrollmentCapabilityStatus || '')
+  const enrollmentAuthorityPending = ['idle', 'loading', 'failed'].includes(enrollmentStatus)
+    || (enrollmentStatus === 'unavailable'
+      && formState.values.useAuthoritativeEnrollment === true)
+  const isReadyToSave = isStudentFormReady(formState.values, classSessions)
+    && !enrollmentAuthorityPending
+  const disabledReason = enrollmentAuthorityPending
+    ? enrollmentStatus === 'failed'
+      ? 'Chưa tải được đăng ký lịch học; nội dung đang nhập vẫn được giữ nguyên.'
+      : 'Đang kiểm tra đăng ký lịch học theo từng ngày.'
+    : getStudentFormSaveDisabledReason(formState.values, classSessions)
   const parentCareIncomplete = isStudentParentCareInfoIncomplete(formState.values)
 
   return `
@@ -525,7 +560,9 @@ function renderStudentForm(
                     formState,
                     getTeacherSelectOptions(teachers),
                   ),
-                  renderClassSessionCheckboxes(formState, classSessions),
+                  formState.values.useAuthoritativeEnrollment === true
+                    ? renderRecurringEnrollmentEditor(formState, classSessions)
+                    : renderClassSessionCheckboxes(formState, classSessions, options),
                   renderTextareaField('personality', 'Tính cách học viên', formState, {
                     className: 'span-full',
                   }),
@@ -655,7 +692,7 @@ function renderStudentLevelField(formState) {
   `
 }
 
-function renderClassSessionCheckboxes(formState, classSessions = []) {
+function renderClassSessionCheckboxes(formState, classSessions = [], options = {}) {
   const selectedIds = new Set(normalizeClassSessionIds(formState.values.classSessionIds))
   const selectableClassSessions = getSelectableClassSessions(classSessions, selectedIds)
 
@@ -666,6 +703,11 @@ function renderClassSessionCheckboxes(formState, classSessions = []) {
           <span>Ca học / Lớp</span>
           <p>Có thể chọn nhiều ca học trong tuần. Nếu chưa chọn, học viên sẽ được tính là Chưa phân lớp.</p>
           <p>Danh mục ca học được quản lý tại Cài đặt cơ sở.</p>
+          ${options.enrollmentCapabilityStatus === 'loading'
+            ? '<p>Đang kiểm tra đăng ký lịch học theo từng ngày…</p>'
+            : options.enrollmentCapabilityStatus === 'failed'
+              ? '<p class="student-enrollment-review" role="status">Chưa tải được đăng ký lịch học theo từng ngày. Nội dung đang nhập vẫn được giữ nguyên.</p>'
+            : ''}
         </div>
         <button class="student-secondary-button" type="button" data-student-action="open-settings-module">
           Mở Cài đặt cơ sở
@@ -696,6 +738,78 @@ function renderClassSessionCheckboxes(formState, classSessions = []) {
             : '<p class="student-class-session-empty">Chưa có ca học active.</p>'
         }
       </div>
+    </div>
+  `
+}
+
+function renderRecurringEnrollmentEditor(formState, classSessions = []) {
+  const enrollments = normalizeV22Enrollments(formState.values.recurringEnrollments)
+  const enrollmentLookup = new Map(enrollments.map((entry) => [entry.classSessionId, entry]))
+  const selectedIds = new Set(enrollments.map((entry) => entry.classSessionId))
+  const selectableClassSessions = getSelectableClassSessions(classSessions, selectedIds)
+  const availableClassSessionIds = new Set(
+    classSessions.filter((item) => item?.id).map((item) => String(item.id)),
+  )
+  const missingLegacyEnrollments = enrollments.filter(
+    (entry) => !availableClassSessionIds.has(entry.classSessionId),
+  )
+  const reviewCount = enrollments.filter(
+    (entry) => entry.legacyReviewRequired && !entry.weekdays.length,
+  ).length
+
+  return `
+    <div class="student-class-session-field student-recurring-enrollment-field span-full ${formState.errors.recurringEnrollments ? 'has-error' : ''}">
+      <div class="student-class-session-heading">
+        <div>
+          <span>Lịch học định kỳ theo học viên</span>
+          <p>Chọn đúng ngày học viên thực sự tham gia trong từng ca. Buổi học bù hoặc học thử được thêm riêng tại Thời khóa biểu.</p>
+          ${reviewCount
+            ? `<p class="student-enrollment-review" role="status">Có ${reviewCount} liên kết cũ cần rà soát trước khi lưu.</p>`
+            : ''}
+        </div>
+        <button class="student-secondary-button" type="button" data-student-action="open-settings-module">Mở Cài đặt cơ sở</button>
+      </div>
+      <div class="student-recurring-enrollment-list">
+        ${selectableClassSessions.length || missingLegacyEnrollments.length
+          ? selectableClassSessions.map((classSession) => {
+              const entry = enrollmentLookup.get(String(classSession.id))
+              const selectedDays = new Set(entry?.weekdays || [])
+              const availableDays = getV22ClassSessionWeekdays(classSession)
+              return `
+                <fieldset class="student-recurring-enrollment-option ${classSession.status === 'inactive' ? 'is-inactive' : ''} ${entry?.legacyReviewRequired ? 'needs-review' : ''}">
+                  <legend>${escapeHtml(getClassSessionDisplayLabel(classSession))}${classSession.status === 'inactive' ? ' · Đã ngưng' : ''}</legend>
+                  <div class="student-recurring-enrollment-days">
+                    ${availableDays.map((weekday) => `
+                      <label>
+                        <input type="checkbox"
+                          value="${weekday}"
+                          data-student-enrollment-day
+                          data-class-session-id="${escapeAttribute(classSession.id)}"
+                          ${selectedDays.has(weekday) ? 'checked' : ''}
+                        />
+                        <span>${V22_WEEKDAY_LABELS[weekday]}</span>
+                      </label>
+                    `).join('') || '<span class="student-enrollment-invalid">Ca học chưa có ngày hợp lệ.</span>'}
+                  </div>
+                  ${entry?.legacyReviewRequired && !entry.weekdays.length
+                    ? '<small>Liên kết cũ chưa xác định ngày. Vui lòng chọn ngày thực tế.</small>'
+                    : ''}
+                </fieldset>
+              `
+            }).join('') + missingLegacyEnrollments.map((entry) => `
+              <fieldset class="student-recurring-enrollment-option needs-review is-missing">
+                <legend>Ca học cũ không còn trong danh mục</legend>
+                <p class="student-enrollment-invalid">Không thể tự suy ra ngày học cho liên kết này.</p>
+                <button
+                  class="student-secondary-button student-enrollment-remove"
+                  type="button"
+                  data-student-enrollment-remove-legacy="${escapeAttribute(entry.classSessionId)}"
+                >Bỏ liên kết cũ</button>
+              </fieldset>
+            `).join('')
+          : '<p class="student-class-session-empty">Chưa có ca học đang sử dụng.</p>'}
+      </div>
+      ${formState.errors.recurringEnrollments ? `<small>${escapeHtml(formState.errors.recurringEnrollments)}</small>` : ''}
     </div>
   `
 }
@@ -897,7 +1011,7 @@ function renderStudentClassSessionCell(student, classSessionLookup = new Map()) 
   const visibleItems = classSessionItems.slice(0, 2)
   const hiddenCount = Math.max(0, classSessionItems.length - visibleItems.length)
   const title = classSessionItems
-    .map((item) => `${item.label}${item.status === 'inactive' ? ' (Đã ngưng)' : ''}`)
+    .map((item) => `${item.label}${item.weekdayLabel ? ` · ${item.weekdayLabel}` : ''}${item.status === 'inactive' ? ' (Đã ngưng)' : item.status === 'review' ? ' (Cần chọn ngày)' : ''}`)
     .join(', ')
 
   return `
@@ -905,9 +1019,11 @@ function renderStudentClassSessionCell(student, classSessionLookup = new Map()) 
       ${visibleItems
         .map(
           (item) => `
-            <span class="student-class-session-badge ${item.status === 'inactive' ? 'inactive' : item.status === 'missing' ? 'missing' : ''}">
+            <span class="student-class-session-badge ${item.status === 'inactive' ? 'inactive' : item.status === 'missing' ? 'missing' : item.status === 'review' ? 'review' : ''}">
               ${escapeHtml(item.label)}
+              ${item.weekdayLabel ? `<small>${escapeHtml(item.weekdayLabel)}</small>` : ''}
               ${item.status === 'inactive' ? '<em>Đã ngưng</em>' : ''}
+              ${item.status === 'review' ? '<em>Cần chọn ngày</em>' : ''}
             </span>
           `,
         )
@@ -1028,16 +1144,30 @@ function getStudentClassSessionLabels(student, classSessionLookup = new Map()) {
 }
 
 function getStudentClassSessionItems(student, classSessionLookup = new Map()) {
+  const enrollmentLookup = new Map(
+    normalizeV22Enrollments(student.recurringEnrollments)
+      .map((entry) => [entry.classSessionId, entry]),
+  )
   return normalizeClassSessionIds(student.classSessionIds).map((classSessionId) => {
     const classSession = classSessionLookup.get(classSessionId)
+    const enrollment = enrollmentLookup.get(classSessionId)
+    const weekdayLabel = (enrollment?.weekdays || [])
+      .map((day) => V22_WEEKDAY_LABELS[day] || day)
+      .join(' · ')
     return classSession
       ? {
           label: getClassSessionDisplayLabel(classSession),
-          status: classSession.status === 'inactive' ? 'inactive' : 'active',
+          status: classSession.status === 'inactive'
+            ? 'inactive'
+            : enrollment?.legacyReviewRequired && !enrollment.weekdays.length
+              ? 'review'
+              : 'active',
+          weekdayLabel,
         }
       : {
           label: 'Ca học không tìm thấy',
           status: 'missing',
+          weekdayLabel,
         }
   })
 }

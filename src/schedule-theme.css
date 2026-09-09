@@ -9,6 +9,46 @@
   background: #f3f4f6;
 }
 
+/* V2-2 deterministic recurring roster. */
+.desktop-window.is-schedule-window .schedule-roster-source,
+.desktop-window.is-schedule-window .schedule-roster-review {
+  margin: 3px 0 0;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.desktop-window.is-schedule-window .schedule-roster-source {
+  color: #166534;
+}
+
+.desktop-window.is-schedule-window .schedule-roster-review {
+  color: #92400e;
+}
+
+.desktop-window.is-schedule-window .schedule-managed-roster-notice {
+  display: grid;
+  gap: 4px;
+  padding: 11px 13px;
+  border: 1px solid #86b7a0;
+  border-radius: 10px;
+  color: #14532d;
+  background: #f0fdf4;
+}
+
+[data-ui-theme='dark'] .desktop-window.is-schedule-window .schedule-managed-roster-notice {
+  border-color: #3f7a5a;
+  color: #dcfce7;
+  background: #123222;
+}
+
+[data-ui-theme='dark'] .desktop-window.is-schedule-window .schedule-roster-source {
+  color: #86efac;
+}
+
+[data-ui-theme='dark'] .desktop-window.is-schedule-window .schedule-roster-review {
+  color: #fbbf24;
+}
+
 .desktop-window.is-schedule-window > .window-body > .module-authoritative-refresh-notice {
   flex: 0 0 auto;
   margin: 8px 22px 0;

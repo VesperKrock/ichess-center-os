@@ -105,10 +105,18 @@ export async function mutateAuthoritativeCoreEntity({
   })
 
   if (error) {
+    const detail = [error?.code, error?.message, error?.details, error?.hint]
+      .map((value) => String(value || '').toLowerCase())
+      .join(' ')
+    const v22Outcome = detail.includes('v2_2_class_weekday_in_use')
+      ? 'CLASS_WEEKDAY_IN_USE'
+      : detail.includes('v2_2_schedule_class_link_required')
+        ? 'SCHEDULE_CLASS_LINK_REQUIRED'
+        : ''
     return {
       ok: false,
-      outcome_code: 'SERVER_COMMAND_FAILED',
-      error: String(error.message || error),
+      outcome_code: v22Outcome || 'SERVER_COMMAND_FAILED',
+      error: getAuthoritativeCoreOutcomeMessage(v22Outcome || 'SERVER_COMMAND_FAILED'),
       detail: error,
     }
   }
@@ -157,6 +165,8 @@ export function getAuthoritativeCoreOutcomeMessage(outcomeCode) {
     VERSION_CONFLICT: 'Dữ liệu đã được tài khoản khác cập nhật. Hãy tải lại trước khi lưu.',
     IDEMPOTENCY_CONFLICT: 'Khóa gửi lại đã được dùng cho một thay đổi khác.',
     CONCURRENT_CONFLICT: 'Có thay đổi đồng thời. Hãy tải lại và thử lại.',
+    CLASS_WEEKDAY_IN_USE: 'Không thể bỏ ngày đang có học viên đăng ký. Hãy cập nhật học viên trước.',
+    SCHEDULE_CLASS_LINK_REQUIRED: 'Lịch cố định cần liên kết đúng ca học trong Cài đặt cơ sở.',
     INVALID_SERVER_RESULT: 'Server trả về kết quả không hợp lệ; cache chưa được thay đổi.',
     SERVER_COMMAND_FAILED: 'Không thể lưu lên server; cache chưa được thay đổi.',
   }

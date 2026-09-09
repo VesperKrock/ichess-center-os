@@ -95,7 +95,13 @@ const studentBlurHandlerMatch = main.match(/control\.addEventListener\('blur'[\s
 assert(studentBlurHandlerMatch, 'Student form blur handler should exist for phone formatting');
 assertNotIncludes(studentBlurHandlerMatch[0], 'render()', 'student form blur render');
 assertIncludes(studentBlurHandlerMatch[0], 'updateStudentFormSaveButton()');
-assertIncludes(main, 'validateStudentForm(studentFormState.values)', 'student validation remains on save');
+// V2-2 keeps the original save-time validation boundary and adds the current
+// class/session catalog so individualized weekdays are checked as a subset.
+assertIncludes(
+  main,
+  'validateStudentForm(studentFormState.values, classSessions)',
+  'student and recurring-enrollment validation remains on save',
+);
 
 assertIncludes(styles, 'height: min(92dvh, calc(100dvh - 76px), 780px);');
 assertIncludes(styles, 'max-height: calc(100dvh - 76px);');

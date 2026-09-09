@@ -6,6 +6,7 @@ import {
   scheduleTypes,
 } from './schedule-data.js'
 import { buildScheduleDeadlineAlerts } from './schedule-deadline.js'
+import { deriveV22ScheduleRosters } from './student-recurring-enrollment.js'
 import {
   CENTER_CALENDAR_ITEM_TYPES,
   CENTER_CALENDAR_ITEM_TYPE_LABELS,
@@ -213,7 +214,12 @@ export function renderScheduleModule(
     unavailable: 'Chưa khả dụng',
     failed: 'Chưa tải được',
   }[calendarNotesAvailabilityStatus] || ''
-  const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
+  const visibleSessions = deriveV22ScheduleRosters({
+    sessions: getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions),
+    students,
+    enrollmentSets: deadlineOptions.recurringEnrollmentSets,
+    capabilityReady: deadlineOptions.recurringRosterManaged === true,
+  })
   const weekRangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
   const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
   const weekCenterCalendarItems = calendarNotesAvailable
@@ -305,7 +311,15 @@ export function renderScheduleModule(
             .join('')}
         </div>
       </div>
-      ${formState ? renderScheduleForm(formState, teachers, students, sessions, normalizedWeekStart, classSessions) : ''}
+      ${formState ? renderScheduleForm(
+        formState,
+        teachers,
+        students,
+        sessions,
+        normalizedWeekStart,
+        classSessions,
+        { recurringRosterManaged: deadlineOptions.recurringRosterManaged === true },
+      ) : ''}
       ${calendarNotesAvailable && centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags) : ''}
       ${calendarNotesAvailable && centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
       ${
@@ -1847,6 +1861,11 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
         ${escapeHtml(meta)}
       </p>
       <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
+      ${session.rosterReviewRequired
+        ? '<p class="schedule-roster-review">Cần liên kết ca học để xác định danh sách</p>'
+        : session.rosterSource === 'v2.2-authoritative-enrollment'
+          ? '<p class="schedule-roster-source">Theo đăng ký học viên</p>'
+          : ''}
       ${isEmptySlot ? '<span class="schedule-empty-slot-action">+ Thêm thông tin</span>' : ''}
     </article>
   `
@@ -1990,7 +2009,15 @@ function renderTeacherDeadlineAlertItem(alert) {
   `
 }
 
-function renderScheduleForm(formState, teachers, students, sessions, weekStartDate, classSessions = []) {
+function renderScheduleForm(
+  formState,
+  teachers,
+  students,
+  sessions,
+  weekStartDate,
+  classSessions = [],
+  options = {},
+) {
   const isEdit = formState.mode === 'edit'
   const isManualCreate = formState.mode === 'create'
   const scheduleType = normalizeScheduleType(formState.values.scheduleType)
@@ -2099,7 +2126,9 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         ${isCompactFixedScheduleForm ? '' : renderField('groupName', 'Nhóm/lớp', formState, 'text')}
         ${isCompactFixedScheduleForm ? '' : renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
         ${renderSelectField('status', 'Trạng thái', formState, scheduleStatuses.map((status) => [status, getStatusLabel(status)]))}
-        ${renderStudentPicker(formState, students, teachers)}
+        ${scheduleType === 'recurring' && options.recurringRosterManaged
+          ? renderManagedRecurringRosterNotice(displayValues)
+          : renderStudentPicker(formState, students, teachers)}
         ${renderTextareaField('note', scheduleType === 'oneOff' ? 'Ghi chú / lý do chi tiết' : 'Ghi chú', formState)}
       </div>
 
@@ -2119,6 +2148,15 @@ function renderScheduleForm(formState, teachers, students, sessions, weekStartDa
         </div>
       </div>
     </form>
+  `
+}
+
+function renderManagedRecurringRosterNotice(values = {}) {
+  return `
+    <div class="schedule-managed-roster-notice span-full" role="status">
+      <strong>Danh sách học viên được lấy tự động</strong>
+      <span>Ca ${escapeHtml(values.classSessionLabel || values.title || 'đã chọn')} chỉ hiện học viên đăng ký đúng ngày này trong hồ sơ Học viên.</span>
+    </div>
   `
 }
 

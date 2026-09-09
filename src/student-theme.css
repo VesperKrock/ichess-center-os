@@ -29,6 +29,103 @@
   --student-shadow: 0 14px 32px rgb(15 23 42 / 9%);
 }
 
+/* V2-2 individualized recurring enrollment. */
+.is-student-form-window .student-recurring-enrollment-list {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.is-student-form-window .student-recurring-enrollment-option {
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--student-border, #cbd5e1);
+  border-radius: 10px;
+  background: var(--student-surface, #ffffff);
+}
+
+.is-student-form-window .student-recurring-enrollment-option legend {
+  max-width: 100%;
+  padding: 0 5px;
+  color: var(--student-text, #172033);
+  font-weight: 700;
+}
+
+.is-student-form-window .student-recurring-enrollment-option.needs-review {
+  border-color: #b7791f;
+}
+
+.is-student-form-window .student-recurring-enrollment-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.is-student-form-window .student-recurring-enrollment-days label {
+  cursor: pointer;
+}
+
+.is-student-form-window .student-recurring-enrollment-days input {
+  position: absolute;
+  opacity: 0;
+}
+
+.is-student-form-window .student-recurring-enrollment-days span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 34px;
+  padding: 4px 9px;
+  border: 1px solid var(--student-border, #cbd5e1);
+  border-radius: 999px;
+  color: var(--student-text-muted, #475569);
+  background: var(--student-surface-soft, #f8fafc);
+  font-weight: 700;
+}
+
+.is-student-form-window .student-recurring-enrollment-days input:checked + span {
+  border-color: #166534;
+  color: #ffffff;
+  background: #166534;
+}
+
+.is-student-form-window .student-recurring-enrollment-days input:focus-visible + span {
+  outline: 3px solid rgba(37, 99, 235, 0.32);
+  outline-offset: 2px;
+}
+
+.is-student-form-window .student-enrollment-review,
+.is-student-form-window .student-enrollment-invalid {
+  color: #92400e;
+  font-weight: 650;
+}
+
+.is-student-form-window .student-enrollment-remove {
+  margin-top: 8px;
+}
+
+[data-ui-theme='dark'] .is-student-form-window .student-recurring-enrollment-option {
+  border-color: #526176;
+  background: #172033;
+}
+
+[data-ui-theme='dark'] .is-student-form-window .student-recurring-enrollment-option legend,
+[data-ui-theme='dark'] .is-student-form-window .student-recurring-enrollment-days span {
+  color: #f1f5f9;
+}
+
+[data-ui-theme='dark'] .is-student-form-window .student-recurring-enrollment-days span {
+  border-color: #64748b;
+  background: #202c40;
+}
+
+[data-ui-theme='dark'] .is-student-form-window .student-enrollment-review,
+[data-ui-theme='dark'] .is-student-form-window .student-enrollment-invalid {
+  color: #fbbf24;
+}
+
 :root[data-ui-theme='dark'] {
   --student-canvas: #0b0c10;
   --student-chrome: #0b0c10;
@@ -579,6 +676,7 @@
 }
 
 .is-student-list-window .student-class-session-badge.missing,
+.is-student-list-window .student-class-session-badge.review,
 .is-student-list-window .student-teacher-warning {
   background: var(--student-paused-bg);
   color: var(--student-paused-text);
