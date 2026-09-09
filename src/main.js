@@ -1236,7 +1236,7 @@ function getVisibleScheduleSessionsWithCurrentEnrollmentRosters(
   const centerId = getCurrentCanonicalCenterContext().centerId
   return deriveV22ScheduleRosters({
     sessions: getVisibleScheduleSessions(scheduleSessions, weekStartDate, classSessions),
-    students,
+    students: getStudentsWithCanonicalProjections(),
     enrollmentSets: v22StudentEnrollmentSets,
     capabilityReady: isV22StudentEnrollmentCapabilityReady(
       v22StudentEnrollmentCapabilityState,

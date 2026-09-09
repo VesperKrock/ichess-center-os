@@ -191,42 +191,93 @@ export function deriveV22ScheduleRosters({
   capabilityReady = false,
 } = {}) {
   if (!capabilityReady) return Array.isArray(sessions) ? sessions : []
+  const authoritativeStudentIds = new Set(
+    (Array.isArray(enrollmentSets) ? enrollmentSets : [])
+      .map((set) => String(set?.studentId || '').trim())
+      .filter(Boolean),
+  )
   const activeStudentIds = new Set(
     (Array.isArray(students) ? students : [])
       .filter((student) => !student?.isDeleted && normalizeText(student?.currentStatus) === ACTIVE_STUDENT_STATUS)
       .map((student) => String(student.id)),
   )
-  const rosterByClassDay = new Map()
+  const authoritativeRosterByClassDay = new Map()
   ;(Array.isArray(enrollmentSets) ? enrollmentSets : []).forEach((set) => {
-    const studentId = String(set?.studentId || '')
+    const studentId = String(set?.studentId || '').trim()
     if (!activeStudentIds.has(studentId)) return
     normalizeV22Enrollments(set.enrollments).forEach((entry) => {
       entry.weekdays.forEach((weekday) => {
         const key = `${entry.classSessionId}\u0000${weekday}`
-        const roster = rosterByClassDay.get(key) || []
+        const roster = authoritativeRosterByClassDay.get(key) || []
         roster.push(studentId)
-        rosterByClassDay.set(key, roster)
+        authoritativeRosterByClassDay.set(key, roster)
+      })
+    })
+  })
+
+  const deterministicLegacyRosterByClassDay = new Map()
+  const unresolvedLegacyClassIds = new Set()
+  ;(Array.isArray(students) ? students : []).forEach((student) => {
+    const studentId = String(student?.id || '').trim()
+    if (!activeStudentIds.has(studentId) || authoritativeStudentIds.has(studentId)) return
+    normalizeV22Enrollments(student?.recurringEnrollments).forEach((entry) => {
+      if (entry.legacyReviewRequired || !entry.weekdays.length) {
+        unresolvedLegacyClassIds.add(entry.classSessionId)
+        return
+      }
+      entry.weekdays.forEach((weekday) => {
+        const key = `${entry.classSessionId}\u0000${weekday}`
+        const roster = deterministicLegacyRosterByClassDay.get(key) || []
+        roster.push(studentId)
+        deterministicLegacyRosterByClassDay.set(key, roster)
       })
     })
   })
 
   return (Array.isArray(sessions) ? sessions : []).map((session) => {
     if (String(session?.scheduleType || '').toLowerCase() === 'oneoff') return session
+    const existingStudentIds = [...new Set(
+      (Array.isArray(session?.studentIds) ? session.studentIds : [])
+        .map((studentId) => String(studentId ?? '').trim())
+        .filter(Boolean),
+    )]
     const classSessionId = String(session?.classSessionId || '').trim()
     const weekday = normalizeV22Weekday(session?.dayOfWeek)
     if (!classSessionId || !weekday) {
       return {
         ...session,
-        studentIds: [],
-        rosterSource: 'v2.2-review-required',
+        studentIds: existingStudentIds,
+        rosterSource: 'v2.2-legacy-continuity',
         rosterReviewRequired: true,
       }
     }
+    const key = `${classSessionId}\u0000${weekday}`
+    const authoritativeStudentIdsForOccurrence = authoritativeRosterByClassDay.get(key) || []
+    const deterministicLegacyStudentIds = deterministicLegacyRosterByClassDay.get(key) || []
+    const deterministicLegacyStudentIdSet = new Set(deterministicLegacyStudentIds)
+    const retainedExistingStudentIds = existingStudentIds
+      .filter((studentId) => !authoritativeStudentIds.has(studentId))
+    const unresolvedExistingStudentIds = retainedExistingStudentIds
+      .filter((studentId) => !deterministicLegacyStudentIdSet.has(studentId))
+    const hasLegacyContinuity = retainedExistingStudentIds.length > 0
+      || deterministicLegacyStudentIds.length > 0
+    const hasAuthoritativeContribution = authoritativeStudentIdsForOccurrence.length > 0
+      || existingStudentIds.some((studentId) => authoritativeStudentIds.has(studentId))
+    const rosterReviewRequired = unresolvedExistingStudentIds.length > 0
+      || unresolvedLegacyClassIds.has(classSessionId)
     return {
       ...session,
-      studentIds: [...new Set(rosterByClassDay.get(`${classSessionId}\u0000${weekday}`) || [])].sort(),
-      rosterSource: 'v2.2-authoritative-enrollment',
-      rosterReviewRequired: false,
+      studentIds: [...new Set([
+        ...authoritativeStudentIdsForOccurrence,
+        ...retainedExistingStudentIds,
+        ...deterministicLegacyStudentIds,
+      ])].sort(),
+      rosterSource: hasLegacyContinuity
+        ? hasAuthoritativeContribution
+          ? 'v2.2-mixed-cutover'
+          : 'v2.2-legacy-continuity'
+        : 'v2.2-authoritative-enrollment',
+      rosterReviewRequired,
     }
   })
 }

@@ -1861,14 +1861,25 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
         ${escapeHtml(meta)}
       </p>
       <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
-      ${session.rosterReviewRequired
-        ? '<p class="schedule-roster-review">Cần liên kết ca học để xác định danh sách</p>'
-        : session.rosterSource === 'v2.2-authoritative-enrollment'
-          ? '<p class="schedule-roster-source">Theo đăng ký học viên</p>'
-          : ''}
+      ${renderScheduleRosterSource(session)}
       ${isEmptySlot ? '<span class="schedule-empty-slot-action">+ Thêm thông tin</span>' : ''}
     </article>
   `
+}
+
+function renderScheduleRosterSource(session = {}) {
+  if (session.rosterReviewRequired) {
+    return '<p class="schedule-roster-review">Dữ liệu cũ được giữ nguyên — cần rà soát đăng ký</p>'
+  }
+  if (session.rosterSource === 'v2.2-mixed-cutover') {
+    return '<p class="schedule-roster-source">Đang chuyển dần theo đăng ký học viên</p>'
+  }
+  if (session.rosterSource === 'v2.2-legacy-continuity') {
+    return '<p class="schedule-roster-source">Theo liên kết một ngày cũ — chờ chuyển đổi</p>'
+  }
+  return session.rosterSource === 'v2.2-authoritative-enrollment'
+    ? '<p class="schedule-roster-source">Theo đăng ký học viên</p>'
+    : ''
 }
 
 function renderScheduleAlertBell(alerts = []) {

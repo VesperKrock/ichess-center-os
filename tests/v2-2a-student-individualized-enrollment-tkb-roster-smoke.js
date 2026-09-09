@@ -105,7 +105,7 @@ const enrollmentSets = [
   { studentId: 'student-deleted', version: 1, enrollments: [{ classSessionId: 'class-wed-fri', weekdays: ['fri'] }] },
 ]
 const sessions = [
-  { id: 'fri-recurring', scheduleType: 'recurring', classSessionId: 'class-wed-fri', dayOfWeek: 'friday', studentIds: ['legacy-id'] },
+  { id: 'fri-recurring', scheduleType: 'recurring', classSessionId: 'class-wed-fri', dayOfWeek: 'friday', studentIds: ['student-fri'] },
   { id: 'wed-recurring', scheduleType: 'recurring', classSessionId: 'class-wed-fri', dayOfWeek: 'wed', studentIds: [] },
   { id: 'one-off', scheduleType: 'oneOff', classSessionId: '', dayOfWeek: 'fri', studentIds: ['guest-id'] },
   { id: 'unlinked-recurring', scheduleType: 'recurring', title: 'Same display label must not match', dayOfWeek: 'fri', studentIds: ['legacy-id'] },
@@ -114,16 +114,134 @@ const roster = deriveV22ScheduleRosters({ sessions, students: baseStudents, enro
 assert.deepEqual(roster.find((item) => item.id === 'fri-recurring').studentIds, ['student-fri'])
 assert.deepEqual(roster.find((item) => item.id === 'wed-recurring').studentIds, ['student-wed'])
 assert.deepEqual(roster.find((item) => item.id === 'one-off').studentIds, ['guest-id'])
-assert.deepEqual(roster.find((item) => item.id === 'unlinked-recurring').studentIds, [])
+assert.deepEqual(roster.find((item) => item.id === 'unlinked-recurring').studentIds, ['legacy-id'])
 assert.equal(roster.find((item) => item.id === 'unlinked-recurring').rosterReviewRequired, true)
 assert.equal(deriveV22ScheduleRosters({ sessions, capabilityReady: false }), sessions,
   'Backend-absent production path must preserve the legacy projection unchanged')
+
+const legacyCutoverStudents = projectStudentsWithV22Enrollments([
+  { id: 'legacy-multi', currentStatus: 'Đang theo học', classSessionIds: ['class-wed-fri'] },
+  { id: 'legacy-single', currentStatus: 'Đang theo học', classSessionIds: ['class-sat'] },
+], [], classSessions, true)
+const legacyCutoverSessions = [
+  {
+    id: 'legacy-wed', scheduleType: 'recurring', classSessionId: 'class-wed-fri',
+    dayOfWeek: 'wed', studentIds: ['legacy-multi'],
+  },
+  {
+    id: 'legacy-fri', scheduleType: 'recurring', classSessionId: 'class-wed-fri',
+    dayOfWeek: 'fri', studentIds: ['legacy-multi'],
+  },
+  {
+    id: 'legacy-sat', scheduleType: 'recurring', classSessionId: 'class-sat',
+    dayOfWeek: 'sat', studentIds: [],
+  },
+]
+const unavailableCutover = deriveV22ScheduleRosters({
+  sessions: legacyCutoverSessions,
+  students: legacyCutoverStudents,
+  enrollmentSets: [],
+  capabilityReady: false,
+})
+assert.deepEqual(unavailableCutover.map((item) => item.studentIds), [
+  ['legacy-multi'], ['legacy-multi'], [],
+])
+const readyWithoutSets = deriveV22ScheduleRosters({
+  sessions: legacyCutoverSessions,
+  students: legacyCutoverStudents,
+  enrollmentSets: [],
+  capabilityReady: true,
+})
+assert.deepEqual(readyWithoutSets.map((item) => item.studentIds), [
+  ['legacy-multi'], ['legacy-multi'], ['legacy-single'],
+], 'UNAVAILABLE -> READY must preserve existing rosters and only add deterministic single-day legacy truth')
+assert.equal(readyWithoutSets[0].rosterSource, 'v2.2-legacy-continuity')
+assert.equal(readyWithoutSets[0].rosterReviewRequired, true)
+assert.equal(readyWithoutSets[1].rosterReviewRequired, true,
+  'Multi-day legacy must remain review-required on every occurrence')
+assert.equal(readyWithoutSets[2].rosterReviewRequired, false,
+  'A deterministic single-day legacy link does not invent a weekday')
+
+const partialCutover = deriveV22ScheduleRosters({
+  sessions: legacyCutoverSessions,
+  students: legacyCutoverStudents,
+  enrollmentSets: [{
+    studentId: 'legacy-multi', version: 1,
+    enrollments: [{ classSessionId: 'class-wed-fri', weekdays: ['fri'] }],
+  }],
+  capabilityReady: true,
+})
+assert.deepEqual(partialCutover[0].studentIds, [],
+  'A reviewed Student must leave the wrong weekday instead of retaining their legacy roster entry')
+assert.deepEqual(partialCutover[1].studentIds, ['legacy-multi'])
+assert.deepEqual(partialCutover[2].studentIds, ['legacy-single'])
+assert.equal(partialCutover[2].rosterSource, 'v2.2-legacy-continuity')
+
+const mixedCutover = deriveV22ScheduleRosters({
+  sessions: [{
+    id: 'mixed-fri', scheduleType: 'recurring', classSessionId: 'class-wed-fri',
+    dayOfWeek: 'fri', studentIds: ['legacy-unreviewed', 'reviewed-student'],
+  }],
+  students: [
+    { id: 'legacy-unreviewed', currentStatus: 'Đang theo học' },
+    { id: 'reviewed-student', currentStatus: 'Đang theo học' },
+  ],
+  enrollmentSets: [{
+    studentId: 'reviewed-student', version: 1,
+    enrollments: [{ classSessionId: 'class-wed-fri', weekdays: ['fri'] }],
+  }],
+  capabilityReady: true,
+})[0]
+assert.deepEqual(mixedCutover.studentIds, ['legacy-unreviewed', 'reviewed-student'])
+assert.equal(mixedCutover.rosterSource, 'v2.2-mixed-cutover')
+assert.equal(mixedCutover.rosterReviewRequired, true)
+
+const mixedWrongDayCutover = deriveV22ScheduleRosters({
+  sessions: [{
+    id: 'mixed-wed', scheduleType: 'recurring', classSessionId: 'class-wed-fri',
+    dayOfWeek: 'wed', studentIds: ['legacy-unreviewed', 'reviewed-student'],
+  }],
+  students: [
+    { id: 'legacy-unreviewed', currentStatus: 'Đang theo học' },
+    { id: 'reviewed-student', currentStatus: 'Đang theo học' },
+  ],
+  enrollmentSets: [{
+    studentId: 'reviewed-student', version: 1,
+    enrollments: [{ classSessionId: 'class-wed-fri', weekdays: ['fri'] }],
+  }],
+  capabilityReady: true,
+})[0]
+assert.deepEqual(mixedWrongDayCutover.studentIds, ['legacy-unreviewed'],
+  'Reviewing one Student must not clear an unreviewed Student from the same legacy roster')
+assert.equal(mixedWrongDayCutover.rosterSource, 'v2.2-mixed-cutover')
+assert.equal(mixedWrongDayCutover.rosterReviewRequired, true)
+
+const fullyReviewedCutover = deriveV22ScheduleRosters({
+  sessions: legacyCutoverSessions.slice(0, 2),
+  students: legacyCutoverStudents,
+  enrollmentSets: [
+    { studentId: 'legacy-multi', version: 1, enrollments: [{ classSessionId: 'class-wed-fri', weekdays: ['fri'] }] },
+    { studentId: 'legacy-single', version: 1, enrollments: [{ classSessionId: 'class-sat', weekdays: ['sat'] }] },
+  ],
+  capabilityReady: true,
+})
+assert.deepEqual(fullyReviewedCutover.map((item) => item.studentIds), [[], ['legacy-multi']])
+assert(fullyReviewedCutover.every((item) => item.rosterSource === 'v2.2-authoritative-enrollment'))
+assert(fullyReviewedCutover.every((item) => item.rosterReviewRequired === false))
+
+const unlinkedReady = deriveV22ScheduleRosters({
+  sessions: [{ id: 'unlinked-cutover', scheduleType: 'recurring', studentIds: ['legacy-id'] }],
+  students: [], enrollmentSets: [], capabilityReady: true,
+})[0]
+assert.deepEqual(unlinkedReady.studentIds, ['legacy-id'],
+  'Missing stable linkage must preserve—not erase—the existing roster while requesting review')
+assert.equal(unlinkedReady.rosterReviewRequired, true)
 
 const expandedOccurrences = getVisibleScheduleSessions([
   {
     id: 'shared-class-assignment', scheduleType: 'recurring', classSessionId: 'class-wed-fri',
     dayOfWeek: 'wed', startTime: '19:00', endTime: '20:30', status: 'scheduled',
-    studentIds: ['legacy-id'],
+    studentIds: ['student-fri', 'student-wed'],
   },
 ], '2026-09-07', [{
   ...classSessions[0], startTime: '19:00', endTime: '20:30', room: 'A', level: 'mixed',
@@ -305,6 +423,9 @@ assert(main.includes("v22StudentEnrollmentCapabilityState.status === V22_STUDENT
 assert(main.includes("outcome_code: v22StudentEnrollmentCapabilityState.status === V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS.FAILED"))
 assert(scheduleSource.includes('recurringRosterManaged'))
 assert(scheduleSource.includes('renderManagedRecurringRosterNotice'))
+assert(scheduleSource.includes('Dữ liệu cũ được giữ nguyên — cần rà soát đăng ký'))
+assert(scheduleSource.includes('Đang chuyển dần theo đăng ký học viên'))
+assert(main.includes('students: getStudentsWithCanonicalProjections()'))
 assert(coreSource.includes('CLASS_WEEKDAY_IN_USE'))
 assert(coreSource.includes('SCHEDULE_CLASS_LINK_REQUIRED'))
 assert.doesNotMatch(main, /localStorage[^\n]*(?:recurringEnroll|enrollmentSet)/i)
