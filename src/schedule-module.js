@@ -328,10 +328,9 @@ export function renderScheduleModule(
         reportState && attendanceAvailable
           ? renderScheduleReportPanel(
               reportState,
-              sessions,
+              visibleSessions,
               teachers,
               students,
-              normalizedWeekStart,
               sessionReports,
               reportAttendanceState,
               reportLearningState,
@@ -2628,10 +2627,9 @@ function renderCenterCalendarColorPalette(formState, selectedPreset) {
 
 function renderScheduleReportPanel(
   reportState,
-  sessions,
+  visibleSessions,
   teachers,
   students,
-  weekStartDate,
   sessionReports = [],
   reportAttendanceState = null,
   reportLearningState = null,
@@ -2643,8 +2641,7 @@ function renderScheduleReportPanel(
   occurrenceAttendanceReady = false,
   occurrenceAttendanceStatus = 'unavailable',
 ) {
-  const visibleSessions = getVisibleScheduleSessions(sessions, weekStartDate)
-  const session = visibleSessions.find(
+  const session = (Array.isArray(visibleSessions) ? visibleSessions : []).find(
     (item) =>
       item.id === reportState.sessionId &&
       item.occurrenceDate === reportState.occurrenceDate,

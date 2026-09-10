@@ -163,6 +163,67 @@ const readyHtml = renderScheduleModule(...baseRenderArgs, {
 })
 assert.doesNotMatch(readyHtml, /data-schedule-report-role="admin" disabled/)
 
+const multiDayClassSession = {
+  id: 'class-wed-fri',
+  daysOfWeek: ['wed', 'fri'],
+  displayLabel: 'T4 - T6 19:00 - 20:30',
+  startTime: '19:00',
+  endTime: '20:30',
+  status: 'active',
+}
+const multiDaySchedule = {
+  id: 'schedule-wed-fri',
+  scheduleType: 'recurring',
+  classSessionId: multiDayClassSession.id,
+  dayOfWeek: 'wednesday',
+  startDate: '2026-09-07',
+  endDate: '2026-09-13',
+  startTime: '19:00',
+  endTime: '20:30',
+  status: 'scheduled',
+}
+const multiDayStudents = [
+  { id: 'student-fri-only', fullName: 'Friday only', currentStatus: 'Đang theo học' },
+  { id: 'student-both-days', fullName: 'Both days', currentStatus: 'Đang theo học' },
+]
+const multiDayEnrollmentSets = [
+  {
+    studentId: 'student-fri-only',
+    version: 1,
+    enrollments: [{ classSessionId: multiDayClassSession.id, weekdays: ['fri'] }],
+  },
+  {
+    studentId: 'student-both-days',
+    version: 1,
+    enrollments: [{ classSessionId: multiDayClassSession.id, weekdays: ['wed', 'fri'] }],
+  },
+]
+const renderMultiDayAttendance = (occurrenceDate) => renderScheduleModule(
+  [multiDaySchedule],
+  null,
+  { sessionId: multiDaySchedule.id, occurrenceDate, mode: 'adminPlaceholder' },
+  [], null, null, null, null, false, null, [], multiDayStudents,
+  '2026-09-07',
+  { rows: [] },
+  {
+    attendanceAvailable: true,
+    occurrenceAttendanceReady: true,
+    occurrenceAttendanceStatus: 'ready',
+    classSessions: [multiDayClassSession],
+    recurringEnrollmentSets: multiDayEnrollmentSets,
+    recurringRosterManaged: true,
+  },
+)
+
+const wednesdayAttendanceHtml = renderMultiDayAttendance('2026-09-09')
+assert.match(wednesdayAttendanceHtml, /data-admin-attendance-row="student-both-days"/)
+assert.doesNotMatch(wednesdayAttendanceHtml, /data-admin-attendance-row="student-fri-only"/)
+
+const fridayAttendanceHtml = renderMultiDayAttendance('2026-09-11')
+assert.match(fridayAttendanceHtml, /data-admin-attendance-row="student-both-days"/)
+assert.match(fridayAttendanceHtml, /data-admin-attendance-row="student-fri-only"/)
+assert.match(fridayAttendanceHtml, /data-admin-attendance-action="save"/)
+
 for (const token of [
   'create table public.center_occurrence_attendance_command_results',
   'v2_3_internal_occurrence_attendance_local_id',
