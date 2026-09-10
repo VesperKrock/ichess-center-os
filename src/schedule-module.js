@@ -190,6 +190,8 @@ export function renderScheduleModule(
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
   const attendanceAvailable = deadlineOptions.attendanceAvailable !== false
+  const occurrenceAttendanceReady = deadlineOptions.occurrenceAttendanceReady === true
+  const occurrenceAttendanceStatus = deadlineOptions.occurrenceAttendanceStatus || 'unavailable'
   const calendarNotesAvailable = deadlineOptions.calendarNotesAvailable !== false
   const centerCalendarItemState = calendarNotesAvailable
     ? deadlineOptions.centerCalendarItemState || null
@@ -338,6 +340,8 @@ export function renderScheduleModule(
               isReportExtraExpanded,
               guestParticipantFormState,
               adminAttendanceState,
+              occurrenceAttendanceReady,
+              occurrenceAttendanceStatus,
             )
           : reportState
             ? '<p class="schedule-form-warning" role="status">Chưa thể mở điểm danh hoặc báo cáo buổi học. Vui lòng bấm Làm mới rồi thử lại.</p>'
@@ -2636,6 +2640,8 @@ function renderScheduleReportPanel(
   isReportExtraExpanded = false,
   guestParticipantFormState = null,
   adminAttendanceState = null,
+  occurrenceAttendanceReady = false,
+  occurrenceAttendanceStatus = 'unavailable',
 ) {
   const visibleSessions = getVisibleScheduleSessions(sessions, weekStartDate)
   const session = visibleSessions.find(
@@ -2656,11 +2662,13 @@ function renderScheduleReportPanel(
   const existingReport = findSessionReport(sessionReports, session.id, session.occurrenceDate)
 
   if (reportMode === 'roleGateway') {
-    return renderScheduleReportRoleGateway(session, teacherLabel)
+    return renderScheduleReportRoleGateway(session, teacherLabel, occurrenceAttendanceReady, occurrenceAttendanceStatus)
   }
 
   if (reportMode === 'adminPlaceholder') {
-    return renderScheduleAdminAttendanceForm(session, teacherLabel, studentLookup, adminAttendanceState, existingReport)
+    return renderScheduleAdminAttendanceForm(
+      session, teacherLabel, studentLookup, adminAttendanceState, existingReport, occurrenceAttendanceReady,
+    )
   }
 
   const activeDraft =
@@ -2731,7 +2739,17 @@ function renderScheduleReportPanel(
   `
 }
 
-function renderScheduleReportRoleGateway(session, teacherLabel) {
+function renderScheduleReportRoleGateway(
+  session,
+  teacherLabel,
+  occurrenceAttendanceReady = false,
+  occurrenceAttendanceStatus = 'unavailable',
+) {
+  const unavailableLabel = occurrenceAttendanceStatus === 'loading'
+    ? 'Đang tải điểm danh…'
+    : occurrenceAttendanceStatus === 'failed'
+      ? 'Điểm danh chưa tải được.'
+      : 'Điểm danh tại thời khóa biểu hiện chưa khả dụng.'
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
     <section class="schedule-report-panel schedule-role-gateway" aria-label="Chọn vai trò xử lý buổi học">
@@ -2750,9 +2768,10 @@ function renderScheduleReportRoleGateway(session, teacherLabel) {
 
       <div class="schedule-role-gateway-body">
         <p>Chọn chế độ xử lý cho buổi học này.</p>
+        ${occurrenceAttendanceReady ? '' : `<p class="schedule-form-warning" role="status">${escapeHtml(unavailableLabel)}</p>`}
         <div class="schedule-role-options">
-          <button type="button" data-schedule-report-role="admin">Admin cơ sở</button>
-          <button type="button" data-schedule-report-role="teacher">Giáo viên</button>
+          <button type="button" data-schedule-report-role="admin" ${occurrenceAttendanceReady ? '' : 'disabled aria-disabled="true"'}>Admin cơ sở</button>
+          <button type="button" data-schedule-report-role="teacher" ${occurrenceAttendanceReady ? '' : 'disabled aria-disabled="true"'}>Giáo viên</button>
         </div>
       </div>
     </section>
@@ -2765,6 +2784,7 @@ function renderScheduleAdminAttendanceForm(
   studentLookup,
   adminAttendanceState = null,
   teacherReport = null,
+  occurrenceAttendanceReady = false,
 ) {
   const studentIds = normalizeIdArray(session.studentIds)
   const rowsByStudentId = new Map(
@@ -2828,6 +2848,8 @@ function renderScheduleAdminAttendanceForm(
           <span>Có mặt: ${summary.present}</span>
           <span>Vắng: ${summary.absent}</span>
           <span>Có phép: ${summary.excused}</span>
+          <span>Học bù: ${summary.makeup}</span>
+          <span>Học thử: ${summary.trial}</span>
           <span>Chưa chọn: ${summary.empty}</span>
         </div>
         ${
@@ -2842,7 +2864,7 @@ function renderScheduleAdminAttendanceForm(
         <button type="button" data-schedule-report-role="gateway">Quay lại chọn vai trò</button>
         <div class="schedule-admin-attendance-actions">
           <button type="button" class="is-danger-ghost" data-admin-attendance-action="clear">Xóa nhập liệu</button>
-          <button type="button" class="is-primary" data-admin-attendance-action="save">Lưu điểm danh</button>
+          <button type="button" class="is-primary" data-admin-attendance-action="save" ${occurrenceAttendanceReady ? '' : 'disabled aria-disabled="true"'}>Lưu điểm danh</button>
         </div>
       </footer>
     </section>
@@ -2862,7 +2884,6 @@ function renderAdminAttendanceStudentRow(studentId, student, row = {}) {
       </div>
       <div class="schedule-admin-attendance-choice-group" role="group" aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}">
         ${adminAttendanceStatuses
-          .filter(([value]) => ['present', 'absent', 'excused'].includes(value))
           .map(([value, label]) => `
             <button
               type="button"

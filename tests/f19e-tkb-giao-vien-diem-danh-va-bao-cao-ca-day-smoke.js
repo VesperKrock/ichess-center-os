@@ -70,6 +70,8 @@ const teacherHtml = renderScheduleModule(
   teachers,
   students,
   '2026-06-01',
+  null,
+  { occurrenceAttendanceReady: true, occurrenceAttendanceStatus: 'ready' },
 )
 
 for (const text of ['prototype', 'placeholder', 'F19E', 'sẽ được triển khai', 'cổng tạm']) {
@@ -113,6 +115,8 @@ const lockedHtml = renderScheduleModule(
   teachers,
   students,
   '2026-06-01',
+  null,
+  { occurrenceAttendanceReady: true, occurrenceAttendanceStatus: 'ready' },
 )
 assert(lockedHtml.includes('Admin cơ sở đã điểm danh ca này.'))
 assert(lockedHtml.includes('Giáo viên có thể bổ sung nội dung ca dạy và báo cáo.'))
@@ -190,11 +194,15 @@ const unifiedRecords = buildUnifiedAttendanceRecords({
 assert.equal(
   unifiedRecords.filter((record) =>
     record.studentId === 'student-teacher-1' &&
-    record.date === '2026-06-05' &&
-    record.source === 'teacher',
+    record.date === '2026-06-05',
   ).length,
   1,
-  'Stored teacher record should replace duplicate adapter record from sessionReports',
+  'Admin/teacher/report collision must project one operational attendance truth',
+)
+assert.equal(
+  unifiedRecords.find((record) => record.studentId === 'student-teacher-1')?.source,
+  'admin',
+  'Legacy Admin attendance remains the deterministic effective truth until canonical cutover',
 )
 
 const canonicalTeacherRecord = createTeacherAttendanceRecord({
@@ -210,7 +218,9 @@ assert.equal(canonicalTeacherRecord.source, 'teacher')
 const mainSource = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 const recordsSource = fs.readFileSync(new URL('../src/attendance-records.js', import.meta.url), 'utf8')
 const scheduleSource = fs.readFileSync(new URL('../src/schedule-module.js', import.meta.url), 'utf8')
-assert(mainSource.includes('upsertTeacherAttendanceRecords'))
+assert(mainSource.includes('writeV23OccurrenceAttendanceThroughCloud'))
+assert(mainSource.includes("reason: 'teacher-session-report-attendance-v2-3'"))
+assert(!mainSource.includes('const teacherAttendanceResult = upsertTeacherAttendanceRecords'))
 assert(mainSource.includes('getScheduleAdminAttendanceRecords'))
 assert(recordsSource.includes('createTeacherAttendanceRecord'))
 assert(recordsSource.includes('getTeacherAdapterDedupeKey'))

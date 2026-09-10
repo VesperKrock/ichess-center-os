@@ -270,6 +270,12 @@ export function normalizeStoredAttendanceRecord(record) {
     lockedAt: normalizeNullableText(record.lockedAt),
     correctionReason: String(record.correctionReason || ''),
 
+    attendanceAuthority: normalizeNullableText(record.attendanceAuthority),
+    authorityLocalId: normalizeNullableText(record.authorityLocalId),
+    tuitionPolicyDefined: Boolean(record.tuitionPolicyDefined),
+    tuitionAutoUpdateEnabled: Boolean(record.tuitionAutoUpdateEnabled),
+    tuitionConsumptionApplied: Boolean(record.tuitionConsumptionApplied),
+
     cloudVersion: normalizeCloudVersion(record.cloudVersion),
     cloudUpdatedAt: normalizeNullableText(record.cloudUpdatedAt),
     cloudDeletedAt: normalizeNullableText(record.cloudDeletedAt),
@@ -974,13 +980,18 @@ export function unlockAttendanceBaselineState(
 export function buildUnifiedAttendanceRecords({ sessionReports = [], storedRecords = [] } = {}) {
   const adapterRecords = buildAttendanceRecordsFromSessionReports(sessionReports)
   const normalizedStoredRecords = normalizeStoredAttendanceRecords(storedRecords)
+  const effectiveOperationalRecords = getEffectiveOperationalAttendanceRecords(normalizedStoredRecords)
   const recordMap = new Map()
 
   adapterRecords.forEach((record) => {
+    const occurrenceKey = getOperationalOccurrenceKey(record)
+    if (occurrenceKey && effectiveOperationalRecords.has(occurrenceKey)) return
     recordMap.set(getUnifiedAttendanceRecordKey(record), record)
   })
 
   normalizedStoredRecords.forEach((record) => {
+    const occurrenceKey = getOperationalOccurrenceKey(record)
+    if (occurrenceKey && effectiveOperationalRecords.get(occurrenceKey) !== record) return
     const duplicateAdapterKey = getTeacherAdapterDedupeKey(record)
     if (record.source === 'teacher' && duplicateAdapterKey) {
       recordMap.delete(duplicateAdapterKey)
@@ -989,6 +1000,40 @@ export function buildUnifiedAttendanceRecords({ sessionReports = [], storedRecor
   })
 
   return Array.from(recordMap.values())
+}
+
+function getEffectiveOperationalAttendanceRecords(records = []) {
+  const effective = new Map()
+  records.forEach((record) => {
+    const key = getOperationalOccurrenceKey(record)
+    if (!key) return
+    const current = effective.get(key)
+    if (!current || compareOperationalAttendancePrecedence(record, current) < 0) {
+      effective.set(key, record)
+    }
+  })
+  return effective
+}
+
+function compareOperationalAttendancePrecedence(first = {}, second = {}) {
+  const authority = (record) => record.attendanceAuthority === 'v2.3-occurrence-v1' ? 1 : 0
+  const authorityDelta = authority(second) - authority(first)
+  if (authorityDelta) return authorityDelta
+  const sourcePriority = { correction: 3, admin: 2, teacher: 1 }
+  const sourceDelta = (sourcePriority[second.source] || 0) - (sourcePriority[first.source] || 0)
+  if (sourceDelta) return sourceDelta
+  const versionDelta = normalizeCloudVersion(second.cloudVersion) - normalizeCloudVersion(first.cloudVersion)
+  if (versionDelta) return versionDelta
+  return normalizeRequiredText(first.id).localeCompare(normalizeRequiredText(second.id))
+}
+
+function getOperationalOccurrenceKey(record = {}) {
+  if (record?.source === 'initialBaseline') return ''
+  const studentId = normalizeRequiredText(record?.studentId)
+  const date = normalizeRequiredText(record?.date || record?.occurrenceDate)
+  const scheduleSessionId = normalizeRequiredText(record?.scheduleSessionId || record?.sessionId)
+  if (!studentId || !date || !scheduleSessionId) return ''
+  return [studentId, date, scheduleSessionId].join('::')
 }
 
 function isDemoSessionReport(report) {

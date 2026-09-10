@@ -219,9 +219,20 @@ excludesAll(content.main, [
   'C5.1 realtime ready; attendance/session report cloud empty, giữ cache local.',
   'C5.2C tuition cloud ready; cloud empty, giu cache Hoc phi local.',
 ], 'No local-first/fallback C5.2 runtime')
-assert.equal((content.main.match(/saveStoredAttendanceRecords\(/g) || []).length, 3, 'Attendance cache writes must stay in bootstrap/commit/realtime projection paths')
-assert.equal((content.main.match(/saveAttendanceBaselineState\(/g) || []).length, 3, 'Baseline cache writes must stay in bootstrap/commit/realtime projection paths')
-assert.equal((content.main.match(/saveStoredSessionReports\(/g) || []).length, 3, 'Session report cache writes must stay in bootstrap/commit/realtime projection paths')
+const occurrenceAttendanceWriter = functionSlice(
+  content.main,
+  'async function writeV23OccurrenceAttendanceThroughCloud',
+  'function createC52OperationalRetryFingerprint',
+)
+const occurrenceAttendanceAwaitAt = occurrenceAttendanceWriter.indexOf('await mutateV23OccurrenceAttendance')
+const occurrenceAttendanceProjectionAt = occurrenceAttendanceWriter.indexOf('saveStoredAttendanceRecords')
+assert(
+  occurrenceAttendanceAwaitAt >= 0 && occurrenceAttendanceProjectionAt > occurrenceAttendanceAwaitAt,
+  'V2-3 Attendance projection precedes server commit',
+)
+assert.equal((content.main.match(/saveStoredAttendanceRecords\(/g) || []).length, 4, 'Attendance cache writes must stay in bootstrap/commit/realtime/V2-3 commit projection paths')
+assert.equal((content.main.match(/saveAttendanceBaselineState\(/g) || []).length, 4, 'Baseline cache writes must stay in bootstrap/commit/realtime/V2-3 commit projection paths')
+assert.equal((content.main.match(/saveStoredSessionReports\(/g) || []).length, 4, 'Session report cache writes must stay in bootstrap/commit/realtime/V2-3 commit projection paths')
 assert.equal((content.main.match(/saveStoredTuition\(/g) || []).length, 3, 'Tuition cache writes must stay in bootstrap/commit/realtime projection paths')
 
 includesAll(content.tuitionModule, [

@@ -383,9 +383,7 @@ import {
   saveStoredAttendanceRecords,
   startAttendanceBaselineDraft,
   unlockAttendanceBaselineState,
-  upsertAdminAttendanceRecords,
   upsertInitialBaselineAttendanceRecord,
-  upsertTeacherAttendanceRecords,
 } from './attendance-records.js'
 import {
   buildReportDownloadText,
@@ -636,6 +634,16 @@ import {
   mutateV22StudentWithEnrollments,
   pullV22StudentEnrollments,
 } from './cloud-authoritative-student-enrollments.js'
+import {
+  V23_ATTENDANCE_CAPABILITY_STATUS,
+  createV23AttendanceCapabilityState,
+  getV23AttendanceOutcomeMessage,
+  isV23AttendanceBackendUnavailable,
+  isV23AttendanceCapabilityReady,
+  mutateV23OccurrenceAttendance,
+  pullV23AttendanceCapability,
+  selectCurrentV23OccurrenceAttendanceRecord,
+} from './cloud-authoritative-occurrence-attendance.js'
 import {
   deriveV22ScheduleRosters,
   normalizeV22Enrollments,
@@ -947,6 +955,10 @@ const v21CenterSettingsRetryCommands = new Map()
 let v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState()
 let v22StudentEnrollmentSets = []
 let v22StudentEnrollmentSyncRunId = 0
+let v23AttendanceCapabilityState = createV23AttendanceCapabilityState()
+let v23AttendanceCapabilityRunId = 0
+let v23AttendanceWriteRunId = 0
+const v23AttendanceRetryCommands = new Map()
 let wallpaperRuntimeState = {
   userId: '',
   hasPersonal: false,
@@ -1818,6 +1830,14 @@ function resetV22StudentEnrollmentRuntimeForAccessBoundary(centerId = '') {
   studentFormState = null
 }
 
+function resetV23AttendanceRuntimeForAccessBoundary(centerId = '') {
+  v23AttendanceCapabilityRunId += 1
+  v23AttendanceWriteRunId += 1
+  v23AttendanceRetryCommands.clear()
+  v23AttendanceCapabilityState = createV23AttendanceCapabilityState({ centerId })
+  scheduleAdminAttendanceState = null
+}
+
 function getPersonalWallpaperScope(userId = cloudStatus.user?.id || '') {
   return {
     installationNamespace: getSupabaseInstallationNamespace(),
@@ -1952,6 +1972,7 @@ function resetTransientStateForCenterSwitch() {
   resetC57CalendarNotesRuntimeForAccessBoundary('')
   resetV21CenterSettingsRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetV22StudentEnrollmentRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
+  resetV23AttendanceRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -9726,6 +9747,7 @@ async function handleInternalOpenCenter(centerId) {
   await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
   await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
   await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
+  await refreshV23AttendanceCapability({ silent: true })
   await loadCenterMemberProfiles(switchSyncId)
   await loadCurrentMonthCloudAttachments(switchSyncId)
   await startStudentRealtimeSubscription(switchSyncId)
@@ -10615,7 +10637,11 @@ function hasInitialBaselineAttendanceRecord(records, studentId, date) {
 function createScheduleAdminAttendanceState(occurrence, records = loadStoredAttendanceRecords(getCurrentResolvedCenterId())) {
   const existingRecords = Array.isArray(records) ? records : []
   const rows = getScheduleAdminStudentIds(occurrence).map((studentId) => {
-    const existingRecord = existingRecords.find((record) => isScheduleAdminAttendanceRecord(record, occurrence, studentId))
+    const existingRecord = selectCurrentV23OccurrenceAttendanceRecord(
+      existingRecords,
+      occurrence,
+      studentId,
+    )
 
     return {
       studentId,
@@ -10666,14 +10692,6 @@ function getScheduleAdminAttendanceSessionKey(record = {}) {
   ).trim()
 }
 
-function isScheduleAdminAttendanceRecord(record, occurrence, studentId) {
-  const occurrenceDate = String(occurrence?.occurrenceDate || occurrence?.date || '').trim()
-  return record?.source === 'admin' &&
-    String(record.studentId || '') === String(studentId || '') &&
-    String(record.date || '') === occurrenceDate &&
-    getScheduleAdminAttendanceSessionKey(record) === String(occurrence?.id || '').trim()
-}
-
 function updateScheduleAdminAttendanceRow(studentId, patch = {}) {
   if (!scheduleAdminAttendanceState) {
     return
@@ -10705,7 +10723,6 @@ function buildScheduleAdminAttendanceInputs(occurrence, rows = []) {
   return rows
     .filter((row) => row.attendanceStatus)
     .map((row) => {
-      const counted = ['present', 'makeup'].includes(row.attendanceStatus)
       return {
         studentId: row.studentId,
         date: occurrence.occurrenceDate,
@@ -10716,10 +10733,11 @@ function buildScheduleAdminAttendanceInputs(occurrence, rows = []) {
         teacherName: getScheduleAdminTeacherName(occurrence),
         status: row.attendanceStatus,
         attendanceStatus: row.attendanceStatus,
-        counted,
+        counted: false,
+        countsTowardTuition: false,
         creditNumber: null,
         creditLabel: '',
-        creditValue: counted ? 1 : 0,
+        creditValue: 0,
         source: 'admin',
         submittedByRole: 'admin',
         note: row.note || '',
@@ -10736,7 +10754,6 @@ function buildScheduleAdminAttendanceInputs(occurrence, rows = []) {
 function buildScheduleTeacherAttendanceInputs(occurrence, rows = [], savedReport = null) {
   return rows.map((row, index) => {
     const attendanceStatus = normalizeScheduleTeacherAttendanceStatus(row.attendanceStatus)
-    const counted = ['present', 'makeup'].includes(attendanceStatus)
     return {
       studentId: row.studentId,
       date: occurrence.occurrenceDate,
@@ -10750,10 +10767,11 @@ function buildScheduleTeacherAttendanceInputs(occurrence, rows = [], savedReport
       sourceCreditIndex: 0,
       status: attendanceStatus,
       attendanceStatus,
-      counted,
+      counted: false,
+      countsTowardTuition: false,
       creditNumber: null,
       creditLabel: '',
-      creditValue: counted ? 1 : 0,
+      creditValue: 0,
       source: 'teacher',
       submittedByRole: 'teacher',
       note: row.note || '',
@@ -11829,6 +11847,11 @@ function renderWindowBody(windowItem) {
           v22StudentEnrollmentCapabilityState,
           getCurrentCanonicalCenterContext().centerId,
         ),
+        occurrenceAttendanceReady: isV23AttendanceCapabilityReady(
+          v23AttendanceCapabilityState,
+          getCurrentCanonicalCenterContext().centerId,
+        ),
+        occurrenceAttendanceStatus: v23AttendanceCapabilityState.status,
       },
     )
   }
@@ -13308,6 +13331,9 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   }))
   if (moduleId === 'hoc-vien' || moduleId === 'thoi-khoa-bieu') {
     await refreshV22StudentEnrollments({ reason: `${moduleId}:${reason}`, silent: true })
+  }
+  if (moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
+    await refreshV23AttendanceCapability({ silent: true })
   }
 
   const latestContext = getCurrentCanonicalCenterContext()
@@ -14960,6 +14986,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     resetC57CalendarNotesRuntimeForAccessBoundary('')
     resetV21CenterSettingsRuntimeForAccessBoundary('')
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
+    resetV23AttendanceRuntimeForAccessBoundary('')
     resetWallpaperRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
@@ -15031,6 +15058,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   resetC57CalendarNotesRuntimeForAccessBoundary('')
   resetV21CenterSettingsRuntimeForAccessBoundary('')
   resetV22StudentEnrollmentRuntimeForAccessBoundary('')
+  resetV23AttendanceRuntimeForAccessBoundary('')
   resetWallpaperRuntimeForAccessBoundary(user.id)
   installationHandoffState = purgeInstallationHandoffState()
 
@@ -15203,6 +15231,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
     await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
     await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
+    await refreshV23AttendanceCapability({ silent: true })
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
@@ -17444,6 +17473,7 @@ async function refreshV22StudentEnrollments({ reason = 'manual-refresh', silent 
   const runId = ++v22StudentEnrollmentSyncRunId
   if (!centerContext.ok) {
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
+    resetV23AttendanceRuntimeForAccessBoundary('')
     return { ok: false, outcome_code: 'INVALID_CENTER', error: getV22EnrollmentOutcomeMessage('INVALID_CENTER') }
   }
   const authorityEstablished = v22StudentEnrollmentCapabilityState.centerId === centerId
@@ -17489,6 +17519,47 @@ async function refreshV22StudentEnrollments({ reason = 'manual-refresh', silent 
   })
   reconcileOpenStudentFormWithV22Authority()
   render()
+  return result
+}
+
+async function refreshV23AttendanceCapability({ silent = true } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++v23AttendanceCapabilityRunId
+  if (!centerContext.ok) {
+    resetV23AttendanceRuntimeForAccessBoundary('')
+    return { ok: false, outcome_code: 'INVALID_CENTER' }
+  }
+  v23AttendanceCapabilityState = createV23AttendanceCapabilityState({
+    centerId,
+    status: V23_ATTENDANCE_CAPABILITY_STATUS.LOADING,
+    message: '',
+  })
+  if (!silent) render()
+  const result = await pullV23AttendanceCapability({ supabase: getSupabaseClient(), centerId })
+  if (runId !== v23AttendanceCapabilityRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED' }
+  }
+  if (!result.ok) {
+    const unavailable = result.unavailable || isV23AttendanceBackendUnavailable(result)
+      || result.outcome_code === 'BACKEND_NOT_DEPLOYED'
+    v23AttendanceCapabilityState = createV23AttendanceCapabilityState({
+      centerId,
+      status: unavailable
+        ? V23_ATTENDANCE_CAPABILITY_STATUS.UNAVAILABLE
+        : V23_ATTENDANCE_CAPABILITY_STATUS.FAILED,
+      message: unavailable ? '' : result.error || getV23AttendanceOutcomeMessage(result.outcome_code),
+    })
+    if (!silent) render()
+    return result
+  }
+  v23AttendanceCapabilityState = createV23AttendanceCapabilityState({
+    centerId,
+    status: V23_ATTENDANCE_CAPABILITY_STATUS.READY,
+    message: '',
+  })
+  if (!silent) render()
   return result
 }
 
@@ -18497,6 +18568,122 @@ async function writeC52AttendanceSessionReportThroughCloud({
   }
   render()
   return result
+}
+
+async function writeV23OccurrenceAttendanceThroughCloud({
+  occurrence,
+  attendanceInputs = [],
+  sessionReport = null,
+  reason = 'v2-3-occurrence-attendance',
+} = {}) {
+  const centerId = getCurrentResolvedCenterId()
+  if (!isV23AttendanceCapabilityReady(v23AttendanceCapabilityState, centerId)) {
+    return {
+      ok: false,
+      outcome_code: 'BACKEND_NOT_DEPLOYED',
+      error: v23AttendanceCapabilityState.status === V23_ATTENDANCE_CAPABILITY_STATUS.FAILED
+        ? 'Điểm danh nhanh chưa tải được. Thông tin bạn nhập vẫn được giữ nguyên.'
+        : 'Điểm danh nhanh tại thời khóa biểu hiện chưa khả dụng.',
+    }
+  }
+  const unavailableUpstreams = ['core', 'attendance']
+    .filter((upstream) => !isModuleUpstreamCurrent('thoi-khoa-bieu', upstream))
+  if (unavailableUpstreams.length) {
+    return {
+      ok: false,
+      outcome_code: 'REQUIRED_REFRESH_UNAVAILABLE',
+      error: 'Dữ liệu cần thiết chưa được tải mới. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng bấm Làm mới rồi thử lại.',
+    }
+  }
+  const access = canWriteC51AttendanceEntity(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.canWrite) {
+    return { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.message }
+  }
+
+  const fingerprint = createC52OperationalRetryFingerprint({
+    reason,
+    occurrence: {
+      id: occurrence?.id,
+      occurrenceDate: occurrence?.occurrenceDate,
+      classSessionId: occurrence?.classSessionId,
+    },
+    attendanceInputs,
+    sessionReport,
+  })
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = v23AttendanceRetryCommands.get(retryScope) || {
+    centerId,
+    occurrence: cloneC52OperationalCommandValue(occurrence),
+    attendanceInputs: cloneC52OperationalCommandValue(attendanceInputs),
+    currentRecords: cloneC52OperationalCommandValue(
+      loadStoredAttendanceRecords(centerId),
+    ),
+    sessionReport: cloneC52OperationalCommandValue(sessionReport),
+    idempotencyKey: createOperationalCommandIdempotencyKey(),
+  }
+  v23AttendanceRetryCommands.set(retryScope, pending)
+  const runId = ++v23AttendanceWriteRunId
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (!readiness.ok) return readiness
+  if (runId !== v23AttendanceWriteRunId
+    || centerId !== getCurrentResolvedCenterId()
+    || readiness.centerId !== centerId) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: 'Cơ sở đã thay đổi; yêu cầu chưa được gửi. Thông tin bạn nhập vẫn được giữ nguyên.',
+    }
+  }
+
+  const result = await mutateV23OccurrenceAttendance({
+    supabase: readiness.supabase,
+    centerId,
+    occurrence: pending.occurrence,
+    attendanceInputs: pending.attendanceInputs,
+    currentRecords: pending.currentRecords,
+    sessionReport: pending.sessionReport,
+    idempotencyKey: pending.idempotencyKey,
+    userId: readiness.user?.id,
+  })
+  if (runId !== v23AttendanceWriteRunId || centerId !== getCurrentResolvedCenterId()) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Điểm danh đã được lưu ở cơ sở trước nhưng màn hình hiện tại chưa được cập nhật.'
+        : 'Cơ sở đã thay đổi; màn hình hiện tại không áp dụng kết quả này.',
+    }
+  }
+  if (!result.ok) {
+    if (!['SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT', 'CONCURRENT_CONFLICT'].includes(result.outcome_code)) {
+      v23AttendanceRetryCommands.delete(retryScope)
+    }
+    return result
+  }
+
+  const mergeResult = mergeC51CloudRecordsIntoLocal({
+    attendanceRecords: loadStoredAttendanceRecords(centerId),
+    baselineState: loadAttendanceBaselineState(centerId),
+    sessionReports,
+    cloudRecords: result.records,
+  })
+  saveStoredAttendanceRecords(centerId, mergeResult.attendanceRecords)
+  saveAttendanceBaselineState(centerId, mergeResult.baselineState)
+  sessionReports = mergeResult.sessionReports
+  saveStoredSessionReports(sessionReports)
+  v23AttendanceRetryCommands.delete(retryScope)
+  cloudDbState = {
+    ...cloudDbState,
+    readinessStatus: 'ready',
+    message: `Đã lưu điểm danh buổi học (${attendanceInputs.length} học viên).`,
+    messageTone: 'success',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  return { ...result, projection: mergeResult }
 }
 
 function createC52OperationalRetryFingerprint(value = {}) {
@@ -20637,6 +20824,7 @@ async function initializeSupabaseAuth() {
     resetC56InventoryRuntimeForAccessBoundary('')
     resetC57CalendarNotesRuntimeForAccessBoundary('')
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
+    resetV23AttendanceRuntimeForAccessBoundary('')
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -28435,15 +28623,10 @@ function bindEvents() {
           return
         }
 
-        const candidate = upsertAdminAttendanceRecords({
-          records: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
-          inputs,
-          byName: 'Admin cơ sở',
-        })
-
-        const result = await writeC52AttendanceSessionReportThroughCloud({
-          attendanceRecords: candidate.savedRecords,
-          reason: 'admin-attendance-save',
+        const result = await writeV23OccurrenceAttendanceThroughCloud({
+          occurrence,
+          attendanceInputs: inputs,
+          reason: 'admin-attendance-save-v2-3',
         })
         if (!result.ok) {
           scheduleAdminAttendanceState = {
@@ -28539,16 +28722,11 @@ function bindEvents() {
           savedReport,
         )
       : []
-    const teacherAttendanceResult = upsertTeacherAttendanceRecords({
-      records: storedAttendanceRecords,
-      inputs: teacherAttendanceInputs,
-      byName: getScheduleAdminTeacherName(occurrence) || 'Giáo viên',
-    })
-
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      attendanceRecords: teacherAttendanceResult.savedRecords,
-      sessionReports: [savedReport],
-      reason: 'teacher-session-report-attendance',
+    const result = await writeV23OccurrenceAttendanceThroughCloud({
+      occurrence,
+      attendanceInputs: teacherAttendanceInputs,
+      sessionReport: savedReport,
+      reason: 'teacher-session-report-attendance-v2-3',
     })
     if (!result.ok) {
       sessionReportAttendanceState = {

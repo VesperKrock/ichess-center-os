@@ -97,6 +97,8 @@ const gatewayHtml = renderScheduleModule(
   teachers,
   students,
   '2026-06-01',
+  null,
+  { occurrenceAttendanceReady: true, occurrenceAttendanceStatus: 'ready' },
 )
 assert(gatewayHtml.includes('Bạn là?'))
 assert(gatewayHtml.includes('Chọn chế độ xử lý cho buổi học này.'))
@@ -118,11 +120,13 @@ const adminHtml = renderScheduleModule(
   students,
   '2026-06-01',
   adminState,
+  { occurrenceAttendanceReady: true, occurrenceAttendanceStatus: 'ready' },
 )
 
 const forbiddenUiText = ['prototype', 'placeholder', 'F19F', 'sẽ được triển khai', 'cổng tạm']
 for (const text of forbiddenUiText) {
-  assert(!adminHtml.toLowerCase().includes(text.toLowerCase()), `Admin UI must not include "${text}"`)
+  const operatorVisibleText = adminHtml.replace(/<[^>]+>/g, ' ')
+  assert(!operatorVisibleText.toLowerCase().includes(text.toLowerCase()), `Admin UI must not show "${text}"`)
 }
 
 assert(adminHtml.includes('Điểm danh Admin cơ sở'))
@@ -162,6 +166,7 @@ const emptyHtml = renderScheduleModule(
   students,
   '2026-06-01',
   { sessionId: 'schedule-admin-empty', occurrenceDate: '2026-06-05', rows: [] },
+  { occurrenceAttendanceReady: true, occurrenceAttendanceStatus: 'ready' },
 )
 assert(emptyHtml.includes('Ca học này chưa có học viên.'))
 
@@ -271,12 +276,14 @@ const unifiedRecords = buildUnifiedAttendanceRecords({
 })
 assert.equal(JSON.stringify(sourceReports), sourceReportsSnapshot, 'Admin attendance must not mutate sessionReports')
 assert(unifiedRecords.some((record) => record.source === 'admin'))
-assert(unifiedRecords.some((record) => record.source === 'teacher' || record.source === 'unknown'))
+assert(!unifiedRecords.some((record) => record.source === 'teacher' || record.source === 'unknown'))
 
 const mainSource = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 const scheduleSource = fs.readFileSync(new URL('../src/schedule-module.js', import.meta.url), 'utf8')
 const recordsSource = fs.readFileSync(new URL('../src/attendance-records.js', import.meta.url), 'utf8')
-assert(mainSource.includes('upsertAdminAttendanceRecords'))
+assert(mainSource.includes('writeV23OccurrenceAttendanceThroughCloud'))
+assert(mainSource.includes("reason: 'admin-attendance-save-v2-3'"))
+assert(!mainSource.includes('const candidate = upsertAdminAttendanceRecords'))
 assert(mainSource.includes('data-admin-attendance-action'))
 assert(scheduleSource.includes('renderScheduleAdminAttendanceForm'))
 assert(recordsSource.includes('createAdminAttendanceRecord'))

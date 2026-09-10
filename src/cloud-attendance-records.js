@@ -152,6 +152,16 @@ export function validateAttendanceRecordCloudPayload(record = {}) {
     return { ok: false, error: 'Thiếu attendanceStatus.' }
   }
 
+  if (
+    normalizedRecord.attendanceAuthority === 'v2.3-occurrence-v1'
+    && (!normalizeText(normalizedRecord.authorityLocalId)
+      || !normalizeText(normalizedRecord.authorityLocalId).startsWith('attendance_record::v2-3::')
+      || !normalizeText(normalizedRecord.scheduleSessionId)
+      || normalizeText(normalizedRecord.sessionId) !== normalizeText(normalizedRecord.scheduleSessionId))
+  ) {
+    return { ok: false, error: 'Attendance occurrence authority is invalid.' }
+  }
+
   return {
     ok: true,
     record: normalizedRecord,
@@ -163,6 +173,13 @@ export function createAttendanceRecordCloudLocalId(record = {}) {
 
   if (!normalizedRecord) {
     return ''
+  }
+
+  if (
+    normalizedRecord.attendanceAuthority === 'v2.3-occurrence-v1'
+    && normalizeText(normalizedRecord.authorityLocalId).startsWith('attendance_record::v2-3::')
+  ) {
+    return normalizeText(normalizedRecord.authorityLocalId)
   }
 
   const sessionKey = getAttendanceRecordCloudSessionKey(normalizedRecord)
