@@ -1712,10 +1712,22 @@ h3 {
 .module-notification-item {
   display: grid;
   gap: 4px;
+  width: 100%;
   border: 1px solid rgba(160, 184, 214, 0.18);
   border-radius: 7px;
   padding: 8px;
   background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.module-notification-item:hover,
+.module-notification-item:focus-visible {
+  border-color: rgba(132, 189, 255, 0.62);
+  background: rgba(89, 153, 224, 0.14);
+  outline: none;
 }
 
 .module-notification-item p,

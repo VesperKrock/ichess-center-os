@@ -352,9 +352,11 @@ import {
   validateScheduleForm,
 } from './schedule-module.js'
 import {
-  buildInventoryRequestNotificationCandidates,
-  buildParentFollowupNotificationCandidates,
-  buildTuitionNotificationCandidates,
+  buildInventoryDueNotificationCandidates,
+  buildMissingSessionReportNotificationCandidates,
+  buildScheduleAttentionNotificationCandidates,
+  buildStudentBirthdayNotificationCandidates,
+  buildV24TuitionNotificationCandidates,
   filterNotifications,
   getUnreadNotificationCount as countUnreadNotifications,
   getUnreadNotificationCountsByModule,
@@ -690,7 +692,6 @@ import {
   savePersonalWallpaperBlob,
 } from './wallpaper-preferences.js'
 import {
-  buildTuitionRows,
   createEditTuitionFormState,
   createEmptyTuitionFormState,
   createPaymentFormState,
@@ -11409,10 +11410,15 @@ function renderModuleNotificationBell(windowItem) {
     .slice(0, 5)
     .map(
       (notification) => `
-        <article class="module-notification-item ${notification.readAt ? 'read' : 'unread'}">
+        <button
+          type="button"
+          class="module-notification-item ${notification.readAt ? 'read' : 'unread'}"
+          data-notification-id="${escapeAttribute(notification.id)}"
+          aria-label="${escapeAttribute(notification.title)}"
+        >
           <strong>${escapeHtml(notification.title)}</strong>
           <p>${escapeHtml(notification.message)}</p>
-        </article>
+        </button>
       `,
     )
     .join('')
@@ -12985,23 +12991,23 @@ function buildNotificationModuleSummaries(notificationItems = []) {
 }
 
 function buildNotificationModuleSummaryTitle(summary) {
-  const readState = notificationFilters.readState || 'unread'
-  const noun = summary.warningCount ? 'cảnh báo' : 'thông báo'
-  const stateSuffix = readState === 'read'
-    ? 'đã đọc'
-    : readState === 'all'
-      ? ''
-      : 'mới'
-
-  return `${summary.label} có ${summary.count} ${noun}${stateSuffix ? ` ${stateSuffix}` : ''}`
+  return `${summary.label} — ${summary.count}`
 }
 
 function buildNotificationModuleSummaryMessage(summary) {
+  const stateLabel = notificationFilters.readState === 'read'
+    ? 'đã đọc'
+    : notificationFilters.readState === 'all'
+      ? 'hiện có'
+      : 'mới'
+  const warningLabel = summary.warningCount
+    ? ` Trong đó có ${summary.warningCount} cảnh báo.`
+    : ''
   if (summary.sampleMessages.length) {
-    return `Có ${summary.sampleMessages.join('; ')}. Chi tiết nằm trong chuông riêng của module.`
+    return `${summary.count} thông báo ${stateLabel}.${warningLabel} ${summary.sampleMessages.join('; ')}. Chi tiết nằm trong chuông riêng của module.`
   }
 
-  return `Có ${summary.count} mục chi tiết trong chuông riêng của module.`
+  return `${summary.count} thông báo ${stateLabel}.${warningLabel} Chi tiết nằm trong chuông riêng của module.`
 }
 
 function getNotificationModuleLabel(sourceModule, notification = {}) {
@@ -13554,8 +13560,8 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
   const centerContext = getCurrentCanonicalCenterContext()
   const upstreams = [
     'core',
-    'crm',
-    'tuition',
+    'attendance',
+    'package-cycles',
     ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerContext.centerId)
       ? ['inventory']
       : []),
@@ -13574,7 +13580,10 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
 
   const results = await Promise.all(upstreams.map(async (upstream) => {
     try {
-      return { upstream, ...(await refreshAuthoritativeUpstream(upstream, reason)) }
+      const result = upstream === 'package-cycles'
+        ? await refreshV24PackageCycles({ reason, silent: true })
+        : await refreshAuthoritativeUpstream(upstream, reason)
+      return { upstream, ...result }
     } catch (error) {
       return { upstream, ok: false, error: String(error?.message || error) }
     }
@@ -13585,7 +13594,9 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
   }
 
   const failures = results.filter((result) => !result.ok)
-  notifications = syncAppNotifications(notifications)
+  if (!failures.length) {
+    notifications = syncAppNotifications(notifications)
+  }
   notificationRefreshState = createModuleRefreshState({
     status: failures.length ? 'failed' : 'fresh',
     centerId: centerContext.centerId,
@@ -21968,6 +21979,9 @@ function bindEvents() {
     })
 
     notificationElement.addEventListener('keydown', (event) => {
+      if (notificationElement.matches('button')) {
+        return
+      }
       if (event.key !== 'Enter' && event.key !== ' ') {
         return
       }
@@ -21991,7 +22005,9 @@ function bindEvents() {
   document.querySelectorAll('[data-notification-module-id]').forEach((button) => {
     button.addEventListener('click', () => {
       const moduleId = button.dataset.notificationModuleId
-      if (!moduleId || !isProductionModuleAvailable(moduleId)) {
+      if (!moduleId
+        || !modules.some((moduleItem) => moduleItem.id === moduleId)
+        || !isProductionModuleAvailable(moduleId)) {
         return
       }
 
@@ -31150,13 +31166,32 @@ function syncTuitionNotifications(currentNotifications) {
 }
 
 function syncAppNotifications(currentNotifications) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  if (!centerContext.ok) {
+    return currentNotifications
+  }
+
+  const centerId = centerContext.centerId
+  const today = new Date()
+  const visibleCurrentWeekOccurrences = getVisibleScheduleSessions(
+    scheduleSessions,
+    getCurrentScheduleWeekStartDate(today),
+    classSessions,
+  )
   const notificationCandidates = [
-    ...buildTuitionNotificationCandidates(
-      buildTuitionRows(students, tuitionRecords),
-      getCurrentMonthKey(),
+    ...buildStudentBirthdayNotificationCandidates(students, { centerId, today }),
+    ...(isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)
+      ? buildV24TuitionNotificationCandidates(v24PackageCycleStudentStates, students, { centerId, today })
+      : []),
+    ...buildScheduleAttentionNotificationCandidates(visibleCurrentWeekOccurrences, { centerId, today }),
+    ...buildMissingSessionReportNotificationCandidates(
+      visibleCurrentWeekOccurrences,
+      sessionReports,
+      { centerId, now: today },
     ),
-    ...buildInventoryRequestNotificationCandidates(inventoryRequests),
-    ...buildParentFollowupNotificationCandidates(parentConsultations),
+    ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerId)
+      ? buildInventoryDueNotificationCandidates(inventoryRequests, { centerId, today })
+      : []),
   ]
   const nextNotifications = upsertNotificationCandidates(currentNotifications, notificationCandidates)
 
@@ -31187,6 +31222,31 @@ function openNotificationSourceModule(notificationId) {
   }
 
   isNotificationCenterOpen = false
+  if (notification.sourceModule === 'hoc-vien' && notification.meta?.studentId) {
+    const studentId = String(notification.meta.studentId)
+    if (students.some((student) => String(student.id) === studentId)) {
+      openStudentDetailWindowFromChildInteraction(studentId)
+      return
+    }
+  }
+  if (notification.sourceModule === 'hoc-phi' && notification.entityLabel) {
+    tuitionFilters = {
+      ...tuitionFilters,
+      query: notification.entityLabel,
+    }
+  }
+  if (notification.sourceModule === 'thoi-khoa-bieu' && notification.meta?.occurrenceDate) {
+    const occurrenceDate = String(notification.meta.occurrenceDate)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(occurrenceDate)) {
+      scheduleWeekStartDate = getCurrentScheduleWeekStartDate(new Date(`${occurrenceDate}T12:00:00`))
+    }
+  }
+  if (notification.sourceModule === 'kho-hang' && notification.entityLabel) {
+    inventoryRequestFilters = {
+      ...inventoryRequestFilters,
+      query: notification.entityLabel,
+    }
+  }
   openModuleWindow(notification.sourceModule)
 }
 
