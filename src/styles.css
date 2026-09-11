@@ -21404,6 +21404,17 @@ h3 {
   cursor: default;
 }
 
+.attendance-cell.attendance-cell-makeup .attendance-cell-button {
+  outline: 1px dashed color-mix(in srgb, var(--accent-color, #6d5bd0) 70%, transparent);
+  outline-offset: -3px;
+}
+
+.attendance-cell span.attendance-credit-chip.is-makeup {
+  background: color-mix(in srgb, #7c3aed 18%, var(--surface-raised, #ffffff));
+  border-color: color-mix(in srgb, #7c3aed 52%, transparent);
+  color: color-mix(in srgb, #7c3aed 88%, var(--text-primary, #111827));
+}
+
 .notification-module-summary.is-readonly:hover,
 .notification-module-summary.is-readonly:focus-visible {
   border-top-color: rgba(255, 255, 255, 0.11);

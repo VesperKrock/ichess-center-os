@@ -645,6 +645,21 @@ import {
   selectCurrentV23OccurrenceAttendanceRecord,
 } from './cloud-authoritative-occurrence-attendance.js'
 import {
+  V24_PACKAGE_CYCLE_CAPABILITY_STATUS,
+  buildV24SelectProvisionalPackageCommand,
+  buildV24StartCycleCommand,
+  buildV24UpdateBchtCommand,
+  createV24IdempotencyKey,
+  createV24PackageCycleCapabilityState,
+  createV24RetryFingerprint,
+  getV24OutcomeMessage,
+  getV24StudentCycleState,
+  isV24PackageCycleBackendUnavailable,
+  isV24PackageCycleCapabilityReady,
+  mutateV24PackageCycle,
+  pullV24PackageCycleState,
+} from './cloud-authoritative-tuition-cycles.js'
+import {
   deriveV22ScheduleRosters,
   normalizeV22Enrollments,
   projectStudentsWithV22Enrollments,
@@ -959,6 +974,12 @@ let v23AttendanceCapabilityState = createV23AttendanceCapabilityState()
 let v23AttendanceCapabilityRunId = 0
 let v23AttendanceWriteRunId = 0
 const v23AttendanceRetryCommands = new Map()
+let v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState()
+let v24PackageCycleStudentStates = []
+let v24PackageCycleCatalog = []
+let v24PackageCycleContributions = []
+let v24PackageCycleSyncRunId = 0
+const v24PackageCycleRetryCommands = new Map()
 let wallpaperRuntimeState = {
   userId: '',
   hasPersonal: false,
@@ -1838,6 +1859,15 @@ function resetV23AttendanceRuntimeForAccessBoundary(centerId = '') {
   scheduleAdminAttendanceState = null
 }
 
+function resetV24PackageCycleRuntimeForAccessBoundary(centerId = '') {
+  v24PackageCycleSyncRunId += 1
+  v24PackageCycleRetryCommands.clear()
+  v24PackageCycleStudentStates = []
+  v24PackageCycleCatalog = []
+  v24PackageCycleContributions = []
+  v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState({ centerId })
+}
+
 function getPersonalWallpaperScope(userId = cloudStatus.user?.id || '') {
   return {
     installationNamespace: getSupabaseInstallationNamespace(),
@@ -1973,6 +2003,7 @@ function resetTransientStateForCenterSwitch() {
   resetV21CenterSettingsRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetV22StudentEnrollmentRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetV23AttendanceRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
+  resetV24PackageCycleRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -9748,6 +9779,7 @@ async function handleInternalOpenCenter(centerId) {
   await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
   await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
   await refreshV23AttendanceCapability({ silent: true })
+  await refreshV24PackageCycles({ reason: 'capability-probe', silent: true })
   await loadCenterMemberProfiles(switchSyncId)
   await loadCurrentMonthCloudAttachments(switchSyncId)
   await startStudentRealtimeSubscription(switchSyncId)
@@ -11916,6 +11948,13 @@ function renderWindowBody(windowItem) {
         financeStatus,
         financeAvailable,
         canVoidPayments,
+        packageCycleStatus: v24PackageCycleCapabilityState.status,
+        packageCycleReady: isV24PackageCycleCapabilityReady(
+          v24PackageCycleCapabilityState,
+          getCurrentCanonicalCenterContext().centerId,
+        ),
+        packageCycleStudentStates: v24PackageCycleStudentStates,
+        packageCycleCatalog: v24PackageCycleCatalog,
       },
     )
   }
@@ -12068,6 +12107,12 @@ function renderWindowBody(windowItem) {
         attendanceAvailable,
         tuitionAvailable,
         calendarNotesAvailable,
+        packageCycleReady: isV24PackageCycleCapabilityReady(
+          v24PackageCycleCapabilityState,
+          getCurrentCanonicalCenterContext().centerId,
+        ),
+        packageCycleStudentStates: v24PackageCycleStudentStates,
+        packageCycleContributions: v24PackageCycleContributions,
       },
     )
   }
@@ -13334,6 +13379,9 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   }
   if (moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
     await refreshV23AttendanceCapability({ silent: true })
+  }
+  if (moduleId === 'hoc-phi' || moduleId === 'bang-diem-danh') {
+    await refreshV24PackageCycles({ reason: `${moduleId}:${reason}`, silent: true })
   }
 
   const latestContext = getCurrentCanonicalCenterContext()
@@ -14987,6 +15035,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     resetV21CenterSettingsRuntimeForAccessBoundary('')
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
     resetV23AttendanceRuntimeForAccessBoundary('')
+    resetV24PackageCycleRuntimeForAccessBoundary('')
     resetWallpaperRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
@@ -15059,6 +15108,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   resetV21CenterSettingsRuntimeForAccessBoundary('')
   resetV22StudentEnrollmentRuntimeForAccessBoundary('')
   resetV23AttendanceRuntimeForAccessBoundary('')
+  resetV24PackageCycleRuntimeForAccessBoundary('')
   resetWallpaperRuntimeForAccessBoundary(user.id)
   installationHandoffState = purgeInstallationHandoffState()
 
@@ -15232,6 +15282,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
     await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
     await refreshV23AttendanceCapability({ silent: true })
+    await refreshV24PackageCycles({ reason: 'capability-probe', silent: true })
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
@@ -17474,6 +17525,7 @@ async function refreshV22StudentEnrollments({ reason = 'manual-refresh', silent 
   if (!centerContext.ok) {
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
     resetV23AttendanceRuntimeForAccessBoundary('')
+    resetV24PackageCycleRuntimeForAccessBoundary('')
     return { ok: false, outcome_code: 'INVALID_CENTER', error: getV22EnrollmentOutcomeMessage('INVALID_CENTER') }
   }
   const authorityEstablished = v22StudentEnrollmentCapabilityState.centerId === centerId
@@ -17561,6 +17613,108 @@ async function refreshV23AttendanceCapability({ silent = true } = {}) {
   })
   if (!silent) render()
   return result
+}
+
+async function refreshV24PackageCycles({ reason = 'manual-refresh', silent = true } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++v24PackageCycleSyncRunId
+  if (!centerContext.ok) {
+    resetV24PackageCycleRuntimeForAccessBoundary('')
+    return { ok: false, outcome_code: 'INVALID_CENTER' }
+  }
+  v24PackageCycleStudentStates = []
+  v24PackageCycleCatalog = []
+  v24PackageCycleContributions = []
+  v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState({
+    centerId,
+    status: V24_PACKAGE_CYCLE_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    message: silent ? '' : 'Đang tải tiến độ chu kỳ học phí...',
+  })
+  if (!silent) render()
+  const result = await pullV24PackageCycleState({ supabase: getSupabaseClient(), centerId })
+  if (runId !== v24PackageCycleSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED' }
+  }
+  if (!result.ok) {
+    const unavailable = result.unavailable || isV24PackageCycleBackendUnavailable(result)
+      || result.outcome_code === 'BACKEND_NOT_DEPLOYED'
+    v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState({
+      centerId,
+      status: unavailable
+        ? V24_PACKAGE_CYCLE_CAPABILITY_STATUS.UNAVAILABLE
+        : V24_PACKAGE_CYCLE_CAPABILITY_STATUS.FAILED,
+      message: unavailable ? '' : result.error || getV24OutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? '' : 'error',
+    })
+    if (!silent) render()
+    return result
+  }
+  v24PackageCycleStudentStates = result.students
+  v24PackageCycleCatalog = result.packageCatalog
+  v24PackageCycleContributions = result.contributions
+  v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState({
+    centerId,
+    status: V24_PACKAGE_CYCLE_CAPABILITY_STATUS.READY,
+    message: reason === 'after-server-commit' ? 'Tiến độ chu kỳ học phí đã được cập nhật.' : '',
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  })
+  render()
+  return result
+}
+
+async function writeV24PackageCycleCommand(command, reason = 'package-cycle-save') {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)) {
+    return { ok: false, outcome_code: 'BACKEND_NOT_DEPLOYED', error: getV24OutcomeMessage('BACKEND_NOT_DEPLOYED') }
+  }
+  const fingerprint = createV24RetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = v24PackageCycleRetryCommands.get(retryScope) || {
+    centerId,
+    command,
+    idempotencyKey: createV24IdempotencyKey(),
+  }
+  v24PackageCycleRetryCommands.set(retryScope, pending)
+  const runId = ++v24PackageCycleSyncRunId
+  const result = await mutateV24PackageCycle({
+    supabase: getSupabaseClient(),
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== v24PackageCycleSyncRunId || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Thay đổi đã được lưu ở cơ sở trước. Màn hình hiện tại không sử dụng kết quả đó.'
+        : getV24OutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok) {
+    if (!['PACKAGE_CYCLE_WRITE_FAILED', 'INVALID_SERVER_RESULT'].includes(result.outcome_code)) {
+      v24PackageCycleRetryCommands.delete(retryScope)
+    }
+    return result
+  }
+  const projection = await refreshV24PackageCycles({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Thay đổi đã được lưu nhưng chưa tải lại được tiến độ mới. Hãy bấm Làm mới.',
+    }
+  }
+  v24PackageCycleRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reason }
 }
 
 function reconcileOpenStudentFormWithV22Authority() {
@@ -18682,6 +18836,9 @@ async function writeV23OccurrenceAttendanceThroughCloud({
     message: `Đã lưu điểm danh buổi học (${attendanceInputs.length} học viên).`,
     messageTone: 'success',
     lastUpdatedAt: new Date().toISOString(),
+  }
+  if (isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)) {
+    await refreshV24PackageCycles({ reason: 'attendance-reconciled', silent: true })
   }
   return { ...result, projection: mergeResult }
 }
@@ -20825,6 +20982,7 @@ async function initializeSupabaseAuth() {
     resetC57CalendarNotesRuntimeForAccessBoundary('')
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
     resetV23AttendanceRuntimeForAccessBoundary('')
+    resetV24PackageCycleRuntimeForAccessBoundary('')
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -24062,6 +24220,59 @@ function bindEvents() {
       render()
     },
   )
+
+  document.querySelectorAll('[data-v24-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      if (!isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)) {
+        window.alert('Tiến độ chu kỳ học phí chưa sẵn sàng. Hãy bấm Làm mới rồi thử lại.')
+        return
+      }
+      const action = button.dataset.v24Action
+      const studentId = String(button.dataset.v24StudentId || '').trim()
+      const state = getV24StudentCycleState(v24PackageCycleStudentStates, studentId)
+      let command
+      try {
+        if (action === 'start-cycle') {
+          const panel = button.closest('.tuition-cycle-panel')
+          command = buildV24StartCycleCommand({
+            studentId,
+            tuitionLocalId: button.dataset.v24TuitionLocalId,
+            packageCatalogId: panel?.querySelector('[data-v24-start-field="package"]')?.value,
+            baselineUsedSessions: panel?.querySelector('[data-v24-start-field="baseline"]')?.value,
+            baselineCutoffDate: panel?.querySelector('[data-v24-start-field="cutoff"]')?.value,
+            baselineReviewNote: panel?.querySelector('[data-v24-start-field="review-note"]')?.value,
+          })
+        } else if (action === 'select-package') {
+          const cycle = state?.currentCycle
+          if (!cycle || cycle.id !== button.dataset.v24CycleId) throw new Error('Chu kỳ đã thay đổi. Hãy tải lại.')
+          command = buildV24SelectProvisionalPackageCommand(
+            cycle,
+            button.closest('.tuition-cycle-panel')?.querySelector('[data-v24-select-package]')?.value,
+          )
+        } else if (action === 'bcht-progress' || action === 'bcht-complete') {
+          const cycle = state?.currentCycle
+          if (!cycle || cycle.id !== button.dataset.v24CycleId) throw new Error('Chu kỳ đã thay đổi. Hãy tải lại.')
+          command = buildV24UpdateBchtCommand(
+            cycle,
+            action === 'bcht-complete' ? 'COMPLETED' : 'IN_PROGRESS',
+            button.closest('.tuition-cycle-panel')?.querySelector('[data-v24-bcht-note]')?.value || '',
+          )
+        } else {
+          return
+        }
+      } catch (error) {
+        window.alert(String(error?.message || error))
+        return
+      }
+      button.disabled = true
+      const result = await writeV24PackageCycleCommand(command, action)
+      if (!result.ok) {
+        button.disabled = false
+        window.alert(result.error || 'Chưa thể lưu tiến độ chu kỳ học phí.')
+      }
+    })
+  })
 
   document.querySelectorAll('[data-tuition-action="open-form"]').forEach((button) => {
     button.addEventListener('click', () => {

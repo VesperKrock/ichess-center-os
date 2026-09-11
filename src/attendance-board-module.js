@@ -56,6 +56,7 @@ export function renderAttendanceBoardModule(
   const attendanceAvailable = availability.attendanceAvailable !== false
   const tuitionAvailable = availability.tuitionAvailable !== false
   const calendarNotesAvailable = availability.calendarNotesAvailable !== false
+  const packageCycleReady = availability.packageCycleReady === true
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
   const storedAttendanceRecords = Array.isArray(draftRecords) ? draftRecords : loadStoredAttendanceRecords()
@@ -71,7 +72,13 @@ export function renderAttendanceBoardModule(
     normalizedFilters,
     attendanceBoardNotes,
     storedAttendanceRecords,
-    { tuitionAvailable, calendarNotesAvailable },
+    {
+      tuitionAvailable,
+      calendarNotesAvailable,
+      packageCycleReady,
+      packageCycleStudentStates: availability.packageCycleStudentStates,
+      packageCycleContributions: availability.packageCycleContributions,
+    },
   )
   const visibleDates = getVisibleAttendanceDates(filteredRows, classSessions, normalizedFilters)
   const stats = getAttendanceBoardStats(students, classSessions)
@@ -231,6 +238,17 @@ export function buildAttendanceBoardRows(
 ) {
   const tuitionAvailable = availability.tuitionAvailable !== false
   const calendarNotesAvailable = availability.calendarNotesAvailable !== false
+  const packageCycleReady = availability.packageCycleReady === true
+  const packageCycleStateByStudentId = new Map(
+    (Array.isArray(availability.packageCycleStudentStates)
+      ? availability.packageCycleStudentStates
+      : []).map((state) => [String(state?.studentId || ''), state]),
+  )
+  const packageCycleContributionByOccurrence = new Map(
+    (Array.isArray(availability.packageCycleContributions)
+      ? availability.packageCycleContributions
+      : []).map((contribution) => [getPackageCycleContributionKey(contribution), contribution]),
+  )
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const attendanceRecords = buildUnifiedAttendanceRecords({
     sessionReports,
@@ -261,6 +279,11 @@ export function buildAttendanceBoardRows(
         reportLookup,
         tuition,
         tuitionAvailable,
+        {
+          packageCycleReady,
+          packageCycleState: packageCycleStateByStudentId.get(String(student.id)) || null,
+          packageCycleContributionByOccurrence,
+        },
       )
       const advisoryNote = advisoryNoteByStudentId.get(student.id)
 
@@ -597,6 +620,7 @@ function renderAttendanceCell(row, dateItem, baselineState = {}, rowIndex = 0, d
       'attendance-cell',
       'is-recorded',
       getAttendanceCellStatusClass(attendance),
+      attendance.attendanceStatus === 'makeup' ? 'attendance-cell-makeup' : '',
       isCombinedAttendanceItem(attendance) ? 'attendance-cell-combined' : '',
     ].filter(Boolean)
 
@@ -728,7 +752,7 @@ function renderAttendanceCellDisplay(attendance) {
       .join('')
   }
 
-  return `<span class="attendance-credit-chip">${escapeHtml(attendance.displayValue || attendanceStatusLabels[attendance.attendanceStatus] || '✓')}</span>`
+  return `<span class="attendance-credit-chip ${attendance.attendanceStatus === 'makeup' ? 'is-makeup' : ''}">${escapeHtml(attendance.displayValue || attendanceStatusLabels[attendance.attendanceStatus] || '✓')}</span>`
 }
 
 function getBaselineCellInputValue(attendance) {
@@ -776,6 +800,15 @@ function renderAttendanceDetailModal(detailState, rows, classSessions) {
   const originalClassSession = row.classSessions[0] || actualClassSession
   const sourceLabel = getAttendanceSourceLabel(attendance)
   const typeLabel = getAttendanceDetailTypeLabel(attendance)
+  const isTrial = attendance.attendanceStatus === 'trial'
+  const tuitionCycleLabel = isTrial
+    ? 'Học thử, không tính vào gói'
+    : attendance.countsTowardTuition
+      ? attendance.cycleLabel || 'Chưa đủ dữ liệu gói'
+      : 'Đối chiếu tại Học phí'
+  const remainingSessionsLabel = isTrial
+    ? 'Không áp dụng'
+    : attendance.remainingLabel || 'Đối chiếu tại Học phí'
   const credits = Array.isArray(attendance.credits) ? attendance.credits : []
   const creditRows = credits.length
     ? `
@@ -811,8 +844,8 @@ function renderAttendanceDetailModal(detailState, rows, classSessions) {
         ${renderAttendanceDetailField('Ca học thực tế', getClassSessionLabel(actualClassSession))}
         ${renderAttendanceDetailField('Ca gốc của học viên', getClassSessionLabel(originalClassSession))}
         ${renderAttendanceDetailField('Giáo viên', cleanDisplayText(attendance.teacherName || row.student.mainTeacherName || 'Chưa cập nhật'))}
-        ${renderAttendanceDetailField('Kỳ / gói học phí', attendance.countsTowardTuition ? attendance.cycleLabel || 'Chưa đủ dữ liệu gói' : 'Học thử, không tính vào gói')}
-        ${renderAttendanceDetailField('Số buổi còn lại', attendance.remainingLabel || 'Không áp dụng')}
+        ${renderAttendanceDetailField('Kỳ / gói học phí', tuitionCycleLabel)}
+        ${renderAttendanceDetailField('Số buổi còn lại', remainingSessionsLabel)}
         ${renderAttendanceDetailField('Nguồn dữ liệu', sourceLabel)}
       </div>
       ${creditRows}
@@ -1081,7 +1114,13 @@ function getVisibleAttendanceDates(rows, classSessions, filters) {
   )
 }
 
-function getStudentAttendanceSummary(studentId, reportLookup, tuition, tuitionAvailable = true) {
+function getStudentAttendanceSummary(
+  studentId,
+  reportLookup,
+  tuition,
+  tuitionAvailable = true,
+  packageCycleAuthority = {},
+) {
   const attendanceItems = [...(reportLookup.get(studentId) || [])].sort((firstItem, secondItem) =>
     firstItem.dateKey.localeCompare(secondItem.dateKey),
   )
@@ -1093,6 +1132,21 @@ function getStudentAttendanceSummary(studentId, reportLookup, tuition, tuitionAv
   let lastDisplayedCredit = null
 
   attendanceItems.forEach((item) => {
+    const packageCycleItem = getPackageCycleAttendanceItem(
+      studentId,
+      item,
+      packageCycleAuthority,
+    )
+    if (packageCycleItem) {
+      const sameDateItem = byDate.get(item.dateKey)
+      byDate.set(
+        item.dateKey,
+        sameDateItem
+          ? mergePackageCycleAttendanceItems(sameDateItem, packageCycleItem)
+          : packageCycleItem,
+      )
+      return
+    }
     const countsTowardTuition =
       item.countsTowardTuition !== false && presentAttendanceStatuses.has(item.attendanceStatus)
     const credits = Array.isArray(item.credits) && item.credits.length ? item.credits : countsTowardTuition ? [1] : []
@@ -1136,10 +1190,114 @@ function getStudentAttendanceSummary(studentId, reportLookup, tuition, tuitionAv
 
   return {
     byDate,
-    studiedCount,
+    studiedCount: packageCycleAuthority.packageCycleReady
+      && packageCycleAuthority.packageCycleState?.readiness === 'READY'
+      ? packageCycleAuthority.packageCycleState.currentCycle?.usedSessions ?? studiedCount
+      : studiedCount,
     hasReportData: attendanceItems.length > 0,
     hasBaselineData: attendanceItems.some(isInitialBaselineAttendanceItem),
     hasRealData: attendanceItems.some((item) => !isInitialBaselineAttendanceItem(item)),
+  }
+}
+
+function getPackageCycleContributionKey(contribution = {}) {
+  return [
+    String(contribution.studentId || ''),
+    String(contribution.scheduleSessionId || ''),
+    String(contribution.occurrenceDate || ''),
+  ].join('::')
+}
+
+function getPackageCycleAttendanceItem(studentId, item = {}, authority = {}) {
+  const state = authority.packageCycleState
+  const cycle = state?.currentCycle
+  if (!authority.packageCycleReady || state?.readiness !== 'READY' || !cycle) return null
+  if (!item.dateKey || item.dateKey <= cycle.baselineCutoffDate) return null
+  const contribution = authority.packageCycleContributionByOccurrence?.get(
+    getPackageCycleContributionKey({
+      studentId,
+      scheduleSessionId: item.scheduleSessionId,
+      occurrenceDate: item.dateKey,
+    }),
+  )
+  if (!contribution) {
+    return {
+      ...item,
+      credits: [],
+      countsTowardTuition: false,
+      displayValue: attendanceStatusLabels[item.attendanceStatus] || '—',
+      isWrapStart: false,
+      countingStatus: item.attendanceStatus === 'trial' ? 'trial' : 'neutral',
+      cycleLabel: 'Chưa đối chiếu chu kỳ',
+      remainingLabel: '',
+      warning: item.note || 'Tiến độ gói đang chờ đối chiếu lại.',
+    }
+  }
+  const consumes = contribution.contributionUnits === 1
+  const isTrial = item.attendanceStatus === 'trial'
+  const isMakeup = item.attendanceStatus === 'makeup'
+  const packageKnown = contribution.allocationState === 'APPLIED'
+    && Number.isSafeInteger(contribution.sessionNumber)
+    && Number.isSafeInteger(contribution.totalSessions)
+  const displayValue = isTrial
+    ? 'T'
+    : isMakeup
+      ? 'B'
+      : consumes && packageKnown
+        ? String(contribution.sessionNumber)
+        : attendanceStatusLabels[item.attendanceStatus] || '—'
+  const cycleLabel = packageKnown
+    ? `Chu kỳ ${contribution.cycleNumber} · buổi ${contribution.sessionNumber}/${contribution.totalSessions}`
+    : `Chu kỳ ${contribution.cycleNumber} · chờ chọn gói`
+  const paymentPending = consumes && contribution.paymentStatus !== 'PAID'
+  return {
+    ...item,
+    credits: consumes && packageKnown
+      ? [{
+          sessionNumber: contribution.sessionNumber,
+          cycleNumber: contribution.cycleNumber,
+          displayValue: isMakeup ? 'B' : String(contribution.sessionNumber),
+          creditType: isMakeup ? 'makeup' : 'package-session',
+        }]
+      : [],
+    countsTowardTuition: consumes,
+    displayValue,
+    isWrapStart: consumes && contribution.sessionNumber === 1 && contribution.cycleNumber > 1,
+    countingStatus: isTrial ? 'trial' : paymentPending ? 'unpaid' : consumes ? 'paid' : 'neutral',
+    cycleLabel,
+    remainingLabel: packageKnown ? `Còn ${contribution.remainingSessions} buổi` : 'Chờ chọn gói',
+    warning: contribution.makeupReason
+      || item.note
+      || (contribution.lifecycleStatus === 'NEEDS_PACKAGE_SELECTION'
+        ? 'Điểm danh đã lưu; cần chọn gói tiếp theo.'
+        : paymentPending
+          ? 'Chu kỳ này chưa có thanh toán hợp lệ.'
+          : ''),
+  }
+}
+
+function mergePackageCycleAttendanceItems(first = {}, second = {}) {
+  const credits = [...(first.credits || []), ...(second.credits || [])]
+  const warnings = [...new Set([first.warning, second.warning].filter(Boolean))]
+  const cycleLabels = [...new Set([first.cycleLabel, second.cycleLabel].filter(Boolean))]
+  return {
+    ...second,
+    attendanceStatus: first.attendanceStatus === 'makeup' || second.attendanceStatus === 'makeup'
+      ? 'makeup'
+      : second.attendanceStatus,
+    note: [first.note, second.note].filter(Boolean).join(' · '),
+    credits,
+    countsTowardTuition: first.countsTowardTuition || second.countsTowardTuition,
+    displayValue: credits.map((credit) => getAttendanceCreditDisplayValue(credit)).join(' '),
+    isCombinedCredit: true,
+    needsMakeupReview: false,
+    countingStatus: first.countingStatus === 'unpaid' || second.countingStatus === 'unpaid'
+      ? 'unpaid'
+      : first.countingStatus === 'paid' || second.countingStatus === 'paid'
+        ? 'paid'
+        : second.countingStatus,
+    cycleLabel: cycleLabels.join(' · '),
+    warning: warnings.join(' · '),
   }
 }
 
@@ -1251,6 +1409,7 @@ function buildAttendanceReportLookup(attendanceRecords, monthValue) {
 
     items.push({
       dateKey,
+      scheduleSessionId: firstRecord.scheduleSessionId || firstRecord.sessionId || '',
       attendanceStatus: firstRecord.attendanceStatus || 'present',
       note: firstRecord.note || '',
       studentName: attendanceItem.studentName || '',

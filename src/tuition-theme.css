@@ -1926,3 +1926,89 @@
     border-left: 0;
   }
 }
+
+.desktop-window.is-tuition-window .tuition-cycle-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  border: 1px solid color-mix(in srgb, var(--tuition-accent) 32%, var(--tuition-border));
+  border-radius: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--tuition-accent) 7%, var(--tuition-surface));
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-panel.is-review,
+.desktop-window.is-tuition-window .tuition-cycle-panel.is-bcht_due,
+.desktop-window.is-tuition-window .tuition-cycle-panel.is-renewal_due {
+  border-color: color-mix(in srgb, #d97706 48%, var(--tuition-border));
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-panel.is-urgent,
+.desktop-window.is-tuition-window .tuition-cycle-panel.is-package_selection_required {
+  border-color: color-mix(in srgb, #dc2626 52%, var(--tuition-border));
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-panel h5,
+.desktop-window.is-tuition-window .tuition-cycle-panel p {
+  margin: 0;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-panel-header > span {
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-form-grid,
+.desktop-window.is-tuition-window .tuition-cycle-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-form-grid label,
+.desktop-window.is-tuition-window .tuition-cycle-metrics > div {
+  display: grid;
+  gap: 5px;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-form-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-metrics {
+  margin: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-metrics dt {
+  color: var(--tuition-muted);
+  font-size: 0.76rem;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-metrics dd {
+  margin: 0;
+  font-weight: 750;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-bcht-actions,
+.desktop-window.is-tuition-window .tuition-cycle-package-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-bcht-actions input,
+.desktop-window.is-tuition-window .tuition-cycle-package-selection select {
+  flex: 1 1 240px;
+}
+
+.desktop-window.is-tuition-window .tuition-cycle-source {
+  color: var(--tuition-accent);
+}
