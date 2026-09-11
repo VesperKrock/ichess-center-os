@@ -167,6 +167,13 @@ const resolvedSync = upsertNotificationCandidates(sameBirthdaySync, [])
 assert.equal(resolvedSync.length, 0, 'A derived notification must resolve when its business signal resolves.')
 
 const mainSource = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
+const cloudStatusInitializationIndex = mainSource.indexOf('let cloudStatus = createInitialCloudStatus')
+const firstNotificationSyncIndex = mainSource.indexOf('notifications = syncAppNotifications')
+assert(cloudStatusInitializationIndex >= 0)
+assert(
+  firstNotificationSyncIndex > cloudStatusInitializationIndex,
+  'Notification synchronization must not read canonical Auth/center state before cloudStatus initializes.',
+)
 const refreshStart = mainSource.indexOf('async function refreshNotificationAuthoritativeUpstreams')
 const refreshEnd = mainSource.indexOf('function openModuleWindowFromChildInteraction', refreshStart)
 const refreshSource = mainSource.slice(refreshStart, refreshEnd)

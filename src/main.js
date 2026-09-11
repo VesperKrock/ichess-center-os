@@ -1025,7 +1025,6 @@ let cashbookReconciliationFormState = null
 let inventoryItems = []
 let inventoryMovements = []
 let inventoryRequests = []
-notifications = syncAppNotifications(notifications)
 let activeNotificationDataCenterId = getCurrentStorageCenterId()
 let inventoryFilters = { ...initialInventoryFilters }
 let inventoryMovementFilters = { ...initialInventoryMovementFilters }
