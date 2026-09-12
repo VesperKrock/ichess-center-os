@@ -556,7 +556,6 @@ import {
 import {
   mergeRealtimeTeacherIntoList,
   subscribeToTeacherCloudRealtime,
-  upsertTeacherCloudEntity,
 } from './cloud-realtime-teachers.js'
 import {
   mergeScheduleSessionRealtimePayload,
@@ -600,7 +599,6 @@ import {
 } from './online-access-control.js'
 import { cleanupLegacyDatasetLocalResidue } from './legacy-dataset-cleanup.js'
 import {
-  buildTeacherFromForm,
   createEditTeacherFormState,
   createEmptyTeacherFormState,
   initialTeacherFilters,
@@ -661,6 +659,24 @@ import {
   mutateV24PackageCycle,
   pullV24PackageCycleState,
 } from './cloud-authoritative-tuition-cycles.js'
+import {
+  V26_TEACHER_REGISTRY_CAPABILITY_STATUS,
+  buildV26AssignTeacherCommand,
+  buildV26RemoveTeacherCommand,
+  buildV26TeacherCommand,
+  buildV26TeacherDirectoryProjection,
+  buildV26TeacherReferenceProjection,
+  buildV26TransferTeacherCommand,
+  createV26TeacherRegistryCapabilityState,
+  createV26TeacherRegistryIdempotencyKey,
+  createV26TeacherRegistryRetryFingerprint,
+  getV26TeacherRegistryOutcomeMessage,
+  isV26TeacherRegistryBackendUnavailable,
+  isV26TeacherRegistryCapabilityReady,
+  mutateV26TeacherAssignment,
+  mutateV26TeacherRegistry,
+  pullV26TeacherRegistry,
+} from './cloud-authoritative-teacher-registry.js'
 import {
   deriveV22ScheduleRosters,
   normalizeV22Enrollments,
@@ -804,6 +820,10 @@ let teacherFilters = { ...initialTeacherFilters }
 let teachers = getStoredTeachers([])
 let teacherFormState = null
 let selectedTeacherId = null
+let teacherAssignmentTargetCenterId = ''
+let v26TeacherRegistryCapabilityState = createV26TeacherRegistryCapabilityState()
+let v26TeacherRegistrySyncRunId = 0
+const v26TeacherRegistryRetryCommands = new Map()
 let parentConsultationFilters = { ...initialParentConsultationFilters }
 let parentConsultations = []
 let parentConsultationFormState = null
@@ -1058,7 +1078,6 @@ let studentRealtimeCenterId = ''
 let studentCloudWriteRunId = 0
 let teacherRealtimeSubscription = null
 let teacherRealtimeCenterId = ''
-let teacherCloudWriteRunId = 0
 let scheduleSessionRealtimeSubscription = null
 let scheduleSessionRealtimeCenterId = ''
 let scheduleSessionCloudWriteRunId = 0
@@ -1354,7 +1373,7 @@ function createCurrentSchedulePrintSnapshot() {
     classSessions,
     centerCalendarItems,
     centerCalendarTags,
-    teachers,
+    teachers: getCurrentTeacherReferenceProjection(),
     activityFilters: scheduleCalendarFilters,
     createdAt: new Date().toISOString(),
   })
@@ -1613,6 +1632,15 @@ function resetParentFirstRuntimeForAccessBoundary(centerId = '') {
   parentIdentityEditState = null
   parentContactDetailId = null
   parentFirstCapabilityState = createParentFirstCapabilityState({ centerId })
+}
+
+function resetV26TeacherRegistryRuntimeForAccessBoundary(centerId = '') {
+  v26TeacherRegistrySyncRunId += 1
+  v26TeacherRegistryRetryCommands.clear()
+  teacherAssignmentTargetCenterId = ''
+  teacherFormState = null
+  selectedTeacherId = null
+  v26TeacherRegistryCapabilityState = createV26TeacherRegistryCapabilityState({ centerId })
 }
 
 function getStaffSensitiveProfileKey(centerId, staffMemberId) {
@@ -2004,6 +2032,7 @@ function resetTransientStateForCenterSwitch() {
   resetV22StudentEnrollmentRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetV23AttendanceRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetV24PackageCycleRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
+  resetV26TeacherRegistryRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -10870,7 +10899,8 @@ function getScheduleSettingsClassSessionLabel(classSession) {
 }
 
 function getScheduleAdminTeacherName(occurrence) {
-  const teacher = teachers.find((item) => String(item.id || '') === String(occurrence?.teacherId || ''))
+  const teacher = getCurrentTeacherReferenceProjection()
+    .find((item) => String(item.id || '') === String(occurrence?.teacherId || ''))
   return teacher?.fullName || teacher?.name || teacher?.nickname || occurrence?.teacherName || null
 }
 
@@ -11790,7 +11820,7 @@ function renderWindowBody(windowItem) {
       getStudentsWithCanonicalProjections(),
       studentFilters,
       studentFormState,
-      teachers,
+      getCurrentTeacherReferenceProjection(),
       classSessions,
       { enrollmentCapabilityStatus: v22StudentEnrollmentCapabilityState.status },
     )
@@ -11822,8 +11852,9 @@ function renderWindowBody(windowItem) {
     const currentCenterId = getCurrentCanonicalCenterContext().centerId
     const staffAvailable = isModuleUpstreamCurrent('giao-vien', 'staff')
       && isC55StaffHrCapabilityReady(c55StaffHrCapabilityState, currentCenterId)
+    const teacherDirectory = getCurrentTeacherDirectoryProjection()
     return renderTeacherModule(
-      teachers,
+      teacherDirectory,
       teacherFilters,
       teacherFormState,
       selectedTeacherId,
@@ -11839,6 +11870,10 @@ function renderWindowBody(windowItem) {
         staffAvailable,
         staffCapabilityStatus: c55StaffHrCapabilityState.status,
         staffManagementAvailable: staffAvailable,
+        registryContext: {
+          ...v26TeacherRegistryCapabilityState,
+          assignmentTargetCenterId: teacherAssignmentTargetCenterId,
+        },
       },
     )
   }
@@ -11861,7 +11896,7 @@ function renderWindowBody(windowItem) {
       sessionReportExtraState,
       isSessionReportExtraExpanded,
       sessionReportGuestFormState,
-      teachers,
+      getCurrentTeacherReferenceProjection(),
       students,
       scheduleWeekStartDate,
       scheduleAdminAttendanceState,
@@ -12138,7 +12173,12 @@ function renderWindowBody(windowItem) {
 }
 
 function renderStudentDetailWithDeleteAction(student, classSessions = []) {
-  const detailHtml = renderStudentDetail(student, teachers, classSessions, tuitionRecords)
+  const detailHtml = renderStudentDetail(
+    student,
+    getCurrentTeacherReferenceProjection(),
+    classSessions,
+    tuitionRecords,
+  )
 
   if (!student || student.isDeleted || student.readOnlyProjection) {
     return detailHtml
@@ -12199,8 +12239,30 @@ function getStudentById(studentId) {
   return getStudentsWithCanonicalProjections().find((student) => student.id === studentId)
 }
 
+function getCurrentTeacherDirectoryProjection() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)) {
+    return []
+  }
+  return buildV26TeacherDirectoryProjection({
+    legacyTeachers: teachers,
+    capabilityState: v26TeacherRegistryCapabilityState,
+  })
+}
+
+function getCurrentTeacherReferenceProjection() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)) {
+    return teachers
+  }
+  return buildV26TeacherReferenceProjection({
+    legacyTeachers: teachers,
+    capabilityState: v26TeacherRegistryCapabilityState,
+  })
+}
+
 function getTeacherById(teacherId) {
-  return teachers.find((teacher) => teacher.id === teacherId)
+  return getCurrentTeacherDirectoryProjection().find((teacher) => teacher.id === teacherId)
 }
 
 function getLatestCareNoteContent(careNotes) {
@@ -13550,6 +13612,8 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
       return refreshC57CalendarNotesSharedTruth({ reason, silent: true })
     case 'center-settings':
       return refreshV21CenterSettings({ reason, silent: true })
+    case 'teacher-registry':
+      return refreshV26TeacherRegistry({ reason, silent: true })
     default:
       return { ok: false, outcome_code: 'UNKNOWN_UPSTREAM', error: `Unknown upstream: ${upstream}` }
   }
@@ -14747,6 +14811,125 @@ function bringWindowToFront(windowId) {
   ]
 }
 
+async function writeV26TeacherRegistryCommand(command, kind = 'teacher') {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)
+    || v26TeacherRegistryCapabilityState.canManageRegistry !== true) {
+    return {
+      ok: false,
+      outcome_code: 'OWNER_REQUIRED',
+      error: getV26TeacherRegistryOutcomeMessage('OWNER_REQUIRED'),
+    }
+  }
+  const fingerprint = createV26TeacherRegistryRetryFingerprint(command)
+  const retryScope = `${centerId}|${kind}|${fingerprint}`
+  const pending = v26TeacherRegistryRetryCommands.get(retryScope) || {
+    centerId,
+    command,
+    idempotencyKey: createV26TeacherRegistryIdempotencyKey(),
+  }
+  v26TeacherRegistryRetryCommands.set(retryScope, pending)
+  v26TeacherRegistryCapabilityState = {
+    ...v26TeacherRegistryCapabilityState,
+    isSaving: true,
+    message: '',
+    messageTone: '',
+  }
+  render()
+
+  const mutate = kind === 'assignment'
+    ? mutateV26TeacherAssignment
+    : mutateV26TeacherRegistry
+  const result = await mutate({
+    supabase: getSupabaseClient(),
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getV26TeacherRegistryOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok) {
+    v26TeacherRegistryCapabilityState = {
+      ...v26TeacherRegistryCapabilityState,
+      isSaving: false,
+      message: result.error || getV26TeacherRegistryOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  const refreshed = await refreshV26TeacherRegistry({ reason: 'after-server-commit', silent: true })
+  if (!refreshed.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Đã lưu thay đổi nhưng chưa tải lại được danh bạ mới nhất. Vui lòng bấm Làm mới.',
+    }
+  }
+  v26TeacherRegistryRetryCommands.delete(retryScope)
+  return { ...result, ok: true, committed: true }
+}
+
+async function handleV26TeacherAssignmentAction(action, teacherId, assignmentCenterId = '') {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)
+    || v26TeacherRegistryCapabilityState.canManageRegistry !== true) return
+  const teacher = getTeacherById(teacherId)
+  if (!teacher?.v26Canonical) return
+  const assignments = Array.isArray(teacher.assignments) ? teacher.assignments : []
+  const resolvedTargetCenterId = teacherAssignmentTargetCenterId
+    || v26TeacherRegistryCapabilityState.managedCenters[0]?.centerId
+  const targetCenter = v26TeacherRegistryCapabilityState.managedCenters.find(
+    (center) => center.centerId === resolvedTargetCenterId,
+  )
+  let command
+  try {
+    if (action === 'assign') {
+      const targetAssignment = assignments.find(
+        (assignment) => assignment.centerId === targetCenter?.centerId,
+      )
+      command = buildV26AssignTeacherCommand(teacher, targetCenter, targetAssignment)
+    } else if (action === 'remove') {
+      const sourceAssignment = assignments.find(
+        (assignment) => assignment.centerId === assignmentCenterId && assignment.status === 'assigned',
+      )
+      command = buildV26RemoveTeacherCommand(teacher, sourceAssignment)
+    } else if (action === 'transfer') {
+      const sourceAssignment = assignments.find(
+        (assignment) => assignment.centerId === centerId && assignment.status === 'assigned',
+      )
+      const targetAssignment = assignments.find(
+        (assignment) => assignment.centerId === targetCenter?.centerId,
+      )
+      command = buildV26TransferTeacherCommand(
+        teacher,
+        sourceAssignment,
+        targetCenter,
+        targetAssignment,
+      )
+    } else {
+      return
+    }
+  } catch (error) {
+    v26TeacherRegistryCapabilityState = {
+      ...v26TeacherRegistryCapabilityState,
+      message: String(error?.message || error),
+      messageTone: 'error',
+    }
+    render()
+    return
+  }
+  await writeV26TeacherRegistryCommand(command, 'assignment')
+}
+
 async function handleTeacherFormSave(event = null) {
   event?.preventDefault?.()
 
@@ -14754,56 +14937,61 @@ async function handleTeacherFormSave(event = null) {
     return
   }
 
-  const errors = validateTeacherForm(teacherFormState.values)
-
-  if (Object.keys(errors).length) {
-    teacherFormState = {
-      ...teacherFormState,
-      errors,
-    }
-    render()
-    return
-  }
-
-  let savedTeacher = null
-  const commandIdempotencyKey = teacherFormState.commandIdempotencyKey || createCoreCommandIdempotencyKey()
-  const commandLocalId = teacherFormState.commandLocalId || `teacher-${Date.now()}`
-  teacherFormState = { ...teacherFormState, commandIdempotencyKey, commandLocalId }
-
-  if (teacherFormState.mode === 'edit') {
-    const existingTeacher = getTeacherById(teacherFormState.teacherId)
-
-    if (!existingTeacher) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)) {
+    if (v26TeacherRegistryCapabilityState.canManageRegistry !== true) return
+    const existingTeacher = teacherFormState.mode === 'edit'
+      ? getTeacherById(teacherFormState.teacherId)
+      : null
+    if (teacherFormState.mode === 'edit' && (!existingTeacher || existingTeacher.v26Canonical !== true)) {
       teacherFormState = {
         ...teacherFormState,
-        errors: {
-          form: 'Không tìm thấy giáo viên cần sửa.',
-        },
+        errors: { ...teacherFormState.errors, form: 'Hồ sơ cũ cần được rà soát; hệ thống không tự ghép hoặc ghi đè.' },
       }
       render()
       return
     }
-
-    const updatedTeacher = buildTeacherFromForm(teacherFormState.values, existingTeacher)
-    savedTeacher = updatedTeacher
-  } else {
-    const createdTeacher = buildTeacherFromForm(teacherFormState.values)
-    savedTeacher = { ...createdTeacher, id: commandLocalId }
-  }
-
-  const result = await commitTeacherProjection(savedTeacher, 'teacher-save', commandIdempotencyKey)
-
-  if (!result.ok) {
-    teacherFormState = {
-      ...teacherFormState,
-      errors: { ...teacherFormState.errors, form: result.error || 'Giáo viên chưa được lưu.' },
+    const errors = validateTeacherForm(teacherFormState.values)
+    if (Object.keys(errors).length) {
+      teacherFormState = { ...teacherFormState, errors }
+      render()
+      return
     }
+    let command
+    try {
+      command = buildV26TeacherCommand(teacherFormState.values, existingTeacher)
+    } catch (error) {
+      teacherFormState = {
+        ...teacherFormState,
+        errors: { ...teacherFormState.errors, form: String(error?.message || error) },
+      }
+      render()
+      return
+    }
+    const result = await writeV26TeacherRegistryCommand(command, 'teacher')
+    if (!result.ok) {
+      teacherFormState = {
+        ...teacherFormState,
+        errors: { ...teacherFormState.errors, form: result.error || 'Giáo viên chưa được lưu.' },
+      }
+      render()
+      return
+    }
+    selectedTeacherId = result.teacher_id || command.teacher_id
+    teacherFormState = null
     render()
     return
   }
 
-  selectedTeacherId = result.entity.id
-  teacherFormState = null
+  teacherFormState = {
+    ...teacherFormState,
+    errors: {
+      ...teacherFormState.errors,
+      form: v26TeacherRegistryCapabilityState.status === V26_TEACHER_REGISTRY_CAPABILITY_STATUS.FAILED
+        ? 'Danh bạ giáo viên hiện chưa tải được. Nội dung đang nhập vẫn được giữ nguyên.'
+        : 'Danh bạ giáo viên chưa sẵn sàng. Nội dung đang nhập vẫn được giữ nguyên.',
+    },
+  }
   render()
 }
 
@@ -15046,6 +15234,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
     resetV23AttendanceRuntimeForAccessBoundary('')
     resetV24PackageCycleRuntimeForAccessBoundary('')
+    resetV26TeacherRegistryRuntimeForAccessBoundary('')
     resetWallpaperRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
@@ -15119,6 +15308,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   resetV22StudentEnrollmentRuntimeForAccessBoundary('')
   resetV23AttendanceRuntimeForAccessBoundary('')
   resetV24PackageCycleRuntimeForAccessBoundary('')
+  resetV26TeacherRegistryRuntimeForAccessBoundary('')
   resetWallpaperRuntimeForAccessBoundary(user.id)
   installationHandoffState = purgeInstallationHandoffState()
 
@@ -15293,6 +15483,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
     await refreshV23AttendanceCapability({ silent: true })
     await refreshV24PackageCycles({ reason: 'capability-probe', silent: true })
+    await refreshV26TeacherRegistry({ reason: 'capability-probe', silent: true })
     await loadCenterMemberProfiles(syncId)
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
@@ -15609,16 +15800,6 @@ async function commitStudentProjection(student, reason, idempotencyKey) {
   }
 }
 
-async function commitTeacherProjection(teacher, reason, idempotencyKey) {
-  const result = await writeTeacherThroughCloud(teacher, reason, idempotencyKey)
-
-  if (!result.ok) return result
-
-  teachers = upsertCommittedCoreProjection(teachers, result.entity)
-  saveStoredTeachers(teachers)
-  return result
-}
-
 async function writeClassSessionThroughCloud(
   classSession,
   reason = 'class-session-save',
@@ -15812,74 +15993,6 @@ function handleStudentRealtimeRecord(record) {
   students = mergeResult.students
   saveStoredStudents(students)
   render()
-}
-
-async function writeTeacherThroughCloud(teacher, reason = 'teacher-save', idempotencyKey) {
-  const accessState = buildCurrentOnlineAccessState({
-    cloudReady: cloudDbState.readinessStatus === 'ready',
-  })
-
-  if (!canWriteEntity(accessState, CLOUD_ENTITY_TYPES.TEACHER)) {
-    if (cloudStatus.authStatus === 'signed-in') {
-      cloudDbState = {
-        ...cloudDbState,
-        message: getOnlineAccessMessage(accessState),
-        messageTone: 'error',
-      }
-    }
-    return { ok: false, skipped: true, error: getOnlineAccessMessage(accessState) }
-  }
-
-  const runId = ++teacherCloudWriteRunId
-  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
-
-  if (!readiness.ok) {
-    if (runId === teacherCloudWriteRunId) {
-      cloudDbState = {
-        ...cloudDbState,
-        readinessStatus: 'error',
-        message: readiness.error,
-        messageTone: 'error',
-        lastUpdatedAt: new Date().toISOString(),
-      }
-      render()
-    }
-    return readiness
-  }
-
-  const writeAccessState = buildOnlineAccessState({
-    isSupabaseConfigured: true,
-    isSignedIn: Boolean(readiness.user),
-    user: readiness.user,
-    centerId: readiness.centerId,
-    membership: readiness.membership,
-    role: readiness.membership?.role,
-    cloudReady: readiness.ready !== false,
-  })
-  const result = await upsertTeacherCloudEntity({
-    supabase: readiness.supabase,
-    centerId: readiness.centerId,
-    teacher,
-    userId: readiness.user?.id,
-    accessState: writeAccessState,
-    idempotencyKey,
-  })
-
-  if (runId !== teacherCloudWriteRunId) {
-    return result
-  }
-
-  cloudDbState = {
-    ...cloudDbState,
-    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
-    message: result.ok
-      ? `Da luu cloud Giao vien (${reason}).`
-      : result.error || 'Chua the dong bo cloud Giao vien.',
-    messageTone: result.ok ? 'success' : 'error',
-    lastUpdatedAt: result.ok ? new Date().toISOString() : cloudDbState.lastUpdatedAt,
-  }
-  render()
-  return result
 }
 
 async function startTeacherRealtimeSubscription(syncId = cloudUserSyncId) {
@@ -17669,6 +17782,81 @@ async function refreshV24PackageCycles({ reason = 'manual-refresh', silent = tru
     centerId,
     status: V24_PACKAGE_CYCLE_CAPABILITY_STATUS.READY,
     message: reason === 'after-server-commit' ? 'Tiến độ chu kỳ học phí đã được cập nhật.' : '',
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  })
+  render()
+  return result
+}
+
+async function refreshV26TeacherRegistry({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++v26TeacherRegistrySyncRunId
+  if (!centerContext.ok) {
+    resetV26TeacherRegistryRuntimeForAccessBoundary('')
+    return {
+      ok: false,
+      outcome_code: 'INVALID_CENTER',
+      error: getV26TeacherRegistryOutcomeMessage('INVALID_CENTER'),
+    }
+  }
+
+  const authorityEstablished = v26TeacherRegistryCapabilityState.centerId === centerId
+    && (
+      v26TeacherRegistryCapabilityState.status === V26_TEACHER_REGISTRY_CAPABILITY_STATUS.READY
+      || v26TeacherRegistryCapabilityState.authorityEstablished === true
+    )
+  teacherAssignmentTargetCenterId = ''
+  v26TeacherRegistryCapabilityState = createV26TeacherRegistryCapabilityState({
+    centerId,
+    status: V26_TEACHER_REGISTRY_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    authorityEstablished,
+    message: silent ? '' : 'Đang tải danh bạ giáo viên của cơ sở…',
+  })
+  if (!silent) render()
+
+  const result = await pullV26TeacherRegistry({ supabase: getSupabaseClient(), centerId })
+  if (runId !== v26TeacherRegistrySyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getV26TeacherRegistryOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+
+  if (!result.ok) {
+    const unavailable = isV26TeacherRegistryBackendUnavailable(result)
+    v26TeacherRegistryCapabilityState = createV26TeacherRegistryCapabilityState({
+      centerId,
+      status: unavailable
+        ? V26_TEACHER_REGISTRY_CAPABILITY_STATUS.UNAVAILABLE
+        : V26_TEACHER_REGISTRY_CAPABILITY_STATUS.FAILED,
+      message: unavailable
+        ? getV26TeacherRegistryOutcomeMessage('BACKEND_NOT_DEPLOYED')
+        : result.error || getV26TeacherRegistryOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? 'warning' : 'error',
+      authorityEstablished,
+    })
+    render()
+    return result
+  }
+
+  v26TeacherRegistryCapabilityState = createV26TeacherRegistryCapabilityState({
+    centerId,
+    status: V26_TEACHER_REGISTRY_CAPABILITY_STATUS.READY,
+    role: result.role,
+    canManageRegistry: result.canManageRegistry,
+    authorityEstablished: true,
+    assignedTeachers: result.assignedTeachers,
+    registryTeachers: result.registryTeachers,
+    managedCenters: result.managedCenters,
+    assignmentEvents: result.assignmentEvents,
+    message: reason === 'after-server-commit'
+      ? 'Danh bạ giáo viên đã được cập nhật.'
+      : '',
     messageTone: 'success',
     lastLoadedAt: new Date().toISOString(),
   })
@@ -20993,6 +21181,7 @@ async function initializeSupabaseAuth() {
     resetV22StudentEnrollmentRuntimeForAccessBoundary('')
     resetV23AttendanceRuntimeForAccessBoundary('')
     resetV24PackageCycleRuntimeForAccessBoundary('')
+    resetV26TeacherRegistryRuntimeForAccessBoundary('')
     cloudStatus = {
       ...cloudStatus,
       authStatus: 'signed-out',
@@ -27196,6 +27385,9 @@ function bindEvents() {
   })
 
   document.querySelector('[data-teacher-action="open-create"]')?.addEventListener('click', () => {
+    const centerId = getCurrentCanonicalCenterContext().centerId
+    if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)
+      || v26TeacherRegistryCapabilityState.canManageRegistry !== true) return
     teacherFormState = createEmptyTeacherFormState()
     selectedTeacherId = null
     render()
@@ -27213,7 +27405,24 @@ function bindEvents() {
   document.querySelectorAll('[data-teacher-action="close-profile"]').forEach((button) => {
     button.addEventListener('click', () => {
       selectedTeacherId = null
+      teacherAssignmentTargetCenterId = ''
       render()
+    })
+  })
+
+  document.querySelector('[data-v26-teacher-assignment-target]')?.addEventListener('change', (event) => {
+    teacherAssignmentTargetCenterId = event.currentTarget.value
+    render()
+  })
+
+  document.querySelectorAll('[data-v26-teacher-assignment-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (button.disabled) return
+      void handleV26TeacherAssignmentAction(
+        button.dataset.v26TeacherAssignmentAction,
+        button.dataset.teacherId,
+        button.dataset.assignmentCenterId,
+      )
     })
   })
 
@@ -27310,9 +27519,12 @@ function bindEvents() {
   document.querySelectorAll('[data-teacher-action="open-edit"]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation()
-      const teacher = teachers.find((item) => item.id === button.dataset.teacherId)
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)
+        || v26TeacherRegistryCapabilityState.canManageRegistry !== true) return
+      const teacher = getTeacherById(button.dataset.teacherId)
 
-      if (!teacher) {
+      if (!teacher || teacher.v26Canonical !== true) {
         return
       }
 
@@ -27323,9 +27535,12 @@ function bindEvents() {
 
   document.querySelectorAll('[data-teacher-action="edit-from-profile"]').forEach((button) => {
     button.addEventListener('click', () => {
-      const teacher = teachers.find((item) => item.id === button.dataset.teacherId)
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)
+        || v26TeacherRegistryCapabilityState.canManageRegistry !== true) return
+      const teacher = getTeacherById(button.dataset.teacherId)
 
-      if (!teacher) {
+      if (!teacher || teacher.v26Canonical !== true) {
         return
       }
 
@@ -27337,9 +27552,12 @@ function bindEvents() {
   document.querySelectorAll('[data-teacher-action="stop-teaching"]').forEach((button) => {
     button.addEventListener('click', async (event) => {
       event.stopPropagation()
-      const teacher = teachers.find((item) => item.id === button.dataset.teacherId)
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)
+        || v26TeacherRegistryCapabilityState.canManageRegistry !== true) return
+      const teacher = getTeacherById(button.dataset.teacherId)
 
-      if (!teacher || teacher.status === 'inactive') {
+      if (!teacher || teacher.v26Canonical !== true || teacher.status === 'inactive') {
         return
       }
 
@@ -27351,11 +27569,12 @@ function bindEvents() {
         return
       }
 
-      await commitTeacherProjection({
+      await writeV26TeacherRegistryCommand(buildV26TeacherCommand({
         ...teacher,
+        specialties: teacher.specialties,
+        levels: teacher.levels,
         status: 'inactive',
-        updatedAt: new Date().toISOString(),
-      }, 'teacher-status')
+      }, teacher), 'teacher')
       render()
     })
   })
@@ -29493,7 +29712,8 @@ function bindEvents() {
       }
 
       if (fieldName === 'teacherId' && control.value) {
-        const selectedTeacher = teachers.find((teacher) => teacher.id === control.value)
+        const selectedTeacher = getCurrentTeacherReferenceProjection()
+          .find((teacher) => teacher.id === control.value)
 
         if (selectedTeacher) {
           nextValues.teacherName = selectedTeacher.displayName || selectedTeacher.fullName || ''
@@ -29622,7 +29842,8 @@ function bindEvents() {
     ).map((input) => input.value)
 
     if (nextValues.teacherId) {
-      const selectedTeacher = teachers.find((teacher) => String(teacher.id) === String(nextValues.teacherId))
+      const selectedTeacher = getCurrentTeacherReferenceProjection()
+        .find((teacher) => String(teacher.id) === String(nextValues.teacherId))
 
       if (selectedTeacher) {
         nextValues.teacherName = selectedTeacher.displayName || selectedTeacher.fullName || ''
@@ -29709,12 +29930,17 @@ function bindEvents() {
       const updatedSession = buildScheduleSessionFromForm(
         formValues,
         existingSession,
-        teachers,
+        getCurrentTeacherReferenceProjection(),
         classSessions,
       )
       savedScheduleSession = updatedSession
     } else {
-      const createdSession = buildScheduleSessionFromForm(formValues, null, teachers, classSessions)
+      const createdSession = buildScheduleSessionFromForm(
+        formValues,
+        null,
+        getCurrentTeacherReferenceProjection(),
+        classSessions,
+      )
       savedScheduleSession = { ...createdSession, id: commandLocalId, createdAt: commandCreatedAt }
     }
 

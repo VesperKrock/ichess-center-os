@@ -3,10 +3,10 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
   entry('khach-hang-tu-van', ['C5.3 CRM', 'Parent/Student operational links'], ['C5.1 Student reference'], ['core', 'crm', 'parent-links']),
   entry(
     'giao-vien',
-    ['C5.1 Core Teacher'],
-    ['C5.1 Schedule', 'C5.2 Session Report', 'C5.5 Staff link'],
-    ['core'],
-    ['attendance', 'staff'],
+    ['V2.6 Canonical Teacher Registry'],
+    ['C5.1 legacy Teacher/Schedule references', 'C5.2 Session Report', 'C5.5 Staff link'],
+    ['teacher-registry'],
+    ['core', 'attendance', 'staff'],
   ),
   entry(
     'nhan-vien',

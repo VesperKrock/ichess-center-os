@@ -300,6 +300,10 @@ export function renderTeacherModule(
   const staffAvailable = staffContext.staffAvailable !== false
   const staffCapabilityStatus = String(staffContext.staffCapabilityStatus || 'idle')
   const staffManagementAvailable = staffContext.staffManagementAvailable === true
+  const registryContext = staffContext.registryContext || {}
+  const registryReady = registryContext.status === 'ready'
+  const registryContractAvailable = registryReady || registryContext.authorityEstablished === true
+  const canManageRegistry = registryReady && registryContext.canManageRegistry === true
 
   return `
     <section class="teacher-module ${formState || selectedTeacher ? 'panel-open' : ''}" aria-label="Giáo viên">
@@ -317,11 +321,15 @@ export function renderTeacherModule(
             data-teacher-action="open-staff-management"
             ${staffManagementAvailable ? '' : 'disabled aria-disabled="true"'}
           >${escapeHtml(getStaffManagementEntryLabel(staffCapabilityStatus))}</button>
-          <button class="teacher-add-button" type="button" data-teacher-action="open-create">
-            + Thêm giáo viên
-          </button>
+          ${canManageRegistry
+            ? `<button class="teacher-add-button" type="button" data-teacher-action="open-create">
+                + Thêm giáo viên
+              </button>`
+            : ''}
         </div>
       </div>
+
+      ${renderTeacherRegistryAvailability(registryContext)}
 
       ${renderTeacherOptionalAvailability({
         attendanceAvailable,
@@ -389,7 +397,9 @@ export function renderTeacherModule(
         }
       </section>
       ${selectedTeacher
-        ? renderTeacherProfile(
+        ? registryReady
+          ? renderV26TeacherDirectoryProfile(selectedTeacher, registryContext)
+          : renderTeacherProfile(
             selectedTeacher,
             teacherStudentLinkMap.get(normalizeId(selectedTeacher.id)),
             classSessions,
@@ -398,12 +408,27 @@ export function renderTeacherModule(
             sessionReports,
             staffMembers,
             { attendanceAvailable, staffAvailable },
-          )
+            )
         : ''}
       ${staffLinkState ? renderTeacherStaffLinkModal(staffLinkState, teachers, staffMembers, departments) : ''}
-      ${formState ? renderTeacherForm(formState, classSessions) : ''}
+      ${formState ? registryContractAvailable ? renderV26TeacherForm(formState) : renderTeacherForm(formState, classSessions) : ''}
     </section>
   `
+}
+
+function renderTeacherRegistryAvailability(context = {}) {
+  if (context.status === 'ready') {
+    return context.canManageRegistry
+      ? '<p class="teacher-registry-state is-ready" role="status">Danh bạ giáo viên chuẩn đã cập nhật. Bạn có thể quản lý phân công nhiều cơ sở.</p>'
+      : '<p class="teacher-registry-state is-ready" role="status">Danh sách chỉ gồm giáo viên đang được phân công tại cơ sở này.</p>'
+  }
+  if (context.status === 'loading' || context.status === 'idle') {
+    return '<p class="teacher-registry-state" role="status">Đang tải danh bạ giáo viên của cơ sở…</p>'
+  }
+  if (context.status === 'unavailable') {
+    return '<p class="teacher-registry-state is-warning" role="status">Danh bạ giáo viên dùng chung hiện chưa khả dụng.</p>'
+  }
+  return '<p class="teacher-registry-state is-error" role="status">Danh bạ giáo viên hiện chưa tải được. Vui lòng bấm Làm mới.</p>'
 }
 
 function getStaffManagementEntryLabel(status) {
@@ -527,7 +552,11 @@ function renderTeacherRow(teacher, studentLinks = createTeacherStudentLinkSummar
       <td>
         <span title="${escapeAttribute(teacher.phone)}">${escapeHtml(teacher.phone || '-')}</span>
         <span title="${escapeAttribute(teacher.email)}">${escapeHtml(teacher.email || '-')}</span>
-        <span class="teacher-account-readiness">${escapeHtml(getTeacherAccountStatusLabel(teacher.accountStatus))}</span>
+        <span class="teacher-account-readiness">${teacher.v26Canonical
+          ? 'Hồ sơ giáo viên chuẩn'
+          : teacher.legacyReviewRequired
+            ? 'Hồ sơ cũ · Cần rà soát'
+            : escapeHtml(getTeacherAccountStatusLabel(teacher.accountStatus))}</span>
       </td>
       <td>
         <span class="teacher-status-badge is-${escapeAttribute(teacher.status)}">
@@ -1482,6 +1511,132 @@ function renderTeacherAccountReadinessProfile(teacher) {
   `
 }
 
+function renderV26TeacherDirectoryProfile(teacher, context = {}) {
+  const canManage = context.canManageRegistry === true
+  const isCanonical = teacher.v26Canonical === true
+  const assignments = Array.isArray(teacher.assignments)
+    ? teacher.assignments
+    : teacher.assignment
+      ? [teacher.assignment]
+      : []
+  const activeAssignments = assignments.filter((assignment) => assignment.status === 'assigned')
+  const managedCenters = Array.isArray(context.managedCenters) ? context.managedCenters : []
+  const targetCenterId = context.assignmentTargetCenterId || managedCenters[0]?.centerId || ''
+  const currentAssignment = activeAssignments.find(
+    (assignment) => assignment.centerId === context.centerId,
+  ) || null
+  const targetAssignment = assignments.find(
+    (assignment) => assignment.centerId === targetCenterId,
+  ) || null
+  const targetIsActive = targetAssignment?.status === 'assigned'
+
+  return `
+    <div class="teacher-profile-backdrop" role="presentation">
+      <section class="teacher-profile-panel teacher-registry-profile" aria-label="Hồ sơ giáo viên">
+        <div class="teacher-profile-header">
+          <div class="teacher-profile-title teacher-profile-title-compact">
+            <h4>${escapeHtml(teacher.fullName || 'Giáo viên')}</h4>
+            <span>${escapeHtml(teacher.displayName || '-')}</span>
+            <div class="teacher-profile-badges">
+              <span class="teacher-status-badge is-${escapeAttribute(teacher.status)}">${escapeHtml(getTeacherStatusLabel(teacher.status))}</span>
+              <span class="teacher-type-badge is-${escapeAttribute(teacher.teacherType)}">${escapeHtml(getTeacherTypeLabel(teacher.teacherType))}</span>
+            </div>
+          </div>
+          <div class="teacher-profile-actions">
+            ${canManage && isCanonical
+              ? `<button type="button" data-teacher-action="edit-from-profile" data-teacher-id="${escapeAttribute(teacher.id)}">Sửa hồ sơ</button>`
+              : ''}
+            <button type="button" data-teacher-action="close-profile">Đóng</button>
+          </div>
+        </div>
+        <div class="teacher-registry-profile-body">
+          ${!isCanonical
+            ? '<p class="teacher-registry-state is-warning" role="status">Hồ sơ cũ của cơ sở đang được giữ nguyên để đối chiếu. Hệ thống không tự ghép theo tên, email hoặc số điện thoại.</p>'
+            : ''}
+          ${renderProfileSection('Thông tin cơ bản', [
+            ['Họ tên', teacher.fullName],
+            ['Tên hiển thị', teacher.displayName],
+            ['Số điện thoại', teacher.phone],
+            ['Email', teacher.email],
+            ['Trạng thái', getTeacherStatusLabel(teacher.status)],
+            ['Hình thức', getTeacherTypeLabel(teacher.teacherType)],
+            ['Vai trò chính', teacher.mainRole],
+          ])}
+          ${renderProfileTagGroup('Chuyên môn', teacher.specialties || [], 'Chưa cập nhật')}
+          ${renderProfileTagGroup('Lớp dạy phù hợp', (teacher.levels || []).map(getTeacherLevelLabel), 'Chưa cập nhật')}
+          ${canManage && isCanonical
+            ? renderV26TeacherAssignments({
+                teacher,
+                activeAssignments,
+                managedCenters,
+                targetCenterId,
+                targetAssignment,
+                targetIsActive,
+                currentAssignment,
+                isSaving: context.isSaving === true,
+                message: context.message,
+              })
+            : ''}
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderV26TeacherAssignments({
+  teacher,
+  activeAssignments,
+  managedCenters,
+  targetCenterId,
+  targetAssignment,
+  targetIsActive,
+  currentAssignment,
+  isSaving,
+  message,
+}) {
+  return `
+    <section class="teacher-registry-assignments" aria-label="Phân công cơ sở">
+      <div class="teacher-profile-pane-heading">
+        <h5>Phân công cơ sở</h5>
+        <span>${activeAssignments.length.toLocaleString('vi-VN')} cơ sở đang nhận</span>
+      </div>
+      ${activeAssignments.length
+        ? `<div class="teacher-registry-assignment-list">${activeAssignments.map((assignment) => `
+            <div>
+              <span><strong>${escapeHtml(assignment.centerName || assignment.centerId)}</strong></span>
+              <button type="button" data-v26-teacher-assignment-action="remove"
+                data-teacher-id="${escapeAttribute(teacher.id)}"
+                data-assignment-center-id="${escapeAttribute(assignment.centerId)}"
+                ${isSaving ? 'disabled aria-disabled="true"' : ''}>Gỡ phân công</button>
+            </div>`).join('')}</div>`
+        : '<p>Giáo viên hiện chưa được phân công tại cơ sở Owner quản lý.</p>'}
+      <div class="teacher-registry-assignment-controls">
+        <label>
+          <span>Cơ sở đích</span>
+          <select data-v26-teacher-assignment-target ${isSaving ? 'disabled aria-disabled="true"' : ''}>
+            ${managedCenters.map((center) => `
+              <option value="${escapeAttribute(center.centerId)}" ${center.centerId === targetCenterId ? 'selected' : ''}>
+                ${escapeHtml(center.centerName || center.centerId)}
+              </option>`).join('')}
+          </select>
+        </label>
+        <button type="button" data-v26-teacher-assignment-action="assign"
+          data-teacher-id="${escapeAttribute(teacher.id)}"
+          ${isSaving || !targetCenterId || targetIsActive ? 'disabled aria-disabled="true"' : ''}>Phân công thêm</button>
+        <button type="button" data-v26-teacher-assignment-action="transfer"
+          data-teacher-id="${escapeAttribute(teacher.id)}"
+          ${isSaving || !currentAssignment || !targetCenterId || targetIsActive || targetCenterId === currentAssignment?.centerId
+            ? 'disabled aria-disabled="true"'
+            : ''}>Chuyển từ cơ sở hiện tại</button>
+      </div>
+      ${targetAssignment?.status === 'removed'
+        ? '<p class="teacher-registry-note">Phân công cũ tại cơ sở đích sẽ được mở lại với cùng mã quan hệ.</p>'
+        : ''}
+      ${message ? `<p class="teacher-registry-note" role="status">${escapeHtml(message)}</p>` : ''}
+    </section>
+  `
+}
+
 function renderTeacherStaffLinkProfile(teacher, staffLink) {
   if (staffLink.status === 'duplicate') {
     return `
@@ -1835,6 +1990,64 @@ function renderTeacherStudentRow(link) {
         ${escapeHtml(link.sourceLabel)}
       </span>
     </article>
+  `
+}
+
+function renderV26TeacherForm(formState) {
+  const isEditMode = formState.mode === 'edit'
+  return `
+    <div class="teacher-form-backdrop" role="presentation">
+      <form class="teacher-form-panel" data-teacher-form>
+        <div class="teacher-form-header">
+          <h4>${isEditMode ? 'Sửa hồ sơ giáo viên chuẩn' : 'Thêm giáo viên chuẩn'}</h4>
+          <button type="button" data-teacher-action="cancel-form" aria-label="Đóng form">×</button>
+        </div>
+        <p class="teacher-registry-note">
+          Hồ sơ này dùng chung khi cùng giáo viên được phân công tại nhiều cơ sở. Lịch dạy, học viên và báo cáo vẫn thuộc riêng từng cơ sở.
+        </p>
+        <div class="teacher-form-grid">
+          ${renderTeacherInputField('Họ tên đầy đủ', 'fullName', formState)}
+          ${renderTeacherInputField('Tên hiển thị', 'displayName', formState)}
+          ${renderTeacherInputField('Số điện thoại', 'phone', formState)}
+          ${renderTeacherInputField('Email', 'email', formState, 'email')}
+          ${renderTeacherInputField('Năm sinh', 'birthYear', formState, 'text', '1998')}
+          ${renderTeacherSelectField(
+            'Trạng thái',
+            'status',
+            formState,
+            teacherStatuses.map((status) => [status, getTeacherStatusLabel(status)]),
+          )}
+          ${renderTeacherSelectField(
+            'Hình thức',
+            'teacherType',
+            formState,
+            teacherTypes.map((teacherType) => [teacherType, getTeacherTypeLabel(teacherType)]),
+          )}
+          ${renderTeacherInputField('Vai trò chính', 'mainRole', formState)}
+          ${renderTeacherInputField('Chuyên môn (ngăn cách bằng dấu phẩy)', 'specialties', formState)}
+          <fieldset class="teacher-level-field">
+            <legend>Lớp dạy phù hợp</legend>
+            <div class="teacher-level-options">
+              ${teacherLevelOptions.map((level) => `
+                <label>
+                  <input type="checkbox" value="${escapeAttribute(level)}" data-teacher-level-field
+                    ${formState.values.levels.includes(level) ? 'checked' : ''} />
+                  <span>${escapeHtml(getTeacherLevelLabel(level))}</span>
+                </label>`).join('')}
+            </div>
+          </fieldset>
+          <label class="teacher-form-field teacher-form-field-wide">
+            <span>Ghi chú hồ sơ</span>
+            <textarea data-teacher-form-field="note">${escapeHtml(formState.values.note ?? '')}</textarea>
+          </label>
+        </div>
+        ${renderTeacherFormErrors(formState.errors)}
+        <div class="teacher-form-actions">
+          <button type="button" data-teacher-action="cancel-form">Hủy</button>
+          <button class="teacher-save-button" type="button" data-teacher-action="save-form">Lưu giáo viên</button>
+        </div>
+      </form>
+    </div>
   `
 }
 

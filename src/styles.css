@@ -8283,6 +8283,84 @@ h3 {
   box-shadow: 0 6px 14px rgba(31, 93, 153, 0.24);
 }
 
+.teacher-registry-state,
+.teacher-registry-note {
+  margin: 0;
+  border: 1px solid rgba(118, 164, 231, 0.24);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #c8d8eb;
+  background: rgba(35, 91, 145, 0.12);
+  font-size: 0.82rem;
+}
+
+.teacher-registry-state.is-ready {
+  border-color: rgba(80, 194, 132, 0.28);
+  color: #b8f0cf;
+  background: rgba(32, 123, 76, 0.12);
+}
+
+.teacher-registry-state.is-warning {
+  border-color: rgba(240, 180, 91, 0.3);
+  color: #ffe4b8;
+  background: rgba(154, 96, 18, 0.1);
+}
+
+.teacher-registry-state.is-error {
+  border-color: rgba(238, 105, 105, 0.32);
+  color: #ffd0d0;
+  background: rgba(145, 40, 40, 0.12);
+}
+
+.teacher-registry-profile-body,
+.teacher-registry-assignments,
+.teacher-registry-assignment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.teacher-registry-profile-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.teacher-registry-assignment-list > div,
+.teacher-registry-assignment-controls {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.teacher-registry-assignment-controls label {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 4px;
+}
+
+.teacher-registry-assignment-controls select,
+.teacher-registry-assignment-controls button,
+.teacher-registry-assignment-list button {
+  min-height: 36px;
+  border: 1px solid rgba(160, 184, 214, 0.28);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: #f4f7fb;
+  background: #101923;
+  font: inherit;
+}
+
+.teacher-registry-assignment-controls button:not(:disabled),
+.teacher-registry-assignment-list button:not(:disabled) {
+  cursor: pointer;
+}
+
+.teacher-registry-assignment-controls button:disabled,
+.teacher-registry-assignment-list button:disabled {
+  opacity: 0.5;
+}
+
 .teacher-list-section {
   display: grid;
   flex: 1 1 auto;
