@@ -143,14 +143,16 @@ assert.deepEqual(
 assert(missingReportCandidates.every((candidate) => candidate.sourceModule === 'thoi-khoa-bieu'))
 
 const inventoryCandidates = buildInventoryDueNotificationCandidates([
-  { id: 'request-due', centerId, requestCode: 'YC-01', neededDate: today, status: 'pending' },
-  { id: 'request-overdue', centerId, requestCode: 'YC-02', neededDate: '2026-09-11', status: 'preparing' },
-  { id: 'request-future', centerId, requestCode: 'YC-03', neededDate: '2026-09-13', status: 'pending' },
-  { id: 'request-done', centerId, requestCode: 'YC-04', neededDate: today, status: 'fulfilled' },
-  { id: 'request-foreign', centerId: 'center-b', requestCode: 'YC-05', neededDate: today, status: 'pending' },
+  { id: 'count-due', centerId, countCode: 'KKK-01', dueDate: today, dueState: 'due', status: 'draft' },
+  { id: 'count-overdue', centerId, countCode: 'KKK-02', dueDate: '2026-09-11', dueState: 'overdue', status: 'submitted' },
+  { id: 'count-future', centerId, countCode: 'KKK-03', dueDate: '2026-09-13', dueState: 'upcoming', status: 'draft' },
+  { id: 'count-done', centerId, countCode: 'KKK-04', dueDate: today, dueState: '', status: 'reconciled' },
+  { id: 'count-cancelled', centerId, countCode: 'KKK-05', dueDate: today, dueState: '', status: 'cancelled' },
+  { id: 'count-foreign', centerId: 'center-b', countCode: 'KKK-06', dueDate: today, dueState: 'due', status: 'draft' },
 ], { centerId, today })
-assert.deepEqual(inventoryCandidates.map((candidate) => candidate.entityId).sort(), ['request-due', 'request-overdue'])
-assert.equal(inventoryCandidates.find((candidate) => candidate.entityId === 'request-overdue').severity, 'danger')
+assert.deepEqual(inventoryCandidates.map((candidate) => candidate.entityId).sort(), ['count-due', 'count-overdue'])
+assert.equal(inventoryCandidates.find((candidate) => candidate.entityId === 'count-overdue').severity, 'danger')
+assert(inventoryCandidates.every((candidate) => candidate.entityType === 'inventoryCycleCount'))
 
 const firstSync = upsertNotificationCandidates([], [
   ...birthdayCandidates,
@@ -209,6 +211,8 @@ assert(mainSource.includes('data-notification-id="${escapeAttribute(notification
 assert(mainSource.includes("if (notificationElement.matches('button'))"))
 assert(mainSource.includes('openStudentDetailWindowFromChildInteraction(studentId)'))
 assert(mainSource.includes('scheduleWeekStartDate = getCurrentScheduleWeekStartDate'))
+assert(mainSource.includes('notification.meta?.cycleCountId'))
+assert(mainSource.includes('selectedInventoryCycleCountId = cycleCountId'))
 assert(mainSource.includes('if (!notification || !isProductionModuleAvailable(notification.sourceModule))'))
 assert(mainSource.includes('activeNotificationDataCenterId === binding.currentCenterId'))
 assert(mainSource.includes('resetTransientStateForCenterSwitch()'))

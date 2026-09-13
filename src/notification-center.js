@@ -11,7 +11,6 @@ export const notificationSourceLabels = {
   'he-thong': 'Hệ thống',
 }
 
-const activeInventoryRequestStatuses = new Set(['new', 'pending', 'preparing'])
 const inactiveStudentStatuses = new Set(['Ngưng học'])
 const oneOffAttentionLabels = {
   makeup: 'Học bù',
@@ -58,6 +57,7 @@ const derivedNotificationTypes = new Set([
   'tuition',
   'tuition-advisory',
   'inventory-request',
+  'inventory-cycle-count',
   'parent-followup',
 ])
 
@@ -293,46 +293,43 @@ export function buildMissingSessionReportNotificationCandidates(occurrences, ses
     })
 }
 
-export function buildInventoryDueNotificationCandidates(inventoryRequests, options = {}) {
-  const today = normalizeDateKey(options.today || new Date())
+export function buildInventoryDueNotificationCandidates(cycleCounts, options = {}) {
   const centerId = String(options.centerId || '').trim()
-  const timestamp = getDateKeyTimestamp(today)
+  if (!centerId) return []
 
-  if (!today) {
-    return []
-  }
-
-  return (inventoryRequests ?? [])
-    .filter((request) => {
-      const neededDate = normalizeDateKey(request?.neededDate)
-      return request?.id
-        && neededDate
-        && neededDate <= today
-        && activeInventoryRequestStatuses.has(request.status)
-        && (!centerId || !request.centerId || String(request.centerId) === centerId)
+  return (cycleCounts ?? [])
+    .filter((count) => {
+      const dueDate = normalizeDateKey(count?.dueDate)
+      return count?.id
+        && dueDate
+        && ['draft', 'submitted'].includes(count.status)
+        && ['due', 'overdue'].includes(count.dueState)
+        && String(count.centerId || '') === centerId
     })
-    .map((request) => {
-      const neededDate = normalizeDateKey(request.neededDate)
-      const requestCode = request.requestCode || request.id
-      const overdue = neededDate < today
+    .map((count) => {
+      const dueDate = normalizeDateKey(count.dueDate)
+      const countCode = count.countCode || count.id
+      const overdue = count.dueState === 'overdue'
+      const timestamp = count.updatedAt || count.createdAt || getDateKeyTimestamp(dueDate)
       return {
-        dedupeKey: `inventory-due:${request.id}:${neededDate}`,
+        dedupeKey: `inventory-cycle-count-due:${centerId}:${count.id}`,
         sourceModule: 'kho-hang',
         sourceLabel: notificationSourceLabels['kho-hang'],
-        type: 'inventory',
+        type: 'inventory-cycle-count',
         severity: overdue ? 'danger' : 'warning',
-        title: `${overdue ? 'Quá hạn' : 'Đến hạn'} xử lý: ${requestCode}`,
-        message: `Đề xuất kho cần xử lý vào ${neededDate}.`,
-        entityId: request.id,
-        entityType: 'inventoryRequest',
-        entityLabel: requestCode,
+        title: `${overdue ? 'Quá hạn' : 'Đến hạn'} kiểm kê: ${countCode}`,
+        message: `Phiên kiểm kê cần hoàn tất vào ${dueDate}.`,
+        entityId: count.id,
+        entityType: 'inventoryCycleCount',
+        entityLabel: countCode,
         createdAt: timestamp,
         updatedAt: timestamp,
         meta: {
-          requestId: String(request.id),
-          neededDate,
-          status: request.status,
-          signal: overdue ? 'inventory-overdue' : 'inventory-due-today',
+          cycleCountId: String(count.id),
+          dueDate,
+          dueState: count.dueState,
+          status: count.status,
+          signal: overdue ? 'inventory-cycle-count-overdue' : 'inventory-cycle-count-due',
         },
       }
     })

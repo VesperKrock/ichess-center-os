@@ -108,6 +108,21 @@ import {
   pullC56InventorySharedTruth,
 } from './cloud-authoritative-inventory.js'
 import {
+  buildV27ACancelCycleCountCommand,
+  buildV27AReconcileCycleCountCommand,
+  buildV27AStartCycleCountCommand,
+  buildV27ASubmitCycleCountCommand,
+  createV27AInventoryCycleCountCapabilityState,
+  createV27AInventoryCycleCountIdempotencyKey,
+  createV27AInventoryCycleCountRetryFingerprint,
+  getV27AInventoryCycleCountOutcomeMessage,
+  isV27AInventoryCycleCountBackendUnavailable,
+  isV27AInventoryCycleCountCapabilityReady,
+  mutateV27AInventoryCycleCount,
+  pullV27AInventoryCycleCounts,
+  V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS,
+} from './cloud-authoritative-inventory-cycle-count.js'
+import {
   buildV21ClearSharedWallpaperCommand,
   buildV21SetSharedWallpaperCommand,
   buildV21SetTuitionPackageStatusCommand,
@@ -895,6 +910,9 @@ let c56InventorySharedTruthState = {
 let c56InventoryCapabilityState = createC56InventoryCapabilityState()
 let c56InventorySyncRunId = 0
 const c56InventoryRetryCommands = new Map()
+let v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState()
+let v27aInventoryCycleCountSyncRunId = 0
+const v27aInventoryCycleCountRetryCommands = new Map()
 let c57CalendarNotesSharedTruthState = {
   centerId: '',
   isLoading: false,
@@ -1046,6 +1064,7 @@ let cashbookReconciliationFormState = null
 let inventoryItems = []
 let inventoryMovements = []
 let inventoryRequests = []
+let inventoryCycleCounts = []
 let activeNotificationDataCenterId = getCurrentStorageCenterId()
 let inventoryFilters = { ...initialInventoryFilters }
 let inventoryMovementFilters = { ...initialInventoryMovementFilters }
@@ -1058,6 +1077,11 @@ let selectedInventoryMovementId = null
 let selectedInventoryRequestId = null
 let isInventoryHistoryPanelOpen = false
 let isInventoryRequestsPanelOpen = false
+let isInventoryCycleCountPanelOpen = false
+let selectedInventoryCycleCountId = null
+let inventoryCycleCountDueDate = new Date().toISOString().slice(0, 10)
+let inventoryCycleCountObservedByLineId = {}
+let inventoryCycleCountExplanationByLineId = {}
 let reportState = createInitialReportState()
 let reportTransactionDrilldownState = null
 let reportTransactionDrilldownToken = 0
@@ -1770,9 +1794,12 @@ function resetC55StaffHrRuntimeForAccessBoundary(centerId = '') {
 function resetC56InventoryRuntimeForAccessBoundary(centerId = '') {
   c56InventorySyncRunId += 1
   c56InventoryRetryCommands.clear()
+  v27aInventoryCycleCountSyncRunId += 1
+  v27aInventoryCycleCountRetryCommands.clear()
   inventoryItems = []
   inventoryMovements = []
   inventoryRequests = []
+  inventoryCycleCounts = []
   inventoryFormState = null
   inventoryMovementFormState = null
   inventoryRequestFormState = null
@@ -1781,6 +1808,11 @@ function resetC56InventoryRuntimeForAccessBoundary(centerId = '') {
   selectedInventoryRequestId = null
   isInventoryHistoryPanelOpen = false
   isInventoryRequestsPanelOpen = false
+  isInventoryCycleCountPanelOpen = false
+  selectedInventoryCycleCountId = null
+  inventoryCycleCountDueDate = new Date().toISOString().slice(0, 10)
+  inventoryCycleCountObservedByLineId = {}
+  inventoryCycleCountExplanationByLineId = {}
   c56InventorySharedTruthState = {
     centerId,
     isLoading: false,
@@ -1793,6 +1825,7 @@ function resetC56InventoryRuntimeForAccessBoundary(centerId = '') {
     legacySummary: null,
   }
   c56InventoryCapabilityState = createC56InventoryCapabilityState({ centerId })
+  v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({ centerId })
 }
 
 function clearC57CalendarNotesProjection() {
@@ -2128,6 +2161,7 @@ function reloadLocalDataForResolvedCenter() {
   inventoryItems = []
   inventoryMovements = []
   inventoryRequests = []
+  inventoryCycleCounts = []
   notifications = syncAppNotifications(getStoredNotifications([]))
   deletedNotificationIds = getDeletedNotificationIds()
   activeLocalDataCenterId = getCurrentStorageCenterId()
@@ -9805,7 +9839,7 @@ async function handleInternalOpenCenter(centerId) {
   }
 
   await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
-  await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
+  await refreshInventoryAuthoritativeTruth({ reason: 'capability-probe', silent: true })
   await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
   await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
   await refreshV23AttendanceCapability({ silent: true })
@@ -12080,6 +12114,26 @@ function renderWindowBody(windowItem) {
         coreStatus,
         coreCurrent,
       },
+      {
+        counts: inventoryCycleCounts,
+        isPanelOpen: isInventoryCycleCountPanelOpen,
+        selectedCountId: selectedInventoryCycleCountId,
+        dueDate: inventoryCycleCountDueDate,
+        observedByLineId: inventoryCycleCountObservedByLineId,
+        explanationByLineId: inventoryCycleCountExplanationByLineId,
+        canWrite: isC56InventoryCapabilityReady(
+          c56InventoryCapabilityState,
+          getCurrentCanonicalCenterContext().centerId,
+        ) && isV27AInventoryCycleCountCapabilityReady(
+          v27aInventoryCycleCountCapabilityState,
+          getCurrentCanonicalCenterContext().centerId,
+        ) && canWriteC56InventorySharedTruth(
+          buildCurrentOnlineAccessState({ cloudReady: true }),
+        ).canWrite,
+        isSaving: v27aInventoryCycleCountCapabilityState.isSaving,
+        message: v27aInventoryCycleCountCapabilityState.message,
+        messageTone: v27aInventoryCycleCountCapabilityState.messageTone,
+      },
     )
   }
 
@@ -13619,7 +13673,7 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
     case 'staff':
       return refreshC55StaffHrSharedTruth({ reason, silent: true })
     case 'inventory':
-      return refreshC56InventorySharedTruth({ reason, silent: true })
+      return refreshInventoryAuthoritativeTruth({ reason, silent: true })
     case 'calendar-notes':
       return refreshC57CalendarNotesSharedTruth({ reason, silent: true })
     case 'center-settings':
@@ -13638,6 +13692,10 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
     'attendance',
     'package-cycles',
     ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerContext.centerId)
+      && isV27AInventoryCycleCountCapabilityReady(
+        v27aInventoryCycleCountCapabilityState,
+        centerContext.centerId,
+      )
       ? ['inventory']
       : []),
   ]
@@ -15490,7 +15548,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
 
   if (cloudStatus.membershipStatus === 'loaded') {
     await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
-    await refreshC56InventorySharedTruth({ reason: 'capability-probe' })
+    await refreshInventoryAuthoritativeTruth({ reason: 'capability-probe', silent: true })
     await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
     await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
     await refreshV23AttendanceCapability({ silent: true })
@@ -17462,6 +17520,301 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
   })
   render()
   return result
+}
+
+async function refreshInventoryAuthoritativeTruth({ reason = 'manual-refresh', silent = false } = {}) {
+  const inventoryResult = await refreshC56InventorySharedTruth({ reason, silent })
+  if (!inventoryResult.ok) {
+    inventoryCycleCounts = []
+    selectedInventoryCycleCountId = null
+    v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({
+      centerId: getCurrentCanonicalCenterContext().centerId,
+      status: V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.FAILED,
+      message: 'Cần tải được tồn kho mới nhất trước khi dùng kiểm kê.',
+      messageTone: 'error',
+    })
+    render()
+    return inventoryResult
+  }
+  return refreshV27AInventoryCycleCounts({ reason, silent })
+}
+
+async function refreshV27AInventoryCycleCounts({ reason = 'manual-refresh', silent = false } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++v27aInventoryCycleCountSyncRunId
+  if (!centerContext.ok) {
+    inventoryCycleCounts = []
+    selectedInventoryCycleCountId = null
+    v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({
+      status: V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.FAILED,
+      message: getV27AInventoryCycleCountOutcomeMessage('INVALID_CENTER'),
+      messageTone: 'error',
+    })
+    render()
+    return {
+      ok: false,
+      outcome_code: 'INVALID_CENTER',
+      error: getV27AInventoryCycleCountOutcomeMessage('INVALID_CENTER'),
+    }
+  }
+
+  v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({
+    ...v27aInventoryCycleCountCapabilityState,
+    centerId,
+    status: V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    message: silent ? v27aInventoryCycleCountCapabilityState.message : 'Đang tải dữ liệu kiểm kê...',
+  })
+  if (!silent) render()
+
+  if (!canUseCoreCloudDb()) {
+    inventoryCycleCounts = []
+    selectedInventoryCycleCountId = null
+    const error = getV27AInventoryCycleCountOutcomeMessage('CLIENT_NOT_READY')
+    v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({
+      centerId,
+      status: V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.FAILED,
+      message: error,
+      messageTone: 'error',
+    })
+    render()
+    return { ok: false, outcome_code: 'CLIENT_NOT_READY', error }
+  }
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== v27aInventoryCycleCountSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getV27AInventoryCycleCountOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!readiness.ok || readiness.centerId !== centerId) {
+    inventoryCycleCounts = []
+    selectedInventoryCycleCountId = null
+    const error = readiness.error || getV27AInventoryCycleCountOutcomeMessage('CYCLE_COUNT_READ_FAILED')
+    v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({
+      centerId,
+      status: V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.FAILED,
+      message: error,
+      messageTone: 'error',
+    })
+    render()
+    return { ...readiness, ok: false, error }
+  }
+
+  const result = await pullV27AInventoryCycleCounts({ supabase: readiness.supabase, centerId })
+  if (runId !== v27aInventoryCycleCountSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getV27AInventoryCycleCountOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok) {
+    inventoryCycleCounts = []
+    selectedInventoryCycleCountId = null
+    inventoryCycleCountObservedByLineId = {}
+    inventoryCycleCountExplanationByLineId = {}
+    const unavailable = isV27AInventoryCycleCountBackendUnavailable(result)
+    v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({
+      centerId,
+      status: unavailable
+        ? V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.UNAVAILABLE
+        : V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.FAILED,
+      message: unavailable
+        ? getV27AInventoryCycleCountOutcomeMessage('BACKEND_NOT_DEPLOYED')
+        : result.error || getV27AInventoryCycleCountOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? 'warning' : 'error',
+    })
+    notifications = syncAppNotifications(notifications)
+    render()
+    return result
+  }
+
+  inventoryCycleCounts = result.counts
+  const selectedStillExists = inventoryCycleCounts.some(
+    (count) => count.id === selectedInventoryCycleCountId,
+  )
+  if (!selectedStillExists) {
+    selectedInventoryCycleCountId = inventoryCycleCounts.find(
+      (count) => ['draft', 'submitted'].includes(count.status),
+    )?.id || inventoryCycleCounts[0]?.id || null
+    inventoryCycleCountObservedByLineId = {}
+    inventoryCycleCountExplanationByLineId = {}
+  }
+  const lastLoadedAt = new Date().toISOString()
+  v27aInventoryCycleCountCapabilityState = createV27AInventoryCycleCountCapabilityState({
+    centerId,
+    status: V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS.READY,
+    message: reason === 'after-server-commit'
+      ? 'Phiên kiểm kê đã được cập nhật từ máy chủ.'
+      : `Đã tải ${inventoryCycleCounts.length.toLocaleString('vi-VN')} phiên kiểm kê.`,
+    messageTone: 'success',
+    lastLoadedAt,
+  })
+  notifications = syncAppNotifications(notifications)
+  render()
+  return result
+}
+
+async function writeV27AInventoryCycleCountCommand(command, { reason = 'cycle-count-save' } = {}) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerId)
+    || !isV27AInventoryCycleCountCapabilityReady(
+      v27aInventoryCycleCountCapabilityState,
+      centerId,
+    )) {
+    const result = {
+      ok: false,
+      outcome_code: 'CLIENT_NOT_READY',
+      error: getV27AInventoryCycleCountOutcomeMessage('CLIENT_NOT_READY'),
+    }
+    v27aInventoryCycleCountCapabilityState = {
+      ...v27aInventoryCycleCountCapabilityState,
+      centerId,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+  const access = canWriteC56InventorySharedTruth(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  }))
+  if (!access.canWrite) {
+    const result = {
+      ok: false,
+      outcome_code: 'WRITE_ROLE_REQUIRED',
+      error: getV27AInventoryCycleCountOutcomeMessage('WRITE_ROLE_REQUIRED'),
+    }
+    v27aInventoryCycleCountCapabilityState = {
+      ...v27aInventoryCycleCountCapabilityState,
+      isSaving: false,
+      message: result.error,
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  const fingerprint = createV27AInventoryCycleCountRetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = v27aInventoryCycleCountRetryCommands.get(retryScope) || {
+    centerId,
+    command,
+    idempotencyKey: createV27AInventoryCycleCountIdempotencyKey(),
+  }
+  v27aInventoryCycleCountRetryCommands.set(retryScope, pending)
+  const runId = ++v27aInventoryCycleCountSyncRunId
+  v27aInventoryCycleCountCapabilityState = {
+    ...v27aInventoryCycleCountCapabilityState,
+    centerId,
+    isSaving: true,
+    message: 'Đang lưu phiên kiểm kê...',
+    messageTone: '',
+  }
+  render()
+
+  const readiness = await checkCloudDbReadiness(centerId)
+  if (runId !== v27aInventoryCycleCountSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId
+    || !readiness.ok || readiness.centerId !== centerId) {
+    const result = readiness.ok
+      ? {
+          ok: false,
+          outcome_code: 'CENTER_CONTEXT_CHANGED',
+          error: getV27AInventoryCycleCountOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+        }
+      : readiness
+    if (runId === v27aInventoryCycleCountSyncRunId) {
+      v27aInventoryCycleCountCapabilityState = {
+        ...v27aInventoryCycleCountCapabilityState,
+        isSaving: false,
+        message: result.error || getV27AInventoryCycleCountOutcomeMessage('SERVER_COMMAND_FAILED'),
+        messageTone: 'error',
+      }
+      render()
+    }
+    return result
+  }
+
+  const result = await mutateV27AInventoryCycleCount({
+    supabase: readiness.supabase,
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== v27aInventoryCycleCountSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: getV27AInventoryCycleCountOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok && !isV27AInventoryCycleCountRetryableFailure(result)) {
+    v27aInventoryCycleCountRetryCommands.delete(retryScope)
+  }
+  if (!result.ok) {
+    v27aInventoryCycleCountCapabilityState = {
+      ...v27aInventoryCycleCountCapabilityState,
+      isSaving: false,
+      message: result.error || getV27AInventoryCycleCountOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    }
+    render()
+    return result
+  }
+
+  selectedInventoryCycleCountId = String(result.entity_id || '')
+  inventoryCycleCountObservedByLineId = {}
+  inventoryCycleCountExplanationByLineId = {}
+  v27aInventoryCycleCountCapabilityState = {
+    ...v27aInventoryCycleCountCapabilityState,
+    isSaving: false,
+  }
+  const inventoryProjection = await refreshC56InventorySharedTruth({
+    reason: 'after-cycle-count-commit',
+    silent: true,
+  })
+  const countProjection = inventoryProjection.ok
+    ? await refreshV27AInventoryCycleCounts({ reason: 'after-server-commit', silent: true })
+    : inventoryProjection
+  if (!inventoryProjection.ok || !countProjection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: getV27AInventoryCycleCountOutcomeMessage('COMMITTED_PROJECTION_REFRESH_FAILED'),
+    }
+  }
+  v27aInventoryCycleCountRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection: countProjection, reason }
+}
+
+function isV27AInventoryCycleCountRetryableFailure(result = {}) {
+  return !result?.outcome_code || [
+    'CLIENT_NOT_READY', 'SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT',
+    'CONCURRENT_CONFLICT', 'COMMITTED_PROJECTION_REFRESH_FAILED',
+  ].includes(result.outcome_code)
+}
+
+function showInventoryCycleCountClientError(error) {
+  v27aInventoryCycleCountCapabilityState = {
+    ...v27aInventoryCycleCountCapabilityState,
+    isSaving: false,
+    message: String(error?.message || 'Thông tin kiểm kê chưa hợp lệ.'),
+    messageTone: 'error',
+  }
+  render()
 }
 
 async function writeC56InventoryCommand(command, { reason = 'inventory-save' } = {}) {
@@ -23029,7 +23382,120 @@ function bindEvents() {
 
   document.querySelectorAll('[data-inventory-action="refresh-authoritative"]').forEach((button) => {
     button.addEventListener('click', () => {
-      void refreshC56InventorySharedTruth({ reason: 'manual-refresh' })
+      void refreshInventoryAuthoritativeTruth({ reason: 'manual-refresh' })
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-action="open-panel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      isInventoryCycleCountPanelOpen = true
+      selectedInventoryCycleCountId = inventoryCycleCounts.find(
+        (count) => ['draft', 'submitted'].includes(count.status),
+      )?.id || inventoryCycleCounts[0]?.id || null
+      inventoryCycleCountObservedByLineId = {}
+      inventoryCycleCountExplanationByLineId = {}
+      render()
+      void refreshV27AInventoryCycleCounts({ reason: 'cycle-count-open', silent: true })
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-action="close-panel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      isInventoryCycleCountPanelOpen = false
+      inventoryCycleCountObservedByLineId = {}
+      inventoryCycleCountExplanationByLineId = {}
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedInventoryCycleCountId = button.dataset.inventoryCycleCountId || null
+      inventoryCycleCountObservedByLineId = {}
+      const selectedCount = inventoryCycleCounts.find(
+        (count) => count.id === selectedInventoryCycleCountId,
+      )
+      inventoryCycleCountExplanationByLineId = Object.fromEntries(
+        (selectedCount?.lines || [])
+          .filter((line) => line.explanation)
+          .map((line) => [line.id, line.explanation]),
+      )
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-field="due-date"]').forEach((control) => {
+    control.addEventListener('input', () => {
+      inventoryCycleCountDueDate = control.value
+    })
+  })
+
+  document.querySelector('[data-inventory-cycle-count-start-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    try {
+      const command = buildV27AStartCycleCountCommand(inventoryCycleCountDueDate)
+      await writeV27AInventoryCycleCountCommand(command, { reason: 'start-cycle-count' })
+    } catch (error) {
+      showInventoryCycleCountClientError(error)
+    }
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-observed]').forEach((control) => {
+    control.addEventListener('input', () => {
+      inventoryCycleCountObservedByLineId = {
+        ...inventoryCycleCountObservedByLineId,
+        [control.dataset.inventoryCycleCountObserved]: control.value,
+      }
+    })
+  })
+
+  document.querySelector('[data-inventory-cycle-count-submit-form]')?.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const count = inventoryCycleCounts.find((item) => item.id === selectedInventoryCycleCountId)
+    if (!count) return
+    try {
+      const command = buildV27ASubmitCycleCountCommand(count, inventoryCycleCountObservedByLineId)
+      await writeV27AInventoryCycleCountCommand(command, { reason: 'submit-cycle-count' })
+    } catch (error) {
+      showInventoryCycleCountClientError(error)
+    }
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-explanation]').forEach((control) => {
+    control.addEventListener('input', () => {
+      inventoryCycleCountExplanationByLineId = {
+        ...inventoryCycleCountExplanationByLineId,
+        [control.dataset.inventoryCycleCountExplanation]: control.value,
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-action="reconcile"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const count = inventoryCycleCounts.find((item) => item.id === selectedInventoryCycleCountId)
+      if (!count) return
+      try {
+        const command = buildV27AReconcileCycleCountCommand(
+          count,
+          inventoryCycleCountExplanationByLineId,
+        )
+        await writeV27AInventoryCycleCountCommand(command, { reason: 'reconcile-cycle-count' })
+      } catch (error) {
+        showInventoryCycleCountClientError(error)
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-inventory-cycle-count-action="cancel"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const count = inventoryCycleCounts.find((item) => item.id === selectedInventoryCycleCountId)
+      if (!count || !window.confirm('Hủy phiên kiểm kê này? Tồn kho sẽ không thay đổi.')) return
+      try {
+        const command = buildV27ACancelCycleCountCommand(count)
+        await writeV27AInventoryCycleCountCommand(command, { reason: 'cancel-cycle-count' })
+      } catch (error) {
+        showInventoryCycleCountClientError(error)
+      }
     })
   })
 
@@ -31437,7 +31903,11 @@ function syncAppNotifications(currentNotifications) {
       { centerId, now: today },
     ),
     ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerId)
-      ? buildInventoryDueNotificationCandidates(inventoryRequests, { centerId, today })
+      && isV27AInventoryCycleCountCapabilityReady(
+      v27aInventoryCycleCountCapabilityState,
+      centerId,
+    )
+      ? buildInventoryDueNotificationCandidates(inventoryCycleCounts, { centerId, today })
       : []),
   ]
   const nextNotifications = upsertNotificationCandidates(currentNotifications, notificationCandidates)
@@ -31488,7 +31958,15 @@ function openNotificationSourceModule(notificationId) {
       scheduleWeekStartDate = getCurrentScheduleWeekStartDate(new Date(`${occurrenceDate}T12:00:00`))
     }
   }
-  if (notification.sourceModule === 'kho-hang' && notification.entityLabel) {
+  if (notification.sourceModule === 'kho-hang' && notification.meta?.cycleCountId) {
+    const cycleCountId = String(notification.meta.cycleCountId)
+    if (inventoryCycleCounts.some((count) => count.id === cycleCountId)) {
+      isInventoryCycleCountPanelOpen = true
+      selectedInventoryCycleCountId = cycleCountId
+      inventoryCycleCountObservedByLineId = {}
+      inventoryCycleCountExplanationByLineId = {}
+    }
+  } else if (notification.sourceModule === 'kho-hang' && notification.entityLabel) {
     inventoryRequestFilters = {
       ...inventoryRequestFilters,
       query: notification.entityLabel,

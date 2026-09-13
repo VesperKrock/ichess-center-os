@@ -214,6 +214,7 @@ export function renderInventoryModule(
   students = [],
   sharedTruthState = {},
   capabilities = {},
+  cycleCountState = {},
 ) {
   const activeFilters = { ...initialInventoryFilters, ...filters, stockAlert: 'all' }
   const activeMovementFilters = { ...initialInventoryMovementFilters, ...movementFilters }
@@ -245,6 +246,7 @@ export function renderInventoryModule(
           </button>
           <button type="button" data-inventory-open-subwindow="movements">Mở lịch sử nhập/xuất</button>
           <button type="button" data-inventory-request-action="open-panel">Đề xuất vật tư</button>
+          <button type="button" data-inventory-cycle-count-action="open-panel">Kiểm kê định kỳ</button>
           <button class="inventory-add-button" type="button" data-inventory-action="open-create">
             + Thêm sản phẩm
           </button>
@@ -283,8 +285,225 @@ export function renderInventoryModule(
             )
           : ''
       }
+      ${cycleCountState.isPanelOpen ? renderInventoryCycleCountPanel(cycleCountState) : ''}
     </section>
   `
+}
+
+export function renderInventoryCycleCountPanel(state = {}) {
+  const counts = Array.isArray(state.counts) ? state.counts : []
+  const selectedCount = counts.find((count) => count.id === state.selectedCountId)
+    || counts.find((count) => ['draft', 'submitted'].includes(count.status))
+    || counts[0]
+    || null
+  const canWrite = Boolean(state.canWrite)
+  const isSaving = Boolean(state.isSaving)
+  const hasOpenCount = counts.some((count) => ['draft', 'submitted'].includes(count.status))
+  const message = String(state.message || '').trim()
+
+  return `
+    <div class="inventory-cycle-count-backdrop" role="presentation">
+      <section class="inventory-cycle-count-panel" aria-label="Kiểm kê định kỳ">
+        <div class="inventory-cycle-count-header">
+          <div>
+            <h4>Kiểm kê định kỳ</h4>
+            <p>Đếm thực tế trước, đối chiếu và điều chỉnh bằng chứng nhập/xuất sau khi gửi.</p>
+          </div>
+          <button type="button" data-inventory-cycle-count-action="close-panel" aria-label="Đóng kiểm kê">Đóng</button>
+        </div>
+        ${message ? `<div class="inventory-cycle-count-notice is-${escapeAttribute(state.messageTone || 'neutral')}">${escapeHtml(message)}</div>` : ''}
+        <div class="inventory-cycle-count-layout">
+          <aside class="inventory-cycle-count-sidebar">
+            ${canWrite && !hasOpenCount ? `
+              <form class="inventory-cycle-count-start" data-inventory-cycle-count-start-form>
+                <label>
+                  <span>Ngày đến hạn</span>
+                  <input
+                    type="date"
+                    value="${escapeAttribute(state.dueDate || getTodayDate())}"
+                    data-inventory-cycle-count-field="due-date"
+                    required
+                  />
+                </label>
+                <button type="submit" ${isSaving ? 'disabled' : ''}>
+                  ${isSaving ? 'Đang tạo...' : 'Bắt đầu kiểm kê'}
+                </button>
+              </form>
+            ` : ''}
+            ${!canWrite ? '<p class="inventory-cycle-count-readonly">Vai trò hiện tại được xem nhưng không được thay đổi kiểm kê.</p>' : ''}
+            <div class="inventory-cycle-count-history" aria-label="Lịch sử kiểm kê">
+              ${counts.length
+                ? counts.map((count) => renderInventoryCycleCountHistoryItem(count, selectedCount?.id)).join('')
+                : '<p>Chưa có phiên kiểm kê.</p>'}
+            </div>
+          </aside>
+          <div class="inventory-cycle-count-detail">
+            ${selectedCount
+              ? renderInventoryCycleCountDetail(selectedCount, state, canWrite, isSaving)
+              : '<div class="inventory-cycle-count-empty">Bắt đầu phiên kiểm kê để lập danh sách vật tư đang hoạt động.</div>'}
+          </div>
+        </div>
+      </section>
+    </div>
+  `
+}
+
+function renderInventoryCycleCountHistoryItem(count, selectedCountId) {
+  const dueLabel = getInventoryCycleCountDueLabel(count.dueState)
+  return `
+    <button
+      type="button"
+      class="inventory-cycle-count-history-item ${count.id === selectedCountId ? 'is-active' : ''}"
+      data-inventory-cycle-count-id="${escapeAttribute(count.id)}"
+    >
+      <strong>${escapeHtml(count.countCode || 'Phiên kiểm kê')}</strong>
+      <span>${escapeHtml(getInventoryCycleCountStatusLabel(count.status))}</span>
+      <small>Hạn ${formatDate(count.dueDate)}${dueLabel ? ` · ${escapeHtml(dueLabel)}` : ''}</small>
+    </button>
+  `
+}
+
+function renderInventoryCycleCountDetail(count, state, canWrite, isSaving) {
+  if (count.isBlind) return renderBlindInventoryCycleCount(count, state, canWrite, isSaving)
+  return renderRevealedInventoryCycleCount(count, state, canWrite, isSaving)
+}
+
+function renderBlindInventoryCycleCount(count, state, canWrite, isSaving) {
+  const isDraft = count.status === 'draft'
+  const observedByLineId = state.observedByLineId || {}
+  return `
+    <div class="inventory-cycle-count-detail-header">
+      <div>
+        <h5>${escapeHtml(count.countCode)}</h5>
+        <p>${isDraft
+          ? 'Nhập số lượng đếm được tại chỗ. Các ô được để trống để bảo đảm kiểm kê độc lập.'
+          : 'Phiên kiểm kê đã hủy trước khi gửi số lượng.'}</p>
+      </div>
+      <span class="inventory-cycle-count-status is-${escapeAttribute(count.status)}">
+        ${escapeHtml(getInventoryCycleCountStatusLabel(count.status))}
+      </span>
+    </div>
+    ${isDraft ? `
+      <form data-inventory-cycle-count-submit-form>
+        <div class="inventory-cycle-count-blind-list" aria-label="Danh sách đếm thực tế">
+          ${count.lines.map((line) => `
+            <label class="inventory-cycle-count-blind-line">
+              <span class="inventory-cycle-count-identity">
+                <strong>${escapeHtml(line.itemName)}</strong>
+                <small>${escapeHtml(line.itemCategory)} · ${escapeHtml(line.itemLocation || 'Chưa ghi vị trí')}</small>
+              </span>
+              <span class="inventory-cycle-count-observed-field">
+                <span>Đã đếm (${escapeHtml(line.itemUnit)})</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="2147483647"
+                  step="1"
+                  inputmode="numeric"
+                  value="${escapeAttribute(observedByLineId[line.id] ?? '')}"
+                  data-inventory-cycle-count-observed="${escapeAttribute(line.id)}"
+                  ${canWrite && !isSaving ? '' : 'disabled'}
+                  required
+                />
+              </span>
+            </label>
+          `).join('')}
+        </div>
+        ${canWrite ? `
+          <div class="inventory-cycle-count-actions">
+            <button type="button" data-inventory-cycle-count-action="cancel" ${isSaving ? 'disabled' : ''}>Hủy phiên</button>
+            <button class="is-primary" type="submit" ${isSaving ? 'disabled' : ''}>
+              ${isSaving ? 'Đang gửi...' : 'Gửi kết quả đếm'}
+            </button>
+          </div>
+        ` : ''}
+      </form>
+    ` : ''}
+  `
+}
+
+function renderRevealedInventoryCycleCount(count, state, canWrite, isSaving) {
+  const isSubmitted = count.status === 'submitted'
+  const explanationByLineId = state.explanationByLineId || {}
+  const discrepancies = count.lines.filter((line) => line.variance !== 0).length
+  return `
+    <div class="inventory-cycle-count-detail-header">
+      <div>
+        <h5>${escapeHtml(count.countCode)}</h5>
+        <p>${count.itemCount.toLocaleString('vi-VN')} vật tư · ${discrepancies.toLocaleString('vi-VN')} chênh lệch</p>
+      </div>
+      <span class="inventory-cycle-count-status is-${escapeAttribute(count.status)}">
+        ${escapeHtml(getInventoryCycleCountStatusLabel(count.status))}
+      </span>
+    </div>
+    <div class="inventory-cycle-count-table-wrap">
+      <table class="inventory-cycle-count-table">
+        <thead>
+          <tr>
+            <th>Vật tư</th>
+            <th>Hệ thống</th>
+            <th>Đã đếm</th>
+            <th>Chênh lệch</th>
+            <th>Giải thích</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${count.lines.map((line) => `
+            <tr class="${line.variance === 0 ? 'is-balanced' : 'is-discrepant'}">
+              <td>
+                <strong>${escapeHtml(line.itemName)}</strong>
+                <small>${escapeHtml(line.itemCategory)} · ${escapeHtml(line.itemUnit)}</small>
+              </td>
+              <td>${line.expectedQuantity.toLocaleString('vi-VN')}</td>
+              <td>${line.observedQuantity.toLocaleString('vi-VN')}</td>
+              <td>${formatInventoryCycleCountVariance(line.variance)}</td>
+              <td>
+                ${line.variance === 0
+                  ? '<span class="inventory-cycle-count-balanced">Khớp</span>'
+                  : isSubmitted && canWrite
+                    ? `<textarea
+                        data-inventory-cycle-count-explanation="${escapeAttribute(line.id)}"
+                        placeholder="Nhập giải thích bắt buộc"
+                        ${isSaving ? 'disabled' : ''}
+                      >${escapeHtml(explanationByLineId[line.id] ?? line.explanation ?? '')}</textarea>`
+                    : `<span>${escapeHtml(line.explanation || '—')}</span>`}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${isSubmitted && canWrite ? `
+      <div class="inventory-cycle-count-actions">
+        <button type="button" data-inventory-cycle-count-action="cancel" ${isSaving ? 'disabled' : ''}>Hủy phiên</button>
+        <button class="is-primary" type="button" data-inventory-cycle-count-action="reconcile" ${isSaving ? 'disabled' : ''}>
+          ${isSaving ? 'Đang đối soát...' : discrepancies ? 'Giải thích & đối soát' : 'Hoàn tất kiểm kê'}
+        </button>
+      </div>
+    ` : ''}
+  `
+}
+
+function getInventoryCycleCountStatusLabel(status) {
+  return {
+    draft: 'Đang đếm',
+    submitted: 'Chờ đối soát',
+    reconciled: 'Đã hoàn tất',
+    cancelled: 'Đã hủy',
+  }[status] || 'Không xác định'
+}
+
+function getInventoryCycleCountDueLabel(dueState) {
+  return {
+    upcoming: 'Sắp đến hạn',
+    due: 'Đến hạn',
+    overdue: 'Quá hạn',
+  }[dueState] || ''
+}
+
+function formatInventoryCycleCountVariance(value) {
+  const variance = Number(value || 0)
+  return `${variance > 0 ? '+' : ''}${variance.toLocaleString('vi-VN')}`
 }
 
 export function renderInventoryListWindow(

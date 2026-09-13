@@ -7376,6 +7376,359 @@ h3 {
   box-shadow: 0 22px 64px rgba(0, 0, 0, 0.46);
 }
 
+.inventory-cycle-count-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(5, 8, 12, 0.66);
+}
+
+.inventory-cycle-count-panel {
+  display: grid;
+  width: min(1240px, calc(100% - 24px));
+  height: min(780px, calc(100% - 28px));
+  max-height: calc(100% - 28px);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 8px;
+  color: #d8e2ef;
+  background: #101923;
+  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.48);
+}
+
+.inventory-cycle-count-header,
+.inventory-cycle-count-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-cycle-count-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 14px;
+  background: #111821;
+}
+
+.inventory-cycle-count-header h4,
+.inventory-cycle-count-detail-header h5 {
+  margin: 0;
+  color: #ffffff;
+}
+
+.inventory-cycle-count-header h4 {
+  font-size: 1rem;
+}
+
+.inventory-cycle-count-detail-header h5 {
+  font-size: 0.96rem;
+}
+
+.inventory-cycle-count-header p,
+.inventory-cycle-count-detail-header p {
+  margin: 4px 0 0;
+  color: #9fb1c7;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.inventory-cycle-count-header button,
+.inventory-cycle-count-start button,
+.inventory-cycle-count-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  padding: 7px 11px;
+  color: #f4f7fb;
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.inventory-cycle-count-header button:hover,
+.inventory-cycle-count-header button:focus-visible,
+.inventory-cycle-count-start button:hover,
+.inventory-cycle-count-start button:focus-visible,
+.inventory-cycle-count-actions button:hover,
+.inventory-cycle-count-actions button:focus-visible {
+  border-color: rgba(118, 164, 231, 0.78);
+  outline: none;
+}
+
+.inventory-cycle-count-start button,
+.inventory-cycle-count-actions .is-primary {
+  border-color: #1f5d99;
+  background: #1f5d99;
+}
+
+.inventory-cycle-count-header button:disabled,
+.inventory-cycle-count-start button:disabled,
+.inventory-cycle-count-actions button:disabled,
+.inventory-cycle-count-panel input:disabled,
+.inventory-cycle-count-panel textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.inventory-cycle-count-notice {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 14px;
+  color: #bed2e9;
+  background: rgba(31, 93, 153, 0.12);
+  font-size: 0.82rem;
+}
+
+.inventory-cycle-count-notice.is-error {
+  color: #ffc2c2;
+  background: rgba(154, 43, 43, 0.16);
+}
+
+.inventory-cycle-count-notice.is-success {
+  color: #a9ebc6;
+  background: rgba(33, 132, 77, 0.14);
+}
+
+.inventory-cycle-count-layout {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+}
+
+.inventory-cycle-count-sidebar {
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px;
+  background: rgba(4, 9, 14, 0.28);
+}
+
+.inventory-cycle-count-start,
+.inventory-cycle-count-start label {
+  display: grid;
+  gap: 7px;
+}
+
+.inventory-cycle-count-start {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 10px;
+}
+
+.inventory-cycle-count-start span,
+.inventory-cycle-count-observed-field > span {
+  color: #9fb1c7;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.inventory-cycle-count-panel input,
+.inventory-cycle-count-panel textarea {
+  border: 1px solid rgba(160, 184, 214, 0.24);
+  border-radius: 7px;
+  color: #f4f7fb;
+  background: #0b131c;
+  font: inherit;
+}
+
+.inventory-cycle-count-panel input {
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.inventory-cycle-count-panel textarea {
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  padding: 7px 8px;
+  line-height: 1.35;
+}
+
+.inventory-cycle-count-panel input:focus,
+.inventory-cycle-count-panel textarea:focus {
+  border-color: #76a4e7;
+  outline: 2px solid rgba(118, 164, 231, 0.16);
+}
+
+.inventory-cycle-count-readonly,
+.inventory-cycle-count-history > p {
+  margin: 0 0 10px;
+  color: #9fb1c7;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.inventory-cycle-count-history {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.inventory-cycle-count-history-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #d8e2ef;
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  text-align: left;
+}
+
+.inventory-cycle-count-history-item:hover,
+.inventory-cycle-count-history-item:focus-visible,
+.inventory-cycle-count-history-item.is-active {
+  border-color: rgba(118, 164, 231, 0.68);
+  outline: none;
+  background: rgba(31, 93, 153, 0.18);
+}
+
+.inventory-cycle-count-history-item span,
+.inventory-cycle-count-history-item small {
+  color: #9fb1c7;
+}
+
+.inventory-cycle-count-detail {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: auto;
+  padding: 12px;
+}
+
+.inventory-cycle-count-detail-header {
+  margin-bottom: 10px;
+}
+
+.inventory-cycle-count-status {
+  border: 1px solid rgba(118, 164, 231, 0.42);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #a9c9f2;
+  background: rgba(31, 93, 153, 0.14);
+  font-size: 0.76rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.inventory-cycle-count-status.is-reconciled {
+  border-color: rgba(82, 209, 139, 0.36);
+  color: #9be8bd;
+  background: rgba(82, 209, 139, 0.1);
+}
+
+.inventory-cycle-count-status.is-cancelled {
+  border-color: rgba(160, 184, 214, 0.24);
+  color: #9fb1c7;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.inventory-cycle-count-blind-list {
+  display: grid;
+  gap: 8px;
+}
+
+.inventory-cycle-count-blind-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 170px);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.inventory-cycle-count-identity,
+.inventory-cycle-count-observed-field {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.inventory-cycle-count-identity strong {
+  overflow: hidden;
+  color: #ffffff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-cycle-count-identity small {
+  color: #9fb1c7;
+}
+
+.inventory-cycle-count-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.inventory-cycle-count-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.inventory-cycle-count-table th,
+.inventory-cycle-count-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 9px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.inventory-cycle-count-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: #b8c8db;
+  background: #111821;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.inventory-cycle-count-table td strong,
+.inventory-cycle-count-table td small {
+  display: block;
+}
+
+.inventory-cycle-count-table td small {
+  margin-top: 3px;
+  color: #9fb1c7;
+}
+
+.inventory-cycle-count-table tr.is-discrepant td:nth-child(4) {
+  color: #ffc17a;
+  font-weight: 900;
+}
+
+.inventory-cycle-count-balanced {
+  color: #9be8bd;
+  font-weight: 800;
+}
+
+.inventory-cycle-count-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inventory-cycle-count-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  color: #9fb1c7;
+  text-align: center;
+}
+
 .inventory-request-header {
   display: flex;
   gap: 12px;
@@ -21919,6 +22272,34 @@ h3 {
 
   .inventory-history-backdrop {
     padding: 10px;
+  }
+
+  .inventory-cycle-count-backdrop {
+    padding: 10px;
+  }
+
+  .inventory-cycle-count-panel {
+    width: 100%;
+    max-height: min(88vh, 680px);
+  }
+
+  .inventory-cycle-count-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .inventory-cycle-count-sidebar {
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .inventory-cycle-count-detail {
+    overflow: visible;
+  }
+
+  .inventory-cycle-count-blind-line {
+    grid-template-columns: 1fr;
   }
 
   .inventory-history-panel {
