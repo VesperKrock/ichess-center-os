@@ -7737,6 +7737,7 @@ function render() {
   const currentCenterBinding = resolveAppCenterBinding(cloudStatus)
   const isLoginGateOpen = !isDashboardUnlockedByCenter(cloudStatus, currentCenterBinding)
   const isInternalCentersRoute = isInternalCenterConsoleRoute()
+  const isFinanceShellOpen = !isLoginGateOpen && !isInternalCentersRoute && isActiveFinanceWindowOpen()
 
   if (
     parentConsultationFormState &&
@@ -7750,7 +7751,7 @@ function render() {
   }
 
   app.innerHTML = `
-    <div class="app-shell ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''}">
+    <div class="app-shell ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''} ${isFinanceShellOpen ? 'is-finance-shell' : ''}">
       <main class="desktop-area ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''}">
         ${isLoginGateOpen
           ? cloudStatus.credentialChangeRequired
@@ -12065,6 +12066,7 @@ function renderWindowBody(windowItem) {
           Boolean(cloudStatus.role),
         transactionCodes,
         attachmentCounts: getCloudAttachmentCounts(),
+        attachmentFileNames: getCloudAttachmentFileNames(),
         uploadingTransactionId: cloudUploadingTransactionId,
         printingTransactionId: cashflowTransactionPrintState.transactionId,
       },
@@ -12654,7 +12656,10 @@ function renderTaskbar() {
   const centerProfile = getTaskbarCenterProfileState()
   const windowButtons = visibleWindows
     .map((windowItem) => {
-      const title = getWindowTitle(windowItem)
+      const title =
+        windowItem.id === activeWindowId
+          ? getFinanceTaskbarWindowTitle(windowItem) || getWindowTitle(windowItem)
+          : getWindowTitle(windowItem)
 
       if (!title) {
         return ''
@@ -13345,6 +13350,22 @@ function renderStartMenu() {
       </div>
     </nav>
   `
+}
+
+function isActiveFinanceWindowOpen() {
+  const activeWindowId = getActiveWindowId()
+  const activeWindow = openWindows.find((windowItem) => windowItem.id === activeWindowId)
+  return Boolean(
+    activeWindow &&
+      !activeWindow.type &&
+      ['nhom-tai-chinh', 'so-quy', 'thu-chi'].includes(activeWindow.moduleId),
+  )
+}
+
+function getFinanceTaskbarWindowTitle(windowItem) {
+  return !windowItem.type && ['nhom-tai-chinh', 'so-quy', 'thu-chi'].includes(windowItem.moduleId)
+    ? 'Nhóm Tài chính'
+    : ''
 }
 
 function renderNotificationRefreshNotice() {
@@ -20733,6 +20754,16 @@ function getCloudAttachmentCounts() {
   return cloudStatus.attachments.reduce((counts, attachment) => {
     counts[attachment.transactionCode] = (counts[attachment.transactionCode] ?? 0) + 1
     return counts
+  }, {})
+}
+
+function getCloudAttachmentFileNames() {
+  return cloudStatus.attachments.reduce((fileNames, attachment) => {
+    const transactionCode = String(attachment.transactionCode || '').trim()
+    if (transactionCode && !fileNames[transactionCode]) {
+      fileNames[transactionCode] = String(attachment.fileName || attachment.originalName || '').trim()
+    }
+    return fileNames
   }, {})
 }
 

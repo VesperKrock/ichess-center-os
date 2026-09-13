@@ -1,5 +1,172 @@
 /* Finance UI paint — exact desktop surfaces from the approved Figma frames. */
 
+/* The approved Finance frames include the desktop shell at 1536 × 728. */
+
+.app-shell.is-finance-shell {
+  min-height: 100vh;
+  background: #0f172a;
+}
+
+.app-shell.is-finance-shell .desktop-area {
+  height: calc(100vh - 38.4px);
+  padding: 0;
+}
+
+.app-shell.is-finance-shell .desktop-window.is-finance-window.maximized {
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.app-shell.is-finance-shell .taskbar {
+  height: 38.4px;
+  min-height: 38.4px;
+  justify-content: flex-start;
+  gap: 6.4px;
+  border: 0;
+  padding: 0 19.2px;
+  background: #0f172a;
+  box-shadow: none;
+}
+
+.app-shell.is-finance-shell .taskbar-left {
+  flex: 0 0 auto;
+  gap: 6.4px;
+}
+
+.app-shell.is-finance-shell .start-button,
+.app-shell.is-finance-shell .taskbar-item,
+.app-shell.is-finance-shell .taskbar-window,
+.app-shell.is-finance-shell .taskbar-right button,
+.app-shell.is-finance-shell .taskbar-clock {
+  min-height: 0;
+  border-radius: 4.8px;
+  box-shadow: none;
+  line-height: normal;
+}
+
+.app-shell.is-finance-shell .start-button {
+  height: auto;
+  border: 0;
+  padding: 6.4px 12.8px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 11.2px;
+  font-weight: 700;
+}
+
+.app-shell.is-finance-shell .taskbar-item {
+  height: auto;
+  border: 0;
+  padding: 6.4px 11.2px;
+  color: #ffffff;
+  background: #1e293b;
+  font-size: 10.4px;
+  font-weight: 600;
+}
+
+.app-shell.is-finance-shell .center-profile-chip {
+  border: 0;
+  border-radius: 0;
+  padding: 6.4px 9.6px;
+  color: #9ca3af;
+  background: transparent;
+  font-weight: 500;
+}
+
+.app-shell.is-finance-shell .taskbar-windows {
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 6.4px;
+}
+
+.app-shell.is-finance-shell .taskbar-window {
+  flex: 0 0 120px;
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+  height: auto;
+  border: 0;
+  padding: 6.4px 12.8px;
+  color: #60a5fa;
+  background: #1e293b;
+  box-shadow: inset 0 0 0 0.8px #2563eb;
+  font-size: 10.4px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.app-shell.is-finance-shell .taskbar-window.active {
+  color: #60a5fa;
+  background: #1e293b;
+}
+
+.app-shell.is-finance-shell .taskbar-right {
+  gap: 12.8px;
+  margin-left: auto;
+}
+
+.app-shell.is-finance-shell .taskbar-view-toggle {
+  gap: 0;
+  border: 0;
+  border-radius: 4.8px;
+  padding: 1.6px;
+  background: #1e293b;
+}
+
+.app-shell.is-finance-shell .taskbar-view-toggle button {
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 4.8px 9.6px;
+  color: #9ca3af;
+  background: transparent;
+  font-size: 10.4px;
+  font-weight: 500;
+}
+
+.app-shell.is-finance-shell .taskbar-view-toggle button.active {
+  border-radius: 3.2px;
+  color: #ffffff;
+  background: #2563eb;
+  font-weight: 600;
+}
+
+.app-shell.is-finance-shell .taskbar-clock {
+  height: auto;
+  border: 0;
+  padding: 0;
+  color: #9ca3af;
+  background: transparent;
+  font-size: 10.4px;
+  font-weight: 500;
+}
+
+.app-shell.is-finance-shell .notification-bell {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border: 0;
+  padding: 6.4px;
+  color: transparent;
+  background: #fef3c7;
+}
+
+.app-shell.is-finance-shell .notification-bell-icon {
+  display: block;
+  width: 11.2px;
+  height: 11.2px;
+  overflow: hidden;
+  background: url("./assets/finance-taskbar-bell.svg") center / 11.2px 11.2px no-repeat;
+  color: transparent;
+  font-size: 0;
+}
+
+.app-shell.is-finance-shell .notification-badge {
+  display: none;
+}
+
 .desktop-window.is-finance-window {
   --finance-canvas: #f7f7f8;
   --finance-surface: #ffffff;
@@ -15,6 +182,7 @@
   --finance-positive-soft: #ecfdf5;
   --finance-negative: #dc2626;
   --finance-negative-soft: #fef2f2;
+  --finance-negative-border: #fecaca;
   --finance-warning: #d97706;
   --finance-warning-soft: #fffbeb;
   --finance-warning-border: #fde68a;
@@ -29,23 +197,21 @@
 }
 
 .desktop-window.is-finance-window > .window-titlebar {
-  min-height: 26px;
-  height: 26px;
-  gap: 8px;
+  min-height: 25.6px;
+  height: 25.6px;
+  gap: 6.4px;
   border-bottom: 0;
-  padding: 0 20px;
+  padding: 0 19.2px;
   color: #e5e7eb;
   background: #111827;
 }
 
 .desktop-window.is-finance-window > .window-titlebar::before {
-  content: "♟";
-  flex: 0 0 12px;
-  width: 12px;
-  color: #e5e7eb;
-  font-size: 12px;
-  line-height: 12px;
-  text-align: center;
+  content: "";
+  flex: 0 0 11.2px;
+  width: 11.2px;
+  height: 11.2px;
+  background: url("./assets/finance-chess-pawn.svg") center / 11.2px 11.2px no-repeat;
 }
 
 .desktop-window.is-finance-window > .window-titlebar h2 {
@@ -75,18 +241,52 @@
 }
 
 .desktop-window.is-finance-window > .window-titlebar .window-controls > button {
-  width: 10px;
-  min-width: 10px;
-  height: 12px;
-  min-height: 12px;
+  width: 9.6px;
+  min-width: 9.6px;
+  height: 9.6px;
+  min-height: 9.6px;
   border: 0;
   border-radius: 0;
   padding: 0;
-  color: #e5e7eb;
-  background: transparent;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 10px;
+  overflow: hidden;
+  color: transparent;
+  background: transparent center / contain no-repeat;
+  font-size: 0;
+  line-height: 0;
+}
+
+.desktop-window.is-finance-window > .window-titlebar .window-controls > button:nth-last-child(3) {
+  background-image: url("./assets/finance-window-minus.svg");
+}
+
+.desktop-window.is-finance-window > .window-titlebar .window-controls > button:nth-last-child(2) {
+  width: 8px;
+  min-width: 8px;
+  height: 8px;
+  min-height: 8px;
+  background-image: url("./assets/finance-window-square.svg");
+}
+
+.desktop-window.is-finance-window > .window-titlebar .window-controls > button:last-child {
+  background-image: url("./assets/finance-window-close.svg");
+}
+
+.desktop-window.is-finance-cashbook-window > .window-titlebar,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) > .window-titlebar,
+.desktop-window.is-finance-cashflow-window:has(.transaction-image-manager-backdrop) > .window-titlebar {
+  height: 26px;
+  min-height: 26px;
+  gap: 8px;
+  padding: 0 20px;
+}
+
+.desktop-window.is-finance-cashbook-window > .window-titlebar::before,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) > .window-titlebar::before,
+.desktop-window.is-finance-cashflow-window:has(.transaction-image-manager-backdrop) > .window-titlebar::before {
+  flex-basis: 12px;
+  width: 12px;
+  height: 12px;
+  background-size: 12px 12px;
 }
 
 .desktop-window.is-finance-window > .window-titlebar .window-controls > button:hover,
@@ -163,7 +363,11 @@
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-header p {
-  margin: 4.8px 0 0;
+  position: absolute;
+  top: 43.2px;
+  left: 0;
+  width: 880px;
+  margin: 0;
   color: var(--finance-secondary);
   font-size: 16px;
   font-weight: 400;
@@ -174,26 +378,29 @@
   position: absolute;
   top: 4.8px;
   right: 0;
-  display: flex;
+  display: block;
   width: 304px;
   height: 46.4px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3.2px;
   border: 0.8px solid var(--finance-border);
   border-radius: 11.2px;
-  padding: 0 14.4px;
+  padding: 0 13.6px;
   color: var(--finance-secondary);
   background: var(--finance-surface);
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-meta span {
+  position: absolute;
+  top: 7.2px;
+  left: 13.6px;
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: normal;
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-meta strong {
+  position: absolute;
+  top: 23.2px;
+  left: 13.6px;
   color: var(--finance-text);
   font-size: 14px;
   font-weight: 600;
@@ -218,13 +425,13 @@
   padding: 0;
   color: var(--finance-text);
   background: var(--finance-surface);
-  box-shadow: none;
+  box-shadow: 0 6.4px 19.2px rgb(0 0 0 / 4%);
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-number {
   position: absolute;
-  top: 19.2px;
-  left: 22.4px;
+  top: 18.4px;
+  left: 21.6px;
   color: var(--finance-soft);
   font-size: 14px;
   font-weight: 600;
@@ -233,8 +440,8 @@
 
 .desktop-window.is-finance-gateway-window .finance-workspace-card h4 {
   position: absolute;
-  top: 42.4px;
-  left: 22.4px;
+  top: 45.6px;
+  left: 21.6px;
   margin: 0;
   color: var(--finance-text);
   font-size: 26px;
@@ -244,9 +451,9 @@
 
 .desktop-window.is-finance-gateway-window .finance-workspace-card > p {
   position: absolute;
-  top: 82.4px;
-  left: 22.4px;
-  width: calc(100% - 44.8px);
+  top: 85.6px;
+  left: 21.6px;
+  width: calc(100% - 43.2px);
   margin: 0;
   color: var(--finance-secondary);
   font-size: 16px;
@@ -257,47 +464,49 @@
 .desktop-window.is-finance-gateway-window .finance-workspace-divider {
   position: absolute;
   top: 133.6px;
-  left: 22.4px;
-  width: calc(100% - 44.8px);
+  left: 21.6px;
+  width: calc(100% - 43.2px);
   height: 0.8px;
   background: var(--finance-border);
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-use-label {
   position: absolute;
-  top: 153.6px;
-  left: 22.4px;
+  top: 151.2px;
+  left: 21.6px;
   color: var(--finance-muted);
   font-size: 13px;
   font-weight: 600;
   line-height: normal;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-card ul {
   position: absolute;
-  top: 181.6px;
-  left: 22.4px;
+  top: 178.4px;
+  left: 21.6px;
   display: grid;
-  gap: 18.4px;
+  gap: 17.4px;
   margin: 0;
   padding: 0;
   color: var(--finance-secondary);
-  font-size: 15px;
-  line-height: 20px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 21px;
   list-style: none;
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-card li {
   position: relative;
-  padding-left: 18.4px;
+  width: 646.4px;
+  padding-left: 19.2px;
 }
 
 .desktop-window.is-finance-gateway-window .finance-workspace-card li::before {
   content: "";
   position: absolute;
-  top: 6.4px;
-  left: 0;
+  top: 7.2px;
+  left: 1.6px;
   width: 7.2px;
   height: 7.2px;
   border-radius: 50%;
@@ -306,9 +515,9 @@
 
 .desktop-window.is-finance-gateway-window .finance-workspace-card button {
   position: absolute;
-  right: 22.4px;
+  right: 21.6px;
   bottom: 19.2px;
-  left: 22.4px;
+  left: 21.6px;
   display: flex;
   height: 43.2px;
   min-height: 43.2px;
@@ -333,6 +542,14 @@
   transform: none;
 }
 
+.desktop-window.is-finance-gateway-window .finance-workspace-card button span {
+  min-height: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: none;
+}
+
 .desktop-window.is-finance-gateway-window .finance-workspace-future {
   position: relative;
   height: 121.6px;
@@ -345,8 +562,8 @@
 
 .desktop-window.is-finance-gateway-window .finance-workspace-future h4 {
   position: absolute;
-  top: 17.6px;
-  left: 19.2px;
+  top: 16.8px;
+  left: 18.4px;
   margin: 0;
   color: var(--finance-text);
   font-size: 18px;
@@ -357,7 +574,7 @@
 .desktop-window.is-finance-gateway-window .finance-workspace-future > p {
   position: absolute;
   top: 45.6px;
-  left: 19.2px;
+  left: 18.4px;
   margin: 0;
   color: var(--finance-secondary);
   font-size: 14px;
@@ -366,8 +583,8 @@
 
 .desktop-window.is-finance-gateway-window .finance-workspace-future > div {
   position: absolute;
-  top: 76.8px;
-  left: 19.2px;
+  top: 76px;
+  left: 18.4px;
   display: flex;
   align-items: center;
   gap: 20.8px;
@@ -379,10 +596,11 @@
   height: 27.2px;
   align-items: center;
   justify-content: center;
+  border: 0.8px solid var(--finance-warning-border);
   border-radius: 13.6px;
-  color: var(--finance-muted);
-  background: var(--finance-surface-soft);
-  font-size: 12px;
+  color: var(--finance-warning);
+  background: var(--finance-warning-soft);
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -520,26 +738,31 @@
   color: var(--finance-secondary);
   background: var(--finance-surface);
   font-size: 14px;
+  font-weight: 400;
   line-height: normal;
 }
 
 .desktop-window.is-finance-cashflow-window .cashflow-cloud-status-copy {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0;
 }
 
 .desktop-window.is-finance-cashflow-window .cashflow-cloud-status-dot {
   width: 8px;
   height: 8px;
+  margin-right: 6px;
   border-radius: 50%;
   background: var(--finance-positive);
 }
 
 .desktop-window.is-finance-cashflow-window .cashflow-cloud-status-copy strong {
   display: inline-flex;
+  width: 120px;
   height: 24px;
   align-items: center;
+  justify-content: center;
+  margin-right: 12px;
   border-radius: 12px;
   padding: 0 10px;
   color: var(--finance-positive);
@@ -749,7 +972,7 @@
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(7),
 .desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(7) { width: 338px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(8),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(8) { width: 147px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(8) { width: 158px; }
 
 .desktop-window.is-finance-cashflow-window .cashflow-table th {
   height: 43px;
@@ -889,6 +1112,21 @@
   font-weight: 400;
 }
 
+.desktop-window.is-finance-cashflow-window .cashflow-row-attachment-name {
+  position: absolute;
+  top: 45px;
+  left: 13px;
+  display: block;
+  overflow: hidden;
+  max-width: calc(100% - 26px);
+  color: var(--finance-soft);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .desktop-window.is-finance-cashflow-window .cashflow-cloud-attachment-cell > input {
   display: none;
 }
@@ -968,6 +1206,456 @@
   line-height: normal;
 }
 
+/* The cloud-gallery and edit frames use the approved 36/42/48/68/316 variant. */
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-heading .finance-breadcrumb,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-heading .finance-breadcrumb {
+  top: 18px;
+  width: 520px;
+  height: 17px;
+  font-size: 12px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-heading h3,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-heading h3 {
+  top: 38px;
+  width: 420px;
+  height: 41px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-heading > p:last-child,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-heading > p:last-child {
+  top: 78px;
+  height: 22px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-toolbar-actions,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-toolbar-actions {
+  top: 38px;
+  height: 36px;
+  gap: 12px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-toolbar-actions button,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-toolbar-actions button {
+  height: 36px;
+  border-radius: 8px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-category-button,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-category-button {
+  width: 100px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-add-button,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-add-button {
+  width: 248px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-cloud-auth-note,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-auth-note {
+  top: 118px;
+  height: 42px;
+  min-height: 42px;
+  border-radius: 9px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-cloud-status-dot,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-status-dot {
+  display: none;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-cloud-status-copy strong,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-status-copy strong {
+  width: 148px;
+  margin-right: 16px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-cloud-auth-note > button,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-auth-note > button {
+  width: 136px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 8px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-grid,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid {
+  top: 174px;
+  height: 48px;
+  grid-template-columns: 520px 160px 230px 190px 120px;
+  gap: 12px;
+  border-radius: 9px;
+  padding: 7px 11px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-grid > label:nth-child(2),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-grid > label:nth-child(3),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-grid > label:nth-child(4),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid > label:nth-child(2),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid > label:nth-child(3),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid > label:nth-child(4) {
+  position: relative;
+  left: 2px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-refresh,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-refresh {
+  position: relative;
+  left: 4px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-grid input,
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-grid select,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid input,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid select {
+  border-radius: 7px;
+  font-weight: 500;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-filter-refresh,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-refresh {
+  width: 120px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-stats,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stats {
+  top: 238px;
+  height: 68px;
+  grid-template-columns: repeat(4, 348px);
+  gap: 16px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stats {
+  gap: 24px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-stat-chip,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stat-chip {
+  height: 68px;
+  border-radius: 9px;
+  padding: 11px 13px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-stat-chip span,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stat-chip span {
+  color: var(--finance-secondary);
+  font-size: 11px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-stat-chip strong,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stat-chip strong {
+  margin-top: 5px;
+  font-size: 22px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table-wrap,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table-wrap {
+  top: 320px;
+  height: 316px;
+  border-radius: 10px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th {
+  height: 41px;
+  padding: 0 11px;
+  background: var(--finance-canvas);
+  font-size: 11px;
+}
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(1),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(1),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(1),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(1) { width: 100px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(2),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(2),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(2),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(2) { width: 180px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(3),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(3),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(3),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(3) { width: 300px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(4),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(4),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(4),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(4) { width: 130px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(5),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(5),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(5),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(5) { width: 150px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(6),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(6),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(6),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(6) { width: 120px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(7),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(7),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(7),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(7) { width: 330px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(8),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(8),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(8),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(8) { width: 160px; }
+
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td,
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td {
+  padding-right: 11px;
+  padding-left: 11px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-heading .finance-breadcrumb {
+  width: 500px;
+  font-size: 11px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid {
+  display: none;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-auth-note {
+  padding: 0 16px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-status-copy {
+  gap: 12px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-status-copy strong {
+  width: auto;
+  margin-right: 0;
+  padding: 0 12px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-auth-note > button {
+  width: auto;
+  padding: 0 16px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th {
+  height: 39px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td {
+  height: 61px;
+  font-size: 14px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-transaction-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-transaction-cell > strong {
+  margin-top: 0;
+  font-size: 14px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-type-badge {
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: normal;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-person-cell > strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-person-cell > span {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-amount {
+  font-size: 18px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-attachment-cell > button {
+  height: 19px;
+  min-height: 19px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-row-note {
+  font-size: 13px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-row-attachment-name {
+  top: 33px;
+  font-size: 12px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-row-action-cell {
+  gap: 8px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-transaction-print-button,
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-row-more {
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-row-more {
+  width: 44px;
+}
+
+/* The approved dark edit frame retains the compact list geometry. */
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-heading .finance-breadcrumb {
+  top: 18px;
+  width: auto;
+  height: auto;
+  font-size: 11px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-heading h3 {
+  top: 36px;
+  width: auto;
+  height: auto;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-heading > p:last-child {
+  top: 80px;
+  height: auto;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-toolbar-actions {
+  top: 40px;
+  height: 34px;
+  gap: 10px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-toolbar-actions button {
+  height: 34px;
+  border-radius: 7px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-category-button {
+  width: 104px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-add-button {
+  width: 260px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-auth-note {
+  top: 116px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-status-dot {
+  display: block;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-status-copy strong {
+  width: 120px;
+  margin-right: 12px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-cloud-auth-note > button {
+  width: 128px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 6px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid {
+  top: 168px;
+  display: grid;
+  height: 44px;
+  grid-template-columns: 480px 148px 220px 172px 88px;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 5px 11px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid > label:nth-child(2),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid > label:nth-child(3),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid > label:nth-child(4) {
+  left: 0;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid input,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-grid select {
+  border-radius: 6px;
+  font-weight: 400;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-filter-refresh {
+  left: 0;
+  width: 88px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stats {
+  top: 226px;
+  height: 64px;
+  grid-template-columns: 352fr 352fr 352fr 380fr;
+  gap: 12px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stat-chip {
+  height: 64px;
+  border-radius: 8px;
+  padding: 11px 13px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stat-chip span {
+  color: var(--finance-muted);
+  font-size: 12px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-stat-chip strong {
+  margin-top: 1px;
+  font-size: 24px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table-wrap {
+  top: 304px;
+  height: 332px;
+  border-radius: 8px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th {
+  height: 43px;
+  padding: 0 13px;
+  background: transparent;
+  font-size: 12px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td {
+  padding-right: 13px;
+  padding-left: 13px;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(1),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(1) { width: 102px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(2),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(2) { width: 180px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(3),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(3) { width: 280px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(4),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(4) { width: 140px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(5),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(5) { width: 160px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(6),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(6) { width: 112px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(7),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(7) { width: 338px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(8),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(8) { width: 158px; }
+
 /* SỔ QUỸ — 405:4 / 409:2 */
 
 .desktop-window.is-finance-cashbook-window .cashbook-module {
@@ -992,7 +1680,7 @@
 .desktop-window.is-finance-cashbook-window .cashbook-heading {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
 }
 
 .desktop-window.is-finance-cashbook-window .cashbook-toolbar h3 {
@@ -1520,6 +2208,16 @@
   backdrop-filter: none;
 }
 
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window .cashflow-form-backdrop,
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashflow-window .transaction-image-manager-backdrop {
+  background: rgb(0 0 0 / 34%);
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashbook-window .cashbook-settings-backdrop,
+:root:not([data-ui-theme='dark']) .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-backdrop {
+  background: rgb(0 0 0 / 29%);
+}
+
 /* THU CHI — Sửa giao dịch: 375:4 / 380:2 */
 
 .desktop-window.is-finance-cashflow-window .cashflow-form-panel {
@@ -1532,11 +2230,11 @@
   max-height: none;
   grid-template-rows: 84px minmax(0, 1fr) 64px;
   overflow: hidden;
-  border: 1px solid var(--finance-border);
+  border: 0;
   border-radius: 12px;
   color: var(--finance-text);
   background: var(--finance-surface);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 10%);
+  box-shadow: inset 0 0 0 1px var(--finance-border), 0 12px 32px rgb(0 0 0 / 10%);
   transform: translateX(-50%);
 }
 
@@ -1613,6 +2311,7 @@
 }
 
 .desktop-window.is-finance-cashflow-window .cashflow-field input,
+.desktop-window.is-finance-cashflow-window .cashflow-amount-input input,
 .desktop-window.is-finance-cashflow-window .cashflow-field select,
 .desktop-window.is-finance-cashflow-window .cashflow-field textarea {
   width: 100%;
@@ -1627,6 +2326,34 @@
   font: inherit;
   font-size: 16px;
   font-weight: 500;
+  line-height: normal;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-field > .cashflow-amount-input {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 40px;
+  color: var(--finance-text);
+  font-size: 16px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-amount-input input {
+  padding-right: 58px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-amount-input strong {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  display: flex;
+  height: 40px;
+  align-items: center;
+  color: var(--finance-muted);
+  font-size: 13px;
+  font-weight: 600;
   line-height: normal;
 }
 
@@ -1803,12 +2530,12 @@
   flex-direction: column;
   gap: 16px;
   overflow: hidden;
-  border: 1px solid var(--finance-border);
+  border: 0;
   border-radius: 12px;
   padding: 24px;
   color: var(--finance-text);
   background: var(--finance-surface);
-  box-shadow: 0 4px 24px rgb(0 0 0 / 12%);
+  box-shadow: inset 0 0 0 1px var(--finance-border), 0 4px 24px rgb(0 0 0 / 12%);
   transform: translateX(-50%);
 }
 
@@ -1816,8 +2543,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--finance-border);
-  padding: 0 0 16px;
+  border-bottom: 0;
+  padding: 0;
 }
 
 .desktop-window.is-finance-cashflow-window .cloud-gallery-header h4 {
@@ -1857,8 +2584,8 @@
   display: flex;
   align-items: flex-end;
   gap: 14px;
-  border-bottom: 1px solid var(--finance-border);
-  padding-bottom: 16px;
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .desktop-window.is-finance-cashflow-window .cloud-gallery-toolbar label {
@@ -1928,7 +2655,7 @@
 .desktop-window.is-finance-cashflow-window .cloud-gallery-item strong {
   color: var(--finance-text);
   font-size: 18px;
-  line-height: 22px;
+  line-height: normal;
 }
 
 .desktop-window.is-finance-cashflow-window .cloud-gallery-item-transaction,
@@ -1944,12 +2671,16 @@
   margin-top: 0;
   color: var(--finance-secondary);
   font-size: 14px;
-  line-height: 17px;
+  line-height: normal;
 }
 
 .desktop-window.is-finance-cashflow-window .cloud-gallery-item-transaction > span:first-of-type {
   font-size: 15px;
-  line-height: 18px;
+  line-height: normal;
+}
+
+.desktop-window.is-finance-cashflow-window .cloud-gallery-item-file strong {
+  font-weight: 600;
 }
 
 .desktop-window.is-finance-cashflow-window .cloud-gallery-item-actions a,
@@ -1994,12 +2725,12 @@
   flex-direction: column;
   gap: 24px;
   overflow: hidden;
-  border: 1px solid var(--finance-border);
+  border: 0;
   border-radius: 12px;
   padding: 32px;
   color: var(--finance-text);
   background: var(--finance-surface);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 12%);
+  box-shadow: inset 0 0 0 1px var(--finance-border), 0 10px 30px rgb(0 0 0 / 12%);
   transform: translate(-50%, -50%);
 }
 
@@ -2185,7 +2916,12 @@
 .desktop-window.is-finance-cashflow-window .transaction-image-technical-details summary {
   color: var(--finance-secondary);
   font-weight: 500;
+  list-style: none;
   text-decoration: underline;
+}
+
+.desktop-window.is-finance-cashflow-window .transaction-image-technical-details summary::-webkit-details-marker {
+  display: none;
 }
 
 .desktop-window.is-finance-cashflow-window .transaction-image-manager-actions a,
@@ -2232,11 +2968,11 @@
   height: 480px;
   max-height: none;
   overflow: hidden;
-  border: 1px solid var(--finance-border);
+  border: 0;
   border-radius: 12px;
   color: var(--finance-text);
   background: var(--finance-surface);
-  box-shadow: 0 12px 15px rgb(0 0 0 / 10%), 0 4px 5px rgb(0 0 0 / 5%);
+  box-shadow: inset 0 0 0 1px var(--finance-border), 0 12px 15px rgb(0 0 0 / 10%), 0 4px 5px rgb(0 0 0 / 5%);
   transform: translateX(-50%);
 }
 
@@ -2244,9 +2980,20 @@
   position: absolute;
   inset: 0 23px auto;
   height: 92px;
-  border-bottom: 1px solid var(--finance-border);
+  border-bottom: 0;
   padding: 23px 4px 0;
   background: transparent;
+}
+
+.desktop-window.is-finance-cashbook-window .cashbook-reconciliation-form-header::after,
+.desktop-window.is-finance-cashbook-window .cashbook-settings-header::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: var(--finance-border);
 }
 
 .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-form-header h4 {
@@ -2358,17 +3105,20 @@
 .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-preview {
   position: absolute;
   top: 363px;
-  right: 27px;
+  right: auto;
   left: 27px;
   display: flex;
   height: 46px;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid #fecaca;
+  width: 724px;
+  margin: 0;
+  border: 0;
   border-radius: 8px;
   padding: 0 13px;
   color: var(--finance-muted);
   background: var(--finance-negative-soft);
+  box-shadow: inset 0 0 0 1px var(--finance-negative-border);
 }
 
 .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-preview span {
@@ -2402,9 +3152,20 @@
   align-items: flex-start;
   justify-content: flex-end;
   gap: 10px;
-  border-top: 1px solid var(--finance-border);
+  border-top: 0;
   padding: 10px 4px 0;
   background: transparent;
+}
+
+.desktop-window.is-finance-cashbook-window .cashbook-reconciliation-actions::before,
+.desktop-window.is-finance-cashbook-window .cashbook-settings-actions::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 2px;
+  left: 0;
+  height: 1px;
+  background: var(--finance-border);
 }
 
 .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-actions button,
@@ -2438,11 +3199,11 @@
   height: 336px;
   max-height: none;
   overflow: hidden;
-  border: 1px solid var(--finance-border);
+  border: 0;
   border-radius: 12px;
   color: var(--finance-text);
   background: var(--finance-surface);
-  box-shadow: 0 12px 15px rgb(0 0 0 / 10%), 0 4px 5px rgb(0 0 0 / 5%);
+  box-shadow: inset 0 0 0 1px var(--finance-border), 0 12px 15px rgb(0 0 0 / 10%), 0 4px 5px rgb(0 0 0 / 5%);
   transform: translateX(-50%);
 }
 
@@ -2450,7 +3211,7 @@
   position: absolute;
   inset: 0 23px auto;
   height: 92px;
-  border-bottom: 1px solid var(--finance-border);
+  border-bottom: 0;
   padding: 23px 4px 0;
   background: transparent;
 }
@@ -2528,7 +3289,7 @@
   align-items: flex-start;
   justify-content: flex-end;
   gap: 10px;
-  border-top: 1px solid var(--finance-border);
+  border-top: 0;
   padding: 15px 4px 0;
   background: transparent;
 }
@@ -2559,6 +3320,7 @@
   --finance-positive-soft: #123126;
   --finance-negative: #f87171;
   --finance-negative-soft: #3a1d20;
+  --finance-negative-border: #6b2b31;
   --finance-warning: #fbbf24;
   --finance-warning-soft: #2d240f;
   --finance-warning-border: #6b5115;
@@ -2566,6 +3328,21 @@
   --finance-primary-text: #14171c;
   --finance-scrim: rgb(0 0 0 / 66%);
   border-color: #2a2f36;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-gateway-window .finance-workspace-card {
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-gateway-window .finance-workspace-future > div > span {
+  border-color: #7c5e10;
+  color: #fbbf24;
+  background: #3a2a12;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashbook-window .cashbook-settings-summary.is-warning,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-status {
+  border-color: #fde68a;
 }
 
 :root[data-ui-theme='dark'] .desktop-window.is-finance-window > .window-body > .module-authoritative-refresh-notice {
@@ -2649,7 +3426,7 @@
 }
 
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-preview {
-  border-color: #6b2b31;
+  box-shadow: inset 0 0 0 1px var(--finance-negative-border);
 }
 
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashbook-window .cashbook-reconciliation-actions button:last-child,

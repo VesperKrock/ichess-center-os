@@ -4,7 +4,7 @@ export function renderFinanceWorkspaceModule() {
       <header class="finance-workspace-header" aria-label="Xem nhanh và mở các khu vực tài chính đang dùng của cơ sở.">
         <div>
           <h3 id="finance-workspace-title">Nhóm Tài chính</h3>
-          <p>Quản lý dòng tiền, đối soát quỹ và giao dịch thu chi của cơ sở.</p>
+          <p>Truy cập Sổ quỹ và Thu chi trong cùng một khu vực tài chính.</p>
         </div>
         <aside class="finance-workspace-meta" aria-label="Dữ liệu hiện tại · Xem theo từng khu vực">
           <span>2 khu vực nghiệp vụ</span>
@@ -16,13 +16,13 @@ export function renderFinanceWorkspaceModule() {
         <article class="finance-workspace-card" aria-description="Việc đối soát được thực hiện trong Sổ quỹ">
           <span class="finance-workspace-number">01</span>
           <h4>Sổ quỹ</h4>
-          <p>Theo dõi số dư, đối soát và trạng thái chốt sổ theo ngày.</p>
+          <p>Theo dõi trạng thái quỹ và các bước kiểm soát số dư hằng ngày.</p>
           <div class="finance-workspace-divider" aria-hidden="true"></div>
           <strong class="finance-workspace-use-label">Dùng để</strong>
           <ul>
-            <li>Kiểm tra số dư đầu ngày và cuối ngày</li>
-            <li>Đối soát tiền thực tế với hệ thống</li>
-            <li>Chốt sổ và xem lịch sử đối soát</li>
+            <li>Theo dõi số dư quỹ</li>
+            <li>Đối soát số liệu</li>
+            <li>Chốt sổ theo ngày</li>
           </ul>
           <button type="button" data-finance-open-module="so-quy" aria-label="Xem Sổ quỹ">
             <span>Mở Sổ quỹ</span><span aria-hidden="true">→</span>
@@ -32,13 +32,13 @@ export function renderFinanceWorkspaceModule() {
         <article class="finance-workspace-card">
           <span class="finance-workspace-number">02</span>
           <h4>Thu chi</h4>
-          <p>Ghi nhận và quản lý các giao dịch thu, chi của cơ sở.</p>
+          <p>Ghi nhận và quản lý các giao dịch phát sinh trong hoạt động trung tâm.</p>
           <div class="finance-workspace-divider" aria-hidden="true"></div>
           <strong class="finance-workspace-use-label">Dùng để</strong>
           <ul>
-            <li>Ghi nhận khoản thu và khoản chi</li>
-            <li>Quản lý danh mục và chứng từ giao dịch</li>
-            <li>Lọc, tìm kiếm và xuất dữ liệu giao dịch</li>
+            <li>Ghi nhận khoản thu</li>
+            <li>Ghi nhận khoản chi</li>
+            <li>Quản lý danh sách giao dịch</li>
           </ul>
           <button type="button" data-finance-open-module="thu-chi" aria-label="Xem Thu chi">
             <span>Mở Thu chi</span><span aria-hidden="true">→</span>
@@ -48,10 +48,10 @@ export function renderFinanceWorkspaceModule() {
 
       <section class="finance-workspace-future" aria-label="Phân tích tài chính nâng cao">
         <h4>Phân tích tài chính nâng cao</h4>
-        <p>Báo cáo dòng tiền, xu hướng thu chi và dự báo tài chính.</p>
+        <p>Theo ngày / tuần / quý / năm</p>
         <div>
-          <span>GIAI ĐOẠN SAU</span>
-          <p>Khu vực này sẽ được triển khai sau khi dữ liệu tài chính vận hành ổn định.</p>
+          <span>PHASE SAU</span>
+          <p>Sẽ bổ sung khi dữ liệu tổng hợp sẵn sàng; hiện tại không ảnh hưởng Sổ quỹ và Thu chi.</p>
         </div>
       </section>
     </section>

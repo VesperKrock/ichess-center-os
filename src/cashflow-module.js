@@ -210,7 +210,7 @@ export function renderCashflowModule(
             <input
               type="search"
               value="${escapeAttribute(activeFilters.query)}"
-              placeholder="Danh mục, người liên quan, người ghi nhận, phương thức, ghi chú"
+              placeholder="Tìm danh mục, nội dung, người liên quan..."
               data-cashflow-filter="query"
             />
           </label>
@@ -756,7 +756,7 @@ function renderCashflowForm(formState, categories = []) {
             formState,
             cashflowMethods.map((method) => [method, method]),
           )}
-          ${renderInputField('Người liên quan', 'personName', formState, 'text', 'Phụ huynh, giáo viên, nhà cung cấp')}
+          ${renderInputField('Người liên quan', 'personName', formState, 'text', 'Phụ huynh, giáo viên, nhà cung cấp...')}
           ${renderInputField('Người ghi nhận', 'recordedBy', formState)}
           ${renderEvidenceField(formState)}
           <label class="cashflow-field cashflow-field-wide">
@@ -822,15 +822,10 @@ function renderEvidenceField(formState) {
         summary
           ? `
             <div class="cashflow-evidence-preview" data-cashflow-evidence-preview>
-              ${
-                summary.imageUrl
-                  ? `<img src="${escapeAttribute(summary.imageUrl)}" alt="${escapeAttribute(summary.name)}" />`
-                  : '<div class="cashflow-evidence-thumb" aria-hidden="true">IMG</div>'
-              }
+              <div class="cashflow-evidence-thumb" aria-hidden="true">ẢNH</div>
               <div>
                 <strong title="${escapeAttribute(summary.name)}">${escapeHtml(summary.name)}</strong>
-                <small>${escapeHtml(summary.type)} · ${formatFileSize(summary.size)}</small>
-                <small>${escapeHtml(summary.status)}</small>
+                <small>${escapeHtml(summary.type)} · ${escapeHtml(summary.status)}</small>
               </div>
               <div class="cashflow-evidence-actions">
                 <button type="button" data-cashflow-evidence-action="preview" ${disabledAttribute}>Xem trước</button>
@@ -961,10 +956,7 @@ function renderCategorySelectField(label, name, formState) {
 
 function renderInputField(label, name, formState, type = 'text', placeholder = '') {
   const disabledAttribute = formState.isSaving ? 'disabled' : ''
-
-  return `
-    <label class="cashflow-field">
-      <span>${label}</span>
+  const inputHtml = `
       <input
         type="${type}"
         value="${escapeAttribute(formState.values[name] ?? '')}"
@@ -972,6 +964,12 @@ function renderInputField(label, name, formState, type = 'text', placeholder = '
         data-cashflow-form-field="${name}"
         ${disabledAttribute}
       />
+  `
+
+  return `
+    <label class="cashflow-field">
+      <span>${label}</span>
+      ${name === 'amount' ? `<span class="cashflow-amount-input">${inputHtml}<strong>VNĐ</strong></span>` : inputHtml}
       ${renderFieldError(formState.errors[name])}
     </label>
   `
@@ -1054,6 +1052,8 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
     cloudAttachmentOptions.transactionCodes?.[transaction.id] ?? ''
   const attachmentCount =
     cloudAttachmentOptions.attachmentCounts?.[transactionCode] ?? 0
+  const attachmentFileName =
+    cloudAttachmentOptions.attachmentFileNames?.[transactionCode] ?? ''
   const isUploading =
     cloudAttachmentOptions.uploadingTransactionId === transaction.id
   const isPrinting =
@@ -1088,6 +1088,7 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
           ${isUploading ? 'Đang tải...' : getCloudAttachmentButtonLabel(attachmentCount)}
         </button>
         <span class="cashflow-row-note">${renderTransactionNote(transaction)}</span>
+        ${attachmentFileName ? `<small class="cashflow-row-attachment-name">${escapeHtml(attachmentFileName)}</small>` : ''}
         <input
           type="file"
           accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
@@ -1431,7 +1432,7 @@ function renderManagedAttachment(attachment, state) {
         <span>${formatFileSize(attachment.sizeBytes)} · Tải lên lúc ${formatDateTime(attachment.createdAt)}</span>
         <span>Tải lên bởi: ${escapeHtml(uploaderDisplayName)}</span>
         <details class="transaction-image-technical-details">
-          <summary>Chi tiết kỹ thuật</summary>
+          <summary><span aria-hidden="true">›</span> Chi tiết kỹ thuật</summary>
           <span>Tên file gốc: ${escapeHtml(attachment.originalName || 'Không rõ')}</span>
           <span>Đường dẫn lưu trữ: ${escapeHtml(attachment.storagePath || 'Không rõ')}</span>
         </details>
@@ -1479,7 +1480,7 @@ function renderTransactionNote(transaction) {
     return `<span class="cashflow-source-text">${escapeHtml(getSyncedTuitionRowSourceText(transaction))}</span>`
   }
 
-  const noteText = transaction.note ? escapeHtml(transaction.note) : '—'
+  const noteText = transaction.note ? escapeHtml(transaction.note) : 'Không có ghi chú'
 
   const sourceLabel = getSourceBadgeLabel(transaction.sourceModule)
   const attachmentBadge = transaction.attachment
