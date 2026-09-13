@@ -3,6 +3,7 @@ import './student-theme.css'
 import './schedule-theme.css'
 import './report-theme.css'
 import './tuition-theme.css'
+import './finance-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -11381,6 +11382,13 @@ function renderModuleWindow(windowItem) {
   const isScheduleWindow = windowItem.moduleId === 'thoi-khoa-bieu' && !windowItem.type
   const isReportWindow = windowItem.moduleId === 'bao-cao' && !windowItem.type
   const isTuitionWindow = windowItem.moduleId === 'hoc-phi' && !windowItem.type
+  const financeSurface = !windowItem.type
+    ? {
+        'nhom-tai-chinh': 'gateway',
+        'so-quy': 'cashbook',
+        'thu-chi': 'cashflow',
+      }[windowItem.moduleId] || ''
+    : ''
 
   if (!title || !headerTitle || windowItem.minimized) {
     return ''
@@ -11396,7 +11404,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -12005,6 +12013,7 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'thu-chi') {
     const transactionCodes = getCashflowTransactionCodes()
+    const centerInfo = getCurrentCanonicalCenterContext()
 
     return renderCashflowModule(
       cashflowTransactions,
@@ -12029,10 +12038,12 @@ function renderWindowBody(windowItem) {
       cloudGalleryState,
       cashflowTransactionDetailState,
       c54FinanceSharedTruthState,
+      centerInfo.centerName,
     )
   }
 
   if (moduleItem.id === 'so-quy') {
+    const centerInfo = getCurrentCanonicalCenterContext()
     return renderCashbookModule(
       cashflowTransactions,
       cashbookSelectedDate,
@@ -12041,6 +12052,7 @@ function renderWindowBody(windowItem) {
       cashbookReconciliations,
       cashbookReconciliationFormState,
       c54FinanceSharedTruthState,
+      centerInfo.centerName,
     )
   }
 
@@ -15512,17 +15524,26 @@ function getCurrentCloudBootstrapContext() {
   }
 }
 
-function renderCashflowCloudAuthNotice(status) {
+function renderCashflowCloudAuthNotice(status, financeState = c54FinanceSharedTruthState) {
   const isSignedIn = status.authStatus === 'signed-in' && status.user
   const hasMembership =
     status.membershipStatus === 'loaded' && isTransactionAttachmentRoleAllowed(status.role)
 
   if (isSignedIn && hasMembership) {
+    const updatedLabel = financeState.isLoading
+      ? 'Đang cập nhật...'
+      : financeState.lastLoadedAt
+        ? `Đã cập nhật ${formatRefreshTime(financeState.lastLoadedAt)}`
+        : 'Cloud sẵn sàng'
     return `
       <aside class="cashflow-cloud-auth-note is-ready" role="note">
-        <span>Đã đăng nhập ở cổng hệ thống. Tính năng ảnh cloud của Thu Chi sẵn sàng.</span>
+        <span class="cashflow-cloud-status-copy">
+          <span class="cashflow-cloud-status-dot" aria-hidden="true"></span>
+          <strong>${updatedLabel}</strong>
+          <span>Ảnh cloud sẵn sàng cho chứng từ giao dịch.</span>
+        </span>
         <button type="button" data-cloud-action="open-gallery">
-          Mở kho ảnh cloud
+          Mở kho ảnh
         </button>
       </aside>
     `
@@ -20611,6 +20632,7 @@ async function openCloudGallery() {
 
   cloudGalleryState = {
     monthKey: getCurrentMonthKey(),
+    centerName: getCurrentCanonicalCenterContext().centerName,
     query: '',
     attachments: [],
     status: 'loading',

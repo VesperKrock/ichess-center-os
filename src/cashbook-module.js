@@ -142,6 +142,7 @@ export function renderCashbookModule(
   reconciliations = [],
   reconciliationFormState = null,
   financeSharedTruthState = {},
+  centerName = 'cơ sở hiện tại',
 ) {
   const activeDate = isValidDate(selectedDate) ? selectedDate : getDefaultCashbookDate(transactions)
   const activeSettings = {
@@ -157,7 +158,8 @@ export function renderCashbookModule(
   return `
     <section class="cashbook-module" aria-labelledby="cashbook-title">
       <div class="cashbook-toolbar">
-        <div>
+        <div class="cashbook-heading">
+          <p class="finance-breadcrumb">Nhóm Tài chính / Sổ quỹ</p>
           <h3 id="cashbook-title">Sổ quỹ</h3>
         </div>
         <div class="cashbook-date-actions" aria-label="Chọn ngày xem sổ quỹ">
@@ -175,6 +177,8 @@ export function renderCashbookModule(
         </div>
       </div>
 
+      <p class="cashbook-helper">Theo dõi số dư, đối soát quỹ và trạng thái chốt sổ theo ngày của cơ sở ${escapeHtml(centerName || 'hiện tại')}.</p>
+
       ${renderFinanceSharedTruthNotice(financeSharedTruthState)}
 
       ${renderCashbookSettingsSummary(activeSettings, activeDate)}
@@ -189,20 +193,21 @@ export function renderCashbookModule(
 
       <div class="cashbook-workspace">
         ${renderCashbookReconciliationCard(reconciliation, activeDate, stats.closingBalance)}
-        ${renderCashbookReconciliationHistory(reconciliations, transactions, activeSettings, activeDate)}
-      </div>
-
-      <section class="cashbook-transactions" aria-label="Giao dịch trong ngày">
-        <div class="cashbook-transactions-header">
-          <h4>Giao dịch trong ngày</h4>
-          <span>${stats.transactionCount} giao dịch</span>
+        <div class="cashbook-side-stack">
+          ${renderCashbookReconciliationHistory(reconciliations, transactions, activeSettings, activeDate)}
+          <section class="cashbook-transactions" aria-label="Giao dịch trong ngày">
+            <div class="cashbook-transactions-header">
+              <h4>Giao dịch trong ngày</h4>
+              <span>${stats.transactionCount} giao dịch</span>
+            </div>
+            ${
+              dailyTransactions.length
+                ? renderCashbookTransactionList(dailyTransactions)
+                : '<div class="cashbook-empty">Chưa có giao dịch trong ngày đã chọn.</div>'
+            }
+          </section>
         </div>
-        ${
-          dailyTransactions.length
-            ? renderCashbookTransactionList(dailyTransactions)
-            : '<div class="cashbook-empty">Chưa có giao dịch trong ngày này.</div>'
-        }
-      </section>
+      </div>
 
       ${settingsFormState ? renderCashbookSettingsPanel(settingsFormState) : ''}
       ${
@@ -220,7 +225,21 @@ function renderFinanceSharedTruthNotice(state = {}) {
     ? ' Legacy local đã được quarantine đúng cơ sở; cần migration có preview + xác nhận, chưa nhập vào server.'
     : ''
   if (!message && !migrationWarning) return ''
-  return `<p class="finance-shared-truth-notice is-${escapeAttribute(state.messageTone || 'info')}" role="status">${escapeHtml(`${message}${migrationWarning}`.trim())}</p>`
+  const tone = state.messageTone || 'info'
+  const updatedLabel = tone === 'success' && state.lastLoadedAt
+    ? `Đã cập nhật ${formatCashbookRefreshTime(state.lastLoadedAt)}`
+    : ''
+  const detail = `${message}${migrationWarning}`.trim()
+
+  return `<p class="finance-shared-truth-notice is-${escapeAttribute(tone)}" role="status">${updatedLabel ? `<strong>${escapeHtml(updatedLabel)}</strong><span>— ${escapeHtml(detail)}</span>` : escapeHtml(detail)}</p>`
+}
+
+function formatCashbookRefreshTime(value) {
+  const date = new Date(value)
+
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
 }
 
 export function getCashbookBalanceStats(transactions, selectedDate, settings) {
@@ -382,19 +401,14 @@ function renderCashbookReconciliationCard(reconciliation, selectedDate, systemCl
           <span>Người đối soát</span>
           <strong>${reconciliation ? escapeHtml(reconciliation.checkedBy) : '—'}</strong>
         </div>
-        <div>
-          <span>Thời gian</span>
-          <strong>${reconciliation ? formatDateTime(reconciliation.updatedAt || reconciliation.checkedAt) : '—'}</strong>
-        </div>
-        <div>
-          <span>Ghi chú</span>
-          <strong title="${escapeAttribute(reconciliation?.note)}">${reconciliation?.note ? escapeHtml(reconciliation.note) : '—'}</strong>
-        </div>
-        <div>
-          <span>Chốt sổ</span>
-          <strong>${closedMeta || (reconciliation ? 'Chưa chốt' : '—')}</strong>
-        </div>
       </div>
+      <p class="cashbook-reconciliation-meta">
+        <span>Thời gian ${reconciliation ? formatDateTime(reconciliation.updatedAt || reconciliation.checkedAt) : '—'}</span>
+        <span aria-hidden="true">·</span>
+        <span title="${escapeAttribute(reconciliation?.note)}">Ghi chú ${reconciliation?.note ? escapeHtml(reconciliation.note) : '—'}</span>
+        <span aria-hidden="true">·</span>
+        <span>Chốt sổ ${closedMeta || (reconciliation ? 'Chưa chốt' : '—')}</span>
+      </p>
       ${
         systemChanged
           ? `<p class="cashbook-reconciliation-warning">${

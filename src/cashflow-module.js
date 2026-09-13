@@ -171,6 +171,7 @@ export function renderCashflowModule(
   cloudGalleryState = null,
   transactionDetailState = null,
   financeSharedTruthState = {},
+  centerName = 'cơ sở hiện tại',
 ) {
   const activeFilters = { ...initialCashflowFilters, ...filters }
   const filteredTransactions = getFilteredCashflowTransactions(transactions, activeFilters)
@@ -181,9 +182,10 @@ export function renderCashflowModule(
   return `
     <section class="cashflow-module" aria-labelledby="cashflow-title">
       <div class="cashflow-toolbar">
-        <div>
+        <div class="cashflow-heading">
+          <p class="finance-breadcrumb">Nhóm Tài chính / Thu chi</p>
           <h3 id="cashflow-title">Thu chi</h3>
-          <p>Ghi nhận giao dịch thu/chi của cơ sở hiện tại, bao gồm khoản thu học phí được đồng bộ tự động.</p>
+          <p>Ghi nhận và quản lý giao dịch thu/chi của cơ sở ${escapeHtml(centerName || 'hiện tại')}, bao gồm khoản thu học phí được đồng bộ tự động.</p>
         </div>
         <div class="cashflow-toolbar-actions">
           <button
@@ -194,14 +196,6 @@ export function renderCashflowModule(
             title="Xuất theo bộ lọc hiện tại"
           >
             Tải CSV
-          </button>
-          <button
-            class="cashflow-category-button"
-            type="button"
-            data-cashflow-action="refresh-authoritative"
-            ${financeSharedTruthState.isLoading || financeSharedTruthState.isSaving ? 'disabled' : ''}
-          >
-            ${financeSharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}
           </button>
           <button class="cashflow-category-button" type="button" data-cashflow-action="open-categories">
             Danh mục
@@ -223,23 +217,31 @@ export function renderCashflowModule(
           <label>
             <span>Loại</span>
             <select data-cashflow-filter="type">
-              ${renderOption('all', 'Tất cả', activeFilters.type)}
-              ${renderOption('income', 'Thu', activeFilters.type)}
-              ${renderOption('expense', 'Chi', activeFilters.type)}
+              ${renderOption('all', 'Loại · Tất cả', activeFilters.type)}
+              ${renderOption('income', 'Loại · Thu', activeFilters.type)}
+              ${renderOption('expense', 'Loại · Chi', activeFilters.type)}
             </select>
           </label>
           <label>
             <span>Danh mục</span>
             <select data-cashflow-filter="category">
-              ${renderOption('all', 'Tất cả danh mục', activeFilters.category)}
+              ${renderOption('all', 'Danh mục · Tất cả danh mục', activeFilters.category)}
               ${filterCategories
                 .map((category) =>
-                  renderOption(category.name, getCategoryOptionLabel(category), activeFilters.category),
+                  renderOption(category.name, `Danh mục · ${getCategoryOptionLabel(category)}`, activeFilters.category),
                 )
                 .join('')}
             </select>
           </label>
           ${renderCashflowPeriodFilters(activeFilters)}
+          <button
+            class="cashflow-filter-refresh"
+            type="button"
+            data-cashflow-action="refresh-authoritative"
+            ${financeSharedTruthState.isLoading || financeSharedTruthState.isSaving ? 'disabled' : ''}
+          >
+            ${financeSharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}
+          </button>
         </div>
       </div>
 
@@ -258,14 +260,12 @@ export function renderCashflowModule(
           <thead>
             <tr>
               <th>Ngày</th>
-              <th>Loại</th>
-              <th>Danh mục</th>
+              <th>Giao dịch</th>
               <th>Nội dung / Người liên quan</th>
               <th title="Phương thức thanh toán">THANH TOÁN</th>
               <th>Số tiền</th>
               <th title="Người ghi nhận">Ghi nhận</th>
-              <th>Ghi chú</th>
-              <th title="Ảnh giao dịch cloud">Ảnh cloud</th>
+              <th title="Ảnh giao dịch cloud và ghi chú">Chứng từ / Ghi chú</th>
               <th>Thao tác</th>
             </tr>
           </thead>
@@ -281,6 +281,14 @@ export function renderCashflowModule(
             }
           </tbody>
         </table>
+        <div class="cashflow-table-summary">
+          <span>Hiển thị ${filteredTransactions.length} giao dịch trong kỳ lọc hiện tại</span>
+          <span>Chọn giao dịch để xem hoặc chỉnh sửa chi tiết</span>
+        </div>
+        <div class="cashflow-ledger-continuation">
+          <strong>Sổ giao dịch</strong>
+          <p>Các giao dịch khác sẽ xuất hiện tại đây theo bộ lọc đang chọn.</p>
+        </div>
       </div>
       ${formState ? renderCashflowForm(formState, categories) : ''}
       ${
@@ -486,13 +494,13 @@ function renderCashflowPeriodFilters(filters) {
     <label>
       <span>Kỳ lọc</span>
       <select data-cashflow-filter="periodMode">
-        ${renderOption('all', 'Tất cả', filters.periodMode)}
-        ${renderOption('day', 'Ngày', filters.periodMode)}
-        ${renderOption('week', 'Tuần', filters.periodMode)}
-        ${renderOption('month', 'Tháng', filters.periodMode)}
-        ${renderOption('quarter', 'Quý', filters.periodMode)}
-        ${renderOption('year', 'Năm', filters.periodMode)}
-        ${renderOption('range', 'Khoảng ngày', filters.periodMode)}
+        ${renderOption('all', 'Kỳ lọc · Tất cả', filters.periodMode)}
+        ${renderOption('day', 'Kỳ lọc · Ngày', filters.periodMode)}
+        ${renderOption('week', 'Kỳ lọc · Tuần', filters.periodMode)}
+        ${renderOption('month', 'Kỳ lọc · Tháng', filters.periodMode)}
+        ${renderOption('quarter', 'Kỳ lọc · Quý', filters.periodMode)}
+        ${renderOption('year', 'Kỳ lọc · Năm', filters.periodMode)}
+        ${renderOption('range', 'Kỳ lọc · Khoảng ngày', filters.periodMode)}
       </select>
     </label>
     ${renderCashflowPeriodValueFilters(filters)}
@@ -1057,14 +1065,18 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
   return `
     <tr class="cashflow-row" data-cashflow-transaction-id="${transaction.id}" tabindex="0">
       <td>${formatDate(transaction.transactionDate)}</td>
-      <td><span class="cashflow-type-badge is-${transaction.type}">${getTypeLabel(transaction.type)}</span></td>
-      <td title="${escapeAttribute(transaction.category)}">${escapeHtml(transaction.category)}</td>
-      <td title="${escapeAttribute(transaction.personName)}">${transaction.personName ? escapeHtml(transaction.personName) : '—'}</td>
+      <td class="cashflow-transaction-cell">
+        <span class="cashflow-type-badge is-${transaction.type}">${getTypeLabel(transaction.type)}</span>
+        <strong title="${escapeAttribute(transaction.category)}">${escapeHtml(transaction.category)}</strong>
+      </td>
+      <td class="cashflow-person-cell" title="${escapeAttribute(transaction.personName)}">
+        <strong>${transaction.personName ? escapeHtml(transaction.personName) : '—'}</strong>
+        <span>${transaction.personName ? 'Người liên quan' : 'Không có nội dung/người liên quan'}</span>
+      </td>
       <td>${escapeHtml(getTransactionMethodDisplay(transaction.method))}</td>
       <td class="cashflow-amount is-${transaction.type}">${formatMoney(transaction.amount)}</td>
       <td title="${escapeAttribute(transaction.recordedBy)}">${escapeHtml(getRecordedByDisplayName(transaction.recordedBy))}</td>
-      <td title="${escapeAttribute(noteTitle)}">${renderTransactionNote(transaction)}</td>
-      <td class="cashflow-cloud-attachment-cell">
+      <td class="cashflow-cloud-attachment-cell" title="${escapeAttribute(noteTitle)}">
         <button
           type="button"
           data-cashflow-cloud-action="select-image"
@@ -1075,6 +1087,7 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
         >
           ${isUploading ? 'Đang tải...' : getCloudAttachmentButtonLabel(attachmentCount)}
         </button>
+        <span class="cashflow-row-note">${renderTransactionNote(transaction)}</span>
         <input
           type="file"
           accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
@@ -1094,6 +1107,7 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
         >
           ${printLabel}
         </button>
+        <span class="cashflow-row-more" aria-hidden="true">•••</span>
       </td>
     </tr>
   `
@@ -1251,13 +1265,18 @@ function renderTransactionImageManager(state) {
               ${formatDate(transaction.transactionDate)} ·
               ${formatMoney(transaction.amount)}
             </p>
-            <span>${escapeHtml(transaction.personName || transaction.note || 'Không có nội dung')}</span>
-            <small>${attachments.length} ảnh đã tải lên</small>
+            <div class="transaction-image-manager-meta">
+              <small>${attachments.length} ảnh đã tải lên</small>
+              <span>${escapeHtml(transaction.personName || transaction.note || 'Không có nội dung')}</span>
+            </div>
           </div>
           <button type="button" data-transaction-image-manager-action="close" aria-label="Đóng">×</button>
         </header>
 
+        <div class="transaction-image-manager-divider" aria-hidden="true"></div>
+
         <div class="transaction-image-manager-toolbar">
+          <strong>Ảnh chứng từ</strong>
           <button
             type="button"
             data-transaction-image-manager-action="add"
@@ -1311,7 +1330,7 @@ function renderCloudGallery(state) {
         <header class="cloud-gallery-header">
           <div>
             <h4 id="cloud-gallery-title">Kho ảnh giao dịch cloud</h4>
-            <p>Cơ sở hiện tại · Tháng ${escapeHtml(state.monthKey)}</p>
+            <p>${escapeHtml(state.centerName || 'Cơ sở hiện tại')} · Tháng ${escapeHtml(state.monthKey)}</p>
           </div>
           <button type="button" data-cloud-gallery-action="close" aria-label="Đóng">×</button>
         </header>
@@ -1866,7 +1885,7 @@ function getCategoryTypeLabel(type) {
 function renderEmptyState() {
   return `
     <tr>
-      <td class="cashflow-empty" colspan="10">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
+      <td class="cashflow-empty" colspan="8">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
     </tr>
   `
 }
