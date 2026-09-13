@@ -1,15 +1,8 @@
 export function renderFinanceWorkspaceModule() {
   return `
     <section class="finance-workspace-module" aria-labelledby="finance-workspace-title">
-      <header class="finance-workspace-header" aria-label="Xem nhanh và mở các khu vực tài chính đang dùng của cơ sở.">
-        <div>
-          <h3 id="finance-workspace-title">Nhóm Tài chính</h3>
-          <p>Truy cập Sổ quỹ và Thu chi trong cùng một khu vực tài chính.</p>
-        </div>
-        <aside class="finance-workspace-meta" aria-label="Dữ liệu hiện tại · Xem theo từng khu vực">
-          <span>2 khu vực nghiệp vụ</span>
-          <strong>Sổ quỹ trước · Thu chi sau</strong>
-        </aside>
+      <header class="finance-workspace-header">
+        <h3 id="finance-workspace-title">Nhóm Tài chính</h3>
       </header>
 
       <div class="finance-workspace-sections" aria-label="Lối vào nghiệp vụ tài chính">

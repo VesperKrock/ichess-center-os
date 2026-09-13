@@ -11606,19 +11606,24 @@ function getUnavailableOptionalState(moduleId, upstream, label) {
 function renderModuleRefreshControl(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
+  const isFinanceWindow = isFinanceModuleWindow(windowItem)
+  const label = isFinanceWindow
+    ? getFinanceTitlebarCurrentnessLabel(state)
+    : state.status === 'loading' ? 'Đang tải…' : 'Làm mới'
   return `
     <button
-      class="module-authoritative-refresh"
+      class="module-authoritative-refresh ${isFinanceWindow ? `is-finance-currentness is-${escapeAttribute(state.status)}` : ''}"
       type="button"
       data-module-authoritative-refresh="${escapeAttribute(windowItem.moduleId)}"
       ${state.status === 'loading' ? 'disabled' : ''}
       aria-label="Làm mới dữ liệu của ${escapeAttribute(getWindowHeaderTitle(windowItem))}"
-    >${state.status === 'loading' ? 'Đang tải…' : 'Làm mới'}</button>
+    >${escapeHtml(label)}</button>
   `
 }
 
 function renderModuleRefreshNotice(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
+  if (isFinanceModuleWindow(windowItem)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited'].includes(state.status)
     ? 'is-fresh'
@@ -11633,6 +11638,25 @@ function renderModuleRefreshNotice(windowItem) {
       ? 'Đang tải dữ liệu mới nhất của chức năng này.'
       : state.message
   return `<p class="module-authoritative-refresh-notice ${tone}" role="status">${escapeHtml(label)}</p>`
+}
+
+function isFinanceModuleWindow(windowItem) {
+  return Boolean(
+    windowItem
+      && !windowItem.type
+      && ['nhom-tai-chinh', 'so-quy', 'thu-chi'].includes(windowItem.moduleId),
+  )
+}
+
+function getFinanceTitlebarCurrentnessLabel(state = {}) {
+  if (state.status === 'fresh') {
+    const updatedAt = formatRefreshTime(state.lastFreshAt)
+    return updatedAt ? `Cập nhật ${updatedAt}` : 'Đã cập nhật'
+  }
+  if (state.status === 'loading') return 'Đang cập nhật…'
+  if (state.status === 'limited') return 'Cập nhật chưa đủ'
+  if (state.status === 'failed') return 'Cập nhật lỗi'
+  return 'Chưa cập nhật'
 }
 
 function formatRefreshTime(value) {

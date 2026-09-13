@@ -230,9 +230,47 @@
   line-height: normal;
 }
 
-.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh,
 .desktop-window.is-finance-window > .window-titlebar .module-notification-bell {
   display: none;
+}
+
+.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh.is-finance-currentness {
+  display: inline-flex;
+  width: auto;
+  min-width: 0;
+  height: 20px;
+  min-height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin: 0 1.6px 0 0;
+  border: 0;
+  border-radius: 4px;
+  padding: 0 7.2px;
+  color: #a7f3d0;
+  background: #1f2937;
+  box-shadow: none;
+  font-size: 10.4px;
+  font-weight: 600;
+  line-height: normal;
+  white-space: nowrap;
+}
+
+.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh.is-finance-currentness.is-loading {
+  color: #cbd5e1;
+}
+
+.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh.is-finance-currentness.is-limited,
+.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh.is-finance-currentness.is-failed,
+.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh.is-finance-currentness.is-idle {
+  color: #fcd34d;
+}
+
+.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh.is-finance-currentness:hover,
+.desktop-window.is-finance-window > .window-titlebar .module-authoritative-refresh.is-finance-currentness:focus-visible {
+  border: 0;
+  outline: 1px solid #94a3b8;
+  outline-offset: 1px;
+  background: #273449;
 }
 
 .desktop-window.is-finance-window > .window-titlebar .window-controls {
@@ -348,7 +386,7 @@
 
 .desktop-window.is-finance-gateway-window .finance-workspace-header {
   position: relative;
-  height: 65.6px;
+  height: auto;
   border: 0;
   padding: 0;
   background: transparent;
@@ -359,51 +397,6 @@
   color: var(--finance-text);
   font-size: 30px;
   font-weight: 700;
-  line-height: normal;
-}
-
-.desktop-window.is-finance-gateway-window .finance-workspace-header p {
-  position: absolute;
-  top: 43.2px;
-  left: 0;
-  width: 880px;
-  margin: 0;
-  color: var(--finance-secondary);
-  font-size: 16px;
-  font-weight: 400;
-  line-height: normal;
-}
-
-.desktop-window.is-finance-gateway-window .finance-workspace-meta {
-  position: absolute;
-  top: 4.8px;
-  right: 0;
-  display: block;
-  width: 304px;
-  height: 46.4px;
-  border: 0.8px solid var(--finance-border);
-  border-radius: 11.2px;
-  padding: 0 13.6px;
-  color: var(--finance-secondary);
-  background: var(--finance-surface);
-}
-
-.desktop-window.is-finance-gateway-window .finance-workspace-meta span {
-  position: absolute;
-  top: 7.2px;
-  left: 13.6px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: normal;
-}
-
-.desktop-window.is-finance-gateway-window .finance-workspace-meta strong {
-  position: absolute;
-  top: 23.2px;
-  left: 13.6px;
-  color: var(--finance-text);
-  font-size: 14px;
-  font-weight: 600;
   line-height: normal;
 }
 
