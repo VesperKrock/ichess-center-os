@@ -6,6 +6,10 @@
 
 import { computeAttendanceCycleState, getPaidCycleCountFromTuition } from './attendance-board-cycle.js'
 import {
+  getV28AAttendanceReminderPresentation,
+  groupV28AAttendanceRemindersByStudent,
+} from './attendance-operational-reminders.js'
+import {
   buildUnifiedAttendanceRecords,
   getBaselineEditableDateRange,
   isDateInBaselineEditableRange,
@@ -57,6 +61,7 @@ export function renderAttendanceBoardModule(
   const tuitionAvailable = availability.tuitionAvailable !== false
   const calendarNotesAvailable = availability.calendarNotesAvailable !== false
   const packageCycleReady = availability.packageCycleReady === true
+  const attendanceOperationsReady = availability.attendanceOperationsReady === true
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
   const storedAttendanceRecords = Array.isArray(draftRecords) ? draftRecords : loadStoredAttendanceRecords()
@@ -78,6 +83,9 @@ export function renderAttendanceBoardModule(
       packageCycleReady,
       packageCycleStudentStates: availability.packageCycleStudentStates,
       packageCycleContributions: availability.packageCycleContributions,
+      attendanceOperationsReady,
+      attendanceReminders: availability.attendanceReminders,
+      attendanceCellNotes: availability.attendanceCellNotes,
     },
   )
   const visibleDates = getVisibleAttendanceDates(filteredRows, classSessions, normalizedFilters)
@@ -85,6 +93,22 @@ export function renderAttendanceBoardModule(
 
   return `
     <section class="attendance-board-module" aria-label="Bảng điểm danh">
+      <header class="attendance-board-heading">
+        <div>
+          <span>BẢNG ĐIỂM DANH</span>
+          <div class="attendance-board-heading-copy">
+            <h3>Bảng điểm danh</h3>
+            <p>Điểm danh theo tháng, theo dõi số buổi và ghi chú học viên.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          data-attendance-baseline-manager-open
+          ${attendanceAvailable ? '' : 'disabled'}
+        >
+          Quản lý dữ liệu nền
+        </button>
+      </header>
       <div class="attendance-board-toolbar" aria-label="Bộ lọc bảng điểm danh">
         <label>
           <span>Tháng/Năm</span>
@@ -124,12 +148,17 @@ export function renderAttendanceBoardModule(
       </div>
 
       ${renderOperationalNotesSharedTruthStatus(calendarNotesSharedTruthState)}
+      ${renderAttendanceOperationsStatus(availability.attendanceOperationsState)}
+      ${renderAttendanceReminderSummary(
+        availability.attendanceReminders,
+        filteredRows,
+        availability.isReminderPanelOpen,
+        attendanceOperationsReady,
+      )}
       ${tuitionAvailable
         ? ''
         : `<p class="attendance-board-empty" role="status">Đối chiếu gói học phí hiện chưa tải được.${attendanceAvailable ? ' Bạn vẫn có thể điểm danh.' : ''}</p>`}
-      ${attendanceAvailable
-        ? renderAttendanceBaselinePanel(storedAttendanceRecords, baselineState, baselineUndoAvailable, draftChangeCount, isBaselineDetailsOpen)
-        : '<p class="attendance-board-empty" role="alert">Dữ liệu điểm danh chưa tải được. Vui lòng bấm Làm mới rồi thử lại.</p>'}
+      ${attendanceAvailable ? '' : '<p class="attendance-board-empty" role="alert">Dữ liệu điểm danh chưa tải được. Vui lòng bấm Làm mới rồi thử lại.</p>'}
       ${attendanceAvailable
         ? renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState, normalizedFilters)
         : ''}
@@ -137,19 +166,122 @@ export function renderAttendanceBoardModule(
       ${attendanceAvailable && calendarNotesAvailable
         ? renderAttendanceNoteModal(noteFormState, filteredRows, normalizedFilters)
         : ''}
+      ${attendanceAvailable && attendanceOperationsReady
+        ? renderAttendanceCellNoteContext(
+            availability.attendanceCellNoteContextState,
+            filteredRows,
+            availability.attendanceCellNotes,
+          )
+        : ''}
+      ${attendanceAvailable && attendanceOperationsReady
+        ? renderAttendanceCellNoteModal(
+            availability.attendanceCellNoteFormState,
+            filteredRows,
+            classSessions,
+          )
+        : ''}
+      ${attendanceAvailable && availability.isBaselineManagerOpen
+        ? renderAttendanceBaselineManagerModal(
+            storedAttendanceRecords,
+            baselineState,
+            baselineUndoAvailable,
+            draftChangeCount,
+            isBaselineDetailsOpen,
+          )
+        : ''}
     </section>
   `
 }
 
-function renderOperationalNotesSharedTruthStatus(state = {}) {
-  const message = String(state.message || '').trim()
+function renderAttendanceReminderSummary(reminders = [], rows = [], isOpen = false, isReady = false) {
+  if (!isReady) {
+    return '<p class="attendance-board-operations-notice" role="status">Nhắc việc và ghi chú ô điểm danh hiện chưa tải được.</p>'
+  }
+  const grouped = groupV28AAttendanceRemindersByStudent(reminders)
+  if (!grouped.size) return ''
+  const rowsByStudentId = new Map(rows.map((row) => [String(row?.student?.id || ''), row]))
+  return `
+    <section class="attendance-reminder-summary" aria-label="Nhắc việc điểm danh">
+      <span class="attendance-reminder-summary-dot" aria-hidden="true"></span>
+      <strong>Cần xử lý · ${grouped.size} học viên</strong>
+      <button type="button" data-attendance-reminders-toggle aria-expanded="${isOpen ? 'true' : 'false'}">
+        ${isOpen ? 'Đóng nhắc việc' : 'Xem nhắc việc'}
+      </button>
+      ${isOpen ? `
+        <div class="attendance-reminder-panel">
+          <header>
+            <strong>Nhắc việc điểm danh</strong>
+            <button type="button" data-attendance-reminders-toggle aria-label="Đóng nhắc việc">×</button>
+          </header>
+          <div>
+            ${Array.from(grouped.entries()).map(([studentId, studentReminders]) => {
+              const row = rowsByStudentId.get(studentId)
+              const studentName = cleanDisplayText(row?.student?.fullName || 'Học viên')
+              return `
+                <section class="attendance-reminder-student-group">
+                  <strong>${escapeHtml(studentName)}</strong>
+                  ${studentReminders.map((reminder) => renderAttendanceReminderAction(reminder)).join('')}
+                </section>
+              `
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </section>
+  `
+}
+
+function renderAttendanceOperationsStatus(state = {}) {
+  const message = String(state?.message || '').trim()
+  if (!message) return ''
   const tone = ['success', 'warning', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
-  const migrationWarning = state.legacyMigrationRequired
-    ? ' Ghi chú cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.'
-    : ''
+  return `<p class="attendance-board-operations-notice is-${escapeAttribute(tone)}" role="status">${escapeHtml(message)}</p>`
+}
+
+function renderAttendanceReminderAction(reminder = {}) {
+  const action = reminder.signal === 'REVIEW_UPDATE_DUE'
+    ? 'complete-review'
+    : reminder.signal === 'TBHP_SEND_DUE'
+      ? 'complete-tbhp'
+      : 'open-tuition'
+  const actionLabel = reminder.signal === 'REVIEW_UPDATE_DUE'
+    ? 'Đánh dấu đã cập nhật'
+    : reminder.signal === 'TBHP_SEND_DUE'
+      ? 'Xác nhận đã gửi'
+      : 'Mở Học phí'
+  return `
+    <div class="attendance-reminder-item is-${escapeAttribute(reminder.severity)}">
+      <span>${escapeHtml(reminder.label)}</span>
+      <button
+        type="button"
+        data-attendance-reminder-action="${action}"
+        data-student-id="${escapeAttribute(reminder.studentId)}"
+        data-cycle-id="${escapeAttribute(reminder.cycleId)}"
+        data-reminder-signal="${escapeAttribute(reminder.signal)}"
+        data-checkpoint-version="${escapeAttribute(reminder.checkpointVersion || 0)}"
+      >${actionLabel}</button>
+    </div>
+  `
+}
+
+function renderOperationalNotesSharedTruthStatus(state = {}) {
+  const tone = ['success', 'warning', 'error'].includes(state.messageTone) ? state.messageTone : 'info'
+  let message = ''
+  if (state.isSaving) {
+    message = 'Đang lưu ghi chú dùng chung...'
+  } else if (state.isLoading) {
+    message = 'Đang tải ghi chú dùng chung...'
+  } else if (tone === 'error') {
+    message = 'Ghi chú dùng chung chưa cập nhật được. Nội dung bạn nhập vẫn được giữ nguyên; hãy bấm Làm mới rồi thử lại.'
+  } else if (tone === 'warning' || state.legacyMigrationRequired) {
+    message = 'Ghi chú cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.'
+  }
+  // Routine success is intentionally quiet. Attendance never echoes adapter,
+  // RPC, schema, or operator terminology into the ordinary staff workflow.
+  if (!message) return ''
   return `
     <div class="c57-shared-truth-notice is-${escapeAttribute(tone)}" role="status">
-      <span>${escapeHtml(`${message}${migrationWarning}`.trim() || 'Ghi chú Bảng điểm danh được lưu dùng chung trong cơ sở.')}</span>
+      <span>${escapeHtml(message)}</span>
       <button type="button" data-module-authoritative-refresh="bang-diem-danh" ${state.isLoading || state.isSaving ? 'disabled' : ''}>Làm mới</button>
     </div>
   `
@@ -249,6 +381,11 @@ export function buildAttendanceBoardRows(
       ? availability.packageCycleContributions
       : []).map((contribution) => [getPackageCycleContributionKey(contribution), contribution]),
   )
+  const attendanceOperationsReady = availability.attendanceOperationsReady === true
+  const remindersByStudentId = groupV28AAttendanceRemindersByStudent(
+    availability.attendanceReminders,
+  )
+  const cellNoteByOccurrence = buildAttendanceCellNoteLookup(availability.attendanceCellNotes)
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const attendanceRecords = buildUnifiedAttendanceRecords({
     sessionReports,
@@ -258,7 +395,7 @@ export function buildAttendanceBoardRows(
   })
   const classSessionById = buildAttendanceClassSessionMap(classSessions, sessionReports, attendanceRecords)
   const tuitionByStudentId = new Map(tuitionRecords.map((record) => [record.studentId, record]))
-  const reportLookup = buildAttendanceReportLookup(attendanceRecords, normalizedFilters.month)
+  const reportLookup = buildAttendanceReportLookup(attendanceRecords, normalizedFilters.month, classSessions)
   const advisoryNoteByStudentId = buildAdvisoryNoteLookup(attendanceAdvisoryNotes, normalizedFilters.month)
   const attendanceBoardNoteByStudentId = buildAttendanceBoardNoteLookup(attendanceBoardNotes, normalizedFilters.month)
   const normalizedQuery = normalizeSearchText(normalizedFilters.query)
@@ -269,9 +406,26 @@ export function buildAttendanceBoardRows(
       const reportClassSessionIds = normalizeIdList(
         (reportLookup.get(student.id) || []).map((attendanceItem) => attendanceItem.classSessionId),
       )
-      const classSessionIds = Array.from(new Set([...normalizeIdList(student.classSessionIds), ...reportClassSessionIds]))
+      const recurringEnrollments = Array.isArray(student.recurringEnrollments)
+        ? student.recurringEnrollments
+        : []
+      const enrolledClassSessionIds = normalizeIdList(
+        recurringEnrollments.length
+          ? recurringEnrollments.map((entry) => entry?.classSessionId)
+          : student.classSessionIds,
+      )
+      const classSessionIds = Array.from(new Set([...enrolledClassSessionIds, ...reportClassSessionIds]))
+      const recurringByClassSessionId = new Map(
+        recurringEnrollments.map((entry) => [String(entry?.classSessionId || ''), entry]),
+      )
       const studentClassSessions = classSessionIds
-        .map((classSessionId) => classSessionById.get(classSessionId) || buildFallbackClassSessionFromId(classSessionId))
+        .map((classSessionId) => {
+          const classSession = classSessionById.get(classSessionId) || buildFallbackClassSessionFromId(classSessionId)
+          const enrollment = recurringByClassSessionId.get(String(classSessionId))
+          return classSession && enrollment
+            ? { ...classSession, attendanceWeekdays: normalizeWeekdayValues(enrollment.weekdays) }
+            : classSession
+        })
         .filter(Boolean)
       const tuition = tuitionByStudentId.get(student.id)
       const attendanceSummary = getStudentAttendanceSummary(
@@ -286,6 +440,7 @@ export function buildAttendanceBoardRows(
         },
       )
       const advisoryNote = advisoryNoteByStudentId.get(student.id)
+      const reminders = remindersByStudentId.get(String(student.id)) || []
 
       return {
         index,
@@ -297,6 +452,10 @@ export function buildAttendanceBoardRows(
         tuitionAvailable,
         calendarNotesAvailable,
         attendanceSummary,
+        attendanceOperationsReady,
+        reminders,
+        reminderPresentation: getV28AAttendanceReminderPresentation(reminders),
+        cellNoteByOccurrence,
         careStatus: tuitionAvailable ? getCareStatusLabel(tuition) : 'Chưa tải đối chiếu',
         note: getAttendanceBoardNote(student, advisoryNote, attendanceBoardNoteByStudentId.get(student.id)),
         attendanceBoardNote: attendanceBoardNoteByStudentId.get(student.id) || null,
@@ -458,7 +617,12 @@ function getClassSessionWeekdayIndexes(classSession) {
     fri: 5,
     sat: 6,
   }
-  const daysOfWeek = Array.isArray(classSession?.daysOfWeek) ? classSession.daysOfWeek : []
+  const attendanceWeekdays = Array.isArray(classSession?.attendanceWeekdays)
+    ? classSession.attendanceWeekdays
+    : []
+  const daysOfWeek = attendanceWeekdays.length
+    ? attendanceWeekdays
+    : Array.isArray(classSession?.daysOfWeek) ? classSession.daysOfWeek : []
   const indexes = daysOfWeek
     .map((day) => dayIndexByValue[String(day || '').trim().toLowerCase()])
     .filter((index) => Number.isInteger(index))
@@ -468,6 +632,21 @@ function getClassSessionWeekdayIndexes(classSession) {
     : parseClassSessionDayIndexes(
         classSession?.daysLabel || classSession?.dayLabel || classSession?.displayLabel || classSession?.name,
       )
+}
+
+function normalizeWeekdayValues(values = []) {
+  const aliases = {
+    mon: 'mon', monday: 'mon', t2: 'mon',
+    tue: 'tue', tuesday: 'tue', t3: 'tue',
+    wed: 'wed', wednesday: 'wed', t4: 'wed',
+    thu: 'thu', thursday: 'thu', t5: 'thu',
+    fri: 'fri', friday: 'fri', t6: 'fri',
+    sat: 'sat', saturday: 'sat', t7: 'sat',
+    sun: 'sun', sunday: 'sun', cn: 'sun',
+  }
+  return Array.from(new Set((Array.isArray(values) ? values : [])
+    .map((value) => aliases[String(value || '').trim().toLowerCase()])
+    .filter(Boolean)))
 }
 
 export function parseClassSessionDayIndexes(dayLabel = '') {
@@ -537,10 +716,13 @@ function renderAttendanceBoardRow(row, rowIndex, dates, baselineState, hideClass
   return `
     <tr class="${row.isUnassigned ? 'is-unassigned' : ''}">
       <td class="is-sticky">${rowIndex + 1}</td>
-      <td class="is-sticky">
+      <td class="is-sticky attendance-student-cell is-${escapeAttribute(row.reminderPresentation?.tone || 'normal')}">
         <strong>${escapeHtml(cleanDisplayText(row.student.fullName || ''))}</strong>
+        ${row.reminderPresentation?.count
+          ? `<small>${escapeHtml(row.reminderPresentation.statusText)}</small>`
+          : ''}
       </td>
-      ${hideClassSessionColumn ? '' : `<td class="attendance-class-session-column">${renderClassSessionList(row.classSessions)}</td>`}
+      ${hideClassSessionColumn ? '' : `<td class="attendance-class-session-column">${renderClassSessionList(row.classSessions, row.student.id)}</td>`}
       ${dates.map((dateItem, dateIndex) => renderAttendanceCell(row, dateItem, baselineState, rowIndex, dateIndex)).join('')}
       <td class="attendance-package-sessions-cell">${renderAttendancePackageSessions(row)}</td>
       <td class="attendance-note-cell">${renderAttendanceNoteCell(row)}</td>
@@ -623,6 +805,18 @@ function renderAttendanceCell(row, dateItem, baselineState = {}, rowIndex = 0, d
       attendance.attendanceStatus === 'makeup' ? 'attendance-cell-makeup' : '',
       isCombinedAttendanceItem(attendance) ? 'attendance-cell-combined' : '',
     ].filter(Boolean)
+    const occurrenceRefs = (Array.isArray(attendance.occurrenceRefs) ? attendance.occurrenceRefs : [])
+      .map((occurrence) => ({
+        ...occurrence,
+        note: row.cellNoteByOccurrence?.get(getAttendanceCellNoteKey({
+          studentId: row.student.id,
+          scheduleSessionId: occurrence.scheduleSessionId,
+          occurrenceDate: occurrence.occurrenceDate || dateItem.dateKey,
+        })) || null,
+      }))
+      .filter((occurrence) => occurrence.scheduleSessionId)
+    const canOpenCellNote = row.attendanceOperationsReady && occurrenceRefs.length > 0
+    const hasCellNote = occurrenceRefs.some((occurrence) => String(occurrence.note?.note || '').trim())
 
     return `
       <td class="${escapeAttribute(cellClasses.join(' '))}">
@@ -632,9 +826,12 @@ function renderAttendanceCell(row, dateItem, baselineState = {}, rowIndex = 0, d
           data-attendance-cell-detail
           data-student-id="${escapeAttribute(row.student.id)}"
           data-date-key="${escapeAttribute(dateItem.dateKey)}"
+          ${canOpenCellNote ? 'data-attendance-cell-context' : ''}
+          ${canOpenCellNote ? `data-attendance-occurrences="${escapeAttribute(encodeURIComponent(JSON.stringify(occurrenceRefs)))}"` : ''}
           title="${escapeAttribute(titleParts.join(' · '))}"
         >
           ${renderAttendanceCellDisplay(attendance)}
+          ${hasCellNote ? '<span class="attendance-cell-note-indicator" aria-label="Có ghi chú ô"></span>' : ''}
         </button>
       </td>
     `
@@ -708,7 +905,7 @@ function renderAttendanceBaselineEditableCell(row, dateItem, attendance, isPlann
   `
 }
 
-function renderClassSessionList(classSessions) {
+function renderClassSessionList(classSessions, studentId = '') {
   if (!classSessions.length) {
     return `
       <span class="attendance-unassigned">Chưa phân lớp</span>
@@ -716,24 +913,33 @@ function renderClassSessionList(classSessions) {
   }
 
   return `
-    <div class="attendance-class-session-list">
-      ${classSessions
-        .map(
-          (classSession) => `
-            <span
-              class="${[
-                classSession.status === 'inactive' ? 'is-inactive' : '',
-                classSession.isMissing ? 'is-missing' : '',
-              ].filter(Boolean).join(' ')}"
-              ${classSession.isMissing ? 'title="Ca học / Lớp này chưa có trong Cài đặt cơ sở."' : ''}
-            >
-              ${escapeHtml(getClassSessionLabel(classSession))}
-            </span>
-          `,
-        )
+    <button
+      type="button"
+      class="attendance-class-session-list"
+      data-attendance-student-schedule-edit
+      data-student-id="${escapeAttribute(studentId)}"
+      title="Mở hồ sơ học viên để chỉnh lịch học"
+    >
+      ${classSessions.flatMap((classSession) => getStudentScheduleLines(classSession))
+        .map((line) => `<span>${escapeHtml(line)}</span>`)
         .join('')}
-    </div>
+    </button>
   `
+}
+
+function getStudentScheduleLines(classSession = {}) {
+  const labelByDay = { mon: 'T2', tue: 'T3', wed: 'T4', thu: 'T5', fri: 'T6', sat: 'T7', sun: 'CN' }
+  const explicitWeekdays = normalizeWeekdayValues(classSession.attendanceWeekdays)
+  const weekdays = explicitWeekdays.length
+    ? explicitWeekdays
+    : Object.entries({ sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 })
+      .filter(([, index]) => getClassSessionWeekdayIndexes(classSession).includes(index))
+      .map(([day]) => day)
+  const startTime = String(classSession.startTime || '').trim()
+  const endTime = String(classSession.endTime || '').trim()
+  const timeLabel = startTime && endTime ? `${startTime}–${endTime}` : startTime || endTime
+  if (!weekdays.length) return [getClassSessionLabel(classSession)]
+  return weekdays.map((weekday) => [labelByDay[weekday], timeLabel].filter(Boolean).join(' · '))
 }
 
 function renderAttendanceCellDisplay(attendance) {
@@ -741,6 +947,14 @@ function renderAttendanceCellDisplay(attendance) {
 
   if (attendance.attendanceStatus === 'trial' || String(attendance.displayValue || '').toUpperCase() === 'T') {
     return '<span class="attendance-credit-chip is-trial">T</span>'
+  }
+
+  if (attendance.attendanceStatus === 'makeup') {
+    return '<span class="attendance-credit-chip is-makeup">Bù</span>'
+  }
+
+  if (['absent', 'unexcusedAbsent', 'excused', 'excusedAbsent'].includes(attendance.attendanceStatus)) {
+    return '<span class="attendance-credit-chip is-absent">Vắng</span>'
   }
 
   if (isCombinedAttendanceItem(attendance)) {
@@ -975,6 +1189,99 @@ function renderAttendanceNoteModal(noteFormState, rows, filters) {
   `
 }
 
+function renderAttendanceCellNoteContext(contextState, rows, cellNotes = []) {
+  if (!contextState?.studentId || !contextState?.dateKey || !Array.isArray(contextState.occurrences)) return ''
+  const row = rows.find((candidate) => String(candidate.student.id) === String(contextState.studentId))
+  if (!row) return ''
+  const notesByOccurrence = buildAttendanceCellNoteLookup(cellNotes)
+  const left = Math.max(12, Math.min(Number(contextState.x) || 12, 1220))
+  const top = Math.max(12, Math.min(Number(contextState.y) || 12, 620))
+  return `
+    <div class="attendance-cell-context-dismiss" data-attendance-cell-context-close></div>
+    <section class="attendance-cell-note-context" role="menu" style="left:${left}px;top:${top}px">
+      <header>
+        <strong>${escapeHtml(cleanDisplayText(row.student.fullName || 'Học viên'))}</strong>
+        <span>${escapeHtml(formatAttendanceDate(contextState.dateKey))}</span>
+      </header>
+      ${contextState.occurrences.map((occurrence) => {
+        const key = getAttendanceCellNoteKey({
+          studentId: contextState.studentId,
+          scheduleSessionId: occurrence.scheduleSessionId,
+          occurrenceDate: occurrence.occurrenceDate || contextState.dateKey,
+        })
+        const note = notesByOccurrence.get(key)
+        return `
+          <button
+            type="button"
+            role="menuitem"
+            data-attendance-cell-note-open
+            data-occurrence="${escapeAttribute(encodeURIComponent(JSON.stringify({ ...occurrence, note })))}"
+          >
+            <span>${escapeHtml(occurrence.classSessionLabel || 'Buổi học')}</span>
+            <small>${note?.note ? 'Sửa ghi chú ô' : 'Thêm ghi chú ô'}</small>
+          </button>
+        `
+      }).join('')}
+    </section>
+  `
+}
+
+function renderAttendanceCellNoteModal(formState, rows, classSessions) {
+  if (!formState?.studentId || !formState?.scheduleSessionId || !formState?.occurrenceDate) return ''
+  const row = rows.find((candidate) => String(candidate.student.id) === String(formState.studentId))
+  if (!row) return ''
+  const classSession = classSessions.find((candidate) => String(candidate.id) === String(formState.classSessionId))
+  return `
+    <div class="attendance-detail-backdrop" role="presentation" data-attendance-cell-note-cancel></div>
+    <section class="attendance-cell-note-modal" role="dialog" aria-modal="true" aria-label="Ghi chú ô điểm danh">
+      <header>
+        <div>
+          <h4>Ghi chú ô điểm danh</h4>
+          <p>${escapeHtml(cleanDisplayText(row.student.fullName || 'Học viên'))} · ${escapeHtml(formatAttendanceDate(formState.occurrenceDate))}</p>
+        </div>
+        <button type="button" aria-label="Đóng" data-attendance-cell-note-cancel>×</button>
+      </header>
+      <p class="attendance-cell-note-occurrence">${escapeHtml(getClassSessionLabel(classSession) || formState.classSessionLabel || 'Buổi học')}</p>
+      <label>
+        <span>Nội dung ghi chú</span>
+        <textarea data-attendance-cell-note-field maxlength="4000" placeholder="Nhập ghi chú cho đúng ô điểm danh này">${escapeHtml(formState.note || '')}</textarea>
+      </label>
+      <div class="attendance-note-modal-actions">
+        <button type="button" data-attendance-cell-note-cancel ${formState.isSaving ? 'disabled' : ''}>Hủy</button>
+        <button type="button" data-attendance-cell-note-save ${formState.isSaving ? 'disabled' : ''}>${formState.isSaving ? 'Đang lưu…' : 'Lưu ghi chú'}</button>
+      </div>
+    </section>
+  `
+}
+
+function renderAttendanceBaselineManagerModal(
+  storedAttendanceRecords,
+  baselineState,
+  baselineUndoAvailable,
+  draftChangeCount,
+  isDetailsOpen,
+) {
+  return `
+    <div class="attendance-detail-backdrop" role="presentation" data-attendance-baseline-manager-close></div>
+    <section class="attendance-baseline-manager-modal" role="dialog" aria-modal="true" aria-label="Quản lý dữ liệu nền">
+      <header>
+        <div>
+          <h4>Quản lý dữ liệu nền</h4>
+          <p>Các thao tác vận hành dữ liệu nền điểm danh.</p>
+        </div>
+        <button type="button" aria-label="Đóng" data-attendance-baseline-manager-close>×</button>
+      </header>
+      ${renderAttendanceBaselinePanel(
+        storedAttendanceRecords,
+        baselineState,
+        baselineUndoAvailable,
+        draftChangeCount,
+        isDetailsOpen,
+      )}
+    </section>
+  `
+}
+
 function getAttendanceDetailTypeLabel(attendance) {
   if (attendance.attendanceStatus === 'trial' || attendance.countingStatus === 'trial') {
     return 'Học thử'
@@ -1172,9 +1479,7 @@ function getStudentAttendanceSummary(
       }
     }
 
-    byDate.set(
-      item.dateKey,
-      decorateAttendanceCountingItem(
+    const decoratedItem = decorateAttendanceCountingItem(
         {
           ...item,
           credits,
@@ -1184,8 +1489,11 @@ function getStudentAttendanceSummary(
         packageTotalSessions,
         paidCycleCount,
         tuitionAvailable,
-      ),
-    )
+      )
+    const sameDateItem = byDate.get(item.dateKey)
+    byDate.set(item.dateKey, sameDateItem
+      ? mergeAttendanceDisplayItems(sameDateItem, decoratedItem)
+      : decoratedItem)
   })
 
   return {
@@ -1298,7 +1606,45 @@ function mergePackageCycleAttendanceItems(first = {}, second = {}) {
         : second.countingStatus,
     cycleLabel: cycleLabels.join(' · '),
     warning: warnings.join(' · '),
+    occurrenceRefs: mergeAttendanceOccurrenceRefs(first.occurrenceRefs, second.occurrenceRefs),
   }
+}
+
+function mergeAttendanceDisplayItems(first = {}, second = {}) {
+  const credits = [...(first.credits || []), ...(second.credits || [])]
+  const statusPriority = ['makeup', 'present', 'trial', 'excusedAbsent', 'excused', 'unexcusedAbsent', 'absent']
+  const attendanceStatus = statusPriority.find((status) =>
+    status === first.attendanceStatus || status === second.attendanceStatus,
+  ) || second.attendanceStatus
+  return {
+    ...second,
+    attendanceStatus,
+    note: [...new Set([first.note, second.note].filter(Boolean))].join(' · '),
+    credits,
+    countsTowardTuition: first.countsTowardTuition || second.countsTowardTuition,
+    displayValue: credits.length
+      ? credits.map((credit) => getAttendanceCreditDisplayValue(credit)).join(' ')
+      : attendanceStatusLabels[attendanceStatus] || second.displayValue,
+    isCombinedCredit: credits.length > 1,
+    needsMakeupReview: first.needsMakeupReview || second.needsMakeupReview,
+    countingStatus: first.countingStatus === 'unpaid' || second.countingStatus === 'unpaid'
+      ? 'unpaid'
+      : first.countingStatus === 'paid' || second.countingStatus === 'paid'
+        ? 'paid'
+        : second.countingStatus,
+    cycleLabel: [...new Set([first.cycleLabel, second.cycleLabel].filter(Boolean))].join(' · '),
+    warning: [...new Set([first.warning, second.warning].filter(Boolean))].join(' · '),
+    occurrenceRefs: mergeAttendanceOccurrenceRefs(first.occurrenceRefs, second.occurrenceRefs),
+  }
+}
+
+function mergeAttendanceOccurrenceRefs(first = [], second = []) {
+  return Array.from(new Map([...(first || []), ...(second || [])]
+    .filter((occurrence) => occurrence?.scheduleSessionId)
+    .map((occurrence) => [
+      `${occurrence.scheduleSessionId}::${occurrence.occurrenceDate || ''}`,
+      occurrence,
+    ])).values())
 }
 
 function hasExplicitAttendanceCredits(item) {
@@ -1380,8 +1726,13 @@ function getAttendanceCellStatusClass(attendance) {
   return attendance.isWrapStart ? 'attendance-cell-paid is-wrap-start' : 'attendance-cell-paid'
 }
 
-function buildAttendanceReportLookup(attendanceRecords, monthValue) {
+function buildAttendanceReportLookup(attendanceRecords, monthValue, classSessions = []) {
   const groupedRecords = new Map()
+  const classSessionLabelById = new Map(
+    (Array.isArray(classSessions) ? classSessions : [])
+      .filter((classSession) => classSession?.id)
+      .map((classSession) => [String(classSession.id), getClassSessionLabel(classSession)]),
+  )
 
   attendanceRecords.forEach((record) => {
     if (!record.date || !record.studentId || !record.date.startsWith(monthValue)) {
@@ -1431,6 +1782,18 @@ function buildAttendanceReportLookup(attendanceRecords, monthValue) {
       countsTowardTuition: records.some((record) => record.counted),
       isCombinedCredit: Boolean(attendanceItem.isCombinedCredit || records.length > 1 || buildCreditsFromAttendanceRecords(records).length > 1),
       needsMakeupReview: Boolean(attendanceItem.needsMakeupReview),
+      occurrenceRefs: Array.from(new Map(records
+        .map((record) => {
+          const scheduleSessionId = String(record.scheduleSessionId || record.sessionId || '').trim()
+          if (!scheduleSessionId) return null
+          return [scheduleSessionId, {
+            scheduleSessionId,
+            occurrenceDate: dateKey,
+            classSessionId: String(record.classSessionId || ''),
+            classSessionLabel: classSessionLabelById.get(String(record.classSessionId || '')) || '',
+          }]
+        })
+        .filter(Boolean)).values()),
     })
     lookup.set(studentId, items)
 
@@ -1549,6 +1912,23 @@ function buildAttendanceBoardNoteLookup(attendanceBoardNotes, monthValue) {
     lookup.set(note.studentId, note)
     return lookup
   }, new Map())
+}
+
+function buildAttendanceCellNoteLookup(cellNotes = []) {
+  return (Array.isArray(cellNotes) ? cellNotes : []).reduce((lookup, note) => {
+    const key = getAttendanceCellNoteKey(note)
+    if (key) lookup.set(key, note)
+    return lookup
+  }, new Map())
+}
+
+function getAttendanceCellNoteKey(note = {}) {
+  const studentId = String(note.studentId || '').trim()
+  const scheduleSessionId = String(note.scheduleSessionId || '').trim()
+  const occurrenceDate = String(note.occurrenceDate || note.dateKey || '').trim()
+  return studentId && scheduleSessionId && occurrenceDate
+    ? `${studentId}::${scheduleSessionId}::${occurrenceDate}`
+    : ''
 }
 
 function getAttendanceBoardNote(_student, _advisoryNote, attendanceBoardNote) {

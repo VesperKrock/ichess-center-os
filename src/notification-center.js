@@ -8,6 +8,7 @@ export const notificationSourceLabels = {
   'thu-chi': 'Thu chi',
   'so-quy': 'Sổ quỹ',
   'cai-dat-co-so': 'Cài đặt cơ sở',
+  'bang-diem-danh': 'Bảng điểm danh',
   'he-thong': 'Hệ thống',
 }
 
@@ -59,6 +60,7 @@ const derivedNotificationTypes = new Set([
   'inventory-request',
   'inventory-cycle-count',
   'parent-followup',
+  'attendance-operation',
 ])
 
 export function buildStudentBirthdayNotificationCandidates(students, options = {}) {
@@ -155,22 +157,12 @@ export function buildV24TuitionNotificationCandidates(studentStates, students, o
 
     const needsPackageSelection = cycle.lifecycleStatus === 'NEEDS_PACKAGE_SELECTION'
       || cycle.reminderState === 'PACKAGE_SELECTION_REQUIRED'
-    const provisionalUnpaid = cycle.lifecycleStatus === 'PROVISIONAL_UNPAID'
-      && cycle.paymentStatus !== 'PAID'
-
     if (needsPackageSelection) {
       addCandidate(
         'needs-package-selection',
         'danger',
         `${studentLabel} cần chọn gói học`,
         'Chu kỳ tạm thời chưa có đủ thông tin gói học.',
-      )
-    } else if (provisionalUnpaid) {
-      addCandidate(
-        'provisional-unpaid',
-        'warning',
-        `${studentLabel} có chu kỳ chưa thanh toán`,
-        'Chu kỳ tiếp theo đang tạm thời chưa thanh toán.',
       )
     }
 

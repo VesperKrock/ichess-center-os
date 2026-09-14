@@ -54,10 +54,10 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
   ),
   entry(
     'bang-diem-danh',
-    [],
+    ['V2.8A Attendance operations'],
     ['C5.1 Student/Class/Schedule', 'C5.2 Attendance/Baseline/Session Report/Tuition', 'C5.7 manual notes'],
     ['core', 'attendance'],
-    ['tuition', 'calendar-notes'],
+    ['tuition', 'calendar-notes', 'attendance-operations'],
   ),
   Object.freeze({
     moduleId: 'dang-cap-nhat',

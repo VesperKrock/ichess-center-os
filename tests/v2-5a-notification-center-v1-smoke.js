@@ -76,8 +76,10 @@ const tuitionStates = [
 const tuitionCandidates = buildV24TuitionNotificationCandidates(tuitionStates, tuitionStudents, { centerId, today })
 assert.deepEqual(
   tuitionCandidates.map((candidate) => candidate.meta.signal).sort(),
-  ['bcht-due', 'needs-package-selection', 'package-exhausted', 'provisional-unpaid', 'renewal-due'],
+  ['bcht-due', 'needs-package-selection', 'package-exhausted', 'renewal-due'],
 )
+assert(!tuitionCandidates.some((candidate) => candidate.entityId === 'student-provisional'),
+  'V2-8A owns the authoritative provisional-cycle payment-check signal.')
 assert(tuitionCandidates.every((candidate) => candidate.sourceModule === 'hoc-phi'))
 
 const occurrences = [

@@ -4,6 +4,7 @@ import './schedule-theme.css'
 import './report-theme.css'
 import './tuition-theme.css'
 import './finance-theme.css'
+import './attendance-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -381,10 +382,24 @@ import {
   notificationSourceLabels,
   upsertNotificationCandidates,
 } from './notification-center.js'
+import { buildV28AAttendanceNotificationCandidates } from './attendance-operational-reminders.js'
 import {
   initialAttendanceBoardFilters,
   renderAttendanceBoardModule,
 } from './attendance-board-module.js'
+import {
+  buildV28AMarkTbhpSentCommand,
+  buildV28AUpsertCellNoteCommand,
+  createV28AAttendanceOperationIdempotencyKey,
+  createV28AAttendanceOperationRetryFingerprint,
+  createV28AAttendanceOperationsCapabilityState,
+  getV28AAttendanceOperationOutcomeMessage,
+  isV28AAttendanceOperationsBackendUnavailable,
+  isV28AAttendanceOperationsCapabilityReady,
+  mutateV28AAttendanceOperation,
+  pullV28AAttendanceOperations,
+  V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS,
+} from './cloud-authoritative-attendance-operations.js'
 import {
   clearInitialBaselineAttendanceRecordsInMonth,
   createInitialBaselineEditSnapshot,
@@ -994,6 +1009,10 @@ let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
 let attendanceBoardDetailState = null
 let attendanceBoardNoteFormState = null
 let isAttendanceBaselineDetailsOpen = false
+let isAttendanceBaselineManagerOpen = false
+let isAttendanceReminderPanelOpen = false
+let attendanceCellNoteContextState = null
+let attendanceCellNoteFormState = null
 let studentFormState = null
 let settingsFilters = { ...initialSettingsFilters }
 let settingsActiveTab = 'class-sessions'
@@ -1020,6 +1039,12 @@ let v24PackageCycleCatalog = []
 let v24PackageCycleContributions = []
 let v24PackageCycleSyncRunId = 0
 const v24PackageCycleRetryCommands = new Map()
+let v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState()
+let v28aAttendanceReminders = []
+let v28aAttendanceTbhpCheckpoints = []
+let v28aAttendanceCellNotes = []
+let v28aAttendanceOperationsSyncRunId = 0
+const v28aAttendanceOperationsRetryCommands = new Map()
 let wallpaperRuntimeState = {
   userId: '',
   hasPersonal: false,
@@ -1928,6 +1953,20 @@ function resetV24PackageCycleRuntimeForAccessBoundary(centerId = '') {
   v24PackageCycleCatalog = []
   v24PackageCycleContributions = []
   v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState({ centerId })
+  resetV28AAttendanceOperationsRuntimeForAccessBoundary(centerId)
+}
+
+function resetV28AAttendanceOperationsRuntimeForAccessBoundary(centerId = '') {
+  v28aAttendanceOperationsSyncRunId += 1
+  v28aAttendanceOperationsRetryCommands.clear()
+  v28aAttendanceReminders = []
+  v28aAttendanceTbhpCheckpoints = []
+  v28aAttendanceCellNotes = []
+  v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({ centerId })
+  isAttendanceReminderPanelOpen = false
+  isAttendanceBaselineManagerOpen = false
+  attendanceCellNoteContextState = null
+  attendanceCellNoteFormState = null
 }
 
 function getPersonalWallpaperScope(userId = cloudStatus.user?.id || '') {
@@ -11417,6 +11456,7 @@ function renderModuleWindow(windowItem) {
   const isScheduleWindow = windowItem.moduleId === 'thoi-khoa-bieu' && !windowItem.type
   const isReportWindow = windowItem.moduleId === 'bao-cao' && !windowItem.type
   const isTuitionWindow = windowItem.moduleId === 'hoc-phi' && !windowItem.type
+  const isAttendanceWindow = windowItem.moduleId === 'bang-diem-danh' && !windowItem.type
   const financeSurface = !windowItem.type
     ? {
         'nhom-tai-chinh': 'gateway',
@@ -11439,7 +11479,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -12215,8 +12255,13 @@ function renderWindowBody(windowItem) {
     const attendanceAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'attendance')
     const tuitionAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'tuition')
     const calendarNotesAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'calendar-notes')
+    const attendanceOperationsReady = isModuleUpstreamCurrent('bang-diem-danh', 'attendance-operations')
+      && isV28AAttendanceOperationsCapabilityReady(
+        v28aAttendanceOperationsCapabilityState,
+        getCurrentCanonicalCenterContext().centerId,
+      )
     return renderAttendanceBoardModule(
-      students,
+      getStudentsWithCanonicalProjections(),
       classSessions,
       tuitionAvailable ? tuitionRecords : [],
       attendanceAvailable ? sessionReports : [],
@@ -12245,6 +12290,14 @@ function renderWindowBody(windowItem) {
         ),
         packageCycleStudentStates: v24PackageCycleStudentStates,
         packageCycleContributions: v24PackageCycleContributions,
+        attendanceOperationsReady,
+        attendanceReminders: attendanceOperationsReady ? v28aAttendanceReminders : [],
+        attendanceCellNotes: attendanceOperationsReady ? v28aAttendanceCellNotes : [],
+        attendanceOperationsState: v28aAttendanceOperationsCapabilityState,
+        isReminderPanelOpen: isAttendanceReminderPanelOpen,
+        attendanceCellNoteContextState,
+        attendanceCellNoteFormState,
+        isBaselineManagerOpen: isAttendanceBaselineManagerOpen,
       },
     )
   }
@@ -13552,7 +13605,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, settledResult)
     return settledResult
   }))
-  if (moduleId === 'hoc-vien' || moduleId === 'thoi-khoa-bieu') {
+  if (moduleId === 'hoc-vien' || moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
     await refreshV22StudentEnrollments({ reason: `${moduleId}:${reason}`, silent: true })
   }
   if (moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
@@ -13611,6 +13664,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
         ? 'Lịch hoạt động bổ sung'
         : 'Ghi chú chăm sóc theo tháng và ghi chú điểm danh',
       'center-settings': 'Cài đặt dùng chung và danh mục gói học phí',
+      'attendance-operations': 'Nhắc việc và ghi chú ô điểm danh',
     })[upstream] || 'Một phần dữ liệu bổ sung'
     const outcomeCode = evaluation.health?.[upstream]?.outcomeCode || ''
     return (
@@ -13723,6 +13777,8 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
       return refreshC57CalendarNotesSharedTruth({ reason, silent: true })
     case 'center-settings':
       return refreshV21CenterSettings({ reason, silent: true })
+    case 'attendance-operations':
+      return refreshV28AAttendanceOperations({ reason, silent: true })
     case 'teacher-registry':
       return refreshV26TeacherRegistry({ reason, silent: true })
     default:
@@ -13736,6 +13792,8 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
     'core',
     'attendance',
     'package-cycles',
+    'calendar-notes',
+    'attendance-operations',
     ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerContext.centerId)
       && isV27AInventoryCycleCountCapabilityReady(
         v27aInventoryCycleCountCapabilityState,
@@ -15151,6 +15209,14 @@ function toggleMaximizeWindow(windowId) {
 
 function closeWindow(windowId) {
   const closingWindow = openWindows.find((windowItem) => windowItem.id === windowId)
+  if (closingWindow?.moduleId === 'bang-diem-danh') {
+    attendanceBoardDetailState = null
+    attendanceBoardNoteFormState = null
+    attendanceCellNoteContextState = null
+    attendanceCellNoteFormState = null
+    isAttendanceReminderPanelOpen = false
+    isAttendanceBaselineManagerOpen = false
+  }
   if (closingWindow?.type === 'staff-administrative-profile') {
     const closingState = getStaffAdministrativeProfileWindowState(windowId)
     purgeStaffAdministrativeSensitiveProfile(
@@ -17265,6 +17331,9 @@ async function writeC54FinanceCommand(command, {
       ...commandContext,
     }
   }
+  if (isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)) {
+    await refreshV28AAttendanceOperations({ reason: 'finance-reconciled', silent: true })
+  }
   c54FinanceRetryCommands.delete(retryScope)
   return { ...result, ok: true, projection, reason, ...commandContext }
 }
@@ -17371,6 +17440,9 @@ async function writeC54TuitionPaymentVoid(transaction, reason) {
     }
     render()
     return failure
+  }
+  if (isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)) {
+    await refreshV28AAttendanceOperations({ reason: 'finance-reconciled', silent: true })
   }
   c54TuitionPaymentVoidRetryCommands.delete(retryScope)
   return { ...result, ok: true, projection, reusedPendingIntent: Boolean(existingPending) }
@@ -18208,6 +18280,57 @@ async function refreshV24PackageCycles({ reason = 'manual-refresh', silent = tru
   return result
 }
 
+async function refreshV28AAttendanceOperations({ reason = 'manual-refresh', silent = true } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++v28aAttendanceOperationsSyncRunId
+  if (!centerContext.ok) {
+    resetV28AAttendanceOperationsRuntimeForAccessBoundary('')
+    return { ok: false, outcome_code: 'INVALID_CENTER' }
+  }
+  v28aAttendanceReminders = []
+  v28aAttendanceTbhpCheckpoints = []
+  v28aAttendanceCellNotes = []
+  v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
+    centerId,
+    status: V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    message: silent ? '' : 'Đang tải nhắc việc và ghi chú ô điểm danh…',
+  })
+  if (!silent) render()
+  const result = await pullV28AAttendanceOperations({ supabase: getSupabaseClient(), centerId })
+  if (runId !== v28aAttendanceOperationsSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED' }
+  }
+  if (!result.ok) {
+    const unavailable = result.unavailable || isV28AAttendanceOperationsBackendUnavailable(result)
+    v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
+      centerId,
+      status: unavailable
+        ? V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS.UNAVAILABLE
+        : V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS.FAILED,
+      message: unavailable ? '' : result.error || getV28AAttendanceOperationOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? '' : 'error',
+    })
+    if (!silent) render()
+    return result
+  }
+  v28aAttendanceReminders = result.reminders
+  v28aAttendanceTbhpCheckpoints = result.tbhpCheckpoints
+  v28aAttendanceCellNotes = result.cellNotes
+  v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
+    centerId,
+    status: V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS.READY,
+    message: reason === 'after-server-commit' ? 'Đã cập nhật nhắc việc và ghi chú ô điểm danh.' : '',
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  })
+  notifications = syncAppNotifications(notifications)
+  render()
+  return result
+}
+
 async function refreshV26TeacherRegistry({ reason = 'manual-refresh', silent = false } = {}) {
   const centerContext = getCurrentCanonicalCenterContext()
   const centerId = centerContext.centerId
@@ -18331,6 +18454,79 @@ async function writeV24PackageCycleCommand(command, reason = 'package-cycle-save
     }
   }
   v24PackageCycleRetryCommands.delete(retryScope)
+  return { ...result, ok: true, projection, reason }
+}
+
+async function writeV28AAttendanceOperation(command, reason = 'attendance-operation-save') {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)) {
+    return {
+      ok: false,
+      outcome_code: 'BACKEND_NOT_DEPLOYED',
+      error: getV28AAttendanceOperationOutcomeMessage('BACKEND_NOT_DEPLOYED'),
+    }
+  }
+  const fingerprint = createV28AAttendanceOperationRetryFingerprint(command)
+  const retryScope = `${centerId}|${fingerprint}`
+  const pending = v28aAttendanceOperationsRetryCommands.get(retryScope) || {
+    centerId,
+    command,
+    idempotencyKey: createV28AAttendanceOperationIdempotencyKey(),
+  }
+  v28aAttendanceOperationsRetryCommands.set(retryScope, pending)
+  const runId = ++v28aAttendanceOperationsSyncRunId
+  v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
+    ...v28aAttendanceOperationsCapabilityState,
+    centerId,
+    status: V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS.READY,
+    isSaving: true,
+    message: 'Đang lưu thay đổi…',
+  })
+  render()
+  const result = await mutateV28AAttendanceOperation({
+    supabase: getSupabaseClient(),
+    centerId,
+    command: pending.command,
+    idempotencyKey: pending.idempotencyKey,
+  })
+  if (runId !== v28aAttendanceOperationsSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return {
+      ...result,
+      ok: false,
+      committed: Boolean(result.ok),
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: result.ok
+        ? 'Thay đổi đã được lưu ở cơ sở trước; màn hình hiện tại không dùng kết quả đó.'
+        : getV28AAttendanceOperationOutcomeMessage('CENTER_CONTEXT_CHANGED'),
+    }
+  }
+  if (!result.ok) {
+    if (!['WRITE_FAILED', 'INVALID_SERVER_RESULT'].includes(result.outcome_code)) {
+      v28aAttendanceOperationsRetryCommands.delete(retryScope)
+    }
+    v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
+      ...v28aAttendanceOperationsCapabilityState,
+      centerId,
+      status: V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS.READY,
+      isSaving: false,
+      message: result.error || getV28AAttendanceOperationOutcomeMessage(result.outcome_code),
+      messageTone: 'error',
+    })
+    render()
+    return result
+  }
+  const projection = await refreshV28AAttendanceOperations({ reason: 'after-server-commit', silent: true })
+  if (!projection.ok) {
+    return {
+      ...result,
+      ok: false,
+      committed: true,
+      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
+      error: 'Thay đổi đã được lưu nhưng chưa tải lại được dữ liệu mới. Hãy bấm Làm mới.',
+    }
+  }
+  v28aAttendanceOperationsRetryCommands.delete(retryScope)
   return { ...result, ok: true, projection, reason }
 }
 
@@ -19456,6 +19652,9 @@ async function writeV23OccurrenceAttendanceThroughCloud({
   }
   if (isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)) {
     await refreshV24PackageCycles({ reason: 'attendance-reconciled', silent: true })
+  }
+  if (isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)) {
+    await refreshV28AAttendanceOperations({ reason: 'attendance-reconciled', silent: true })
   }
   return { ...result, projection: mergeResult }
 }
@@ -26104,6 +26303,165 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-attendance-student-schedule-edit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openStudentEditForm(button.dataset.studentId || '')
+    })
+  })
+
+  document.querySelector('[data-attendance-baseline-manager-open]')?.addEventListener('click', () => {
+    isAttendanceBaselineManagerOpen = true
+    attendanceCellNoteContextState = null
+    render()
+  })
+
+  document.querySelectorAll('[data-attendance-baseline-manager-close]').forEach((button) => {
+    button.addEventListener('click', () => {
+      isAttendanceBaselineManagerOpen = false
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-reminders-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      isAttendanceReminderPanelOpen = !isAttendanceReminderPanelOpen
+      attendanceCellNoteContextState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-reminder-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const cycleId = button.dataset.cycleId || ''
+      const signal = button.dataset.reminderSignal || ''
+      const reminder = v28aAttendanceReminders.find((candidate) =>
+        candidate.cycleId === cycleId && candidate.signal === signal,
+      )
+      if (!reminder) return
+      if (signal === 'PAYMENT_CHECK_DUE') {
+        openModuleWindowFromChildInteraction('hoc-phi')
+        return
+      }
+      if (signal === 'TBHP_SEND_DUE') {
+        await writeV28AAttendanceOperation(
+          buildV28AMarkTbhpSentCommand(reminder),
+          'attendance-tbhp-sent',
+        )
+        return
+      }
+      if (signal === 'REVIEW_UPDATE_DUE') {
+        const monthKey = reminder.triggerDate.slice(0, 7)
+        const existingNote = attendanceAdvisoryNotes.find((note) =>
+          note.studentId === reminder.studentId && note.monthKey === monthKey,
+        )
+        const result = await writeC57CalendarNotesCommand(buildC57UpsertAdvisoryNoteCommand({
+          ...existingNote,
+          studentId: reminder.studentId,
+          monthKey,
+          careStatus: 'sentComment',
+          note: existingNote?.note || '',
+        }), { reason: 'attendance-review-updated' })
+        if (result.ok) {
+          await refreshV28AAttendanceOperations({ reason: 'review-completed', silent: true })
+        }
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-cell-context]').forEach((button) => {
+    button.addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      let occurrences = []
+      try {
+        occurrences = JSON.parse(decodeURIComponent(button.dataset.attendanceOccurrences || ''))
+      } catch {
+        occurrences = []
+      }
+      if (!Array.isArray(occurrences) || !occurrences.length) return
+      attendanceCellNoteContextState = {
+        studentId: button.dataset.studentId || '',
+        dateKey: button.dataset.dateKey || '',
+        occurrences,
+        x: event.clientX,
+        y: event.clientY,
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-cell-context-close]').forEach((button) => {
+    button.addEventListener('click', () => {
+      attendanceCellNoteContextState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-cell-note-open]').forEach((button) => {
+    button.addEventListener('click', () => {
+      let occurrence = null
+      try {
+        occurrence = JSON.parse(decodeURIComponent(button.dataset.occurrence || ''))
+      } catch {
+        occurrence = null
+      }
+      if (!occurrence?.scheduleSessionId || !attendanceCellNoteContextState?.studentId) return
+      const existingNote = occurrence.note || null
+      attendanceCellNoteFormState = {
+        id: existingNote?.id || '',
+        version: Number(existingNote?.version) || 0,
+        studentId: attendanceCellNoteContextState.studentId,
+        scheduleSessionId: occurrence.scheduleSessionId,
+        occurrenceDate: occurrence.occurrenceDate || attendanceCellNoteContextState.dateKey,
+        classSessionId: occurrence.classSessionId || '',
+        classSessionLabel: occurrence.classSessionLabel || '',
+        note: existingNote?.note || '',
+        isSaving: false,
+      }
+      attendanceCellNoteContextState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-attendance-cell-note-field]')?.addEventListener('input', (event) => {
+    if (!attendanceCellNoteFormState) return
+    attendanceCellNoteFormState = { ...attendanceCellNoteFormState, note: event.target.value }
+  })
+
+  document.querySelectorAll('[data-attendance-cell-note-cancel]').forEach((button) => {
+    button.addEventListener('click', () => {
+      attendanceCellNoteFormState = null
+      render()
+    })
+  })
+
+  document.querySelector('[data-attendance-cell-note-save]')?.addEventListener('click', async () => {
+    if (!attendanceCellNoteFormState || attendanceCellNoteFormState.isSaving) return
+    const draft = { ...attendanceCellNoteFormState, isSaving: true }
+    attendanceCellNoteFormState = draft
+    render()
+    let command
+    try {
+      command = buildV28AUpsertCellNoteCommand(draft)
+    } catch (error) {
+      attendanceCellNoteFormState = { ...draft, isSaving: false }
+      v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
+        ...v28aAttendanceOperationsCapabilityState,
+        status: V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS.READY,
+        message: String(error?.message || error),
+        messageTone: 'error',
+      })
+      render()
+      return
+    }
+    const result = await writeV28AAttendanceOperation(command, 'attendance-cell-note-save')
+    if (result.ok) {
+      attendanceCellNoteFormState = null
+    } else if (attendanceCellNoteFormState) {
+      attendanceCellNoteFormState = { ...attendanceCellNoteFormState, isSaving: false }
+    }
+    render()
+  })
+
   document.querySelectorAll('[data-attendance-cell-detail]').forEach((button) => {
     button.addEventListener('click', () => {
       attendanceBoardDetailState = {
@@ -31950,6 +32308,13 @@ function syncAppNotifications(currentNotifications) {
     ...buildStudentBirthdayNotificationCandidates(students, { centerId, today }),
     ...(isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)
       ? buildV24TuitionNotificationCandidates(v24PackageCycleStudentStates, students, { centerId, today })
+      : []),
+    ...(isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)
+      ? buildV28AAttendanceNotificationCandidates(
+          v28aAttendanceReminders,
+          getStudentsWithCanonicalProjections(),
+          { centerId, today },
+        )
       : []),
     ...buildScheduleAttentionNotificationCandidates(visibleCurrentWeekOccurrences, { centerId, today }),
     ...buildMissingSessionReportNotificationCandidates(
