@@ -130,6 +130,8 @@ for (const authorityToken of [
   'createEditCashflowCategoryFormState(category)',
   "document.querySelectorAll('.cashflow-category-list')",
   "list.addEventListener('scroll', syncCategoryScrollbar, { passive: true })",
+  "document.querySelector('[data-cashflow-category-action=\"close\"]')?.addEventListener('click'",
+  'isCashflowCategoryPanelOpen = false',
 ]) {
   assert(mainSource.includes(authorityToken), `Existing category authority/handler is missing ${authorityToken}`)
 }
@@ -140,6 +142,11 @@ for (const visualSampleName of ['Lệ phí giải đấu', 'Lương giáo viên'
 }
 
 const css = readFileSync(new URL('../src/finance-theme.css', import.meta.url), 'utf8')
+assert.match(
+  css,
+  /\.cashflow-category-panel > \.cashflow-form-header \{[^}]*z-index: 1;/s,
+  'Painted category header must stay above the full-panel layout so the close control receives clicks',
+)
 for (const cssContract of [
   '/* THU CHI — Danh mục: 530:2 / 531:2 */',
   'top: 76px;',

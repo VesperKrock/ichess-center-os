@@ -2531,6 +2531,7 @@
 
 .desktop-window.is-finance-cashflow-window .cashflow-category-panel > .cashflow-form-header {
   position: absolute;
+  z-index: 1;
   inset: 0 0 auto;
   display: block;
   width: 100%;
