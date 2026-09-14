@@ -864,8 +864,8 @@ function renderCategoryPanel(categories, transactions, categoryFormState) {
   const isEditMode = categoryFormState.mode === 'edit'
 
   return `
-    <div class="cashflow-form-backdrop" role="presentation">
-      <section class="cashflow-category-panel" aria-label="Danh mục thu chi">
+    <div class="cashflow-form-backdrop cashflow-category-backdrop" role="presentation">
+      <section class="cashflow-category-panel" aria-label="Danh mục thu chi" aria-modal="true" role="dialog">
         <div class="cashflow-form-header">
           <div>
             <h4>Danh mục thu chi</h4>
@@ -889,9 +889,17 @@ function renderCategoryPanel(categories, transactions, categoryFormState) {
                 ${isEditMode ? 'Lưu danh mục' : 'Thêm danh mục'}
               </button>
             </div>
+            <p class="cashflow-category-helper">Danh mục mới sẽ xuất hiện trong form và bộ lọc Thu chi.</p>
           </form>
-          <div class="cashflow-category-list">
-            ${categories.map((category) => renderCategoryItem(category, transactions)).join('')}
+          <div class="cashflow-category-column">
+            <div class="cashflow-category-list-header">
+              <h5>Danh mục đang dùng</h5>
+              <span>${categories.length} danh mục</span>
+            </div>
+            <div class="cashflow-category-list">
+              ${categories.map((category) => renderCategoryItem(category, transactions)).join('')}
+            </div>
+            <span class="cashflow-category-scrollbar" aria-hidden="true"><span></span></span>
           </div>
         </div>
       </section>
@@ -924,11 +932,12 @@ function renderCategoryItem(category, transactions) {
 
 function renderCategoryInputField(label, name, formState) {
   return `
-    <label class="cashflow-field">
+    <label class="cashflow-field cashflow-category-field-${name}">
       <span>${label}</span>
       <input
         type="text"
         value="${escapeAttribute(formState.values[name] ?? '')}"
+        placeholder="Nhập tên danh mục"
         data-cashflow-category-field="${name}"
       />
       ${renderFieldError(formState.errors[name])}
@@ -938,17 +947,20 @@ function renderCategoryInputField(label, name, formState) {
 
 function renderCategorySelectField(label, name, formState) {
   return `
-    <label class="cashflow-field">
+    <label class="cashflow-field cashflow-category-field-${name}">
       <span>${label}</span>
-      <select data-cashflow-category-field="${name}">
-        ${[
-          ['income', 'Thu'],
-          ['expense', 'Chi'],
-          ['both', 'Cả hai'],
-        ]
-          .map(([value, optionLabel]) => renderOption(value, optionLabel, formState.values[name]))
-          .join('')}
-      </select>
+      <span class="cashflow-category-select-control">
+        <select data-cashflow-category-field="${name}">
+          ${[
+            ['income', 'Thu'],
+            ['expense', 'Chi'],
+            ['both', 'Cả hai'],
+          ]
+            .map(([value, optionLabel]) => renderOption(value, optionLabel, formState.values[name]))
+            .join('')}
+        </select>
+        <span aria-hidden="true">⌄</span>
+      </span>
       ${renderFieldError(formState.errors[name])}
     </label>
   `

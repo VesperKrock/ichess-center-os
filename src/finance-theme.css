@@ -2509,6 +2509,481 @@
   background: var(--finance-negative-soft);
 }
 
+/* THU CHI — Danh mục: 530:2 / 531:2 */
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-panel {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  display: block;
+  width: min(1040px, calc(100% - 48px));
+  height: 512px;
+  max-height: none;
+  overflow: hidden;
+  border: 1px solid var(--finance-border);
+  border-radius: 12px;
+  padding: 0;
+  color: var(--finance-text);
+  background: var(--finance-surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 10%);
+  transform: translateX(-50%);
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-panel > .cashflow-form-header {
+  position: absolute;
+  inset: 0 0 auto;
+  display: block;
+  width: 100%;
+  height: 84px;
+  border-bottom: 1px solid var(--finance-border);
+  padding: 13px 24px 0;
+  background: var(--finance-surface);
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-panel > .cashflow-form-header h4 {
+  height: 34px;
+  margin: 0;
+  color: var(--finance-text);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 34px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-panel > .cashflow-form-header p {
+  height: 22px;
+  margin: 0;
+  color: var(--finance-secondary);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-panel > .cashflow-form-header > button {
+  position: absolute;
+  top: 19px;
+  right: 23px;
+  display: inline-flex;
+  width: 24px;
+  min-width: 24px;
+  height: 32px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--finance-border);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--finance-text);
+  background: var(--finance-surface);
+  box-shadow: none;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 30px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-layout {
+  position: absolute;
+  inset: 0;
+  display: block;
+  min-height: 0;
+  padding: 0;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form {
+  position: absolute;
+  top: 102px;
+  left: 22px;
+  display: block;
+  width: 320px;
+  height: 384px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--finance-border);
+  border-radius: 10px;
+  padding: 0;
+  background: var(--finance-surface-soft);
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form h5 {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  left: 16px;
+  height: 26px;
+  margin: 0;
+  color: var(--finance-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 26px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field {
+  position: absolute;
+  right: 18px;
+  left: 16px;
+  display: flex;
+  width: auto;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-category-field-name {
+  top: 50px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-category-field-type {
+  top: 134px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field > span:first-child {
+  height: 16px;
+  color: var(--finance-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field input,
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field select {
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  border: 1px solid var(--finance-border);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--finance-text);
+  background: var(--finance-surface);
+  box-shadow: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: normal;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field input::placeholder {
+  color: var(--finance-soft);
+  opacity: 1;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-select-control {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 42px;
+  color: var(--finance-text);
+  text-transform: none;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-category-select-control select {
+  appearance: none;
+  padding-right: 38px;
+  font-weight: 500;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-select-control > span {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  display: flex;
+  width: 18px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  color: var(--finance-secondary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 42px;
+  pointer-events: none;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field > small {
+  position: absolute;
+  top: 66px;
+  left: 0;
+  color: var(--finance-negative);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form-actions {
+  position: absolute;
+  top: 218px;
+  right: 18px;
+  left: 16px;
+  display: flex;
+  height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form-actions > span:empty {
+  display: none;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form-actions button {
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid var(--finance-border);
+  border-radius: 8px;
+  padding: 0 14px;
+  color: var(--finance-text);
+  background: var(--finance-surface);
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: normal;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form-actions .cashflow-save-button {
+  width: 146px;
+  margin-left: auto;
+  border-color: #e5e7eb;
+  padding: 0;
+  color: #ffffff;
+  background: #0f1627;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-helper {
+  position: absolute;
+  top: 281px;
+  right: 18px;
+  left: 16px;
+  margin: 0;
+  color: var(--finance-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: normal;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form > .cashflow-form-errors {
+  position: absolute;
+  right: 16px;
+  bottom: 8px;
+  left: 16px;
+  margin: 0;
+  color: var(--finance-negative);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-form > .cashflow-form-errors p {
+  margin: 0;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-column {
+  position: absolute;
+  top: 102px;
+  left: 366px;
+  width: 648px;
+  height: 384px;
+  overflow: hidden;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-list-header {
+  display: flex;
+  width: 648px;
+  height: 26px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-list-header h5 {
+  width: 420px;
+  height: 26px;
+  margin: 0;
+  color: var(--finance-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 26px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-list-header span {
+  width: 128px;
+  height: 22px;
+  color: var(--finance-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: right;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-list {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  display: block;
+  width: 628px;
+  height: 346px;
+  max-height: none;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0;
+  scrollbar-width: none;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item {
+  position: relative;
+  display: block;
+  width: 628px;
+  height: 52px;
+  min-width: 0;
+  margin: 0 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--finance-border);
+  border-radius: 8px;
+  padding: 0;
+  background: var(--finance-surface-soft);
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item:last-child {
+  margin-bottom: 0;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item.is-archived {
+  opacity: 0.72;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item > div:first-child {
+  min-width: 0;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item strong {
+  position: absolute;
+  top: 4px;
+  left: 12px;
+  display: block;
+  width: 430px;
+  height: 20px;
+  overflow: hidden;
+  color: var(--finance-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item span {
+  position: absolute;
+  top: 25px;
+  left: 12px;
+  display: block;
+  width: 430px;
+  height: 17px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--finance-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item > div:last-child {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  display: flex;
+  width: 114px;
+  height: 32px;
+  gap: 6px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item button {
+  width: 52px;
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid var(--finance-border);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--finance-text);
+  background: var(--finance-surface);
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: normal;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item button:last-child {
+  width: 56px;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-item button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-scrollbar {
+  position: absolute;
+  top: 38px;
+  right: 4px;
+  display: block;
+  width: 8px;
+  height: 330px;
+  border-radius: 4px;
+  background: #f0f1f3;
+  pointer-events: none;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-scrollbar > span {
+  display: block;
+  width: 8px;
+  height: 126px;
+  border-radius: 4px;
+  background: #adb2bd;
+  will-change: transform;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-panel {
+  box-shadow: 0 12px 32px rgb(0 0 0 / 24%);
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-form {
+  background: var(--finance-canvas);
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-panel > .cashflow-form-header p,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field > span:first-child,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-helper,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-list-header span,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-item span,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-select-control > span {
+  color: #9ca3af;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field input,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-form .cashflow-field select,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-form-actions button,
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-item button {
+  background: var(--finance-surface);
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-form-actions .cashflow-save-button {
+  border-color: var(--finance-border);
+  color: var(--finance-primary-text);
+  background: var(--finance-primary);
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-item {
+  background: var(--finance-input);
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-scrollbar {
+  background: #202329;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window .cashflow-category-scrollbar > span {
+  background: #6b7280;
+}
+
 /* THU CHI — Kho ảnh cloud: 361:2 / 368:2 */
 
 .desktop-window.is-finance-cashflow-window .cloud-gallery-window {

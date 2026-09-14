@@ -24746,6 +24746,22 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('.cashflow-category-list').forEach((list) => {
+    const track = list.parentElement?.querySelector('.cashflow-category-scrollbar')
+    const thumb = track?.querySelector(':scope > span')
+    if (!track || !thumb) return
+
+    const syncCategoryScrollbar = () => {
+      const scrollRange = Math.max(0, list.scrollHeight - list.clientHeight)
+      const thumbRange = Math.max(0, track.clientHeight - thumb.offsetHeight)
+      const progress = scrollRange > 0 ? list.scrollTop / scrollRange : 0
+      thumb.style.transform = `translateY(${Math.round(progress * thumbRange)}px)`
+    }
+
+    list.addEventListener('scroll', syncCategoryScrollbar, { passive: true })
+    syncCategoryScrollbar()
+  })
+
   document.querySelector('[data-cashflow-category-action="close"]')?.addEventListener('click', () => {
     isCashflowCategoryPanelOpen = false
     cashflowCategoryFormState = createEmptyCashflowCategoryFormState()
