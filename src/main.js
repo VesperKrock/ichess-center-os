@@ -6,6 +6,7 @@ import './tuition-theme.css'
 import './finance-theme.css'
 import './attendance-theme.css'
 import './attendance-v2-8p2-theme.css'
+import './inventory-v2-8p2-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -11458,6 +11459,7 @@ function renderModuleWindow(windowItem) {
   const isReportWindow = windowItem.moduleId === 'bao-cao' && !windowItem.type
   const isTuitionWindow = windowItem.moduleId === 'hoc-phi' && !windowItem.type
   const isAttendanceWindow = windowItem.moduleId === 'bang-diem-danh' && !windowItem.type
+  const isInventoryWindow = windowItem.moduleId === 'kho-hang' && !windowItem.type
   const financeSurface = !windowItem.type
     ? {
         'nhom-tai-chinh': 'gateway',
@@ -11480,7 +11482,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${isInventoryWindow ? 'is-inventory-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -11664,7 +11666,7 @@ function renderModuleRefreshControl(windowItem) {
 }
 
 function renderModuleTitlebarCurrentness(windowItem) {
-  if (windowItem?.type || windowItem?.moduleId !== 'bang-diem-danh') return ''
+  if (windowItem?.type || !['bang-diem-danh', 'kho-hang'].includes(windowItem?.moduleId)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited', 'loading', 'failed'].includes(state.status) ? state.status : 'idle'
   const updatedAt = formatRefreshTime(state.lastFreshAt)
@@ -11691,7 +11693,7 @@ function renderModuleTitlebarCurrentness(windowItem) {
 
 function renderModuleRefreshNotice(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
-  if (isFinanceModuleWindow(windowItem) || windowItem.moduleId === 'bang-diem-danh') return ''
+  if (isFinanceModuleWindow(windowItem) || ['bang-diem-danh', 'kho-hang'].includes(windowItem.moduleId)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited'].includes(state.status)
     ? 'is-fresh'
@@ -12187,6 +12189,7 @@ function renderWindowBody(windowItem) {
   if (moduleItem.id === 'kho-hang') {
     const coreStatus = getModuleUpstreamStatus('kho-hang', 'core')
     const coreCurrent = isModuleUpstreamCurrent('kho-hang', 'core')
+    const centerInfo = getCurrentCanonicalCenterContext()
     return renderInventoryModule(
       inventoryItems,
       inventoryFilters,
@@ -12207,6 +12210,7 @@ function renderWindowBody(windowItem) {
       {
         coreStatus,
         coreCurrent,
+        centerName: centerInfo.centerName,
       },
       {
         counts: inventoryCycleCounts,
@@ -24060,6 +24064,27 @@ function bindEvents() {
       selectedInventoryMovementId = null
       render()
     })
+  })
+
+  document.querySelector('[data-inventory-export-movements]')?.addEventListener('click', () => {
+    const csvCell = (value) => `"${String(value || '').replaceAll('"', '""')}"`
+    const rows = Array.from(document.querySelectorAll('.inventory-history-item')).map((row) =>
+      Array.from(row.children).map((cell) => cell.textContent.trim()),
+    )
+    const content = [
+      ['Ngày', 'Loại', 'Vật tư', 'Số lượng', 'Tồn trước → sau', 'Lý do', 'Người thực hiện', 'Ghi chú'],
+      ...rows,
+    ].map((row) => row.map(csvCell).join(',')).join('\n')
+    const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = `lich-su-nhap-xuat-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
   })
 
   document.querySelectorAll('[data-inventory-action="open-create"]').forEach((button) => {

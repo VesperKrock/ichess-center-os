@@ -4,6 +4,7 @@ export const initialInventoryFilters = {
   query: '',
   category: 'all',
   condition: 'all',
+  location: 'all',
   stockAlert: 'all',
 }
 
@@ -223,6 +224,7 @@ export function renderInventoryModule(
   const filteredMovements = getFilteredInventoryMovements(movements, activeMovementFilters)
   const filteredRequests = getFilteredInventoryRequests(inventoryRequests, activeRequestFilters)
   const categories = getInventoryFilterCategories(items)
+  const locations = getInventoryFilterLocations(items)
   const stats = getInventoryStats(items)
   const movementStats = getInventoryMovementStats(filteredMovements)
   const requestStats = getInventoryRequestStats(inventoryRequests)
@@ -233,29 +235,25 @@ export function renderInventoryModule(
 
   return `
     <section class="inventory-module inventory-main-table" aria-label="Kho hàng">
-      <div class="inventory-main-topbar">
-        <div class="inventory-stats" aria-label="Tổng quan kho">
-          ${renderInventoryStat('Tổng mặt hàng', stats.itemCount, 'neutral')}
-          ${renderInventoryStat('Tổng tồn', stats.totalQuantity, 'stock')}
-          ${renderInventoryStat('Sắp hết', stats.lowStockCount, 'warning')}
-          ${renderInventoryStat('Hết hàng', stats.outOfStockCount, 'danger')}
+      <header class="inventory-page-header">
+        <div class="inventory-page-heading">
+          <span>KHO HÀNG</span>
+          <h3>Kho hàng</h3>
+          <p>Quản lý vật tư, tài sản và tồn kho tại cơ sở ${escapeHtml(capabilities.centerName || 'hiện tại')}.</p>
         </div>
-        <div class="inventory-dashboard-actions">
-          <button type="button" data-inventory-action="refresh-authoritative" ${sharedTruthState.isLoading ? 'disabled' : ''}>
-            ${sharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}
-          </button>
-          <button type="button" data-inventory-open-subwindow="movements">Mở lịch sử nhập/xuất</button>
+        <nav class="inventory-dashboard-actions" aria-label="Tác vụ Kho hàng">
+          <button type="button" data-inventory-open-subwindow="movements">Lịch sử nhập/xuất</button>
           <button type="button" data-inventory-request-action="open-panel">Đề xuất vật tư</button>
           <button type="button" data-inventory-cycle-count-action="open-panel">Kiểm kê định kỳ</button>
           <button class="inventory-add-button" type="button" data-inventory-action="open-create">
             + Thêm sản phẩm
           </button>
-        </div>
-      </div>
+        </nav>
+      </header>
 
       ${renderInventorySharedTruthNotice(sharedTruthState)}
 
-      ${renderInventoryListSection(filteredItems, activeFilters, categories)}
+      ${renderInventoryListSection(filteredItems, activeFilters, categories, locations, stats)}
       ${formState ? renderInventoryForm(formState, items) : ''}
       ${movementFormState ? renderInventoryMovementForm(movementFormState, items) : ''}
       ${
@@ -314,6 +312,7 @@ export function renderInventoryCycleCountPanel(state = {}) {
         ${message ? `<div class="inventory-cycle-count-notice is-${escapeAttribute(state.messageTone || 'neutral')}">${escapeHtml(message)}</div>` : ''}
         <div class="inventory-cycle-count-layout">
           <aside class="inventory-cycle-count-sidebar">
+            <h5>Quyền hiện tại</h5>
             ${canWrite && !hasOpenCount ? `
               <form class="inventory-cycle-count-start" data-inventory-cycle-count-start-form>
                 <label>
@@ -515,6 +514,7 @@ export function renderInventoryListWindow(
   const activeFilters = { ...initialInventoryFilters, ...filters }
   const filteredItems = getFilteredInventoryItems(items, activeFilters)
   const categories = getInventoryFilterCategories(items)
+  const locations = getInventoryFilterLocations(items)
 
   return `
     <section class="inventory-module inventory-list-window" aria-labelledby="inventory-list-window-title">
@@ -560,7 +560,7 @@ export function renderInventoryListWindow(
         </div>
       </div>
 
-      ${renderInventoryListSection(filteredItems, activeFilters, categories)}
+      ${renderInventoryListSection(filteredItems, activeFilters, categories, locations)}
       ${formState ? renderInventoryForm(formState, items) : ''}
       ${movementFormState ? renderInventoryMovementForm(movementFormState, items) : ''}
     </section>
@@ -605,17 +605,30 @@ function renderInventoryHistoryPanel(
     <div class="inventory-history-backdrop" role="presentation">
       <section class="inventory-history-panel" aria-label="Lịch sử nhập xuất kho">
         <div class="inventory-history-panel-header">
-          <h4>Lịch sử nhập/xuất kho</h4>
+          <div>
+            <h4>Lịch sử nhập/xuất kho</h4>
+            <p>Theo dõi các lượt nhập, xuất kho và biến động tồn theo dữ liệu đã ghi nhận.</p>
+          </div>
           <button type="button" data-inventory-history-action="close" aria-label="Đóng lịch sử">×</button>
         </div>
         ${renderInventoryMovementHistory(filteredMovements, allMovements, items, filters, stats)}
+        <footer class="inventory-history-panel-footer">
+          <span>Hiển thị ${filteredMovements.length.toLocaleString('vi-VN')} / ${allMovements.length.toLocaleString('vi-VN')} bản ghi</span>
+          <button type="button" data-inventory-history-action="close">Đóng</button>
+        </footer>
       </section>
       ${selectedMovement ? renderInventoryMovementDetail(selectedMovement, items) : ''}
     </div>
   `
 }
 
-function renderInventoryListSection(filteredItems, activeFilters, categories = []) {
+function renderInventoryListSection(
+  filteredItems,
+  activeFilters,
+  categories = [],
+  locations = [],
+  stats = null,
+) {
   return `
     <section class="inventory-list-section" aria-label="Danh sách vật tư, tài sản, sản phẩm">
       <div class="inventory-list-filters" aria-label="Tìm kiếm và lọc danh sách vật tư, tài sản, sản phẩm">
@@ -624,7 +637,7 @@ function renderInventoryListSection(filteredItems, activeFilters, categories = [
           <input
             type="search"
             value="${escapeAttribute(activeFilters.query)}"
-            placeholder="Tìm vật tư/tài sản/sản phẩm theo tên, nhóm, mã, vị trí"
+            placeholder="Tìm vật tư / tài sản / sản phẩm theo tên, nhóm, mã, vị trí"
             data-inventory-filter="query"
           />
         </label>
@@ -640,33 +653,55 @@ function renderInventoryListSection(filteredItems, activeFilters, categories = [
         <label>
           <span>Tình trạng</span>
           <select data-inventory-filter="condition">
-            ${renderOption('all', 'Tất cả tình trạng', activeFilters.condition)}
+            ${renderOption('all', 'Tất cả', activeFilters.condition)}
             ${inventoryConditions
               .map((condition) => renderOption(condition, condition, activeFilters.condition))
               .join('')}
           </select>
         </label>
+        <label>
+          <span>Vị trí</span>
+          <select data-inventory-filter="location">
+            ${renderOption('all', 'Tất cả', activeFilters.location)}
+            ${locations
+              .map((location) => renderOption(location, location, activeFilters.location))
+              .join('')}
+          </select>
+        </label>
       </div>
+      ${stats ? `
+        <div class="inventory-stats" aria-label="Tổng quan kho">
+          ${renderInventoryStat('Tổng mặt hàng', stats.itemCount, 'neutral')}
+          ${renderInventoryStat('Tổng tồn', stats.totalQuantity, 'stock')}
+          ${renderInventoryStat('Sắp hết', stats.lowStockCount, 'warning')}
+          ${renderInventoryStat('Hết hàng', stats.outOfStockCount, 'danger')}
+        </div>
+      ` : ''}
       ${
         filteredItems.length
           ? `
-            <div class="inventory-table-wrap">
-              <table class="inventory-table">
-                <thead>
-                  <tr>
-                    <th>Hạng mục</th>
-                    <th>Nhóm</th>
-                    <th>Tồn kho</th>
-                    <th>Định mức tối thiểu</th>
-                    <th>Tình trạng</th>
-                    <th>Vị trí</th>
-                    <th>Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${filteredItems.map(renderInventoryRow).join('')}
-                </tbody>
-              </table>
+            <div class="inventory-table-panel">
+              <div class="inventory-table-wrap">
+                <table class="inventory-table">
+                  <thead>
+                    <tr>
+                      <th>Hạng mục</th>
+                      <th>Nhóm</th>
+                      <th>Tồn kho</th>
+                      <th>Định mức tối thiểu</th>
+                      <th>Tình trạng</th>
+                      <th>Vị trí</th>
+                      <th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${filteredItems.map(renderInventoryRow).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <footer class="inventory-table-footer">
+                <span>${filteredItems.length.toLocaleString('vi-VN')} mặt hàng · Tồn kho được tính từ dữ liệu nhập/xuất gần nhất.</span>
+              </footer>
             </div>
           `
           : `
@@ -692,6 +727,8 @@ export function getFilteredInventoryItems(items, filters = initialInventoryFilte
         activeFilters.category === 'all' || item.category === activeFilters.category
       const matchesCondition =
         activeFilters.condition === 'all' || item.condition === activeFilters.condition
+      const matchesLocation =
+        activeFilters.location === 'all' || item.location === activeFilters.location
       const matchesStockAlert =
         activeFilters.stockAlert === 'all' ||
         getStockState(item).key === activeFilters.stockAlert
@@ -701,7 +738,7 @@ export function getFilteredInventoryItems(items, filters = initialInventoryFilte
           normalizeText(value).includes(normalizedQuery),
         )
 
-      return matchesCategory && matchesCondition && matchesStockAlert && matchesQuery
+      return matchesCategory && matchesCondition && matchesLocation && matchesStockAlert && matchesQuery
     })
     .sort((firstItem, secondItem) => {
       const stockPriority = { out: 0, low: 1, ok: 2 }
@@ -1192,25 +1229,34 @@ function renderInventoryForm(formState, items) {
         <div class="inventory-form-header">
           <div>
             <h4>${isEditMode ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}</h4>
+            <p>${isEditMode ? 'Cập nhật thông tin mặt hàng đang quản lý.' : 'Tạo mặt hàng mới và thiết lập tồn đầu kỳ.'}</p>
           </div>
           <button type="button" data-inventory-action="cancel-form" aria-label="Đóng form">×</button>
         </div>
-        <div class="inventory-form-grid">
-          ${renderInventoryInputField('Tên vật tư / tài sản / sản phẩm', 'name', formState, 'text', 'Ví dụ: Bộ bàn cờ tiêu chuẩn')}
-          ${renderInventorySelectField('Nhóm', 'category', formState, categories)}
-          ${renderInventoryUnitField(formState, units)}
-          ${
-            isEditMode
-              ? `<label class="inventory-field">
-                  <span>Số lượng tồn</span>
-                  <input type="number" value="${escapeAttribute(formState.values.quantity ?? '0')}" readonly />
-                  <small>Chỉ thay đổi qua thao tác Nhập/Xuất kho.</small>
-                </label>`
-              : renderInventoryInputField('Số lượng tồn đầu kỳ', 'quantity', formState, 'number', '0')
-          }
-          ${renderInventorySelectField('Tình trạng', 'condition', formState, conditions)}
-          ${renderInventoryInputField('Định mức tối thiểu', 'lowStockThreshold', formState, 'number', '0')}
-          ${renderInventoryInputField('Vị trí', 'location', formState, 'text', 'Tủ tài liệu lớp 1')}
+        <div class="inventory-form-grid inventory-product-form-grid">
+          <div class="inventory-product-form-row is-name-row">
+            ${renderInventoryInputField('Tên vật tư / tài sản / sản phẩm', 'name', formState, 'text', 'Ví dụ: Bộ bàn cờ tiêu chuẩn')}
+            ${renderInventorySelectField('Nhóm', 'category', formState, categories)}
+          </div>
+          <div class="inventory-product-form-row">
+            ${renderInventoryUnitField(formState, units)}
+            ${
+              isEditMode
+                ? `<label class="inventory-field">
+                    <span>Số lượng tồn</span>
+                    <input type="number" value="${escapeAttribute(formState.values.quantity ?? '0')}" readonly />
+                    <small>Chỉ thay đổi qua thao tác Nhập/Xuất kho.</small>
+                  </label>`
+                : renderInventoryInputField('Số lượng tồn đầu kỳ', 'quantity', formState, 'number', '0')
+            }
+          </div>
+          <div class="inventory-product-form-row">
+            ${renderInventorySelectField('Tình trạng', 'condition', formState, conditions)}
+            ${renderInventoryInputField('Định mức tối thiểu', 'lowStockThreshold', formState, 'number', '0')}
+          </div>
+          <div class="inventory-product-form-row is-location-row">
+            ${renderInventoryInputField('Vị trí', 'location', formState, 'text', 'Tủ tài liệu lớp 1')}
+          </div>
           <label class="inventory-field span-full ${formState.errors.note ? 'has-error' : ''}">
             <span>Ghi chú</span>
             <textarea data-inventory-form-field="note">${escapeHtml(formState.values.note ?? '')}</textarea>
@@ -1237,6 +1283,12 @@ function renderInventoryForm(formState, items) {
       </form>
     </div>
   `
+}
+
+function getInventoryFilterLocations(items) {
+  return Array.from(
+    new Set((items ?? []).map((item) => String(item.location ?? '').trim()).filter(Boolean)),
+  ).sort((firstLocation, secondLocation) => firstLocation.localeCompare(secondLocation, 'vi'))
 }
 
 function renderInventoryUnitField(formState, units) {
@@ -1508,11 +1560,19 @@ function renderInventoryMovementHistory(
             data-inventory-movement-filter="date"
           />
         </label>
+        <button type="button" data-inventory-action="refresh-authoritative">Làm mới</button>
+        <button type="button" data-inventory-export-movements>Xuất CSV</button>
       </div>
       <div class="inventory-history-summary" aria-label="Tóm tắt lịch sử theo bộ lọc hiện tại">
-        Nhập: ${stats.inCount.toLocaleString('vi-VN')} lượt / ${stats.totalInQuantity.toLocaleString('vi-VN')} SL
-        <span>·</span>
-        Xuất: ${stats.outCount.toLocaleString('vi-VN')} lượt / ${stats.totalOutQuantity.toLocaleString('vi-VN')} SL
+        <div class="inventory-history-stat is-in">
+          <span>NHẬP KHO</span>
+          <strong>${stats.inCount.toLocaleString('vi-VN')} lượt · ${stats.totalInQuantity.toLocaleString('vi-VN')} SL</strong>
+        </div>
+        <div class="inventory-history-stat is-out">
+          <span>XUẤT KHO</span>
+          <strong>${stats.outCount.toLocaleString('vi-VN')} lượt · ${stats.totalOutQuantity.toLocaleString('vi-VN')} SL</strong>
+        </div>
+        <p>Đang hiển thị theo bộ lọc hiện tại.</p>
       </div>
       ${
         filteredMovements.length
@@ -1529,6 +1589,7 @@ function renderInventoryMovementHistory(
                 <span>Ghi chú</span>
               </div>
               ${filteredMovements.map((movement) => renderInventoryMovementHistoryItem(movement, items)).join('')}
+              <footer class="inventory-history-table-footer">Bản ghi nhập/xuất là bất biến sau khi tạo.</footer>
             </div>
           `
           : '<div class="inventory-history-empty">Không có lịch sử nhập/xuất phù hợp.</div>'
@@ -1734,31 +1795,51 @@ function renderInventoryRequestForm(formState, students = [], capabilities = {})
           </div>
           <button type="button" data-inventory-request-action="cancel-form" aria-label="Đóng form">×</button>
         </div>
-        <div class="inventory-form-grid">
-          ${renderInventoryRequestInput('Họ & tên người đề xuất', 'requestedByName', formState, 'text', 'Người đề xuất')}
-          ${renderInventoryRequestInput('Vai trò / bộ phận', 'requestedByRole', formState, 'text', 'Giáo viên, tư vấn, trợ giảng')}
-          ${renderInventoryRequestInput('Họ & tên học viên được đề xuất', 'studentName', formState, 'text', 'Tên học viên / lớp')}
-          ${renderInventoryRequestStudentSelect(formState, students, capabilities)}
-          ${renderInventoryRequestSelect('Mức ưu tiên', 'priority', formState, inventoryRequestPriorityOptions)}
-          ${renderInventoryRequestCheckboxGroup('Dụng cụ, sản phẩm đề xuất', 'itemTypes', formState, inventoryRequestItemOptions)}
-          ${renderInventoryRequestInput('Mục khác nếu có', 'otherItemText', formState, 'text', 'Nội dung vật tư khác', !values.itemTypes.includes('other'))}
-          <label class="inventory-field span-full ${formState.errors.itemDetails ? 'has-error' : ''}">
-            <span>Mô tả số lượng và nội dung chi tiết</span>
-            <textarea data-inventory-request-field="itemDetails">${escapeHtml(values.itemDetails ?? '')}</textarea>
-            ${renderFieldError(formState.errors.itemDetails)}
-          </label>
-          ${renderInventoryRequestCheckboxGroup('Hình thức/địa điểm sử dụng', 'usageModes', formState, inventoryRequestUsageOptions)}
-          ${renderInventoryRequestInput('Mục khác nếu có', 'otherUsageText', formState, 'text', 'Hình thức sử dụng khác', !values.usageModes.includes('other'))}
-          ${renderInventoryRequestInput('Cụ thể nơi sử dụng', 'usageLocationDetail', formState, 'text', 'Phòng học, CLB, địa chỉ cụ thể')}
-          ${renderInventoryRequestInput('Ngày cần sản phẩm', 'neededDate', formState, 'date')}
-          <label class="inventory-field span-full">
-            <span>Ghi chú thêm</span>
-            <textarea data-inventory-request-field="adminNote">${escapeHtml(values.adminNote ?? '')}</textarea>
-          </label>
+        <div class="inventory-request-form-layout">
+          <section class="inventory-request-form-card is-requester">
+            <div class="inventory-request-card-heading">
+              <h5>Thông tin đề xuất</h5>
+              ${renderInventoryRequestSelect('Mức ưu tiên', 'priority', formState, inventoryRequestPriorityOptions)}
+            </div>
+            <div class="inventory-request-card-grid">
+              ${renderInventoryRequestInput('Họ & tên người đề xuất', 'requestedByName', formState, 'text', 'Người đề xuất')}
+              ${renderInventoryRequestInput('Vai trò / bộ phận', 'requestedByRole', formState, 'text', 'Giáo viên, tư vấn, trợ giảng')}
+              ${renderInventoryRequestInput('Họ & tên học viên được đề xuất', 'studentName', formState, 'text', 'Tên học viên / lớp')}
+              ${renderInventoryRequestStudentSelect(formState, students, capabilities)}
+            </div>
+          </section>
+          <section class="inventory-request-form-card is-usage">
+            <h5>Hình thức / địa điểm sử dụng</h5>
+            ${renderInventoryRequestCheckboxGroup('Hình thức/địa điểm sử dụng', 'usageModes', formState, inventoryRequestUsageOptions)}
+            <div class="inventory-request-card-grid">
+              ${renderInventoryRequestInput('Mục khác nếu có', 'otherUsageText', formState, 'text', 'Hình thức sử dụng khác', !values.usageModes.includes('other'))}
+              ${renderInventoryRequestInput('Cụ thể nơi sử dụng', 'usageLocationDetail', formState, 'text', 'Phòng học, CLB, địa chỉ cụ thể')}
+            </div>
+          </section>
+          <section class="inventory-request-form-card is-items">
+            <h5>Vật tư đề xuất</h5>
+            ${renderInventoryRequestCheckboxGroup('Dụng cụ, sản phẩm đề xuất', 'itemTypes', formState, inventoryRequestItemOptions)}
+            ${renderInventoryRequestInput('Mục khác nếu có', 'otherItemText', formState, 'text', 'Nội dung vật tư khác', !values.itemTypes.includes('other'))}
+          </section>
+          <section class="inventory-request-form-card is-notes">
+            <h5>Mô tả & Ghi chú</h5>
+            <div class="inventory-request-card-grid">
+              <label class="inventory-field ${formState.errors.itemDetails ? 'has-error' : ''}">
+                <span>Mô tả số lượng / chi tiết</span>
+                <textarea data-inventory-request-field="itemDetails">${escapeHtml(values.itemDetails ?? '')}</textarea>
+                ${renderFieldError(formState.errors.itemDetails)}
+              </label>
+              ${renderInventoryRequestInput('Ngày cần sản phẩm', 'neededDate', formState, 'date')}
+            </div>
+            <label class="inventory-field span-full">
+              <span>Ghi chú thêm</span>
+              <textarea data-inventory-request-field="adminNote">${escapeHtml(values.adminNote ?? '')}</textarea>
+            </label>
+          </section>
         </div>
         ${renderFormErrors(formState.errors)}
         <div class="inventory-form-actions">
-          <span></span>
+          <span>Tất cả thông tin nằm trên một màn — không cần cuộn.</span>
           <div>
             <button type="button" data-inventory-request-action="cancel-form">Hủy</button>
             <button class="inventory-save-button" type="submit">Lưu đề xuất</button>
@@ -1873,19 +1954,12 @@ function getInventoryFormConditions(currentCondition = '') {
 }
 
 function renderInventorySharedTruthNotice(state = {}) {
-  const message = String(state.message || '').trim()
-  const tone = state.messageTone === 'error'
-    ? 'error'
-    : state.messageTone === 'success'
-      ? 'success'
-      : 'info'
   const legacy = state.legacyMigrationRequired
     ? '<p><strong>Dữ liệu Kho hàng cũ:</strong> nội dung đã được giữ nguyên để kiểm tra riêng; hệ thống không tự tải lên, gộp hoặc xóa.</p>'
     : ''
-  if (!message && !legacy) return ''
+  if (!legacy) return ''
   return `
-    <aside class="inventory-shared-truth-notice is-${tone}" role="status">
-      ${message ? `<p>${escapeHtml(message)}</p>` : ''}
+    <aside class="inventory-shared-truth-notice is-info" role="status">
       ${legacy}
     </aside>
   `
@@ -1935,10 +2009,14 @@ function getConditionTone(condition) {
 }
 
 function renderInventoryStat(label, value, tone) {
+  const icon = { neutral: '□', stock: '≡', warning: '!', danger: '×' }[tone] || '□'
   return `
     <div class="inventory-stat-card is-${tone}">
-      <span>${label}</span>
-      <strong>${Number(value || 0).toLocaleString('vi-VN')}</strong>
+      <span class="inventory-stat-icon" aria-hidden="true">${icon}</span>
+      <span class="inventory-stat-copy">
+        <span>${label}</span>
+        <strong>${Number(value || 0).toLocaleString('vi-VN')}</strong>
+      </span>
     </div>
   `
 }
