@@ -229,7 +229,7 @@ const unavailableHtml = renderSettingsModule([], [], undefined, null, null, {
   centerSettingsState: { status: 'unavailable' },
   wallpaperState: { source: 'default', hasPersonal: false },
 })
-assert.match(unavailableHtml, /Cài đặt dùng chung hiện chưa khả dụng/)
+assert.doesNotMatch(unavailableHtml, /settings-capability-notice/)
 assert.match(unavailableHtml, /data-settings-center-action="open-edit" disabled/)
 assert.doesNotMatch(unavailableHtml, /data-settings-wallpaper-file="shared"/)
 assert.match(unavailableHtml, /data-settings-wallpaper-file="personal"/)
@@ -237,7 +237,7 @@ const loadingHtml = renderSettingsModule([], [], undefined, null, null, {
   activeTab: 'tuition-packages',
   centerSettingsState: { status: 'loading' },
 })
-assert.match(loadingHtml, /Đang tải cài đặt dùng chung/)
+assert.doesNotMatch(loadingHtml, /settings-capability-notice/)
 assert.match(loadingHtml, /data-settings-package-action="open-create" disabled/)
 
 assert.equal(buildPersonalWallpaperKey({ installationNamespace: 'project-a', userId: 'user-a' }), 'project-a:user-a')

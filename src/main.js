@@ -8,6 +8,7 @@ import './attendance-theme.css'
 import './attendance-v2-8p2-theme.css'
 import './inventory-v2-8p2-theme.css'
 import './parent-consultation-v2-8p2-theme.css'
+import './settings-v2-8p2-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -11462,7 +11463,10 @@ function renderModuleWindow(windowItem) {
   const isAttendanceWindow = windowItem.moduleId === 'bang-diem-danh' && !windowItem.type
   const isInventoryWindow = windowItem.moduleId === 'kho-hang' && !windowItem.type
   const isParentConsultationWindow = windowItem.moduleId === 'khach-hang-tu-van' && !windowItem.type
-  const titlebarText = isParentConsultationWindow ? 'iChess Center OS · Admin Console' : headerTitle
+  const isSettingsWindow = windowItem.moduleId === 'cai-dat-co-so' && !windowItem.type
+  const titlebarText = isParentConsultationWindow || isSettingsWindow
+    ? 'iChess Center OS · Admin Console'
+    : headerTitle
   const financeSurface = !windowItem.type
     ? {
         'nhom-tai-chinh': 'gateway',
@@ -11485,7 +11489,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${isInventoryWindow ? 'is-inventory-window' : ''} ${isParentConsultationWindow ? 'is-parent-consultation-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${isInventoryWindow ? 'is-inventory-window' : ''} ${isParentConsultationWindow ? 'is-parent-consultation-window' : ''} ${isSettingsWindow ? 'is-settings-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -11669,7 +11673,7 @@ function renderModuleRefreshControl(windowItem) {
 }
 
 function renderModuleTitlebarCurrentness(windowItem) {
-  if (windowItem?.type || !['bang-diem-danh', 'kho-hang', 'khach-hang-tu-van'].includes(windowItem?.moduleId)) return ''
+  if (windowItem?.type || !['bang-diem-danh', 'kho-hang', 'khach-hang-tu-van', 'cai-dat-co-so'].includes(windowItem?.moduleId)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited', 'loading', 'failed'].includes(state.status) ? state.status : 'idle'
   const updatedAt = formatRefreshTime(state.lastFreshAt)
@@ -11696,7 +11700,7 @@ function renderModuleTitlebarCurrentness(windowItem) {
 
 function renderModuleRefreshNotice(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
-  if (isFinanceModuleWindow(windowItem) || ['bang-diem-danh', 'kho-hang', 'khach-hang-tu-van'].includes(windowItem.moduleId)) return ''
+  if (isFinanceModuleWindow(windowItem) || ['bang-diem-danh', 'kho-hang', 'khach-hang-tu-van', 'cai-dat-co-so'].includes(windowItem.moduleId)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited'].includes(state.status)
     ? 'is-fresh'

@@ -216,9 +216,12 @@ export function renderSettingsModule(
   return `
     <section class="settings-module" aria-label="Cài đặt cơ sở">
       <div class="settings-header">
-        <div>
-          <h3>Cài đặt cơ sở</h3>
-          <p>Quản lý các thiết lập vận hành của cơ sở.</p>
+        <div class="settings-title-group">
+          <span>CÀI ĐẶT CƠ SỞ</span>
+          <div class="settings-title-subtitle">
+            <h3>Cài đặt cơ sở</h3>
+            <p>Quản lý các thiết lập vận hành của cơ sở.</p>
+          </div>
         </div>
         <div class="settings-summary">
           <span>${stats.total} ca học</span>
@@ -321,28 +324,29 @@ function renderCenterInfoPanel(centerInfo, cloudDbPanelState, options = {}) {
   const state = options.centerSettingsState || {}
   const ready = state.status === 'ready'
   return `
-    <section class="settings-class-session-panel settings-info-panel" aria-label="Thông tin cơ sở">
-      <div class="settings-panel-header">
-        <div>
-          <h4>Thông tin cơ sở</h4>
-          <p>Tên hiển thị và thông tin liên hệ dùng chung trong đúng cơ sở hiện tại.</p>
+    <div class="settings-center-info-stack settings-info-panel">
+      <section class="settings-center-profile-card" aria-label="Thông tin cơ sở">
+        <div class="settings-panel-header">
+          <div>
+            <h4>Thông tin cơ sở</h4>
+            <p>Tên hiển thị và thông tin liên hệ dùng chung trong đúng cơ sở hiện tại.</p>
+          </div>
+          <button type="button" data-settings-center-action="open-edit" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>Chỉnh sửa</button>
         </div>
-        <button type="button" data-settings-center-action="open-edit" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>Chỉnh sửa</button>
-      </div>
-      ${renderCenterSettingsCapabilityNotice(state)}
-      <div class="settings-info-grid">
-        ${renderInfoItem('Tên hiển thị', centerInfo.name)}
-        ${renderInfoItem('Mã cơ sở', centerInfo.code)}
-        ${renderInfoItem('Môi trường', centerInfo.environment)}
-        ${renderInfoItem('Trạng thái', centerInfo.status)}
-        ${renderInfoItem('Địa chỉ', centerInfo.address)}
-        ${renderInfoItem('Số điện thoại', centerInfo.phone)}
-      </div>
-      <p class="settings-product-note">Mã cơ sở là định danh hệ thống và không thể sửa tại đây.</p>
+        <div class="settings-info-grid">
+          ${renderInfoItem('Tên hiển thị', centerInfo.name)}
+          ${renderInfoItem('Địa chỉ', centerInfo.address)}
+          ${renderInfoItem('Số điện thoại', centerInfo.phone)}
+          ${renderInfoItem('Trạng thái', centerInfo.status, { status: true })}
+          ${renderInfoItem('Mã cơ sở', centerInfo.code)}
+          ${renderInfoItem('Môi trường', centerInfo.environment)}
+        </div>
+        <p class="settings-product-note">Mã cơ sở là định danh hệ thống và không thể sửa tại đây.</p>
+      </section>
       ${renderCenterAppearancePanel(options.wallpaperState, state)}
       ${renderCloudDbPanel(cloudDbPanelState, centerInfo)}
       ${options.centerProfileFormState ? renderCenterProfileForm(options.centerProfileFormState, centerInfo, state) : ''}
-    </section>
+    </div>
   `
 }
 
@@ -401,7 +405,6 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
         </div>
         <button type="button" data-settings-package-action="open-create" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>+ Thêm gói</button>
       </div>
-      ${renderCenterSettingsCapabilityNotice(state)}
       <p class="settings-product-note">Danh mục này không được tự tạo từ hồ sơ học phí học viên. Việc gán gói và tự động hóa chu kỳ thuộc bước V2-4.</p>
       <div class="settings-class-session-table-wrap">
         <table class="settings-class-session-table">
@@ -537,11 +540,11 @@ function renderSampleDataPanel() {
   `
 }
 
-function renderInfoItem(label, value) {
+function renderInfoItem(label, value, options = {}) {
   return `
-    <article>
+    <article class="${options.status ? 'is-status' : ''}">
       <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value || 'Chưa cập nhật')}</strong>
+      <strong class="${[options.status ? 'settings-info-status-badge' : '', value ? '' : 'is-empty'].filter(Boolean).join(' ')}">${escapeHtml(value || 'Chưa cập nhật')}</strong>
     </article>
   `
 }
