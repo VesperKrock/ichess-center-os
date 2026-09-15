@@ -90,24 +90,37 @@ export function renderAttendanceBoardModule(
   )
   const visibleDates = getVisibleAttendanceDates(filteredRows, classSessions, normalizedFilters)
   const stats = getAttendanceBoardStats(students, classSessions)
+  const compactSystemStatus = renderAttendanceCompactSystemStatus(
+    {
+      attendanceAvailable,
+      tuitionAvailable,
+      calendarNotesAvailable,
+      attendanceOperationsReady,
+      attendanceOperationsState: availability.attendanceOperationsState,
+    },
+    calendarNotesSharedTruthState,
+  )
 
   return `
     <section class="attendance-board-module" aria-label="Bảng điểm danh">
       <header class="attendance-board-heading">
-        <div>
+        <div class="attendance-board-heading-intro">
           <span>BẢNG ĐIỂM DANH</span>
           <div class="attendance-board-heading-copy">
             <h3>Bảng điểm danh</h3>
             <p>Điểm danh theo tháng, theo dõi số buổi và ghi chú học viên.</p>
           </div>
         </div>
-        <button
-          type="button"
-          data-attendance-baseline-manager-open
-          ${attendanceAvailable ? '' : 'disabled'}
-        >
-          Quản lý dữ liệu nền
-        </button>
+        <div class="attendance-board-heading-actions">
+          ${compactSystemStatus}
+          <button
+            type="button"
+            data-attendance-baseline-manager-open
+            ${attendanceAvailable ? '' : 'disabled'}
+          >
+            Quản lý dữ liệu nền
+          </button>
+        </div>
       </header>
       <div class="attendance-board-toolbar" aria-label="Bộ lọc bảng điểm danh">
         <label>
@@ -147,18 +160,12 @@ export function renderAttendanceBoardModule(
         </div>
       </div>
 
-      ${renderOperationalNotesSharedTruthStatus(calendarNotesSharedTruthState)}
-      ${renderAttendanceOperationsStatus(availability.attendanceOperationsState)}
       ${renderAttendanceReminderSummary(
         availability.attendanceReminders,
         filteredRows,
         availability.isReminderPanelOpen,
         attendanceOperationsReady,
       )}
-      ${tuitionAvailable
-        ? ''
-        : `<p class="attendance-board-empty" role="status">Đối chiếu gói học phí hiện chưa tải được.${attendanceAvailable ? ' Bạn vẫn có thể điểm danh.' : ''}</p>`}
-      ${attendanceAvailable ? '' : '<p class="attendance-board-empty" role="alert">Dữ liệu điểm danh chưa tải được. Vui lòng bấm Làm mới rồi thử lại.</p>'}
       ${attendanceAvailable
         ? renderAttendanceBoardContent(filteredRows, visibleDates, classSessions, students, baselineState, normalizedFilters)
         : ''}
@@ -193,37 +200,68 @@ export function renderAttendanceBoardModule(
   `
 }
 
-function renderAttendanceReminderSummary(reminders = [], rows = [], isOpen = false, isReady = false) {
-  if (!isReady) {
-    return '<p class="attendance-board-operations-notice" role="status">Nhắc việc và ghi chú ô điểm danh hiện chưa tải được.</p>'
+function renderAttendanceCompactSystemStatus(availability = {}, calendarNotesState = {}) {
+  const messages = []
+  if (availability.attendanceAvailable === false) {
+    messages.push('Dữ liệu điểm danh chưa tải được. Vui lòng bấm Làm mới rồi thử lại.')
   }
+  if (availability.tuitionAvailable === false) {
+    messages.push(`Đối chiếu gói học phí hiện chưa tải được.${availability.attendanceAvailable === false ? '' : ' Bạn vẫn có thể điểm danh.'}`)
+  }
+  if (availability.calendarNotesAvailable === false) {
+    messages.push('Ghi chú chăm sóc theo tháng và ghi chú điểm danh hiện chưa tải được.')
+  }
+  if (availability.attendanceOperationsReady === false) {
+    messages.push('Nhắc việc và ghi chú ô điểm danh hiện chưa tải được.')
+  }
+  if (calendarNotesState?.isSaving) {
+    messages.push('Đang lưu ghi chú dùng chung...')
+  } else if (calendarNotesState?.isLoading) {
+    messages.push('Đang tải ghi chú dùng chung...')
+  } else if (calendarNotesState?.messageTone === 'error') {
+    messages.push('Ghi chú dùng chung chưa cập nhật được. Nội dung bạn nhập vẫn được giữ nguyên.')
+  } else if (calendarNotesState?.messageTone === 'warning' || calendarNotesState?.legacyMigrationRequired) {
+    messages.push('Ghi chú cũ đang được giữ an toàn và chưa đưa vào dữ liệu dùng chung.')
+  }
+
+  const message = [...new Set(messages)].join(' ')
+  if (!message) return ''
+  return `<p class="attendance-board-heading-status" role="status" title="${escapeAttribute(message)}">${escapeHtml(message)}</p>`
+}
+
+function renderAttendanceReminderSummary(reminders = [], rows = [], isOpen = false, isReady = false) {
+  if (!isReady) return ''
   const grouped = groupV28AAttendanceRemindersByStudent(reminders)
   if (!grouped.size) return ''
   const rowsByStudentId = new Map(rows.map((row) => [String(row?.student?.id || ''), row]))
+  const highlightedGroup = Array.from(grouped.entries())
+    .sort((first, second) => {
+      const countDelta = second[1].length - first[1].length
+      if (countDelta) return countDelta
+      const secondDanger = second[1].some((reminder) => reminder.severity === 'danger') ? 1 : 0
+      const firstDanger = first[1].some((reminder) => reminder.severity === 'danger') ? 1 : 0
+      return secondDanger - firstDanger
+    })[0]
+  const highlightedStudentId = highlightedGroup?.[0] || ''
+  const highlightedReminders = highlightedGroup?.[1] || []
+  const highlightedStudentName = cleanDisplayText(
+    rowsByStudentId.get(highlightedStudentId)?.student?.fullName || 'Học viên',
+  )
   return `
     <section class="attendance-reminder-summary" aria-label="Nhắc việc điểm danh">
       <span class="attendance-reminder-summary-dot" aria-hidden="true"></span>
       <strong>Cần xử lý · ${grouped.size} học viên</strong>
       <button type="button" data-attendance-reminders-toggle aria-expanded="${isOpen ? 'true' : 'false'}">
-        ${isOpen ? 'Đóng nhắc việc' : 'Xem nhắc việc'}
+        Xem nhắc việc
       </button>
       ${isOpen ? `
         <div class="attendance-reminder-panel">
           <header>
-            <strong>Nhắc việc điểm danh</strong>
+            <strong>${escapeHtml(highlightedStudentName)}</strong>
             <button type="button" data-attendance-reminders-toggle aria-label="Đóng nhắc việc">×</button>
           </header>
           <div>
-            ${Array.from(grouped.entries()).map(([studentId, studentReminders]) => {
-              const row = rowsByStudentId.get(studentId)
-              const studentName = cleanDisplayText(row?.student?.fullName || 'Học viên')
-              return `
-                <section class="attendance-reminder-student-group">
-                  <strong>${escapeHtml(studentName)}</strong>
-                  ${studentReminders.map((reminder) => renderAttendanceReminderAction(reminder)).join('')}
-                </section>
-              `
-            }).join('')}
+            ${highlightedReminders.map((reminder) => renderAttendanceReminderAction(reminder)).join('')}
           </div>
         </div>
       ` : ''}
@@ -250,17 +288,19 @@ function renderAttendanceReminderAction(reminder = {}) {
       ? 'Xác nhận đã gửi'
       : 'Mở Học phí'
   return `
-    <div class="attendance-reminder-item is-${escapeAttribute(reminder.severity)}">
+    <button
+      type="button"
+      class="attendance-reminder-item is-${escapeAttribute(reminder.severity)}"
+      data-attendance-reminder-action="${action}"
+      data-student-id="${escapeAttribute(reminder.studentId)}"
+      data-cycle-id="${escapeAttribute(reminder.cycleId)}"
+      data-reminder-signal="${escapeAttribute(reminder.signal)}"
+      data-checkpoint-version="${escapeAttribute(reminder.checkpointVersion || 0)}"
+      aria-label="${escapeAttribute(`${reminder.label}. ${actionLabel}`)}"
+    >
+      <span class="attendance-reminder-item-dot" aria-hidden="true"></span>
       <span>${escapeHtml(reminder.label)}</span>
-      <button
-        type="button"
-        data-attendance-reminder-action="${action}"
-        data-student-id="${escapeAttribute(reminder.studentId)}"
-        data-cycle-id="${escapeAttribute(reminder.cycleId)}"
-        data-reminder-signal="${escapeAttribute(reminder.signal)}"
-        data-checkpoint-version="${escapeAttribute(reminder.checkpointVersion || 0)}"
-      >${actionLabel}</button>
-    </div>
+    </button>
   `
 }
 
@@ -306,34 +346,46 @@ function renderAttendanceBaselinePanel(
   return `
     <section class="attendance-baseline-toolbar" aria-label="Dữ liệu nền điểm danh">
       <div class="attendance-baseline-summary">
-        <strong>Dữ liệu nền điểm danh</strong>
-        <span>Trạng thái: ${escapeHtml(baselineStateLabels[status] || baselineStateLabels.notStarted)}</span>
-        <span>${baselineRecords.length} bản ghi nền</span>
-        <span>${hasDraftChanges ? `${draftChangeCount} thay đổi chưa lưu` : 'Không có thay đổi chưa lưu'}</span>
-        <span>Nhập từ ${escapeHtml(formatAttendanceDate(editableRange.startDate))} đến ${escapeHtml(formatAttendanceDate(editableRange.endDate))}</span>
+        <div>
+          <strong class="attendance-baseline-state is-${escapeAttribute(status)}">
+            <span aria-hidden="true"></span>
+            ${escapeHtml(baselineStateLabels[status] || baselineStateLabels.notStarted)}
+          </strong>
+          <span>${baselineRecords.length} bản ghi nền</span>
+          <span>${escapeHtml(formatAttendanceDate(editableRange.startDate))} → ${escapeHtml(formatAttendanceDate(editableRange.endDate))}</span>
+        </div>
+        <p>${hasDraftChanges ? `${draftChangeCount} thay đổi chưa lưu` : 'Không có thay đổi chưa lưu'}</p>
       </div>
-      <div class="attendance-baseline-actions">
-        <button type="button" data-attendance-baseline-action="start" ${isLocked ? 'disabled' : ''}>
-          Bắt đầu nhập dữ liệu nền
-        </button>
-        <button type="button" data-attendance-baseline-action="undo" ${baselineUndoAvailable ? '' : 'disabled'}>
-          Hoàn tác nhập gần nhất
-        </button>
-        <button type="button" data-attendance-baseline-action="save" ${hasDraftChanges && !isLocked ? '' : 'disabled'}>
-          Lưu thay đổi
-        </button>
-        <button type="button" data-attendance-baseline-action="cancel" ${hasDraftChanges ? '' : 'disabled'}>
-          Hủy thay đổi
-        </button>
-        <button type="button" data-attendance-baseline-action="clear" ${isLocked ? 'disabled' : ''}>
-          Xóa dữ liệu nền đang nhập
-        </button>
-        <button type="button" data-attendance-baseline-action="lock" ${isLocked ? 'disabled' : ''}>
-          Chốt dữ liệu nền
-        </button>
-        <button type="button" data-attendance-baseline-action="unlock" ${isLocked ? '' : 'disabled'}>
-          Mở khóa dữ liệu nền
-        </button>
+      <div class="attendance-baseline-action-group">
+        <span>Nhập / chỉnh sửa</span>
+        <div class="attendance-baseline-actions">
+          <button type="button" data-attendance-baseline-action="start" ${isLocked ? 'disabled' : ''}>
+            Bắt đầu nhập dữ liệu nền
+          </button>
+          <button type="button" data-attendance-baseline-action="undo" ${baselineUndoAvailable ? '' : 'disabled'}>
+            Hoàn tác nhập gần nhất
+          </button>
+          <button type="button" data-attendance-baseline-action="save" ${hasDraftChanges && !isLocked ? '' : 'disabled'}>
+            Lưu thay đổi
+          </button>
+          <button type="button" data-attendance-baseline-action="cancel" ${hasDraftChanges ? '' : 'disabled'}>
+            Hủy thay đổi
+          </button>
+        </div>
+      </div>
+      <div class="attendance-baseline-action-group is-foundation">
+        <span>Dữ liệu nền</span>
+        <div class="attendance-baseline-actions">
+          <button type="button" class="is-destructive" data-attendance-baseline-action="clear" ${isLocked ? 'disabled' : ''}>
+            Xóa dữ liệu nền đang nhập
+          </button>
+          <button type="button" data-attendance-baseline-action="lock" ${isLocked ? 'disabled' : ''}>
+            Chốt dữ liệu nền
+          </button>
+          <button type="button" data-attendance-baseline-action="unlock" ${isLocked ? '' : 'disabled'}>
+            Mở khóa dữ liệu nền
+          </button>
+        </div>
       </div>
       <details class="attendance-baseline-details" data-attendance-baseline-details ${isDetailsOpen ? 'open' : ''}>
         <summary>Chi tiết dữ liệu nền</summary>
@@ -939,7 +991,8 @@ function getStudentScheduleLines(classSession = {}) {
   const endTime = String(classSession.endTime || '').trim()
   const timeLabel = startTime && endTime ? `${startTime}–${endTime}` : startTime || endTime
   if (!weekdays.length) return [getClassSessionLabel(classSession)]
-  return weekdays.map((weekday) => [labelByDay[weekday], timeLabel].filter(Boolean).join(' · '))
+  const weekdayLabel = weekdays.map((weekday) => labelByDay[weekday]).filter(Boolean).join('–')
+  return [[weekdayLabel, timeLabel].filter(Boolean).join(' · ')]
 }
 
 function renderAttendanceCellDisplay(attendance) {
@@ -1200,8 +1253,8 @@ function renderAttendanceCellNoteContext(contextState, rows, cellNotes = []) {
     <div class="attendance-cell-context-dismiss" data-attendance-cell-context-close></div>
     <section class="attendance-cell-note-context" role="menu" style="left:${left}px;top:${top}px">
       <header>
-        <strong>${escapeHtml(cleanDisplayText(row.student.fullName || 'Học viên'))}</strong>
-        <span>${escapeHtml(formatAttendanceDate(contextState.dateKey))}</span>
+        <strong>Ghi chú ô điểm danh</strong>
+        <span>${escapeHtml(cleanDisplayText(row.student.fullName || 'Học viên'))} · ${escapeHtml(formatAttendanceCellContextDate(contextState.dateKey))}</span>
       </header>
       ${contextState.occurrences.map((occurrence) => {
         const key = getAttendanceCellNoteKey({
@@ -1217,8 +1270,10 @@ function renderAttendanceCellNoteContext(contextState, rows, cellNotes = []) {
             data-attendance-cell-note-open
             data-occurrence="${escapeAttribute(encodeURIComponent(JSON.stringify({ ...occurrence, note })))}"
           >
-            <span>${escapeHtml(occurrence.classSessionLabel || 'Buổi học')}</span>
-            <small>${note?.note ? 'Sửa ghi chú ô' : 'Thêm ghi chú ô'}</small>
+            <span>Xem / sửa ghi chú</span>
+            ${contextState.occurrences.length > 1
+              ? `<small>${escapeHtml(occurrence.classSessionLabel || 'Buổi học')}</small>`
+              : ''}
           </button>
         `
       }).join('')}
@@ -1265,10 +1320,7 @@ function renderAttendanceBaselineManagerModal(
     <div class="attendance-detail-backdrop" role="presentation" data-attendance-baseline-manager-close></div>
     <section class="attendance-baseline-manager-modal" role="dialog" aria-modal="true" aria-label="Quản lý dữ liệu nền">
       <header>
-        <div>
-          <h4>Quản lý dữ liệu nền</h4>
-          <p>Các thao tác vận hành dữ liệu nền điểm danh.</p>
-        </div>
+        <h4>Quản lý dữ liệu nền điểm danh</h4>
         <button type="button" aria-label="Đóng" data-attendance-baseline-manager-close>×</button>
       </header>
       ${renderAttendanceBaselinePanel(
@@ -2099,6 +2151,17 @@ function formatAttendanceDate(dateKey) {
   }
 
   return `${day}/${month}/${year}`
+}
+
+function formatAttendanceCellContextDate(dateKey) {
+  const [year, month, day] = String(dateKey || '').split('-').map(Number)
+  const date = new Date(year, month - 1, day, 12)
+
+  if (!year || !month || !day || Number.isNaN(date.getTime())) {
+    return formatAttendanceDate(dateKey)
+  }
+
+  return `${weekdayLabels[date.getDay()]} ${String(day).padStart(2, '0')}`
 }
 
 function formatDateTime(value) {

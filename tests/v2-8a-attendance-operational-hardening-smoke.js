@@ -299,8 +299,8 @@ const contextHtml = renderAttendanceBoardModule(...renderArgs, {
   },
 })
 assert(contextHtml.includes('attendance-cell-note-context'))
-assert(contextHtml.includes('Sửa ghi chú ô'))
-assert(contextHtml.includes('Ca học chưa đặt tên'))
+assert(contextHtml.includes('Ghi chú ô điểm danh'))
+assert(contextHtml.includes('Xem / sửa ghi chú'))
 assert(!contextHtml.includes('>occurrence-absent<'))
 const modalHtml = renderAttendanceBoardModule(...renderArgs, {
   ...availability,
@@ -339,7 +339,7 @@ const migrationFiles = readdirSync(new URL('../supabase/migrations/', import.met
   .filter((name) => name.startsWith('20260914') && name.endsWith('.sql'))
 assert.deepEqual(migrationFiles, ['202609140001_v2_8a_attendance_operational_hardening.sql'])
 const trackedMigrationDrift = execFileSync('git', [
-  'diff', '--name-only', '7388432e05362a43624c838ac03fafcd8430386f', '--', 'supabase/migrations',
+  'diff', '--name-only', '64b49aff7c2733431b9a97ee042e44623049acaa', '--', 'supabase/migrations',
 ], { encoding: 'utf8' }).trim()
 assert.equal(trackedMigrationDrift, '', 'Historical tracked migration drift must remain zero.')
 

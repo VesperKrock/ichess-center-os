@@ -5,6 +5,7 @@ import './report-theme.css'
 import './tuition-theme.css'
 import './finance-theme.css'
 import './attendance-theme.css'
+import './attendance-v2-8p2-theme.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { renderAppAuthEntry } from './app-auth.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
@@ -11492,6 +11493,7 @@ function renderModuleWindow(windowItem) {
         <span class="module-window-hero-slot designer-image-slot" aria-hidden="true"></span>
         <h2 id="${windowItem.id}-title">${escapeHtml(headerTitle)}</h2>
         <div class="window-controls">
+          ${renderModuleTitlebarCurrentness(windowItem)}
           ${renderModuleRefreshControl(windowItem)}
           ${renderModuleNotificationBell(windowItem)}
           <button type="button" data-window-action="minimize" data-window-id="${windowItem.id}" aria-label="Thu nhỏ ${escapeAttribute(headerTitle)}">-</button>
@@ -11661,9 +11663,35 @@ function renderModuleRefreshControl(windowItem) {
   `
 }
 
+function renderModuleTitlebarCurrentness(windowItem) {
+  if (windowItem?.type || windowItem?.moduleId !== 'bang-diem-danh') return ''
+  const state = getModuleRefreshState(windowItem.moduleId)
+  const tone = ['fresh', 'limited', 'loading', 'failed'].includes(state.status) ? state.status : 'idle'
+  const updatedAt = formatRefreshTime(state.lastFreshAt)
+  const label = state.status === 'fresh'
+    ? updatedAt ? `Đã cập nhật ${updatedAt}` : 'Đã cập nhật'
+    : state.status === 'loading'
+      ? 'Đang đồng bộ…'
+      : state.status === 'limited'
+        ? 'Cập nhật chưa đủ'
+        : state.status === 'failed'
+          ? 'Cập nhật lỗi'
+          : 'Chưa cập nhật'
+  return `
+    <span
+      class="module-titlebar-currentness is-${escapeAttribute(tone)}"
+      role="status"
+      title="${escapeAttribute(state.message || label)}"
+    >
+      <span aria-hidden="true"></span>
+      ${escapeHtml(label)}
+    </span>
+  `
+}
+
 function renderModuleRefreshNotice(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
-  if (isFinanceModuleWindow(windowItem)) return ''
+  if (isFinanceModuleWindow(windowItem) || windowItem.moduleId === 'bang-diem-danh') return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited'].includes(state.status)
     ? 'is-fresh'
