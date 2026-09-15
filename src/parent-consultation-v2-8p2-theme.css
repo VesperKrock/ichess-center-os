@@ -1,0 +1,1424 @@
+/* V2-8P2 — final Figma-grounded Parent / Consultant workspace paint. */
+
+.desktop-window.is-parent-consultation-window {
+  --parent-workspace: #f7f7f8;
+  --parent-panel: #ffffff;
+  --parent-soft: #f7f7f8;
+  --parent-subtle: #f9fafb;
+  --parent-field: #ffffff;
+  --parent-line: #d1d5db;
+  --parent-line-soft: #e5e7eb;
+  --parent-text: #111827;
+  --parent-secondary: #4b5563;
+  --parent-muted: #6b7280;
+  --parent-faint: #9ca3af;
+  --parent-primary: #111827;
+  --parent-primary-text: #ffffff;
+  --parent-green: #047857;
+  --parent-green-bg: #ecfdf5;
+  --parent-green-line: #a7f3d0;
+  --parent-amber: #b45309;
+  --parent-amber-bg: #fffbeb;
+  --parent-amber-line: #fde68a;
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .desktop-area {
+  height: calc(100vh - 38.4px);
+  padding: 0;
+}
+
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .desktop-window.is-parent-consultation-window.maximized {
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.desktop-window.is-parent-consultation-window > .window-titlebar {
+  box-sizing: border-box;
+  height: 26px;
+  min-height: 26px;
+  gap: 16px;
+  padding: 0 8px 0 16px;
+  border: 0;
+  color: #e5e7eb;
+  background: #111827;
+}
+
+.desktop-window.is-parent-consultation-window > .window-titlebar h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #e5e7eb;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window > .window-titlebar .window-controls {
+  align-items: center;
+  gap: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .module-titlebar-currentness {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: #e5e7eb;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window .module-titlebar-currentness > span {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+
+.desktop-window.is-parent-consultation-window .module-titlebar-currentness.is-fresh > span { background: #10b981; }
+.desktop-window.is-parent-consultation-window .module-titlebar-currentness.is-loading > span,
+.desktop-window.is-parent-consultation-window .module-titlebar-currentness.is-limited > span { background: #f59e0b; }
+.desktop-window.is-parent-consultation-window .module-titlebar-currentness.is-failed > span { background: #ef4444; }
+
+.desktop-window.is-parent-consultation-window > .window-titlebar .window-controls > button,
+.desktop-window.is-parent-consultation-window > .window-titlebar .module-notification-bell summary {
+  box-sizing: border-box;
+  width: 24px;
+  min-width: 24px;
+  height: 20px;
+  min-height: 20px;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  padding: 0;
+  color: #e5e7eb;
+  background: #1e293b;
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.desktop-window.is-parent-consultation-window > .window-titlebar .window-controls > .module-authoritative-refresh {
+  width: auto;
+  min-width: 58px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.desktop-window.is-parent-consultation-window > .window-body {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  color: var(--parent-text);
+  background: var(--parent-workspace);
+}
+
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .taskbar {
+  box-sizing: border-box;
+  height: 38.4px;
+  min-height: 38.4px;
+  gap: 11.2px;
+  padding: 4.8px 12.8px;
+  border-top-color: #334155;
+  background: #0f172a;
+  box-shadow: none;
+}
+
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .taskbar-left,
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .taskbar-right { gap: 6.4px; }
+
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .taskbar-item,
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .taskbar-clock,
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .taskbar-window,
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .taskbar-overflow,
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .start-button,
+:root:has(.desktop-window.is-parent-consultation-window.maximized) .notification-bell {
+  box-sizing: border-box;
+  min-height: 28px;
+  border-radius: 4.8px;
+  padding: 5px 10px;
+  font-size: 10.4px;
+  line-height: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-module {
+  box-sizing: border-box;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 20px;
+  overflow: hidden;
+  padding: 32px;
+  color: var(--parent-text);
+  background: var(--parent-workspace);
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-topbar {
+  display: flex;
+  height: 52px;
+  min-height: 52px;
+  flex: 0 0 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-page-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-page-heading > span {
+  color: var(--parent-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-page-heading > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-page-heading h2,
+.desktop-window.is-parent-consultation-window .parent-consultation-page-heading p { margin: 0; }
+
+.desktop-window.is-parent-consultation-window .parent-consultation-page-heading h2 {
+  color: var(--parent-text);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 34px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-page-heading p {
+  color: var(--parent-muted);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-topbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-add-button {
+  box-sizing: border-box;
+  height: 38px;
+  min-height: 38px;
+  border: 1px solid var(--parent-primary);
+  border-radius: 8px;
+  padding: 9px 18px;
+  color: var(--parent-primary-text);
+  background: var(--parent-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  box-shadow: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-stats {
+  display: flex;
+  height: 32px;
+  min-height: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  gap: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card {
+  box-sizing: border-box;
+  display: inline-flex;
+  height: 32px;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 18px;
+  padding: 7px 16px;
+  color: var(--parent-secondary);
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card span,
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card strong {
+  display: block;
+  margin: 0;
+  color: inherit;
+  font-size: 13px;
+  line-height: 16px;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card span { font-weight: 500; }
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card strong { font-weight: 700; }
+
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card.is-active,
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card.is-success {
+  border-color: var(--parent-green-line);
+  color: var(--parent-green);
+  background: var(--parent-green-bg);
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-stat-card.is-warning {
+  border-color: var(--parent-amber-line);
+  color: var(--parent-amber);
+  background: var(--parent-amber-bg);
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-list-section {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: 88px minmax(0, 1fr);
+  gap: 20px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-list-header { display: none; }
+
+.desktop-window.is-parent-consultation-window .parent-consultation-toolbar {
+  box-sizing: border-box;
+  display: grid;
+  height: 88px;
+  grid-template-columns: minmax(0, 1fr) 180px 180px 210px 210px 140px;
+  gap: 16px;
+  align-items: end;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-toolbar label,
+.desktop-window.is-parent-consultation-window .parent-consultation-search-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-toolbar label > span {
+  color: var(--parent-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-toolbar input,
+.desktop-window.is-parent-consultation-window .parent-consultation-toolbar select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid var(--parent-line);
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--parent-text);
+  background: var(--parent-field);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-toolbar input::placeholder { color: var(--parent-muted); }
+
+.desktop-window.is-parent-consultation-window .parent-consultation-filter-count {
+  align-self: end;
+  padding-bottom: 8px;
+  color: var(--parent-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 10px;
+  background: var(--parent-panel);
+  scrollbar-color: var(--parent-faint) var(--parent-soft);
+  scrollbar-width: thin;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-table {
+  width: 100%;
+  min-width: 1420px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-table th,
+.desktop-window.is-parent-consultation-window .parent-consultation-table td {
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--parent-line-soft);
+  padding: 0 16px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 44px;
+  color: var(--parent-muted);
+  background: var(--parent-soft);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-table td {
+  height: 78px;
+  overflow: hidden;
+  color: var(--parent-text);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-consultation-table th:nth-child(1) { width: 260px; }
+.desktop-window.is-parent-consultation-window .parent-consultation-table th:nth-child(2) { width: 200px; }
+.desktop-window.is-parent-consultation-window .parent-consultation-table th:nth-child(3) { width: 220px; }
+.desktop-window.is-parent-consultation-window .parent-consultation-table th:nth-child(4) { width: 240px; }
+.desktop-window.is-parent-consultation-window .parent-consultation-table th:nth-child(5) { width: 240px; }
+.desktop-window.is-parent-consultation-window .parent-consultation-table th:nth-child(6) { width: auto; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-cell,
+.desktop-window.is-parent-consultation-window .parent-student-cell,
+.desktop-window.is-parent-consultation-window .parent-stage-cell,
+.desktop-window.is-parent-consultation-window .parent-advisor-cell,
+.desktop-window.is-parent-consultation-window .parent-next-action-cell,
+.desktop-window.is-parent-consultation-window .parent-note-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-cell strong {
+  color: var(--parent-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-student-cell strong,
+.desktop-window.is-parent-consultation-window .parent-advisor-cell strong,
+.desktop-window.is-parent-consultation-window .parent-next-action-cell strong {
+  color: var(--parent-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-cell span,
+.desktop-window.is-parent-consultation-window .parent-contact-cell small,
+.desktop-window.is-parent-consultation-window .parent-student-cell span,
+.desktop-window.is-parent-consultation-window .parent-student-cell small,
+.desktop-window.is-parent-consultation-window .parent-advisor-cell span,
+.desktop-window.is-parent-consultation-window .parent-next-action-cell span,
+.desktop-window.is-parent-consultation-window .parent-note-cell span {
+  color: var(--parent-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 14px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-cell span { font-size: 13px; line-height: 16px; }
+.desktop-window.is-parent-consultation-window .parent-note-cell small { display: none; }
+
+.desktop-window.is-parent-consultation-window .parent-stage-badge,
+.desktop-window.is-parent-consultation-window .parent-status-badge,
+.desktop-window.is-parent-consultation-window .parent-source-badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: max-content;
+  min-height: 24px;
+  align-items: center;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 13px;
+  padding: 3px 12px 4px;
+  color: var(--parent-secondary);
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-stage-badge.is-converted,
+.desktop-window.is-parent-consultation-window .parent-status-badge.is-activeCare,
+.desktop-window.is-parent-consultation-window .parent-status-badge.is-converted {
+  border-color: var(--parent-green-line);
+  color: var(--parent-green);
+  background: var(--parent-green-bg);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-backdrop,
+.desktop-window.is-parent-consultation-window .parent-note-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  background: rgba(17, 24, 39, 0.22);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel {
+  position: absolute;
+  top: 58px;
+  left: 178px;
+  box-sizing: border-box;
+  display: grid;
+  width: 1180px;
+  height: 520px;
+  max-width: none;
+  max-height: none;
+  grid-template-rows: 78px minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--parent-line);
+  border-radius: 12px;
+  padding: 0;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  box-shadow: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header {
+  box-sizing: border-box;
+  display: flex;
+  height: 78px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--parent-line-soft);
+  padding: 0 23px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header h3,
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header p { margin: 0; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header h3 {
+  color: var(--parent-text);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 34px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header p {
+  color: var(--parent-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-note-modal-header-actions { gap: 12px; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header button {
+  box-sizing: border-box;
+  height: 38px;
+  min-height: 38px;
+  border: 1px solid var(--parent-line);
+  border-radius: 8px;
+  padding: 0 16px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header button:first-child {
+  width: 200px;
+  border-color: var(--parent-primary);
+  color: var(--parent-primary-text);
+  background: var(--parent-primary);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-panel .parent-note-modal-header button:last-child { width: 60px; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-scroll {
+  display: block;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 23px 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-section > h4,
+.desktop-window.is-parent-consultation-window .parent-detail-section-heading h4 {
+  height: 24px;
+  margin: 0;
+  color: var(--parent-text);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-section.is-status > h4 { margin-top: 12px; margin-bottom: 6px; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body {
+  position: relative;
+  display: grid;
+  box-sizing: border-box;
+  height: 112px;
+  grid-template-columns: 232px 344px 1fr;
+  grid-template-rows: repeat(3, 22px);
+  gap: 12px 14px;
+  align-content: center;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 10px 15px;
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body article {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body article:nth-child(1) { grid-column: 1; grid-row: 1; }
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body article:nth-child(2) { grid-column: 1; grid-row: 2; }
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body article:nth-child(3) { grid-column: 1; grid-row: 3; }
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body article:nth-child(4) { grid-column: 2; grid-row: 1; }
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body article:nth-child(5) { grid-column: 2; grid-row: 2; }
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body article:nth-child(6) { grid-column: 3; grid-row: 1; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body span {
+  margin: 0;
+  color: var(--parent-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-body strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--parent-text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-section.is-students { display: block; margin-top: 16px; }
+.desktop-window.is-parent-consultation-window .parent-contact-detail-section.is-care { margin-top: 16px; }
+
+.desktop-window.is-parent-consultation-window .parent-detail-section-heading {
+  display: flex;
+  height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-linked-students-list {
+  box-sizing: border-box;
+  height: 62px;
+  overflow: auto;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-linked-student-card {
+  display: block;
+  height: 60px;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.desktop-window.is-parent-consultation-window .parent-linked-student-card > button {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 60px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  padding: 0 15px;
+  color: var(--parent-text);
+  background: transparent;
+  text-align: left;
+}
+
+.desktop-window.is-parent-consultation-window .parent-linked-student-card strong { font-size: 15px; font-weight: 600; line-height: 22px; }
+.desktop-window.is-parent-consultation-window .parent-linked-student-card span { color: var(--parent-muted); font-size: 12px; line-height: 18px; }
+
+.desktop-window.is-parent-consultation-window .parent-detail-note-history {
+  display: block;
+  box-sizing: border-box;
+  height: 128px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.desktop-window.is-parent-consultation-window .parent-detail-note-history > .parent-note-history-item,
+.desktop-window.is-parent-consultation-window .parent-detail-note-history > .parent-note-history-empty {
+  box-sizing: border-box;
+  height: 98px;
+  overflow-y: auto;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 8px 15px;
+  color: var(--parent-text);
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-detail-note-history > .parent-note-history-item ~ .parent-note-history-item { display: none; }
+.desktop-window.is-parent-consultation-window .parent-note-history-meta { color: var(--parent-muted); font-size: 12px; font-weight: 400; }
+.desktop-window.is-parent-consultation-window .parent-note-history-meta span { color: var(--parent-muted); background: #f3f4f6; }
+.desktop-window.is-parent-consultation-window .parent-note-history-item p { margin: 0; color: var(--parent-text); font-size: 14px; line-height: 22px; }
+.desktop-window.is-parent-consultation-window .parent-note-history-item small { color: var(--parent-muted); font-size: 12px; line-height: 20px; }
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal {
+  position: absolute;
+  top: 46px;
+  left: 208px;
+  box-sizing: border-box;
+  display: grid;
+  width: 1120px;
+  height: 548px;
+  max-width: none;
+  max-height: none;
+  grid-template-rows: 80px 373px 95px;
+  overflow: hidden;
+  border: 1px solid var(--parent-line);
+  border-radius: 12px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  box-shadow: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-header {
+  box-sizing: border-box;
+  height: 80px;
+  border-bottom: 1px solid var(--parent-line-soft);
+  padding: 0 23px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-header h3 {
+  color: var(--parent-text);
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-header span {
+  color: var(--parent-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-header > button {
+  box-sizing: border-box;
+  width: 60px;
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid var(--parent-line);
+  border-radius: 8px;
+  padding: 0;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: 520px 536px;
+  grid-template-rows: 104px 226px;
+  gap: 0 16px;
+  overflow: hidden;
+  padding: 13px 23px 10px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-body > section {
+  display: block;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+.desktop-window.is-parent-consultation-window .parent-link-review-body > section:first-of-type { grid-column: 1 / 3; grid-row: 1; }
+.desktop-window.is-parent-consultation-window .parent-link-review-body > section:nth-of-type(2) { grid-column: 1; grid-row: 2; }
+.desktop-window.is-parent-consultation-window .parent-link-review-body > section:nth-of-type(3) { grid-column: 2; grid-row: 2; }
+
+.desktop-window.is-parent-consultation-window .parent-link-review-body h4 {
+  margin: 0 0 5px;
+  color: var(--parent-text);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-summary {
+  box-sizing: border-box;
+  display: flex;
+  height: 58px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 0 15px;
+  color: var(--parent-text);
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-summary strong { font-size: 15px; font-weight: 600; line-height: 22px; }
+.desktop-window.is-parent-consultation-window .parent-link-review-summary span { color: var(--parent-muted); font-size: 12px; line-height: 18px; }
+
+.desktop-window.is-parent-consultation-window .parent-link-contact-panel,
+.desktop-window.is-parent-consultation-window .parent-link-role-panel {
+  box-sizing: border-box;
+  height: 226px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 12px 15px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-body > section:nth-of-type(2) > h4 {
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-role-panel { margin-top: 29px; }
+
+.desktop-window.is-parent-consultation-window .parent-link-role-panel h4 {
+  margin-bottom: 8px;
+  font-size: 15px;
+  line-height: 22px;
+  text-transform: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-choice {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-choice label {
+  box-sizing: border-box;
+  min-height: 26px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 13px;
+  padding: 3px 12px;
+  color: var(--parent-muted);
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-choice label:has(input:checked) {
+  border-color: var(--parent-green-line);
+  color: var(--parent-green);
+  background: var(--parent-green-bg);
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-choice input {
+  position: absolute;
+  width: 1px !important;
+  min-height: 1px !important;
+  opacity: 0;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-contact-panel .parent-contact-form-grid > label:first-child { grid-column: 1 / 3; }
+.desktop-window.is-parent-consultation-window .parent-link-contact-panel .parent-contact-form-grid > small { display: none; }
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-grid label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-grid label > span {
+  color: var(--parent-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-grid input:not([type='checkbox']),
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-grid select {
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid var(--parent-line);
+  border-radius: 7px;
+  padding: 0 11px;
+  color: var(--parent-text);
+  background: var(--parent-field);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-checkbox {
+  min-height: 36px;
+  flex-direction: row !important;
+  align-items: center;
+  color: var(--parent-text);
+  font-size: 13px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-footer {
+  box-sizing: border-box;
+  display: flex;
+  height: 95px;
+  align-items: flex-start;
+  gap: 0;
+  border: 0;
+  padding: 11px 23px 0;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-footer > span {
+  box-sizing: border-box;
+  display: flex;
+  width: 820px;
+  height: 54px;
+  flex: 0 0 820px;
+  align-items: center;
+  margin-right: -4px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 7px 13px;
+  color: var(--parent-muted);
+  background: var(--parent-subtle);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-footer-actions {
+  width: 256px;
+  flex: 0 0 256px;
+  flex-wrap: nowrap;
+  gap: 10px;
+  margin-top: 8px;
+  margin-left: -4px;
+}
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-footer button { box-sizing: border-box; height: 38px; min-height: 38px; border-radius: 8px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-footer button:first-child { width: 82px; border-color: var(--parent-line); color: var(--parent-text); background: var(--parent-panel); }
+.desktop-window.is-parent-consultation-window .parent-link-review-modal .parent-contact-form-footer button:last-child { width: 164px; border-color: var(--parent-primary); color: var(--parent-primary-text); background: var(--parent-primary); }
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  box-sizing: border-box;
+  display: flex;
+  width: calc(100% - 40px);
+  height: calc(100% - 40px);
+  max-width: none;
+  max-height: none;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--parent-line);
+  border-radius: 12px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  box-shadow: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal > .parent-contact-form-header {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 66px;
+  min-height: 66px;
+  flex: 0 0 66px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--parent-line-soft);
+  padding: 0 24px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-header h3 {
+  margin: 0;
+  color: var(--parent-text);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 29px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-header span {
+  color: var(--parent-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 15px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-header-actions { gap: 12px; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-header button,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-footer button {
+  box-sizing: border-box;
+  height: 34px;
+  min-height: 34px;
+  border: 1px solid var(--parent-line);
+  border-radius: 8px;
+  padding: 0 16px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-header button:last-child {
+  width: 42px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard {
+  box-sizing: border-box;
+  display: grid;
+  width: 100%;
+  height: 58px;
+  min-height: 58px;
+  flex: 0 0 58px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--parent-line-soft);
+  padding: 0 24px;
+  background: var(--parent-soft);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button {
+  box-sizing: border-box;
+  display: flex;
+  height: 36px;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 0 16px;
+  color: var(--parent-muted);
+  background: var(--parent-panel);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button strong {
+  display: grid;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 10px;
+  color: var(--parent-muted);
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button.is-complete strong {
+  border-color: var(--parent-green-line);
+  color: var(--parent-green);
+  background: var(--parent-green-bg);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button.is-active {
+  border-color: var(--parent-primary);
+  color: var(--parent-primary-text);
+  background: var(--parent-primary);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button.is-active strong {
+  border-color: var(--parent-panel);
+  color: var(--parent-primary);
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal > .parent-contact-form-scroll {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 14px 24px 0;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  scrollbar-color: var(--parent-faint) var(--parent-soft);
+  scrollbar-width: thin;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-section {
+  display: block;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-section > h4 {
+  height: 28px;
+  margin: 0;
+  color: var(--parent-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 40px;
+  row-gap: 6px;
+  margin-top: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid label,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-form label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid label > span,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-form label > span {
+  height: 16px;
+  color: var(--parent-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid input,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid select,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 38px;
+  min-height: 38px;
+  border: 1px solid var(--parent-line);
+  border-radius: 7px;
+  padding: 0 11px;
+  color: var(--parent-text);
+  background: var(--parent-field);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid textarea {
+  padding-top: 8px;
+  resize: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal > .parent-contact-form-footer {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 62px;
+  min-height: 62px;
+  flex: 0 0 62px;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--parent-line-soft);
+  border-bottom: 0;
+  padding: 0 24px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-step-nav,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-step-nav button:last-child,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-footer-actions button:last-child {
+  border-color: var(--parent-primary);
+  color: var(--parent-primary-text);
+  background: var(--parent-primary);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-child-consultation-layout {
+  display: grid;
+  grid-template-columns: 620px 360px minmax(0, 1fr);
+  grid-template-rows: 62px 52px 106px;
+  column-gap: 24px;
+  row-gap: 16px;
+  margin-top: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-child-new-card,
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid { display: contents; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid > label:nth-child(1) { grid-column: 1; grid-row: 1; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid > label:nth-child(2) { grid-column: 2; grid-row: 1; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid > label:nth-child(3) { grid-column: 3; grid-row: 1; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid > label:nth-child(4) { grid-column: 1; grid-row: 2; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid > label:nth-child(5) { grid-column: 1; grid-row: 3; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid > label:nth-child(6) { grid-column: 2 / 4; grid-row: 3; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid textarea {
+  height: 82px;
+  min-height: 82px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-student-picker-guidance {
+  box-sizing: border-box;
+  grid-column: 2 / 4;
+  grid-row: 2;
+  align-self: start;
+  height: 56px;
+  margin-top: 4px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: var(--parent-text);
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-student-picker-guidance strong { font-size: 13px; font-weight: 600; line-height: 18px; }
+.desktop-window.is-parent-consultation-window .parent-student-picker-guidance p { margin: 0; color: var(--parent-muted); font-size: 12px; line-height: 16px; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid {
+  row-gap: 4px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid label { gap: 4px; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid label:has([data-parent-contact-field='consultantId']) { gap: 2px; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid input,
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid select { height: 34px; min-height: 34px; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid textarea { height: 72px; min-height: 72px; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid small { height: 16px; color: var(--parent-faint); font-size: 12px; line-height: 16px; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four > h3 {
+  height: 28px;
+  margin: 0;
+  color: var(--parent-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout {
+  display: grid;
+  grid-template-columns: 918px 506px;
+  gap: 24px;
+  margin-top: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout > .parent-enrollment-section {
+  box-sizing: border-box;
+  display: block;
+  height: 376px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 10px;
+  padding: 14px 15px;
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-heading h4 {
+  height: 26px;
+  color: var(--parent-text);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 26px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form {
+  display: grid;
+  grid-template-columns: 430px 440px;
+  column-gap: 16px;
+  row-gap: 4px;
+  margin-top: 3px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form label { gap: 4px; }
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form small { display: none; }
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form label:nth-child(9) { grid-column: 1 / 3; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form input,
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form select,
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid var(--parent-line);
+  border-radius: 7px;
+  padding: 0 11px;
+  color: var(--parent-text);
+  background: var(--parent-field);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  resize: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-actions button {
+  box-sizing: border-box;
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid var(--parent-line);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-actions button:nth-child(1) { width: 170px; border-color: var(--parent-primary); color: var(--parent-primary-text); background: var(--parent-primary); }
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-actions button:nth-child(2) { width: 190px; }
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-actions button:nth-child(3) { width: 170px; }
+
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-sidebar {
+  display: grid;
+  grid-template-rows: 104px 92px 160px;
+  gap: 10px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-step-four-panel {
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 10px;
+  padding: 8px 14px;
+  color: var(--parent-text);
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-step-four-panel h4 { margin: 0; color: var(--parent-text); font-size: 15px; font-weight: 600; line-height: 24px; }
+.desktop-window.is-parent-consultation-window .parent-step-four-panel p { margin: 2px 0 0; color: var(--parent-faint); font-size: 12px; line-height: 18px; }
+.desktop-window.is-parent-consultation-window .parent-step-four-panel pre { height: 118px; margin: 2px 0 0; overflow-y: auto; color: var(--parent-muted); background: transparent; font: inherit; font-size: 12px; line-height: 14px; white-space: pre-wrap; scrollbar-color: var(--parent-line) transparent; scrollbar-width: thin; }
+
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window {
+  --parent-workspace: #0f1115;
+  --parent-panel: #14171c;
+  --parent-soft: #0f1115;
+  --parent-subtle: #101216;
+  --parent-field: #101216;
+  --parent-line: #2a2f36;
+  --parent-line-soft: #2a2f36;
+  --parent-text: #f4f4f5;
+  --parent-secondary: #9ca3af;
+  --parent-muted: #9ca3af;
+  --parent-faint: #6b7280;
+  --parent-primary: #f4f4f5;
+  --parent-primary-text: #111827;
+  --parent-green: #5bd49b;
+  --parent-green-bg: #123126;
+  --parent-green-line: #265944;
+  --parent-amber: #fbbf24;
+  --parent-amber-bg: #3b2d0d;
+  --parent-amber-line: #6b4f12;
+  color-scheme: dark;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-contact-form-backdrop,
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-note-modal-backdrop { background: rgba(244, 244, 245, 0.22); }
+
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-stage-badge,
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-status-badge,
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-source-badge,
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-note-history-meta span,
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-link-choice label,
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button strong { background: #171a20; }
+
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-link-choice label:has(input:checked),
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button.is-complete strong { background: var(--parent-green-bg); }
+
+:root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button.is-active strong { background: var(--parent-primary); }
+
+@media (max-width: 1000px) {
+  .desktop-window.is-parent-consultation-window .parent-consultation-module { padding: 16px; }
+  .desktop-window.is-parent-consultation-window .parent-consultation-page-heading p { display: none; }
+  .desktop-window.is-parent-consultation-window .parent-consultation-toolbar { grid-template-columns: minmax(0, 1fr) repeat(2, 160px); }
+  .desktop-window.is-parent-consultation-window .parent-consultation-toolbar label:nth-of-type(4),
+  .desktop-window.is-parent-consultation-window .parent-consultation-toolbar label:nth-of-type(5),
+  .desktop-window.is-parent-consultation-window .parent-consultation-filter-count { display: none; }
+}

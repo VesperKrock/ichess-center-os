@@ -1017,19 +1017,14 @@ export function renderParentConsultationModule(
   return `
     <section class="parent-consultation-module" aria-label="Danh sách phụ huynh và tư vấn">
       <div class="parent-consultation-topbar">
-        <div class="parent-consultation-stats" aria-label="Tổng quan tư vấn">
-          ${renderStatCard('Tổng khách', visibleStats.total)}
-          ${renderStatCard('Khách mới', visibleStats.leads)}
-          ${renderStatCard('Đang tư vấn', visibleStats.consulting, 'is-active')}
-          ${renderStatCard('Cần follow-up', visibleStats.callbacks, 'is-warning')}
-          ${renderStatCard('Đã chuyển đổi', visibleStats.converted, 'is-success')}
+        <div class="parent-consultation-page-heading">
+          <span>PHỤ HUYNH / TƯ VẤN</span>
+          <div>
+            <h2>Phụ huynh / Tư vấn</h2>
+            <p>Danh bạ liên hệ, tư vấn và chăm sóc tại cơ sở.</p>
+          </div>
         </div>
         <div class="parent-consultation-topbar-actions">
-          <button
-            type="button"
-            data-parent-crm-action="refresh"
-            ${!ready || sharedTruthState.isLoading || sharedTruthState.isSaving ? 'disabled' : ''}
-          >${sharedTruthState.isLoading ? 'Đang tải...' : 'Làm mới'}</button>
           <button
             class="parent-consultation-add-button"
             type="button"
@@ -1038,10 +1033,13 @@ export function renderParentConsultationModule(
           >+ Thêm khách mới</button>
         </div>
       </div>
-
-      ${!loading && sharedTruthState.message
-        ? `<div class="parent-contact-form-${sharedTruthState.messageTone === 'error' ? 'error' : 'message'}" data-parent-crm-sync-message>${escapeHtml(sharedTruthState.message)}</div>`
-        : ''}
+      <div class="parent-consultation-stats" aria-label="Tổng quan tư vấn">
+        ${renderStatCard('Tổng khách', visibleStats.total)}
+        ${renderStatCard('Khách mới', visibleStats.leads)}
+        ${renderStatCard('Đang tư vấn', visibleStats.consulting, 'is-active')}
+        ${renderStatCard('Cần follow-up', visibleStats.callbacks, 'is-warning')}
+        ${renderStatCard('Đã chuyển đổi', visibleStats.converted, 'is-success')}
+      </div>
       ${body}
       ${ready && detailContact ? renderParentContactDetailPanel(detailContact) : ''}
       ${ready && formState ? renderParentContactForm(formState, students, sharedTruthState.eligibleConsultants) : ''}
@@ -1072,6 +1070,7 @@ function renderParentConsultationReadyBody(filteredContacts, mergedContacts, fil
         ${renderFilterSelect('Loại liên hệ', 'contactType', filters.contactType, { all: 'Tất cả loại', ...parentContactTypeLabels })}
         ${renderFilterSelect('Trạng thái', 'consultationStatus', filters.consultationStatus, { all: 'Tất cả trạng thái', ...parentConsultationStatusLabels })}
         ${renderFilterSelect('Nguồn', 'source', filters.source, { all: 'Tất cả nguồn', ...parentContactSourceLabels })}
+        <span class="parent-consultation-filter-count">${filteredContacts.length}/${mergedContacts.length} liên hệ</span>
       </div>
       ${filteredContacts.length ? renderContactsTable(filteredContacts) : '<div class="parent-consultation-empty">Không tìm thấy liên hệ phù hợp với bộ lọc hiện tại.</div>'}
     </section>
@@ -1146,9 +1145,6 @@ function renderContactRow(contact) {
     <tr class="parent-consultation-row" data-parent-contact-row-id="${escapeAttribute(contact.id)}" tabindex="0">
       <td>
         <div class="parent-contact-cell">
-          <span class="parent-contact-badge is-${escapeAttribute(contact.contactType)}">
-            ${escapeHtml(parentContactTypeLabels[contact.contactType] ?? 'Liên hệ')}
-          </span>
           <strong>${escapeHtml(contact.parentName || 'Chưa có tên')}</strong>
           <span>${escapeHtml(contact.phone || 'Chưa có số điện thoại')}</span>
           <small>${escapeHtml(linkedStudentCount ? `${linkedStudentCount} học viên liên kết` : contact.secondaryPhone || contact.email || '')}</small>
@@ -1216,33 +1212,36 @@ function renderParentContactDetailPanel(contact) {
           </div>
         </div>
         <div class="parent-contact-detail-scroll">
-          <div class="parent-contact-detail-body">
-            <article>
-              <span>Stage</span>
-              <strong>${escapeHtml(parentCustomerStageLabels[customerStage])}</strong>
-            </article>
-            <article>
-              <span>Trạng thái</span>
-              <strong>${escapeHtml(parentConsultationStatusLabels[contact.consultationStatus] || 'Đang chăm sóc')}</strong>
-            </article>
-            <article>
-              <span>Tư vấn phụ trách</span>
-              <strong>${escapeHtml(getConsultantDisplayName(contact))}</strong>
-            </article>
-            <article>
-              <span>Nhu cầu</span>
-              <strong>${escapeHtml(contact.leadNeed || contact.interestedProgram || 'Chưa nhập')}</strong>
-            </article>
-            <article>
-              <span>Next action</span>
-              <strong>${escapeHtml(contact.nextAction || 'Chưa có việc tiếp theo')}</strong>
-            </article>
-            <article>
-              <span>Ghi chú gần nhất</span>
-              <strong>${escapeHtml(contact.lastNote || 'Chưa có ghi chú')}</strong>
-            </article>
-          </div>
-          <div class="parent-linked-students" aria-label="Học viên liên quan">
+          <section class="parent-contact-detail-section is-status">
+            <h4>Tình trạng tư vấn</h4>
+            <div class="parent-contact-detail-body">
+              <article>
+                <span>Stage</span>
+                <strong>${escapeHtml(parentCustomerStageLabels[customerStage])}</strong>
+              </article>
+              <article>
+                <span>Trạng thái</span>
+                <strong>${escapeHtml(parentConsultationStatusLabels[contact.consultationStatus] || 'Đang chăm sóc')}</strong>
+              </article>
+              <article>
+                <span>Tư vấn phụ trách</span>
+                <strong>${escapeHtml(getConsultantDisplayName(contact))}</strong>
+              </article>
+              <article>
+                <span>Nhu cầu</span>
+                <strong>${escapeHtml(contact.leadNeed || contact.interestedProgram || 'Chưa nhập')}</strong>
+              </article>
+              <article>
+                <span>Next action</span>
+                <strong>${escapeHtml(contact.nextAction || 'Chưa có việc tiếp theo')}</strong>
+              </article>
+              <article>
+                <span>Ghi chú gần nhất</span>
+                <strong>${escapeHtml(contact.lastNote || 'Chưa có ghi chú chăm sóc.')}</strong>
+              </article>
+            </div>
+          </section>
+          <section class="parent-linked-students parent-contact-detail-section is-students" aria-label="Học viên liên quan">
             <div class="parent-detail-section-heading">
               <h4>Học viên liên quan</h4>
               ${!contact.isDerivedFromStudents && contact.canonicalContactId
@@ -1258,8 +1257,8 @@ function renderParentContactDetailPanel(contact) {
                   : '<p>Chưa có học viên liên quan.</p>'
               }
             </div>
-          </div>
-          <div class="parent-note-history-list parent-detail-note-history" aria-label="Lịch sử ghi chú">
+          </section>
+          <section class="parent-note-history-list parent-detail-note-history parent-contact-detail-section is-care" aria-label="Lịch sử ghi chú">
             <div class="parent-detail-section-heading">
               <h4>Ghi chú chăm sóc</h4>
               ${contact.isDerivedFromStudents ? '' : `
@@ -1273,7 +1272,7 @@ function renderParentContactDetailPanel(contact) {
                 ? noteLogs.map((log) => renderNoteHistoryItem(log)).join('')
                 : '<div class="parent-note-history-empty">Chưa có lịch sử ghi chú.</div>'
             }
-          </div>
+          </section>
         </div>
       </section>
     </div>
@@ -1636,33 +1635,37 @@ function renderParentLinkReviewModal(state, contacts = [], students = []) {
           ${!isExistingLink ? `
             <section>
               <h4>Hồ sơ phụ huynh</h4>
-              ${fixedContact
-                ? `<div class="parent-link-review-summary"><strong>${escapeHtml(fixedContact.parentName || 'Phụ huynh')}</strong><span>${escapeHtml(fixedContact.phone || fixedContact.email || 'Thông tin liên hệ được bảo vệ')}</span></div>`
-                : `
-                  <div class="parent-link-choice" role="radiogroup" aria-label="Chọn cách ghép hồ sơ">
-                    <label><input type="radio" name="parent-link-contact-choice" value="existing" data-parent-link-field="contactChoice" ${state.contactChoice === 'existing' ? 'checked' : ''}> Chọn hồ sơ đã có</label>
-                    <label><input type="radio" name="parent-link-contact-choice" value="new" data-parent-link-field="contactChoice" ${state.contactChoice !== 'existing' ? 'checked' : ''}> Tạo hồ sơ mới sau khi kiểm tra</label>
-                  </div>
-                  ${state.contactChoice === 'existing'
-                    ? renderParentLinkContactSelect(canonicalContacts, selectedContactId)
-                    : renderParentLinkNewContactFields(state)}
-                `}
+              <div class="parent-link-contact-panel">
+                ${fixedContact
+                  ? `<div class="parent-link-review-summary"><strong>${escapeHtml(fixedContact.parentName || 'Phụ huynh')}</strong><span>${escapeHtml(fixedContact.phone || fixedContact.email || 'Thông tin liên hệ được bảo vệ')}</span></div>`
+                  : `
+                    <div class="parent-link-choice" role="radiogroup" aria-label="Chọn cách ghép hồ sơ">
+                      <label><input type="radio" name="parent-link-contact-choice" value="existing" data-parent-link-field="contactChoice" ${state.contactChoice === 'existing' ? 'checked' : ''}> Chọn hồ sơ đã có</label>
+                      <label><input type="radio" name="parent-link-contact-choice" value="new" data-parent-link-field="contactChoice" ${state.contactChoice !== 'existing' ? 'checked' : ''}> Tạo hồ sơ mới sau khi kiểm tra</label>
+                    </div>
+                    ${state.contactChoice === 'existing'
+                      ? renderParentLinkContactSelect(canonicalContacts, selectedContactId)
+                      : renderParentLinkNewContactFields(state)}
+                  `}
+              </div>
             </section>
           ` : ''}
           <section class="${isEnd ? 'parent-link-end-warning' : ''}">
-            <h4>Vai trò với học viên</h4>
-            ${isEnd ? '<p>Liên kết sẽ được kết thúc và giữ lại trong lịch sử; không xóa hồ sơ phụ huynh hoặc học viên.</p>' : ''}
-            <div class="parent-contact-form-grid">
-              ${renderParentLinkSelect('Mối quan hệ', 'relationshipType', state.relationshipType || 'PARENT', {
-                PARENT: 'Phụ huynh',
-                LEGAL_GUARDIAN: 'Người giám hộ',
-                CAREGIVER: 'Người chăm sóc',
-                EMERGENCY_CONTACT: 'Liên hệ khẩn cấp',
-                OTHER_REVIEWED: 'Quan hệ khác đã kiểm tra',
-              }, isEnd)}
-              ${renderParentLinkSelect('Liên hệ học phí', 'financialContactRole', state.financialContactRole || 'PRIMARY', { NONE: 'Không', PRIMARY: 'Chính', SECONDARY: 'Phụ' }, isEnd)}
-              ${renderParentLinkSelect('Liên hệ học tập', 'academicContactRole', state.academicContactRole || 'PRIMARY', { NONE: 'Không', PRIMARY: 'Chính', SECONDARY: 'Phụ' }, isEnd)}
-              <label class="parent-link-checkbox"><input type="checkbox" data-parent-link-field="isPrimaryContact" ${state.isPrimaryContact ? 'checked' : ''} ${isEnd ? 'disabled' : ''}> Đặt là người liên hệ chính</label>
+            <div class="parent-link-role-panel">
+              <h4>Vai trò với học viên</h4>
+              ${isEnd ? '<p>Liên kết sẽ được kết thúc và giữ lại trong lịch sử; không xóa hồ sơ phụ huynh hoặc học viên.</p>' : ''}
+              <div class="parent-contact-form-grid">
+                ${renderParentLinkSelect('Mối quan hệ', 'relationshipType', state.relationshipType || 'PARENT', {
+                  PARENT: 'Phụ huynh',
+                  LEGAL_GUARDIAN: 'Người giám hộ',
+                  CAREGIVER: 'Người chăm sóc',
+                  EMERGENCY_CONTACT: 'Liên hệ khẩn cấp',
+                  OTHER_REVIEWED: 'Quan hệ khác đã kiểm tra',
+                }, isEnd)}
+                ${renderParentLinkSelect('Liên hệ học phí', 'financialContactRole', state.financialContactRole || 'PRIMARY', { NONE: 'Không', PRIMARY: 'Chính', SECONDARY: 'Phụ' }, isEnd)}
+                ${renderParentLinkSelect('Liên hệ học tập', 'academicContactRole', state.academicContactRole || 'PRIMARY', { NONE: 'Không', PRIMARY: 'Chính', SECONDARY: 'Phụ' }, isEnd)}
+                <label class="parent-link-checkbox"><input type="checkbox" data-parent-link-field="isPrimaryContact" ${state.isPrimaryContact ? 'checked' : ''} ${isEnd ? 'disabled' : ''}> Đặt là người liên hệ chính</label>
+              </div>
             </div>
           </section>
         </div>
@@ -1960,11 +1963,11 @@ function renderParentContactWizardIndicator(activeStep) {
       ${parentContactWizardSteps.map((step) => `
         <button
           type="button"
-          class="${step.id === activeStep ? 'is-active' : ''}"
+          class="${step.id === activeStep ? 'is-active' : step.id < activeStep ? 'is-complete' : ''}"
           data-parent-contact-step="${step.id}"
           aria-current="${step.id === activeStep ? 'step' : 'false'}"
         >
-          <strong>${step.id}</strong>
+          <strong>${step.id < activeStep ? '✓' : step.id}</strong>
           <span>${escapeHtml(step.label)}</span>
         </button>
       `).join('')}
@@ -2037,11 +2040,15 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
     `
   }
 
-  return `
-    ${renderCareLogSection(formState)}
-    ${renderAppointmentSection(formState)}
-    ${renderEnrollmentSection(formState)}
-  `
+  if (formState.mode === 'edit') {
+    return `
+      ${renderCareLogSection(formState)}
+      ${renderAppointmentSection(formState)}
+      ${renderEnrollmentSection(formState)}
+    `
+  }
+
+  return renderParentContactWizardStepFour(formState)
 }
 
 function getParentContactWizardStep(step) {
@@ -2049,7 +2056,39 @@ function getParentContactWizardStep(step) {
   return Math.min(Math.max(Number.isFinite(normalizedStep) ? normalizedStep : 1, 1), parentContactWizardSteps.length)
 }
 
-function renderEnrollmentSection(formState) {
+function renderParentContactWizardStepFour(formState) {
+  const summary = buildEnrollmentSummary({ enrollmentDraft: formState.enrollmentDraft ?? {} })
+  const compactSummary = summary
+    .split('\n')
+    .filter((line, index) => index > 0 || !line.toLocaleUpperCase('vi').includes('THÔNG TIN HỌC THỬ'))
+    .join('\n')
+    .trim()
+
+  return `
+    <div class="parent-contact-step-four">
+      <h3>Lịch hẹn &amp; đăng ký dự kiến</h3>
+      <div class="parent-contact-step-four-layout">
+        ${renderEnrollmentSection(formState, { showSummary: false })}
+        <aside class="parent-contact-step-four-sidebar" aria-label="Tổng quan lịch hẹn và học thử">
+          <section class="parent-step-four-panel is-care-history">
+            <h4>Lịch sử chăm sóc</h4>
+            <p>Chưa có lịch sử chăm sóc.</p>
+          </section>
+          <section class="parent-step-four-panel is-appointment">
+            <h4>Lịch hẹn</h4>
+            <p>Chưa có lịch hẹn.</p>
+          </section>
+          <section class="parent-step-four-panel is-trial-summary">
+            <h4>Tóm tắt học thử</h4>
+            <pre>${escapeHtml(compactSummary)}</pre>
+          </section>
+        </aside>
+      </div>
+    </div>
+  `
+}
+
+function renderEnrollmentSection(formState, { showSummary = true } = {}) {
   const draft = formState.enrollmentDraft ?? createEnrollmentDraftFromContact()
   const errors = formState.enrollmentErrors ?? {}
   const message = formState.enrollmentMessage || ''
@@ -2083,7 +2122,7 @@ function renderEnrollmentSection(formState) {
         <button type="button" data-parent-enrollment-action="ready">Đánh dấu đã hẹn học thử</button>
         <button type="button" data-parent-enrollment-action="copy">Copy tóm tắt học thử</button>
       </div>
-      <pre class="parent-enrollment-summary">${escapeHtml(summary)}</pre>
+      ${showSummary ? `<pre class="parent-enrollment-summary">${escapeHtml(summary)}</pre>` : ''}
     </section>
   `
 }
