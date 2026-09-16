@@ -205,6 +205,7 @@ export function renderSettingsModule(
     : 'class-sessions'
   const centerSettingsState = options.centerSettingsState ?? {}
   const tuitionPackages = Array.isArray(options.tuitionPackages) ? options.tuitionPackages : []
+  const classSessionDeletePolicies = options.classSessionDeletePolicies ?? {}
   const centerInfo = buildCenterInfo(centerSettingsState.centerProfile || options.centerInfo)
   const filteredClassSessions = getFilteredSettingsClassSessions(
     classSessions,
@@ -305,7 +306,11 @@ export function renderSettingsModule(
               ${
                 filteredClassSessions.length
                   ? filteredClassSessions
-                      .map((classSession) => renderClassSessionRow(classSession, students))
+                      .map((classSession) => renderClassSessionRow(
+                        classSession,
+                        students,
+                        classSessionDeletePolicies[classSession.id],
+                      ))
                       .join('')
                   : renderEmptyClassSessionRow(classSessions.length)
               }
@@ -616,13 +621,17 @@ export function getClassSessionStudentCount(classSessionId, students = []) {
   ).length
 }
 
-function renderClassSessionRow(classSession, students = []) {
+function renderClassSessionRow(classSession, students = [], deletePolicy = null) {
   const studentCount =
     typeof classSession.studentCount === 'number'
       ? classSession.studentCount
       : getClassSessionStudentCount(classSession.id, students)
   const statusLabel = getClassSessionStatusLabel(classSession.status)
   const actionLabel = classSession.status === 'inactive' ? 'Kích hoạt lại' : 'Ngưng dùng'
+  const canDelete = deletePolicy?.ok === true && deletePolicy.canDelete === true
+  const deleteReason = canDelete
+    ? 'Xóa vĩnh viễn ca học chưa được sử dụng.'
+    : deletePolicy?.message || 'Chưa xác minh được lịch sử phụ thuộc; hãy dùng Ngưng dùng.'
 
   return `
     <tr>
@@ -648,7 +657,17 @@ function renderClassSessionRow(classSession, students = []) {
           <button type="button" data-settings-class-session-action="toggle-status" data-class-session-id="${escapeAttribute(classSession.id)}">
             ${actionLabel}
           </button>
+          <button
+            type="button"
+            data-settings-class-session-action="delete"
+            data-class-session-id="${escapeAttribute(classSession.id)}"
+            title="${escapeAttribute(deleteReason)}"
+            ${canDelete ? '' : 'disabled aria-disabled="true"'}
+          >
+            Xóa
+          </button>
         </div>
+        ${canDelete ? '' : `<small class="settings-class-session-delete-note">${escapeHtml(deleteReason)}</small>`}
       </td>
     </tr>
   `

@@ -108,8 +108,12 @@ export async function mutateAuthoritativeCoreEntity({
     const detail = [error?.code, error?.message, error?.details, error?.hint]
       .map((value) => String(value || '').toLowerCase())
       .join(' ')
-    const v22Outcome = detail.includes('v2_2_class_weekday_in_use')
-      ? 'CLASS_WEEKDAY_IN_USE'
+    const v22Outcome = detail.includes('class_session_delete_referenced')
+      ? 'CLASS_SESSION_REFERENCED'
+      : detail.includes('v2_2_class_weekday_in_use')
+        ? normalizedOperation === 'DELETE'
+          ? 'CLASS_SESSION_REFERENCED'
+          : 'CLASS_WEEKDAY_IN_USE'
       : detail.includes('v2_2_schedule_class_link_required')
         ? 'SCHEDULE_CLASS_LINK_REQUIRED'
         : ''
@@ -166,6 +170,7 @@ export function getAuthoritativeCoreOutcomeMessage(outcomeCode) {
     IDEMPOTENCY_CONFLICT: 'Khóa gửi lại đã được dùng cho một thay đổi khác.',
     CONCURRENT_CONFLICT: 'Có thay đổi đồng thời. Hãy tải lại và thử lại.',
     CLASS_WEEKDAY_IN_USE: 'Không thể bỏ ngày đang có học viên đăng ký. Hãy cập nhật học viên trước.',
+    CLASS_SESSION_REFERENCED: 'Không thể xóa vĩnh viễn ca học đã có phụ thuộc hoặc lịch sử. Hãy dùng “Ngưng dùng”.',
     SCHEDULE_CLASS_LINK_REQUIRED: 'Lịch cố định cần liên kết đúng ca học trong Cài đặt cơ sở.',
     INVALID_SERVER_RESULT: 'Server trả về kết quả không hợp lệ; cache chưa được thay đổi.',
     SERVER_COMMAND_FAILED: 'Không thể lưu lên server; cache chưa được thay đổi.',

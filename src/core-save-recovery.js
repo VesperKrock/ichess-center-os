@@ -13,6 +13,7 @@ const ACTIONABLE_PRECOMMIT_OUTCOMES = new Set([
   'INVALID_PAYLOAD',
   'PAYLOAD_ID_MISMATCH',
   'ENTITY_NOT_FOUND',
+  'CLASS_SESSION_REFERENCED',
 ])
 
 export function prepareAuthoritativeCoreFormCommand({

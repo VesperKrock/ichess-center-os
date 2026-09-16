@@ -593,6 +593,11 @@ import {
   subscribeToTeacherCloudRealtime,
 } from './cloud-realtime-teachers.js'
 import {
+  CLASS_SESSION_REALTIME_PATCH_MESSAGE,
+  mergeRealtimeClassSessionIntoList,
+  subscribeToClassSessionCloudRealtime,
+} from './cloud-realtime-class-sessions.js'
+import {
   mergeScheduleSessionRealtimePayload,
   subscribeToScheduleSessionCloudRealtime,
   upsertScheduleSessionCloudEntity,
@@ -734,6 +739,10 @@ import {
   validateSettingsClassSessionForm,
   validateSettingsTuitionPackageForm,
 } from './settings-module.js'
+import {
+  getClassSessionDeletePolicyMap,
+  inspectAuthoritativeClassSessionDependencies,
+} from './class-session-lifecycle.js'
 import {
   buildPersonalWallpaperKey,
   loadPersonalWallpaperBlob,
@@ -1132,6 +1141,9 @@ let studentRealtimeCenterId = ''
 let studentCloudWriteRunId = 0
 let teacherRealtimeSubscription = null
 let teacherRealtimeCenterId = ''
+let classSessionRealtimeSubscription = null
+let classSessionRealtimeCenterId = ''
+let classSessionDeletePolicyOverrides = {}
 let scheduleSessionRealtimeSubscription = null
 let scheduleSessionRealtimeCenterId = ''
 let scheduleSessionCloudWriteRunId = 0
@@ -1334,6 +1346,25 @@ function getStudentsWithCanonicalProjections() {
     classSessions,
     isV22StudentEnrollmentCapabilityReady(v22StudentEnrollmentCapabilityState, centerId),
   )
+}
+
+function getCurrentClassSessionDeletePolicyMap() {
+  const projectedPolicies = getClassSessionDeletePolicyMap(classSessions, {
+    students: getStudentsWithCanonicalProjections(),
+    enrollmentSets: v22StudentEnrollmentSets,
+    scheduleSessions,
+    attendanceRecords: buildUnifiedAttendanceRecords({
+      sessionReports,
+      storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+    }),
+    sessionReports,
+  })
+  const activeIds = new Set(classSessions.map((classSession) => String(classSession?.id || '')))
+  const authoritativeOverrides = Object.fromEntries(
+    Object.entries(classSessionDeletePolicyOverrides)
+      .filter(([classSessionId]) => activeIds.has(classSessionId)),
+  )
+  return { ...projectedPolicies, ...authoritativeOverrides }
 }
 
 function getVisibleScheduleSessionsWithCurrentEnrollmentRosters(
@@ -2174,6 +2205,7 @@ function reloadLocalDataForResolvedCenter() {
   cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
   students = getStoredStudents([])
   classSessions = getStoredClassSessions([])
+  classSessionDeletePolicyOverrides = {}
   teachers = getStoredTeachers([])
   // CRM authorization is user/role-scoped. Never render or retain another
   // account's center-scoped disk projection before this session completes an
@@ -9797,6 +9829,7 @@ function canOpenInternalCenter(center) {
 function resetCloudRuntimeStateForOwnerCenterSwitch() {
   stopStudentRealtimeSubscription()
   stopTeacherRealtimeSubscription()
+  stopClassSessionRealtimeSubscription()
   stopScheduleSessionRealtimeSubscription()
   stopC51AttendanceRealtimeSubscription()
   stopC52TuitionRealtimeSubscription()
@@ -9892,6 +9925,7 @@ async function handleInternalOpenCenter(centerId) {
   await loadCurrentMonthCloudAttachments(switchSyncId)
   await startStudentRealtimeSubscription(switchSyncId)
   await startTeacherRealtimeSubscription(switchSyncId)
+  await startClassSessionRealtimeSubscription(switchSyncId)
   await startScheduleSessionRealtimeSubscription(switchSyncId)
 }
 
@@ -12279,6 +12313,7 @@ function renderWindowBody(windowItem) {
       getSettingsCloudDbPanelState(),
       {
         activeTab: settingsActiveTab,
+        classSessionDeletePolicies: getCurrentClassSessionDeletePolicyMap(),
         tuitionPackages: v21TuitionPackages,
         centerProfileFormState: settingsCenterProfileFormState,
         tuitionPackageFormState: settingsTuitionPackageFormState,
@@ -15448,6 +15483,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   }
 
   const syncId = ++cloudUserSyncId
+  stopClassSessionRealtimeSubscription()
   setCurrentStorageCenterId('')
   setCurrentInstallationStorageNamespace(`${getSupabaseInstallationNamespace()}-unresolved`)
 
@@ -15467,6 +15503,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     resetWallpaperRuntimeForAccessBoundary('')
     stopStudentRealtimeSubscription()
     stopTeacherRealtimeSubscription()
+    stopClassSessionRealtimeSubscription()
     stopScheduleSessionRealtimeSubscription()
     stopC51AttendanceRealtimeSubscription()
     stopC52TuitionRealtimeSubscription()
@@ -15605,6 +15642,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     } else {
       stopStudentRealtimeSubscription()
       stopTeacherRealtimeSubscription()
+      stopClassSessionRealtimeSubscription()
       stopScheduleSessionRealtimeSubscription()
       stopC51AttendanceRealtimeSubscription()
       stopC52TuitionRealtimeSubscription()
@@ -15717,6 +15755,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await loadCurrentMonthCloudAttachments(syncId)
     await startStudentRealtimeSubscription(syncId)
     await startTeacherRealtimeSubscription(syncId)
+    await startClassSessionRealtimeSubscription(syncId)
     await startScheduleSessionRealtimeSubscription(syncId)
   }
 }
@@ -16043,6 +16082,7 @@ async function writeClassSessionThroughCloud(
   reason = 'class-session-save',
   idempotencyKey,
   commandCenterId = getCurrentCanonicalCenterContext().centerId,
+  operation = 'UPSERT',
 ) {
   const readiness = await getAuthoritativeCoreCommandContext(
     CLOUD_ENTITY_TYPES.CLASS_SESSION,
@@ -16056,6 +16096,7 @@ async function writeClassSessionThroughCloud(
     entityType: CLOUD_ENTITY_TYPES.CLASS_SESSION,
     entity: classSession,
     idempotencyKey,
+    operation,
   })
   return { ...result, commandCenterId: readiness.centerId, reason }
 }
@@ -16083,6 +16124,97 @@ async function commitClassSessionProjection(classSession, reason, idempotencyKey
   })
   applyAuthoritativeCoreSaveUiResult(result)
   return result
+}
+
+async function commitClassSessionDeletion(classSession, idempotencyKey) {
+  const commandCenterId = getCurrentCanonicalCenterContext().centerId
+  const classSessionId = String(classSession?.id || '').trim()
+  const result = await runAuthoritativeCoreSave({
+    entityLabel: 'Ca học / Lớp',
+    executeCommand: () => writeClassSessionThroughCloud(
+      classSession,
+      'class-session-delete',
+      idempotencyKey,
+      commandCenterId,
+      'DELETE',
+    ),
+    isContextCurrent: () => getCurrentCanonicalCenterContext().centerId === commandCenterId,
+    installCommittedEntity: () => {
+      classSessions = classSessions.filter((item) => String(item?.id || '') !== classSessionId)
+      delete classSessionDeletePolicyOverrides[classSessionId]
+      saveStoredClassSessions(classSessions)
+    },
+    refreshProjection: (commandResult) => refreshAuthoritativeCoreProjectionAfterCommit(
+      CLOUD_ENTITY_TYPES.CLASS_SESSION,
+      commandCenterId,
+      commandResult.entity,
+    ),
+  })
+  const uiResult = result.committed && result.refreshOk
+    ? { ...result, userMessage: 'Đã xóa vĩnh viễn ca học và xác nhận lại dữ liệu trung tâm.' }
+    : result
+  applyAuthoritativeCoreSaveUiResult(uiResult)
+  return uiResult
+}
+
+async function refreshClassSessionDeletePreflight(classSessionId) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const normalizedClassSessionId = String(classSessionId || '').trim()
+  const context = await getCloudDbContext(centerId)
+  if (!context.ok || context.centerId !== centerId) return context
+
+  const [classResult, enrollmentResult] = await Promise.all([
+    listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.CLASS_SESSION,
+    }),
+    pullV22StudentEnrollments({ supabase: context.supabase, centerId }),
+  ])
+  if (!classResult.ok) return classResult
+  if (!enrollmentResult.ok) {
+    return {
+      ...enrollmentResult,
+      ok: false,
+      outcome_code: 'DEPENDENCY_READ_FAILED',
+      error: 'Chưa xác minh được đăng ký học; không thể xóa an toàn.',
+    }
+  }
+
+  const dependencyResult = await inspectAuthoritativeClassSessionDependencies({
+    supabase: context.supabase,
+    centerId,
+    classSessionId: normalizedClassSessionId,
+    enrollmentSets: enrollmentResult.enrollmentSets,
+  })
+  if (!dependencyResult.ok) return dependencyResult
+
+  const latestContext = getCurrentCanonicalCenterContext()
+  if (!latestContext.ok || latestContext.centerId !== centerId) {
+    return {
+      ok: false,
+      outcome_code: 'CENTER_CONTEXT_CHANGED',
+      error: 'Cơ sở đã thay đổi trong lúc kiểm tra phụ thuộc.',
+    }
+  }
+
+  classSessions = classResult.data
+  v22StudentEnrollmentSets = enrollmentResult.enrollmentSets
+  saveStoredClassSessions(classSessions)
+  classSessionDeletePolicyOverrides = {
+    ...classSessionDeletePolicyOverrides,
+    [normalizedClassSessionId]: dependencyResult.dependencyState,
+  }
+
+  const classSession = classSessions.find((item) => String(item?.id || '') === normalizedClassSessionId)
+  if (!classSession) {
+    return {
+      ok: false,
+      outcome_code: 'ENTITY_NOT_FOUND',
+      error: 'Ca học không còn tồn tại trên server.',
+    }
+  }
+  return { ...dependencyResult, classSession }
 }
 
 async function commitScheduleSessionProjection(scheduleSession, reason, idempotencyKey) {
@@ -16320,6 +16452,95 @@ function handleTeacherRealtimeRecord(record) {
 
   teachers = mergeResult.teachers
   saveStoredTeachers(teachers)
+  render()
+}
+
+async function startClassSessionRealtimeSubscription(syncId = cloudUserSyncId) {
+  const targetCenterId = getCurrentResolvedCenterId()
+  if (classSessionRealtimeCenterId && classSessionRealtimeCenterId !== targetCenterId) {
+    stopClassSessionRealtimeSubscription()
+  }
+  if (!canUseCoreCloudDb() || !targetCenterId) {
+    stopClassSessionRealtimeSubscription()
+    return
+  }
+  if (classSessionRealtimeCenterId === targetCenterId) return
+
+  const readiness = await checkCloudDbReadiness(targetCenterId)
+  if (syncId !== cloudUserSyncId || getCurrentResolvedCenterId() !== targetCenterId) return
+  if (!readiness.ok || readiness.centerId !== targetCenterId) {
+    stopClassSessionRealtimeSubscription()
+    return
+  }
+
+  const accessState = buildOnlineAccessState({
+    isSupabaseConfigured: true,
+    isSignedIn: Boolean(readiness.user),
+    user: readiness.user,
+    centerId: readiness.centerId,
+    membership: readiness.membership,
+    role: readiness.membership?.role,
+    cloudReady: true,
+  })
+  const subscription = subscribeToClassSessionCloudRealtime({
+    supabase: readiness.supabase,
+    centerId: readiness.centerId,
+    accessState,
+    onClassSessionRecord: handleClassSessionRealtimeRecord,
+    onStatusChange: handleClassSessionRealtimeStatus,
+  })
+  if (!subscription.ok) {
+    cloudDbState = {
+      ...cloudDbState,
+      message: subscription.message,
+      messageTone: 'error',
+      lastUpdatedAt: new Date().toISOString(),
+    }
+    render()
+    return
+  }
+
+  classSessionRealtimeSubscription = subscription
+  classSessionRealtimeCenterId = readiness.centerId
+}
+
+function stopClassSessionRealtimeSubscription() {
+  classSessionRealtimeSubscription?.cleanup?.()
+  classSessionRealtimeSubscription = null
+  classSessionRealtimeCenterId = ''
+}
+
+function handleClassSessionRealtimeStatus(status) {
+  if (!status || status.status !== 'CHANNEL_ERROR' && status.status !== 'TIMED_OUT') return
+  cloudDbState = {
+    ...cloudDbState,
+    message: status.needsRealtimePatch
+      ? CLASS_SESSION_REALTIME_PATCH_MESSAGE
+      : status.message || 'Online Ca học / Lớp chưa sẵn sàng.',
+    messageTone: 'error',
+    lastUpdatedAt: new Date().toISOString(),
+  }
+  render()
+}
+
+function handleClassSessionRealtimeRecord(record) {
+  const activeCenterId = getCurrentResolvedCenterId()
+  if (
+    !classSessionRealtimeCenterId
+    || classSessionRealtimeCenterId !== activeCenterId
+    || String(record?.center_id || '') !== activeCenterId
+  ) return
+
+  const mergeResult = mergeRealtimeClassSessionIntoList(classSessions, record)
+  if (!mergeResult.ok || !mergeResult.changed) return
+
+  classSessions = mergeResult.classSessions
+  classSessionDeletePolicyOverrides = {}
+  if (!mergeResult.classSession
+      && settingsClassSessionFormState?.classSessionId === String(record?.local_id || '')) {
+    settingsClassSessionFormState = null
+  }
+  saveStoredClassSessions(classSessions)
   render()
 }
 
@@ -20416,6 +20637,7 @@ function applyCloudBootstrapSnapshotToLocal(snapshot) {
   students = Array.isArray(snapshot.students) ? snapshot.students : []
   teachers = Array.isArray(snapshot.teachers) ? snapshot.teachers : []
   classSessions = Array.isArray(snapshot.classSessions) ? snapshot.classSessions : []
+  classSessionDeletePolicyOverrides = {}
   scheduleSessions = Array.isArray(snapshot.scheduleSessions) ? snapshot.scheduleSessions : []
   scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'cloud-bootstrap' })
 
@@ -27218,6 +27440,63 @@ function bindEvents() {
         updatedAt: new Date().toISOString(),
       }
       await commitClassSessionProjection(nextClassSession, 'class-session-status')
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-settings-class-session-action="delete"]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const classSessionId = String(button.dataset.classSessionId || '')
+      const currentClassSession = classSessions.find((item) => item.id === classSessionId)
+      if (!currentClassSession || button.disabled) return
+
+      button.disabled = true
+      const preflight = await refreshClassSessionDeletePreflight(classSessionId)
+      if (!preflight.ok) {
+        const message = preflight.error || 'Chưa thể xác minh ca học có an toàn để xóa hay không.'
+        cloudDbState = {
+          ...cloudDbState,
+          message,
+          messageTone: 'error',
+          lastUpdatedAt: new Date().toISOString(),
+        }
+        window.alert(message)
+        render()
+        return
+      }
+      if (!preflight.dependencyState.canDelete) {
+        window.alert(preflight.dependencyState.message)
+        render()
+        return
+      }
+
+      const label = preflight.classSession.displayLabel || preflight.classSession.name || classSessionId
+      const confirmed = window.confirm(
+        `Xóa vĩnh viễn ca học “${label}”? Thao tác này không thể hoàn tác.`,
+      )
+      if (!confirmed) {
+        render()
+        return
+      }
+
+      const result = await commitClassSessionDeletion(
+        preflight.classSession,
+        createCoreCommandIdempotencyKey(),
+      )
+      if (!result.ok && result.outcome_code === 'CLASS_SESSION_REFERENCED') {
+        classSessionDeletePolicyOverrides = {
+          ...classSessionDeletePolicyOverrides,
+          [classSessionId]: {
+            ok: true,
+            canDelete: false,
+            referenced: true,
+            reason: 'CLASS_SESSION_REFERENCED',
+            message: result.error,
+          },
+        }
+        window.alert(result.error)
+      }
+      if (result.ok) settingsClassSessionFormState = null
       render()
     })
   })
