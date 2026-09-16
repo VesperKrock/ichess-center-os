@@ -562,6 +562,42 @@
   line-height: 18px;
 }
 
+.desktop-window.is-schedule-window .schedule-calendar-legend-group > .schedule-calendar-legend-chip {
+  color: var(--schedule-text-secondary);
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item strong {
+  color: #111827;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item span,
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item p {
+  color: #78350f;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item.is-adminHandledMissingTeacherReport {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item.is-adminHandledMissingTeacherReport p {
+  color: #1e3a8a;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item.is-qtvAttentionNeeded {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-schedule-window .schedule-alert-popover .schedule-teacher-alert-item.is-qtvAttentionNeeded p {
+  color: #991b1b;
+}
+
 .desktop-window.is-schedule-window .schedule-calendar-legend-chip i,
 .desktop-window.is-schedule-window .schedule-calendar-tag-chip i {
   width: 7px;

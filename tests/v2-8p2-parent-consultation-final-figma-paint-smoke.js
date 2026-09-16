@@ -157,7 +157,8 @@ for (const expected of [
 
 const mainSource = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 assert(mainSource.includes("import './parent-consultation-v2-8p2-theme.css'"))
-assert(mainSource.includes("['bang-diem-danh', 'kho-hang', 'khach-hang-tu-van']"))
+assert(mainSource.includes('usesCompactModuleTitlebarCurrentness(windowItem)'))
+assert(mainSource.includes('isPrimaryBusinessModuleWindow(windowItem)'))
 assert(mainSource.includes("'iChess Center OS · Admin Console'"))
 
 console.log('V2-8P2 PARENT CONSULTANT FINAL FIGMA PAINT SMOKE: PASS')

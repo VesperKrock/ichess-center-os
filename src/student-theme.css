@@ -12,7 +12,7 @@
   --student-border-soft: #ebebeb;
   --student-text: #1a1a1a;
   --student-muted: #5f6368;
-  --student-muted-soft: #9aa0a6;
+  --student-muted-soft: #6b7280;
   --student-primary: #1a1a1a;
   --student-primary-text: #ffffff;
   --student-focus: rgb(26 26 26 / 18%);
@@ -21,7 +21,7 @@
   --student-success-bg: #e6f7f0;
   --student-success-text: #0d7a5f;
   --student-paused-bg: #fff4d6;
-  --student-paused-text: #d97706;
+  --student-paused-text: #92400e;
   --student-stopped-bg: #fee2e2;
   --student-stopped-text: #b91c1c;
   --student-note-bg: #ede9fe;
@@ -104,6 +104,16 @@
 
 .is-student-form-window .student-enrollment-remove {
   margin-top: 8px;
+  border-color: var(--student-border);
+  color: var(--student-muted);
+  background: var(--student-surface-soft);
+}
+
+.is-student-form-window .student-enrollment-remove:disabled {
+  border-color: var(--student-border);
+  color: var(--student-muted);
+  background: var(--student-surface-soft);
+  opacity: 1;
 }
 
 [data-ui-theme='dark'] .is-student-form-window .student-recurring-enrollment-option {
@@ -257,6 +267,7 @@
 }
 
 .desktop-window.is-student-window .module-authoritative-refresh {
+  width: auto;
   min-width: 0;
   min-height: 24px;
   padding: 3px 9px;
@@ -265,6 +276,21 @@
   background: var(--student-surface);
   color: var(--student-text);
   font-size: 11px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-student-window .module-authoritative-refresh:disabled {
+  opacity: 1;
+}
+
+.desktop-window.is-student-window .module-titlebar-currentness {
+  height: 24px;
+  color: var(--student-muted);
+}
+
+.desktop-window.is-student-window > .window-titlebar .window-controls > .module-authoritative-refresh {
+  width: auto;
+  min-width: 64px;
 }
 
 .desktop-window.is-student-window .module-authoritative-refresh-notice {
@@ -959,6 +985,7 @@
 }
 
 .is-student-form-window .student-class-session-heading button {
+  min-width: 116px;
   min-height: 28px;
   padding: 4px 8px;
   border: 0;
@@ -967,6 +994,7 @@
   box-shadow: none;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .is-student-form-window .student-class-session-list {

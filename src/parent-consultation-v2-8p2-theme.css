@@ -480,6 +480,10 @@
   line-height: 14px;
 }
 
+.desktop-window.is-parent-consultation-window .parent-advisor-cell .parent-source-badge {
+  color: var(--parent-secondary);
+}
+
 .desktop-window.is-parent-consultation-window .parent-stage-badge.is-converted,
 .desktop-window.is-parent-consultation-window .parent-status-badge.is-activeCare,
 .desktop-window.is-parent-consultation-window .parent-status-badge.is-converted {
@@ -1188,6 +1192,16 @@
   resize: none;
 }
 
+:root:not([data-ui-theme='dark']) .desktop-window.is-parent-consultation-window .parent-contact-form-error {
+  border-color: #fecaca;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid label.has-error small {
+  color: #b91c1c;
+}
+
 .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal > .parent-contact-form-footer {
   box-sizing: border-box;
   display: flex;
@@ -1220,10 +1234,14 @@
 .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-child-consultation-layout {
   display: grid;
   grid-template-columns: 620px 360px minmax(0, 1fr);
-  grid-template-rows: 62px 52px 106px;
+  grid-template-rows: 86px 52px 106px;
   column-gap: 24px;
   row-gap: 16px;
   margin-top: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-birthyear-hint {
+  color: var(--parent-secondary);
 }
 
 .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-child-new-card,
@@ -1266,7 +1284,7 @@
 .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid input,
 .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid select { height: 34px; min-height: 34px; }
 .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid textarea { height: 72px; min-height: 72px; }
-.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid small { height: 16px; color: var(--parent-faint); font-size: 12px; line-height: 16px; }
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid small { height: 16px; color: var(--parent-secondary); font-size: 12px; line-height: 16px; }
 
 .desktop-window.is-parent-consultation-window .parent-contact-step-four > h3 {
   height: 28px;
@@ -1373,7 +1391,7 @@
 }
 
 .desktop-window.is-parent-consultation-window .parent-step-four-panel h4 { margin: 0; color: var(--parent-text); font-size: 15px; font-weight: 600; line-height: 24px; }
-.desktop-window.is-parent-consultation-window .parent-step-four-panel p { margin: 2px 0 0; color: var(--parent-faint); font-size: 12px; line-height: 18px; }
+.desktop-window.is-parent-consultation-window .parent-step-four-panel p { margin: 2px 0 0; color: var(--parent-secondary); font-size: 12px; line-height: 18px; }
 .desktop-window.is-parent-consultation-window .parent-step-four-panel pre { height: 118px; margin: 2px 0 0; overflow-y: auto; color: var(--parent-muted); background: transparent; font: inherit; font-size: 12px; line-height: 14px; white-space: pre-wrap; scrollbar-color: var(--parent-line) transparent; scrollbar-width: thin; }
 
 :root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window {

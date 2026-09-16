@@ -1277,7 +1277,7 @@
   color: var(--tuition-muted);
   background: var(--tuition-surface-soft);
   cursor: not-allowed;
-  opacity: 0.72;
+  opacity: 0.82;
 }
 
 .desktop-window.is-tuition-window .tuition-payment-panel {

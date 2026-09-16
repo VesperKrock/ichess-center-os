@@ -1245,7 +1245,7 @@ function renderInventoryForm(formState, items) {
                 ? `<label class="inventory-field">
                     <span>Số lượng tồn</span>
                     <input type="number" value="${escapeAttribute(formState.values.quantity ?? '0')}" readonly />
-                    <small>Chỉ thay đổi qua thao tác Nhập/Xuất kho.</small>
+                    <small class="inventory-field-help">Chỉ thay đổi qua thao tác Nhập/Xuất kho.</small>
                   </label>`
                 : renderInventoryInputField('Số lượng tồn đầu kỳ', 'quantity', formState, 'number', '0')
             }

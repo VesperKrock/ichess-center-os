@@ -99,6 +99,7 @@ const mainSource = readFileSync(new URL('../src/main.js', import.meta.url), 'utf
 assert(mainSource.includes("import './settings-v2-8p2-theme.css'"))
 assert(mainSource.includes("const isSettingsWindow = windowItem.moduleId === 'cai-dat-co-so'"))
 assert(mainSource.includes("${isSettingsWindow ? 'is-settings-window' : ''}"))
-assert(mainSource.includes("'khach-hang-tu-van', 'cai-dat-co-so'"))
+assert(mainSource.includes('usesCompactModuleTitlebarCurrentness(windowItem)'))
+assert(mainSource.includes('isPrimaryBusinessModuleWindow(windowItem)'))
 
 console.log('V2-8P2 SETTINGS FINAL FIGMA PAINT SMOKE: PASS')

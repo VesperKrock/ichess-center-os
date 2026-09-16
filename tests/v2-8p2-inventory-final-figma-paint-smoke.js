@@ -146,7 +146,8 @@ for (const expected of [
   'max-height: 636px;',
   'padding: 96px 138px 100px;',
   'width: 820px;',
-  'height: 548px;',
+  'height: 568px;',
+  'inventory-product-form-row:has(.inventory-field-help)',
   '--inventory-workspace: #0f1115;',
   '--inventory-panel: #14171c;',
 ]) {
@@ -155,8 +156,8 @@ for (const expected of [
 
 const mainSource = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 assert(mainSource.includes("import './inventory-v2-8p2-theme.css'"))
-assert(mainSource.includes("['bang-diem-danh', 'kho-hang'].includes(windowItem?.moduleId)"))
-assert(mainSource.includes("['bang-diem-danh', 'kho-hang'].includes(windowItem.moduleId)"))
+assert(mainSource.includes('usesCompactModuleTitlebarCurrentness(windowItem)'))
+assert(mainSource.includes('isPrimaryBusinessModuleWindow(windowItem)'))
 assert(mainSource.includes("link.download = `lich-su-nhap-xuat-${new Date().toISOString().slice(0, 10)}.csv`"))
 
 console.log('V2-8P2 INVENTORY FINAL FIGMA PAINT SMOKE: PASS')

@@ -12,7 +12,7 @@
   --inventory-muted: #6b7280;
   --inventory-faint: #9ca3af;
   --inventory-primary: #111827;
-  --inventory-green: #059669;
+  --inventory-green: #047857;
   --inventory-green-bg: #ecfdf5;
   --inventory-amber: #d97706;
   --inventory-amber-bg: #fff7e6;
@@ -904,19 +904,21 @@
 .desktop-window.is-inventory-window .inventory-item-form-panel {
   display: flex;
   width: 820px;
-  height: 548px;
+  height: 568px;
   flex-direction: column;
   padding: 17px 23px 13px;
 }
 .desktop-window.is-inventory-window .inventory-item-form-panel .inventory-form-header { display: flex; min-height: 58px; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; border: 0; padding: 0; background: transparent; }
 .desktop-window.is-inventory-window .inventory-item-form-panel .inventory-form-header h4 { margin: 0; color: var(--inventory-text); font-size: 24px; font-weight: 700; line-height: 29px; }
 .desktop-window.is-inventory-window .inventory-item-form-panel .inventory-form-header p { margin: 4px 0 0; color: var(--inventory-secondary); font-size: 13px; line-height: 16px; }
-.desktop-window.is-inventory-window .inventory-item-form-panel .inventory-product-form-grid { display: flex; height: 388px; min-height: 0; flex: 0 0 auto; flex-direction: column; gap: 14px; margin-top: 16px; padding: 0; }
+.desktop-window.is-inventory-window .inventory-item-form-panel .inventory-product-form-grid { display: flex; height: 408px; min-height: 0; flex: 0 0 auto; flex-direction: column; gap: 14px; margin-top: 16px; padding: 0; }
 .desktop-window.is-inventory-window .inventory-product-form-row { display: grid; min-height: 60px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.desktop-window.is-inventory-window .inventory-product-form-row:has(.inventory-field-help) { min-height: 80px; }
 .desktop-window.is-inventory-window .inventory-product-form-row.is-name-row { grid-template-columns: 468px 292px; }
 .desktop-window.is-inventory-window .inventory-product-form-row.is-location-row { grid-template-columns: 380px 380px; }
 .desktop-window.is-inventory-window .inventory-product-form-grid > .inventory-field { min-height: 92px; }
 .desktop-window.is-inventory-window .inventory-product-form-grid .inventory-field { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.desktop-window.is-inventory-window .inventory-product-form-grid .inventory-field-help { color: var(--inventory-secondary); font-size: 12px; line-height: 16px; }
 .desktop-window.is-inventory-window .inventory-product-form-grid textarea { min-height: 62px; resize: none; }
 
 .desktop-window.is-inventory-window .inventory-form-actions {
@@ -933,6 +935,30 @@
 .desktop-window.is-inventory-window .inventory-form-actions > div { display: flex; gap: 10px; }
 .desktop-window.is-inventory-window .inventory-form-actions button { min-height: 38px; border: 1px solid var(--inventory-line); border-radius: 8px; padding: 9px 18px; color: var(--inventory-text); background: var(--inventory-panel); font-size: 14px; font-weight: 600; }
 .desktop-window.is-inventory-window .inventory-form-actions .inventory-save-button { border-color: var(--inventory-primary); color: #fff; background: var(--inventory-primary); }
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-inventory-window .inventory-form-actions .inventory-movement-button {
+  border-color: #86efac !important;
+  color: #166534 !important;
+  background: #f0fdf4 !important;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-inventory-window .inventory-form-actions .inventory-delete-button {
+  border-color: #fecaca !important;
+  color: #b91c1c !important;
+  background: #fef2f2 !important;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-inventory-window .inventory-form-actions .inventory-movement-button:disabled,
+:root:not([data-ui-theme='dark']) .desktop-window.is-inventory-window .inventory-form-actions .inventory-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-inventory-window .inventory-form-actions .inventory-movement-button:disabled,
+:root[data-ui-theme='dark'] .desktop-window.is-inventory-window .inventory-form-actions .inventory-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
 
 :root[data-ui-theme='dark'] .desktop-window.is-inventory-window {
   --inventory-bg: #1a1e24;

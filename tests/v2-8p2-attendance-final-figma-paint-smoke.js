@@ -152,7 +152,8 @@ for (const expected of [
 const mainSource = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 assert(mainSource.includes("import './attendance-v2-8p2-theme.css'"))
 assert(mainSource.includes('renderModuleTitlebarCurrentness(windowItem)'))
-assert(mainSource.includes("windowItem.moduleId === 'bang-diem-danh'"))
-assert(mainSource.includes("isFinanceModuleWindow(windowItem) || windowItem.moduleId === 'bang-diem-danh'"))
+assert(mainSource.includes('usesCompactModuleTitlebarCurrentness(windowItem)'))
+assert(mainSource.includes('isPrimaryBusinessModuleWindow(windowItem)'))
+assert(mainSource.includes('isFinanceModuleWindow(windowItem) || usesCompactModuleTitlebarCurrentness(windowItem)'))
 
 console.log('V2-8P2 ATTENDANCE FINAL FIGMA PAINT SMOKE: PASS')

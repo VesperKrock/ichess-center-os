@@ -1017,9 +1017,10 @@
 
 .desktop-window.is-attendance-window .attendance-baseline-actions button:disabled {
   border-color: var(--attendance-line-soft);
-  color: var(--attendance-faint);
+  color: #5f6368;
   background: #f3f4f6;
   cursor: not-allowed;
+  opacity: 1;
 }
 
 .desktop-window.is-attendance-window .attendance-baseline-details {
@@ -1200,8 +1201,9 @@
 
 :root[data-ui-theme='dark'] .desktop-window.is-attendance-window .attendance-baseline-actions button:disabled {
   border-color: var(--attendance-line);
-  color: #6b7280;
+  color: #9ca3af;
   background: #15181d;
+  opacity: 1;
 }
 
 @media (max-width: 1100px) {

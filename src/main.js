@@ -11673,7 +11673,7 @@ function renderModuleRefreshControl(windowItem) {
 }
 
 function renderModuleTitlebarCurrentness(windowItem) {
-  if (windowItem?.type || !['bang-diem-danh', 'kho-hang', 'khach-hang-tu-van', 'cai-dat-co-so'].includes(windowItem?.moduleId)) return ''
+  if (!usesCompactModuleTitlebarCurrentness(windowItem)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited', 'loading', 'failed'].includes(state.status) ? state.status : 'idle'
   const updatedAt = formatRefreshTime(state.lastFreshAt)
@@ -11698,9 +11698,18 @@ function renderModuleTitlebarCurrentness(windowItem) {
   `
 }
 
+function usesCompactModuleTitlebarCurrentness(windowItem) {
+  return Boolean(
+    windowItem
+      && !windowItem.type
+      && isPrimaryBusinessModuleWindow(windowItem)
+      && !isFinanceModuleWindow(windowItem),
+  )
+}
+
 function renderModuleRefreshNotice(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
-  if (isFinanceModuleWindow(windowItem) || ['bang-diem-danh', 'kho-hang', 'khach-hang-tu-van', 'cai-dat-co-so'].includes(windowItem.moduleId)) return ''
+  if (isFinanceModuleWindow(windowItem) || usesCompactModuleTitlebarCurrentness(windowItem)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const tone = ['fresh', 'limited'].includes(state.status)
     ? 'is-fresh'
