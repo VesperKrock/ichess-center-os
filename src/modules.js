@@ -20,7 +20,7 @@ export const modules = [
   },
   {
     id: 'khach-hang-tu-van',
-    name: 'Phụ huynh / Tư vấn',
+    name: 'Khách hàng',
     shortDescription: 'Theo dõi danh sách phụ huynh, khách tư vấn và trạng thái chăm sóc ban đầu.',
     status: 'unavailable',
     launcherVisibility: 'unavailable',
@@ -265,7 +265,7 @@ export const PRODUCT_LAUNCHER_MODULE_IDS = Object.freeze([
   'hoc-phi',
   'bang-diem-danh',
   'thoi-khoa-bieu',
-  'giao-vien',
+  //'giao-vien',
   'nhom-tai-chinh',
   'bao-cao',
   'kho-hang',

@@ -1009,7 +1009,7 @@ export function renderParentConsultationModule(
   const body = loading
     ? renderParentFirstState('Đang tải hồ sơ phụ huynh và học viên liên quan...', 'is-loading')
     : unavailable
-      ? renderParentFirstState('Hồ sơ Phụ huynh / Tư vấn hiện chưa khả dụng.', 'is-unavailable')
+      ? renderParentFirstState('Hồ sơ Khách hàng hiện chưa khả dụng.', 'is-unavailable')
       : failed
         ? renderParentFirstState(failureMessage || 'Dữ liệu phụ huynh hiện chưa tải được. Vui lòng thử lại.', 'is-error')
         : renderParentConsultationReadyBody(filteredContacts, mergedContacts, filters, sharedTruthState)
@@ -1018,9 +1018,9 @@ export function renderParentConsultationModule(
     <section class="parent-consultation-module" aria-label="Danh sách phụ huynh và tư vấn">
       <div class="parent-consultation-topbar">
         <div class="parent-consultation-page-heading">
-          <span>PHỤ HUYNH / TƯ VẤN</span>
+          <span>Khách hàng</span>
           <div>
-            <h2>Phụ huynh / Tư vấn</h2>
+            <h2>Khách hàng</h2>
             <p>Danh bạ liên hệ, tư vấn và chăm sóc tại cơ sở.</p>
           </div>
         </div>
@@ -1056,7 +1056,7 @@ function renderParentConsultationReadyBody(filteredContacts, mergedContacts, fil
     <section class="parent-consultation-list-section" aria-label="Bảng liên hệ phụ huynh và khách tư vấn mới">
       <div class="parent-consultation-list-header">
         <div>
-          <h3>Phụ huynh / Tư vấn</h3>
+          <h3>Khách hàng</h3>
           <span>${filteredContacts.length}/${mergedContacts.length} liên hệ</span>
         </div>
         <span class="parent-consultation-phase">Dữ liệu dùng chung${sharedTruthState.lastLoadedAt ? ` · cập nhật ${escapeHtml(formatDateTime(sharedTruthState.lastLoadedAt, true))}` : ''}</span>
