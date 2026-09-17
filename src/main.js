@@ -1,59 +1,3 @@
-import './styles.css'
-import './student-theme.css'
-import './schedule-theme.css'
-import './report-theme.css'
-import './tuition-theme.css'
-import './finance-theme.css'
-import './attendance-theme.css'
-import './attendance-v2-8p2-theme.css'
-import './inventory-v2-8p2-theme.css'
-import './parent-consultation-v2-8p2-theme.css'
-import './settings-v2-8p2-theme.css'
-import { resolveAppCenterBinding } from './app-center-binding.js'
-import { renderAppAuthEntry } from './app-auth.js'
-import { isDashboardUnlockedByCenter } from './app-login-gate.js'
-import {
-  getProductionLauncherModules,
-  isProductionModuleAvailable as isStaticProductionModuleAvailable,
-  isProductionModuleVisible,
-  modules,
-  resolveCapabilityDrivenLauncherPresentation,
-} from './modules.js'
-import {
-  applyModuleUpstreamRefreshResult,
-  createLoadingModuleUpstreamHealth,
-  evaluateModuleRefreshResults,
-  getModuleActionRequiredUpstreams,
-  getModuleRefreshContract,
-  getModuleUpstreamUiState,
-  isBusinessModule,
-  isUnavailableCalendarNotesOutcome,
-} from './module-authority-registry.js'
-import { createInitialCloudStatus } from './cloud-status.js'
-import {
-  completeRequiredCredentialChange,
-  getCurrentSupabaseUser,
-  onSupabaseAuthStateChange,
-  resolveActiveCenterMembership,
-  signInWithEmailPassword,
-  signUpWithEmailPassword,
-  signOutSupabase,
-} from './supabase-auth.js'
-import {
-  INSTALLATION_CAPABILITY_STATUS,
-  armInstallationHandoff,
-  cancelInstallationHandoff,
-  claimFirstOwner,
-  createInstallationHandoffState,
-  drainBootstrapTargetSession,
-  ensureInstallationRequestId,
-  executeInstallationHandoff,
-  getInstallationErrorMessage,
-  inspectInstallationHandoff,
-  loadInstallationCapability,
-  prepareInstallationHandoff,
-  purgeInstallationHandoffState,
-} from './first-owner-bootstrap.js'
 import {
   createLifecycleRequestId,
   getAccountLifecycleErrorMessage,
@@ -61,73 +5,131 @@ import {
   normalizeAccountGovernanceCapability,
   validateReviewedAccountEmail,
 } from './account-lifecycle.js'
+import { renderAppAuthEntry } from './app-auth.js'
+import { resolveAppCenterBinding } from './app-center-binding.js'
+import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import {
-  getSupabaseClient,
-  getSupabaseConfigStatus,
-  getSupabaseInstallationNamespace,
-} from './supabase-client.js'
+  initialAttendanceBoardFilters,
+  renderAttendanceBoardModule,
+} from './attendance-board-module.js'
+import { buildV28AAttendanceNotificationCandidates } from './attendance-operational-reminders.js'
 import {
-  buildAttachmentFileName,
-  buildTransactionCode,
-  buildTransactionImageStoragePath,
-  createTransactionAttachmentMetadata,
-  deleteTransactionAttachmentMetadata,
-  getCurrentMonthKey,
-  isTransactionAttachmentRoleAllowed,
-  listTransactionAttachmentsByMonth,
-  listTransactionAttachmentsByTransactionCode,
-} from './transaction-attachments.js'
+  buildUnifiedAttendanceRecords,
+  clearInitialBaselineAttendanceRecordsInMonth,
+  isDateInBaselineEditableRange,
+  loadAttendanceBaselineState,
+  loadStoredAttendanceRecords,
+  lockAttendanceBaselineState,
+  parseInitialBaselineCellInput,
+  removeInitialBaselineAttendanceRecord,
+  restoreInitialBaselineEditSnapshot,
+  saveAttendanceBaselineDraftState,
+  saveAttendanceBaselineState,
+  saveStoredAttendanceRecords,
+  startAttendanceBaselineDraft,
+  unlockAttendanceBaselineState,
+  upsertInitialBaselineAttendanceRecord
+} from './attendance-records.js'
+import './attendance-theme.css'
+import './attendance-v2-8p2-theme.css'
 import {
-  buildC54ArchiveCategoryCommand,
-  buildC54CloseReconciliationCommand,
-  buildC54SaveCategoryCommand,
-  buildC54SaveSettingsCommand,
-  buildC54SaveTransactionCommand,
-  buildC54UpsertReconciliationCommand,
-  buildC54VoidTuitionPaymentCommand,
-  buildC54VoidTransactionCommand,
-  canWriteC54FinanceSharedTruth,
-  createC54FinanceIdempotencyKey,
-  createC54FinanceRetryFingerprint,
-  getC54FinanceOutcomeMessage,
-  mutateC54FinanceSharedTruth,
-  mutateC54TuitionPaymentVoid,
-  pullC54FinanceSharedTruth,
-} from './cloud-authoritative-finance.js'
-import { inspectAndQuarantineC54LegacyFinance } from './legacy-finance-quarantine.js'
+  buildCashbookReconciliationFromForm,
+  buildCashbookSettingsFromForm,
+  createCashbookReconciliationFormState,
+  createCashbookSettingsFormState,
+  createDefaultCashbookSettings,
+  getCashbookBalanceStats,
+  getDefaultCashbookDate,
+  renderCashbookModule,
+  validateCashbookReconciliationForm,
+  validateCashbookSettingsForm,
+} from './cashbook-module.js'
 import {
-  buildC56ArchiveItemCommand,
-  buildC56CreateRequestCommand,
-  buildC56PostMovementCommand,
-  buildC56SaveItemCommand,
-  buildC56UpdateRequestStatusCommand,
-  C56_INVENTORY_CAPABILITY_STATUS,
-  canWriteC56InventorySharedTruth,
-  createC56InventoryCapabilityState,
-  createC56InventoryIdempotencyKey,
-  createC56InventoryRetryFingerprint,
-  getC56InventoryOutcomeMessage,
-  isC56InventoryBackendUnavailable,
-  isC56InventoryCapabilityReady,
-  mutateC56InventorySharedTruth,
-  pullC56InventorySharedTruth,
-} from './cloud-authoritative-inventory.js'
+  CASHFLOW_EVIDENCE_ACCEPT,
+  buildCashflowCategoryFromForm,
+  buildCashflowCsvExport,
+  buildCashflowTransactionFromForm,
+  createCashflowAttachmentDraftFromExisting,
+  createEditCashflowCategoryFormState,
+  createEditCashflowFormState,
+  createEmptyCashflowAttachmentDraft,
+  createEmptyCashflowCategoryFormState,
+  createEmptyCashflowFormStateWithCategories,
+  createErrorCashflowAttachmentDraft,
+  formatFileSize,
+  getDefaultCategoryNameForType,
+  initialCashflowFilters,
+  renderCashflowModule,
+  validateCashflowCategoryForm,
+  validateCashflowForm,
+} from './cashflow-module.js'
 import {
-  buildV27ACancelCycleCountCommand,
-  buildV27AReconcileCycleCountCommand,
-  buildV27AStartCycleCountCommand,
-  buildV27ASubmitCycleCountCommand,
-  createV27AInventoryCycleCountCapabilityState,
-  createV27AInventoryCycleCountIdempotencyKey,
-  createV27AInventoryCycleCountRetryFingerprint,
-  getV27AInventoryCycleCountOutcomeMessage,
-  isV27AInventoryCycleCountBackendUnavailable,
-  isV27AInventoryCycleCountCapabilityReady,
-  mutateV27AInventoryCycleCount,
-  pullV27AInventoryCycleCounts,
-  V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS,
-} from './cloud-authoritative-inventory-cycle-count.js'
+  CASHFLOW_TRANSACTION_PRINT_ROOT_CLASS,
+  CASHFLOW_TRANSACTION_PRINT_ROOT_SELECTOR,
+  createCashflowTransactionPrintSnapshot,
+  renderCashflowTransactionPrintDocument,
+  waitForCashflowPrintImages,
+} from './cashflow-transaction-print-module.js'
 import {
+  detectCenterCalendarConflicts,
+  detectCenterCalendarSeriesConflicts,
+} from './center-calendar-conflicts.js'
+import {
+  getCenterCalendarItemById,
+  getCenterCalendarTagById,
+} from './center-calendar-data.js'
+import {
+  expandWeeklyCenterCalendarOccurrences,
+  getCenterCalendarSeriesRange,
+  isWeeklyRecurringCenterCalendarItem,
+} from './center-calendar-recurrence.js'
+import {
+  getClassSessionDeletePolicyMap,
+  inspectAuthoritativeClassSessionDependencies,
+} from './class-session-lifecycle.js'
+import {
+  C51_ATTENDANCE_REALTIME_ENTITY_TYPES,
+  C51_TEACHER_CONSULTANT_WRITE_HOLD,
+  canWriteC51AttendanceEntity,
+  mergeC51CloudRecordsIntoLocal,
+  pullC51AttendanceSessionReportCloudEntities,
+  subscribeToC51AttendanceSessionReportRealtime,
+  upsertC51AttendanceSessionReportCloudEntities,
+} from './cloud-attendance-realtime.js'
+import {
+  getChangedFields,
+  writeC53AuditLogEntry,
+} from './cloud-audit-log.js'
+import {
+  V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS,
+  buildV28AMarkTbhpSentCommand,
+  buildV28AUpsertCellNoteCommand,
+  createV28AAttendanceOperationIdempotencyKey,
+  createV28AAttendanceOperationRetryFingerprint,
+  createV28AAttendanceOperationsCapabilityState,
+  getV28AAttendanceOperationOutcomeMessage,
+  isV28AAttendanceOperationsBackendUnavailable,
+  isV28AAttendanceOperationsCapabilityReady,
+  mutateV28AAttendanceOperation,
+  pullV28AAttendanceOperations,
+} from './cloud-authoritative-attendance-operations.js'
+import { createOperationalCommandIdempotencyKey } from './cloud-authoritative-attendance-tuition.js'
+import {
+  buildC57ArchiveCalendarItemCommand,
+  buildC57SaveCalendarItemCommand,
+  buildC57SaveCalendarTagCommand,
+  buildC57SetCalendarTagActiveCommand,
+  buildC57UpsertAdvisoryNoteCommand,
+  buildC57UpsertBoardNoteCommand,
+  canWriteC57SharedTruth,
+  createC57IdempotencyKey,
+  createC57RetryFingerprint,
+  getC57OutcomeMessage,
+  mutateC57CalendarNotesSharedTruth,
+  pullC57CalendarNotesSharedTruth,
+} from './cloud-authoritative-calendar-notes.js'
+import {
+  V21_CENTER_SETTINGS_CAPABILITY_STATUS,
   buildV21ClearSharedWallpaperCommand,
   buildV21SetSharedWallpaperCommand,
   buildV21SetTuitionPackageStatusCommand,
@@ -144,27 +146,97 @@ import {
   mutateV21CenterSettings,
   pullV21CenterSettings,
   uploadV21SharedWallpaper,
-  V21_CENTER_SETTINGS_CAPABILITY_STATUS,
 } from './cloud-authoritative-center-settings.js'
-import { inspectAndQuarantineC56LegacyInventory } from './legacy-inventory-quarantine.js'
 import {
-  buildC57ArchiveCalendarItemCommand,
-  buildC57SaveCalendarItemCommand,
-  buildC57SaveCalendarTagCommand,
-  buildC57SetCalendarTagActiveCommand,
-  buildC57UpsertAdvisoryNoteCommand,
-  buildC57UpsertBoardNoteCommand,
-  canWriteC57SharedTruth,
-  createC57IdempotencyKey,
-  createC57RetryFingerprint,
-  getC57OutcomeMessage,
-  mutateC57CalendarNotesSharedTruth,
-  pullC57CalendarNotesSharedTruth,
-} from './cloud-authoritative-calendar-notes.js'
-import { inspectAndQuarantineC57LegacyState } from './legacy-calendar-notes-quarantine.js'
+  createCoreCommandIdempotencyKey,
+  mutateAuthoritativeCoreEntity,
+} from './cloud-authoritative-core.js'
 import {
-  buildC55StaffHrUpsertCommand,
+  buildC53AppendCareLogCommand,
+  buildC53ArchiveCaseCommand,
+  buildC53AssignCaseCommand,
+  buildC53CreateLeadCommand,
+  buildC53SaveCaseCommand,
+  buildC53UpsertAppointmentCommand,
+  canWriteC53CrmSharedTruth,
+  createC53CrmIdempotencyKey,
+  mutateC53CrmSharedTruth,
+  pullC53CrmSharedTruth,
+} from './cloud-authoritative-crm.js'
+import {
+  buildC54ArchiveCategoryCommand,
+  buildC54CloseReconciliationCommand,
+  buildC54SaveCategoryCommand,
+  buildC54SaveSettingsCommand,
+  buildC54SaveTransactionCommand,
+  buildC54UpsertReconciliationCommand,
+  buildC54VoidTransactionCommand,
+  buildC54VoidTuitionPaymentCommand,
+  canWriteC54FinanceSharedTruth,
+  createC54FinanceIdempotencyKey,
+  createC54FinanceRetryFingerprint,
+  getC54FinanceOutcomeMessage,
+  mutateC54FinanceSharedTruth,
+  mutateC54TuitionPaymentVoid,
+  pullC54FinanceSharedTruth,
+} from './cloud-authoritative-finance.js'
+import {
+  V27A_INVENTORY_CYCLE_COUNT_CAPABILITY_STATUS,
+  buildV27ACancelCycleCountCommand,
+  buildV27AReconcileCycleCountCommand,
+  buildV27AStartCycleCountCommand,
+  buildV27ASubmitCycleCountCommand,
+  createV27AInventoryCycleCountCapabilityState,
+  createV27AInventoryCycleCountIdempotencyKey,
+  createV27AInventoryCycleCountRetryFingerprint,
+  getV27AInventoryCycleCountOutcomeMessage,
+  isV27AInventoryCycleCountBackendUnavailable,
+  isV27AInventoryCycleCountCapabilityReady,
+  mutateV27AInventoryCycleCount,
+  pullV27AInventoryCycleCounts,
+} from './cloud-authoritative-inventory-cycle-count.js'
+import {
+  C56_INVENTORY_CAPABILITY_STATUS,
+  buildC56ArchiveItemCommand,
+  buildC56CreateRequestCommand,
+  buildC56PostMovementCommand,
+  buildC56SaveItemCommand,
+  buildC56UpdateRequestStatusCommand,
+  canWriteC56InventorySharedTruth,
+  createC56InventoryCapabilityState,
+  createC56InventoryIdempotencyKey,
+  createC56InventoryRetryFingerprint,
+  getC56InventoryOutcomeMessage,
+  isC56InventoryBackendUnavailable,
+  isC56InventoryCapabilityReady,
+  mutateC56InventorySharedTruth,
+  pullC56InventorySharedTruth,
+} from './cloud-authoritative-inventory.js'
+import {
+  V23_ATTENDANCE_CAPABILITY_STATUS,
+  createV23AttendanceCapabilityState,
+  getV23AttendanceOutcomeMessage,
+  isV23AttendanceBackendUnavailable,
+  isV23AttendanceCapabilityReady,
+  mutateV23OccurrenceAttendance,
+  pullV23AttendanceCapability,
+  selectCurrentV23OccurrenceAttendanceRecord,
+} from './cloud-authoritative-occurrence-attendance.js'
+import {
+  PARENT_FIRST_CAPABILITY_STATUS,
+  createParentFirstCapabilityState,
+  createParentStudentLink,
+  endParentStudentLink,
+  getParentFirstOutcomeMessage,
+  isParentFirstBackendUnavailable,
+  isParentFirstCapabilityReady,
+  pullParentStudentLinks,
+  updateParentStudentLink,
+  updateProtectedContactIdentity,
+} from './cloud-authoritative-parent-student-links.js'
+import {
   C55_STAFF_HR_CAPABILITY_STATUS,
+  buildC55StaffHrUpsertCommand,
   canWriteC55StaffHrSharedTruth,
   createC55StaffHrCapabilityState,
   createC55StaffHrIdempotencyKey,
@@ -177,108 +249,128 @@ import {
   readC55StaffAdministrativeProfile,
   recordC55StaffHrAccessAudit,
 } from './cloud-authoritative-staff-hr.js'
-import { inspectAndQuarantineC55LegacyStaffHr } from './legacy-staff-hr-quarantine.js'
+import {
+  V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS,
+  createV22StudentEnrollmentCapabilityState,
+  getV22EnrollmentOutcomeMessage,
+  isV22StudentEnrollmentBackendUnavailable,
+  isV22StudentEnrollmentCapabilityReady,
+  mutateV22StudentWithEnrollments,
+  pullV22StudentEnrollments,
+} from './cloud-authoritative-student-enrollments.js'
+import {
+  V26_TEACHER_REGISTRY_CAPABILITY_STATUS,
+  buildV26AssignTeacherCommand,
+  buildV26RemoveTeacherCommand,
+  buildV26TeacherCommand,
+  buildV26TeacherDirectoryProjection,
+  buildV26TeacherReferenceProjection,
+  buildV26TransferTeacherCommand,
+  createV26TeacherRegistryCapabilityState,
+  createV26TeacherRegistryIdempotencyKey,
+  createV26TeacherRegistryRetryFingerprint,
+  getV26TeacherRegistryOutcomeMessage,
+  isV26TeacherRegistryBackendUnavailable,
+  isV26TeacherRegistryCapabilityReady,
+  mutateV26TeacherAssignment,
+  mutateV26TeacherRegistry,
+  pullV26TeacherRegistry,
+} from './cloud-authoritative-teacher-registry.js'
+import {
+  V24_PACKAGE_CYCLE_CAPABILITY_STATUS,
+  buildV24SelectProvisionalPackageCommand,
+  buildV24StartCycleCommand,
+  buildV24UpdateBchtCommand,
+  createV24IdempotencyKey,
+  createV24PackageCycleCapabilityState,
+  createV24RetryFingerprint,
+  getV24OutcomeMessage,
+  getV24StudentCycleState,
+  isV24PackageCycleBackendUnavailable,
+  isV24PackageCycleCapabilityReady,
+  mutateV24PackageCycle,
+  pullV24PackageCycleState,
+} from './cloud-authoritative-tuition-cycles.js'
+import {
+  CLOUD_BOOTSTRAP_STATUS,
+  canRunCloudBootstrap,
+  createInitialCloudBootstrapState,
+  getCloudBootstrapSnapshotCounts,
+  hasCloudBootstrapSnapshotData
+} from './cloud-bootstrap.js'
+import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
+import {
+  checkCloudDbReadiness,
+  createEmptyCloudEntityCounts,
+  getCloudDbContext,
+  getCloudEntityCounts,
+  listCloudEntityPayloads,
+  listScheduleSessionCloudPayloads,
+  pullCloudBootstrapCoreEntities,
+  pullCoreEntitiesFromCloud,
+  pushLocalCoreEntitiesToCloud,
+} from './cloud-db-sync.js'
+import {
+  CLASS_SESSION_REALTIME_PATCH_MESSAGE,
+  mergeRealtimeClassSessionIntoList,
+  subscribeToClassSessionCloudRealtime,
+} from './cloud-realtime-class-sessions.js'
+import {
+  mergeScheduleSessionRealtimePayload,
+  subscribeToScheduleSessionCloudRealtime,
+  upsertScheduleSessionCloudEntity,
+} from './cloud-realtime-schedule-sessions.js'
+import {
+  NEEDS_SUPABASE_REALTIME_PATCH,
+  mergeRealtimeStudentIntoList,
+  subscribeToStudentCloudRealtime,
+  upsertStudentCloudEntity,
+} from './cloud-realtime-students.js'
+import {
+  mergeRealtimeTeacherIntoList,
+  subscribeToTeacherCloudRealtime,
+} from './cloud-realtime-teachers.js'
+import {
+  buildRollbackPreviewFromAuditEntry,
+  loadAuditEntriesForEntity,
+} from './cloud-rollback-preview.js'
+import { backfillLocalScheduleSessionsToCloud } from './cloud-schedule-session-backfill.js'
+import { buildScheduleSessionBridgePreview } from './cloud-schedule-session-bridge.js'
+import { createInitialCloudStatus } from './cloud-status.js'
+import {
+  C52_TEACHER_CONSULTANT_WRITE_HOLD,
+  canWriteC52TuitionRecordPackageEntity,
+  createTuitionRecordPackageLocalId,
+  mergeC52TuitionCloudRecordsIntoLocal,
+  pullC52TuitionRecordPackageCloudEntities,
+  subscribeToC52TuitionRecordPackageRealtime,
+  upsertC52TuitionRecordPackageCloudEntities,
+} from './cloud-tuition-record-package-bridge.js'
+import {
+  prepareAuthoritativeCoreFormCommand,
+  runAuthoritativeCoreSave,
+} from './core-save-recovery.js'
+import './finance-theme.css'
+import { renderFinanceWorkspaceModule } from './finance-workspace-module.js'
+import {
+  INSTALLATION_CAPABILITY_STATUS,
+  armInstallationHandoff,
+  cancelInstallationHandoff,
+  claimFirstOwner,
+  createInstallationHandoffState,
+  drainBootstrapTargetSession,
+  ensureInstallationRequestId,
+  executeInstallationHandoff,
+  getInstallationErrorMessage,
+  inspectInstallationHandoff,
+  loadInstallationCapability,
+  prepareInstallationHandoff,
+  purgeInstallationHandoffState,
+} from './first-owner-bootstrap.js'
 import {
   compressTransactionImage,
   validateTransactionImageFile,
 } from './image-compression.js'
-import {
-  getMemberProfileMap,
-  listCenterAccountMemberships,
-  updateMyCenterMemberProfile,
-} from './member-profiles.js'
-import {
-  createTransactionImageSignedUrl,
-  deleteTransactionImageObject,
-  uploadTransactionImageBlob,
-} from './supabase-storage.js'
-import { getUploaderDisplayName } from './uploader-display.js'
-import {
-  getDeletedNotificationIds,
-  getCurrentStorageCenterId,
-  getDesktopModuleOrder,
-  getStoredNotifications,
-  getStoredSchedule,
-  getStoredSessionReports,
-  getStoredClassSessions,
-  getStoredStudents,
-  getStoredTeachers,
-  getStoredTuition,
-  getUiTheme,
-  getViewMode,
-  createCloudDbPullBackup,
-  saveDeletedNotificationIds,
-  saveDesktopModuleOrder,
-  setCurrentInstallationStorageNamespace,
-  setCurrentStorageCenterId,
-  saveStoredNotifications,
-  saveStoredSchedule,
-  saveStoredSessionReports,
-  saveStoredClassSessions,
-  saveStoredStudents,
-  saveStoredTeachers,
-  saveStoredTuition,
-  saveUiTheme,
-  saveViewMode,
-} from './storage.js'
-import {
-  inspectAndQuarantineC53LegacyCrm,
-  preserveC5CloseoutLegacyCoreAttendance,
-} from './legacy-closeout-preservation.js'
-import {
-  buildCashbookReconciliationFromForm,
-  buildCashbookSettingsFromForm,
-  createCashbookReconciliationFormState,
-  createCashbookSettingsFormState,
-  createDefaultCashbookSettings,
-  getCashbookBalanceStats,
-  getDefaultCashbookDate,
-  renderCashbookModule,
-  validateCashbookReconciliationForm,
-  validateCashbookSettingsForm,
-} from './cashbook-module.js'
-import {
-  buildCashflowTransactionFromForm,
-  buildCashflowCsvExport,
-  buildCashflowCategoryFromForm,
-  createCashflowAttachmentDraftFromExisting,
-  createEditCashflowCategoryFormState,
-  createEditCashflowFormState,
-  createEmptyCashflowAttachmentDraft,
-  createEmptyCashflowCategoryFormState,
-  createEmptyCashflowFormStateWithCategories,
-  createErrorCashflowAttachmentDraft,
-  CASHFLOW_EVIDENCE_ACCEPT,
-  formatFileSize,
-  getDefaultCategoryNameForType,
-  initialCashflowFilters,
-  renderCashflowModule,
-  validateCashflowCategoryForm,
-  validateCashflowForm,
-} from './cashflow-module.js'
-import { renderFinanceWorkspaceModule } from './finance-workspace-module.js'
-import {
-  addCareLogToParentContact,
-  addAppointmentToParentContact,
-  addQuickNoteToParentContact,
-  buildEnrollmentSummary,
-  buildParentContactFromForm,
-  createEnrollmentDraftFromContact,
-  createEmptyParentAppointmentDraft,
-  createEmptyParentCareLogDraft,
-  createEditParentContactFormState,
-  createEmptyParentContactFormState,
-  initialParentConsultationFilters,
-  mergeParentContactsWithStudents,
-  renderParentConsultationModule,
-  markEnrollmentReadyForParentContact,
-  saveEnrollmentDraftToParentContact,
-  updateParentAppointmentStatus,
-  validateEnrollmentReadyDraft,
-  validateParentAppointmentDraft,
-  validateParentCareLogDraft,
-  validateParentContactForm,
-} from './parent-consultation-module.js'
 import {
   buildInventoryItemFromForm,
   buildInventoryMovementFromForm,
@@ -298,62 +390,122 @@ import {
   validateInventoryRequestForm,
   validateInventoryRequestStatusForm,
 } from './inventory-module.js'
+import './inventory-v2-8p2-theme.css'
+import { inspectAndQuarantineC57LegacyState } from './legacy-calendar-notes-quarantine.js'
 import {
-  getCenterCalendarItemById,
-  getCenterCalendarTagById,
-} from './center-calendar-data.js'
+  inspectAndQuarantineC53LegacyCrm,
+  preserveC5CloseoutLegacyCoreAttendance,
+} from './legacy-closeout-preservation.js'
+import { cleanupLegacyDatasetLocalResidue } from './legacy-dataset-cleanup.js'
+import { inspectAndQuarantineC54LegacyFinance } from './legacy-finance-quarantine.js'
+import { inspectAndQuarantineC56LegacyInventory } from './legacy-inventory-quarantine.js'
+import { inspectAndQuarantineC55LegacyStaffHr } from './legacy-staff-hr-quarantine.js'
 import {
-  detectCenterCalendarConflicts,
-  detectCenterCalendarSeriesConflicts,
-} from './center-calendar-conflicts.js'
+  getMemberProfileMap,
+  listCenterAccountMemberships,
+  updateMyCenterMemberProfile,
+} from './member-profiles.js'
 import {
-  expandWeeklyCenterCalendarOccurrences,
-  getCenterCalendarSeriesRange,
-  isWeeklyRecurringCenterCalendarItem,
-} from './center-calendar-recurrence.js'
+  applyModuleUpstreamRefreshResult,
+  createLoadingModuleUpstreamHealth,
+  evaluateModuleRefreshResults,
+  getModuleActionRequiredUpstreams,
+  getModuleRefreshContract,
+  getModuleUpstreamUiState,
+  isBusinessModule,
+  isUnavailableCalendarNotesOutcome,
+} from './module-authority-registry.js'
 import {
-  SCHEDULE_PRINT_FILTER_ALL,
-  createSchedulePrintSnapshot,
-  getSchedulePrintDocumentTitle,
-  getSchedulePrintFilteredSnapshot,
-  renderSchedulePrintDocument,
-} from './schedule-print-module.js'
+  getProductionLauncherModules,
+  isProductionModuleVisible,
+  isProductionModuleAvailable as isStaticProductionModuleAvailable,
+  modules,
+  resolveCapabilityDrivenLauncherPresentation,
+} from './modules.js'
 import {
-  CASHFLOW_TRANSACTION_PRINT_ROOT_CLASS,
-  CASHFLOW_TRANSACTION_PRINT_ROOT_SELECTOR,
-  createCashflowTransactionPrintSnapshot,
-  renderCashflowTransactionPrintDocument,
-  waitForCashflowPrintImages,
-} from './cashflow-transaction-print-module.js'
+  buildInventoryDueNotificationCandidates,
+  buildMissingSessionReportNotificationCandidates,
+  buildScheduleAttentionNotificationCandidates,
+  buildStudentBirthdayNotificationCandidates,
+  buildV24TuitionNotificationCandidates,
+  getUnreadNotificationCount as countUnreadNotifications,
+  filterNotifications,
+  getUnreadNotificationCountsByModule,
+  markNotificationReadById,
+  markNotificationsReadByIds,
+  notificationSourceLabels,
+  upsertNotificationCandidates,
+} from './notification-center.js'
 import {
-  buildSessionReportFromAttendance,
-  buildSessionReportFromLearningGroups,
-  buildLearningGroupFromForm,
-  buildGuestParticipantFromForm,
-  buildScheduleSessionFromForm,
+  ONLINE_ACCESS_ROLES,
+  buildOnlineAccessState,
+  canWriteEntity,
+  getOnlineAccessMessage,
+  normalizeOnlineRole,
+} from './online-access-control.js'
+import {
+  addAppointmentToParentContact,
+  addCareLogToParentContact,
+  addQuickNoteToParentContact,
+  buildEnrollmentSummary,
+  buildParentContactFromForm,
+  createEditParentContactFormState,
+  createEmptyParentAppointmentDraft,
+  createEmptyParentCareLogDraft,
+  createEmptyParentContactFormState,
+  createEnrollmentDraftFromContact,
+  initialParentConsultationFilters,
+  markEnrollmentReadyForParentContact,
+  mergeParentContactsWithStudents,
+  renderParentConsultationModule,
+  saveEnrollmentDraftToParentContact,
+  updateParentAppointmentStatus,
+  validateEnrollmentReadyDraft,
+  validateParentAppointmentDraft,
+  validateParentCareLogDraft,
+  validateParentContactForm,
+} from './parent-consultation-module.js'
+import './parent-consultation-v2-8p2-theme.css'
+import {
+  buildReportDownloadText,
+  buildReportPrintHtml,
+  createInitialReportState,
+  getReportDownloadFilename,
+  getReportTransactionScope,
+  getReportTransactionsForScope,
+  getWeekStartDate,
+  renderReportModule,
+} from './report-module.js'
+import './report-theme.css'
+import {
   buildCenterCalendarItemFromForm,
   buildCenterCalendarTagFromForm,
+  buildGuestParticipantFromForm,
+  buildLearningGroupFromForm,
+  buildScheduleSessionFromForm,
+  buildSessionReportFromAttendance,
   buildSessionReportFromExtraInfo,
+  buildSessionReportFromLearningGroups,
+  createCenterCalendarItemConflictState,
   createCenterCalendarItemDeleteState,
   createCenterCalendarItemDetailState,
   createCenterCalendarOccurrenceDetailState,
   createCenterCalendarSeriesDeleteState,
-  createCenterCalendarItemConflictState,
   createCenterCalendarTagManagerState,
   createEditCenterCalendarItemFormState,
   createEditCenterCalendarSeriesFormState,
   createEditCenterCalendarTagFormState,
-  createEditScheduleFormState,
   createEditLearningGroupFormState,
+  createEditScheduleFormState,
   createEmptyCenterCalendarItemFormState,
   createEmptyCenterCalendarTagFormState,
+  createEmptyGuestParticipantFormState,
+  createEmptyLearningGroupFormState,
   createEmptyScheduleFormState,
   createScheduleFormStateForDay,
-  createEmptyLearningGroupFormState,
-  createEmptyGuestParticipantFormState,
+  createSessionReportDraft,
   createSessionReportExtraState,
   createSessionReportLearningState,
-  createSessionReportDraft,
   findSessionReport,
   getCurrentScheduleWeekStartDate,
   getNextScheduleWeekStartDate,
@@ -365,147 +517,37 @@ import {
   renderScheduleModule,
   updateSessionReportDraftAttendance,
   updateSessionReportExtraState,
-  validateLearningGroupForm,
-  validateGuestParticipantForm,
-  validateSessionReportAttendance,
   validateCenterCalendarItemForm,
   validateCenterCalendarTagForm,
+  validateGuestParticipantForm,
+  validateLearningGroupForm,
   validateScheduleForm,
+  validateSessionReportAttendance,
 } from './schedule-module.js'
 import {
-  buildInventoryDueNotificationCandidates,
-  buildMissingSessionReportNotificationCandidates,
-  buildScheduleAttentionNotificationCandidates,
-  buildStudentBirthdayNotificationCandidates,
-  buildV24TuitionNotificationCandidates,
-  filterNotifications,
-  getUnreadNotificationCount as countUnreadNotifications,
-  getUnreadNotificationCountsByModule,
-  markNotificationReadById,
-  markNotificationsReadByIds,
-  notificationSourceLabels,
-  upsertNotificationCandidates,
-} from './notification-center.js'
-import { buildV28AAttendanceNotificationCandidates } from './attendance-operational-reminders.js'
+  SCHEDULE_PRINT_FILTER_ALL,
+  createSchedulePrintSnapshot,
+  getSchedulePrintDocumentTitle,
+  getSchedulePrintFilteredSnapshot,
+  renderSchedulePrintDocument,
+} from './schedule-print-module.js'
+import './schedule-theme.css'
 import {
-  initialAttendanceBoardFilters,
-  renderAttendanceBoardModule,
-} from './attendance-board-module.js'
-import {
-  buildV28AMarkTbhpSentCommand,
-  buildV28AUpsertCellNoteCommand,
-  createV28AAttendanceOperationIdempotencyKey,
-  createV28AAttendanceOperationRetryFingerprint,
-  createV28AAttendanceOperationsCapabilityState,
-  getV28AAttendanceOperationOutcomeMessage,
-  isV28AAttendanceOperationsBackendUnavailable,
-  isV28AAttendanceOperationsCapabilityReady,
-  mutateV28AAttendanceOperation,
-  pullV28AAttendanceOperations,
-  V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS,
-} from './cloud-authoritative-attendance-operations.js'
-import {
-  clearInitialBaselineAttendanceRecordsInMonth,
-  createInitialBaselineEditSnapshot,
-  buildUnifiedAttendanceRecords,
-  isDateInBaselineEditableRange,
-  loadAttendanceBaselineState,
-  loadStoredAttendanceRecords,
-  lockAttendanceBaselineState,
-  parseInitialBaselineCellInput,
-  removeInitialBaselineAttendanceRecord,
-  restoreInitialBaselineEditSnapshot,
-  saveAttendanceBaselineState,
-  saveAttendanceBaselineDraftState,
-  saveStoredAttendanceRecords,
-  startAttendanceBaselineDraft,
-  unlockAttendanceBaselineState,
-  upsertInitialBaselineAttendanceRecord,
-} from './attendance-records.js'
-import {
-  buildReportDownloadText,
-  buildReportPrintHtml,
-  createInitialReportState,
-  getReportTransactionScope,
-  getReportTransactionsForScope,
-  getReportDownloadFilename,
-  getWeekStartDate,
-  renderReportModule,
-} from './report-module.js'
-import {
-  STAFF_EMPLOYMENT_STATUSES,
-  archiveDepartment,
-  archiveStaffMember,
-  buildStaffEmploymentTransition,
-  buildDepartmentFromForm,
-  buildStaffMemberFromForm,
-  clearStaffListFilters,
-  createEditDepartmentFormState,
-  createEditStaffFormState,
-  createEmptyDepartmentFormState,
-  createEmptyStaffFormState,
-  findStaffMemberByAccountUserId,
-  findStaffMemberByMembershipId,
-  findStaffMemberByTeacherId,
-  getAvailableStaffAccountMemberships,
-  getAvailableStaffEmploymentTransitions,
-  getStaffEmploymentStatus,
-  isAccountMembershipActive,
-  isStaffMemberArchived,
-  initialStaffFilters,
-  linkStaffMemberToAccount,
-  renderStaffModule,
-  restoreDepartment,
-  restoreStaffMember,
-  resolveStaffAccountLink,
-  unlinkStaffMemberFromAccount,
-  validateDepartmentForm,
-  validateStaffForm,
-} from './staff-module.js'
-import {
-  STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE,
-  buildStaffAdministrativeProfileFromDraft,
-  createEditStaffAdministrativeProfileDraft,
-  createStaffAdministrativeProfileDraft,
-  createStaffAdministrativeProfileId,
-  getStaffAdministrativeCompletionChecklist,
-  getStaffAdministrativeSensitiveValue,
-  getStaffAdministrativeWindowTitle,
-  isStaffAdministrativeSensitiveField,
-  markStaffAdministrativeProfileReviewed,
-  maskStaffAdministrativeValue,
-  renderStaffAdministrativeProfileWindow,
-  resolveStaffAdministrativeProfileAccess,
-  resolveStaffAdministrativeProfileForStaff,
-  setStaffAdministrativeProfileDraftValue,
-  toggleStaffAdministrativeRevealedField,
-  validateStaffAdministrativeProfile,
-} from './staff-administrative-profile-module.js'
-import {
-  STAFF_DOCUMENT_STALE_MESSAGE,
-  archiveStaffDocument,
-  buildStaffDocumentFromDraft,
-  createEditStaffDocumentDraft,
-  createStaffDocumentDraft,
-  createStaffDocumentId,
-  getFilteredStaffDocuments,
-  getStaffDocumentRelationshipIssues,
-  initialStaffDocumentFilters,
-  renderStaffDocumentResults,
-  renderStaffDocumentsSection,
-  restoreStaffDocument,
-  setStaffDocumentDraftValue,
-  validateStaffDocument,
-} from './staff-documents-module.js'
-import {
-  staffDocumentAttachmentService,
-  validateStaffDocumentAttachmentFile,
-} from './staff-document-attachments-supabase.js'
-import {
-  STAFF_DOCUMENT_CONTENT_SCROLL_SELECTOR,
-  captureStaffDocumentViewerReturnContext,
-  scheduleStaffDocumentViewerReturnRestore,
-} from './staff-document-viewer-return.js'
+  buildClassSessionAutoName,
+  buildSettingsClassSessionFromForm,
+  createEditSettingsClassSessionFormState,
+  createEditSettingsTuitionPackageFormState,
+  createEmptySettingsClassSessionFormState,
+  createEmptySettingsTuitionPackageFormState,
+  createSettingsCenterProfileFormState,
+  getClassSessionStudentCount,
+  initialSettingsFilters,
+  renderSettingsModule,
+  validateSettingsCenterProfileForm,
+  validateSettingsClassSessionForm,
+  validateSettingsTuitionPackageForm,
+} from './settings-module.js'
+import './settings-v2-8p2-theme.css'
 import {
   STAFF_ADMINISTRATIVE_POLICY_STALE_MESSAGE,
   STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE,
@@ -530,121 +572,107 @@ import {
   validateStaffAdministrativeRetentionPolicy,
 } from './staff-administrative-governance-module.js'
 import {
-  checkCloudDbReadiness,
-  createEmptyCloudEntityCounts,
-  getCloudDbContext,
-  getCloudEntityCounts,
-  listCloudEntityPayloads,
-  listScheduleSessionCloudPayloads,
-  pullCloudBootstrapCoreEntities,
-  pullCoreEntitiesFromCloud,
-  pushLocalCoreEntitiesToCloud,
-} from './cloud-db-sync.js'
+  STAFF_ADMINISTRATIVE_PROFILE_ACCESS_DENIED_MESSAGE,
+  buildStaffAdministrativeProfileFromDraft,
+  createEditStaffAdministrativeProfileDraft,
+  createStaffAdministrativeProfileDraft,
+  createStaffAdministrativeProfileId,
+  getStaffAdministrativeCompletionChecklist,
+  getStaffAdministrativeSensitiveValue,
+  getStaffAdministrativeWindowTitle,
+  isStaffAdministrativeSensitiveField,
+  markStaffAdministrativeProfileReviewed,
+  maskStaffAdministrativeValue,
+  renderStaffAdministrativeProfileWindow,
+  resolveStaffAdministrativeProfileAccess,
+  resolveStaffAdministrativeProfileForStaff,
+  setStaffAdministrativeProfileDraftValue,
+  toggleStaffAdministrativeRevealedField,
+  validateStaffAdministrativeProfile,
+} from './staff-administrative-profile-module.js'
 import {
-  CLOUD_BOOTSTRAP_STATUS,
-  canRunCloudBootstrap,
-  createInitialCloudBootstrapState,
-  getCloudBootstrapSnapshotCounts,
-  getCloudBootstrapStatusLabel,
-  hasCloudBootstrapSnapshotData,
-} from './cloud-bootstrap.js'
-import { CLOUD_ENTITY_TYPES } from './cloud-db-entities.js'
+  staffDocumentAttachmentService,
+  validateStaffDocumentAttachmentFile,
+} from './staff-document-attachments-supabase.js'
 import {
-  createCoreCommandIdempotencyKey,
-  mutateAuthoritativeCoreEntity,
-} from './cloud-authoritative-core.js'
+  STAFF_DOCUMENT_CONTENT_SCROLL_SELECTOR,
+  captureStaffDocumentViewerReturnContext,
+  scheduleStaffDocumentViewerReturnRestore,
+} from './staff-document-viewer-return.js'
 import {
-  prepareAuthoritativeCoreFormCommand,
-  runAuthoritativeCoreSave,
-} from './core-save-recovery.js'
-import { createOperationalCommandIdempotencyKey } from './cloud-authoritative-attendance-tuition.js'
+  STAFF_DOCUMENT_STALE_MESSAGE,
+  archiveStaffDocument,
+  buildStaffDocumentFromDraft,
+  createEditStaffDocumentDraft,
+  createStaffDocumentDraft,
+  createStaffDocumentId,
+  getFilteredStaffDocuments,
+  getStaffDocumentRelationshipIssues,
+  initialStaffDocumentFilters,
+  renderStaffDocumentResults,
+  renderStaffDocumentsSection,
+  restoreStaffDocument,
+  setStaffDocumentDraftValue,
+  validateStaffDocument,
+} from './staff-documents-module.js'
 import {
-  buildC53AppendCareLogCommand,
-  buildC53ArchiveCaseCommand,
-  buildC53AssignCaseCommand,
-  buildC53CreateLeadCommand,
-  buildC53SaveCaseCommand,
-  buildC53UpsertAppointmentCommand,
-  canWriteC53CrmSharedTruth,
-  createC53CrmIdempotencyKey,
-  mutateC53CrmSharedTruth,
-  pullC53CrmSharedTruth,
-} from './cloud-authoritative-crm.js'
+  STAFF_EMPLOYMENT_STATUSES,
+  archiveDepartment,
+  archiveStaffMember,
+  buildDepartmentFromForm,
+  buildStaffEmploymentTransition,
+  buildStaffMemberFromForm,
+  clearStaffListFilters,
+  createEditDepartmentFormState,
+  createEditStaffFormState,
+  createEmptyDepartmentFormState,
+  createEmptyStaffFormState,
+  findStaffMemberByAccountUserId,
+  findStaffMemberByMembershipId,
+  findStaffMemberByTeacherId,
+  getAvailableStaffAccountMemberships,
+  getAvailableStaffEmploymentTransitions,
+  getStaffEmploymentStatus,
+  initialStaffFilters,
+  isAccountMembershipActive,
+  isStaffMemberArchived,
+  linkStaffMemberToAccount,
+  renderStaffModule,
+  resolveStaffAccountLink,
+  restoreDepartment,
+  restoreStaffMember,
+  unlinkStaffMemberFromAccount,
+  validateDepartmentForm,
+  validateStaffForm,
+} from './staff-module.js'
 import {
-  createParentFirstCapabilityState,
-  createParentStudentLink,
-  endParentStudentLink,
-  getParentFirstOutcomeMessage,
-  isParentFirstBackendUnavailable,
-  isParentFirstCapabilityReady,
-  PARENT_FIRST_CAPABILITY_STATUS,
-  pullParentStudentLinks,
-  updateParentStudentLink,
-  updateProtectedContactIdentity,
-} from './cloud-authoritative-parent-student-links.js'
-import {
-  NEEDS_SUPABASE_REALTIME_PATCH,
-  mergeRealtimeStudentIntoList,
-  subscribeToStudentCloudRealtime,
-  upsertStudentCloudEntity,
-} from './cloud-realtime-students.js'
-import {
-  mergeRealtimeTeacherIntoList,
-  subscribeToTeacherCloudRealtime,
-} from './cloud-realtime-teachers.js'
-import {
-  CLASS_SESSION_REALTIME_PATCH_MESSAGE,
-  mergeRealtimeClassSessionIntoList,
-  subscribeToClassSessionCloudRealtime,
-} from './cloud-realtime-class-sessions.js'
-import {
-  mergeScheduleSessionRealtimePayload,
-  subscribeToScheduleSessionCloudRealtime,
-  upsertScheduleSessionCloudEntity,
-} from './cloud-realtime-schedule-sessions.js'
-import { backfillLocalScheduleSessionsToCloud } from './cloud-schedule-session-backfill.js'
-import {
-  C51_ATTENDANCE_REALTIME_ENTITY_TYPES,
-  C51_TEACHER_CONSULTANT_WRITE_HOLD,
-  canWriteC51AttendanceEntity,
-  mergeC51CloudRecordsIntoLocal,
-  pullC51AttendanceSessionReportCloudEntities,
-  subscribeToC51AttendanceSessionReportRealtime,
-  upsertC51AttendanceSessionReportCloudEntities,
-} from './cloud-attendance-realtime.js'
-import {
-  C52_TEACHER_CONSULTANT_WRITE_HOLD,
-  canWriteC52TuitionRecordPackageEntity,
-  createTuitionRecordPackageLocalId,
-  mergeC52TuitionCloudRecordsIntoLocal,
-  pullC52TuitionRecordPackageCloudEntities,
-  subscribeToC52TuitionRecordPackageRealtime,
-  upsertC52TuitionRecordPackageCloudEntities,
-} from './cloud-tuition-record-package-bridge.js'
-import {
-  getChangedFields,
-  writeC53AuditLogEntry,
-} from './cloud-audit-log.js'
-import {
-  buildRollbackPreviewFromAuditEntry,
-  loadAuditEntriesForEntity,
-} from './cloud-rollback-preview.js'
-import { buildScheduleSessionBridgePreview } from './cloud-schedule-session-bridge.js'
-import {
-  ONLINE_ACCESS_ROLES,
-  buildOnlineAccessState,
-  canWriteEntity,
-  getOnlineAccessMessage,
-  normalizeOnlineRole,
-} from './online-access-control.js'
-import { cleanupLegacyDatasetLocalResidue } from './legacy-dataset-cleanup.js'
-import {
-  createEditTeacherFormState,
-  createEmptyTeacherFormState,
-  initialTeacherFilters,
-  renderTeacherModule,
-  validateTeacherForm,
-} from './teacher-module.js'
+  createCloudDbPullBackup,
+  getCurrentStorageCenterId,
+  getDeletedNotificationIds,
+  getDesktopModuleOrder,
+  getStoredClassSessions,
+  getStoredNotifications,
+  getStoredSchedule,
+  getStoredSessionReports,
+  getStoredStudents,
+  getStoredTeachers,
+  getStoredTuition,
+  getUiTheme,
+  getViewMode,
+  saveDeletedNotificationIds,
+  saveDesktopModuleOrder,
+  saveStoredClassSessions,
+  saveStoredNotifications,
+  saveStoredSchedule,
+  saveStoredSessionReports,
+  saveStoredStudents,
+  saveStoredTeachers,
+  saveStoredTuition,
+  saveUiTheme,
+  saveViewMode,
+  setCurrentInstallationStorageNamespace,
+  setCurrentStorageCenterId,
+} from './storage.js'
 import {
   emptyCareNoteDraft,
   getStudentCareNotesWindowTitle,
@@ -666,101 +694,61 @@ import {
   validateStudentForm,
 } from './student-module.js'
 import {
-  V22_STUDENT_ENROLLMENT_CAPABILITY_STATUS,
-  createV22StudentEnrollmentCapabilityState,
-  getV22EnrollmentOutcomeMessage,
-  isV22StudentEnrollmentBackendUnavailable,
-  isV22StudentEnrollmentCapabilityReady,
-  mutateV22StudentWithEnrollments,
-  pullV22StudentEnrollments,
-} from './cloud-authoritative-student-enrollments.js'
-import {
-  V23_ATTENDANCE_CAPABILITY_STATUS,
-  createV23AttendanceCapabilityState,
-  getV23AttendanceOutcomeMessage,
-  isV23AttendanceBackendUnavailable,
-  isV23AttendanceCapabilityReady,
-  mutateV23OccurrenceAttendance,
-  pullV23AttendanceCapability,
-  selectCurrentV23OccurrenceAttendanceRecord,
-} from './cloud-authoritative-occurrence-attendance.js'
-import {
-  V24_PACKAGE_CYCLE_CAPABILITY_STATUS,
-  buildV24SelectProvisionalPackageCommand,
-  buildV24StartCycleCommand,
-  buildV24UpdateBchtCommand,
-  createV24IdempotencyKey,
-  createV24PackageCycleCapabilityState,
-  createV24RetryFingerprint,
-  getV24OutcomeMessage,
-  getV24StudentCycleState,
-  isV24PackageCycleBackendUnavailable,
-  isV24PackageCycleCapabilityReady,
-  mutateV24PackageCycle,
-  pullV24PackageCycleState,
-} from './cloud-authoritative-tuition-cycles.js'
-import {
-  V26_TEACHER_REGISTRY_CAPABILITY_STATUS,
-  buildV26AssignTeacherCommand,
-  buildV26RemoveTeacherCommand,
-  buildV26TeacherCommand,
-  buildV26TeacherDirectoryProjection,
-  buildV26TeacherReferenceProjection,
-  buildV26TransferTeacherCommand,
-  createV26TeacherRegistryCapabilityState,
-  createV26TeacherRegistryIdempotencyKey,
-  createV26TeacherRegistryRetryFingerprint,
-  getV26TeacherRegistryOutcomeMessage,
-  isV26TeacherRegistryBackendUnavailable,
-  isV26TeacherRegistryCapabilityReady,
-  mutateV26TeacherAssignment,
-  mutateV26TeacherRegistry,
-  pullV26TeacherRegistry,
-} from './cloud-authoritative-teacher-registry.js'
-import {
   deriveV22ScheduleRosters,
   normalizeV22Enrollments,
   projectStudentsWithV22Enrollments,
   reconcileV22EnrollmentDayInput,
   reconcileV22StudentFormValues,
 } from './student-recurring-enrollment.js'
+import './student-theme.css'
+import './styles.css'
 import {
-  buildSettingsClassSessionFromForm,
-  buildClassSessionAutoName,
-  createEditSettingsTuitionPackageFormState,
-  createEditSettingsClassSessionFormState,
-  createEmptySettingsTuitionPackageFormState,
-  createEmptySettingsClassSessionFormState,
-  createSettingsCenterProfileFormState,
-  getClassSessionStudentCount,
-  initialSettingsFilters,
-  renderSettingsModule,
-  validateSettingsCenterProfileForm,
-  validateSettingsClassSessionForm,
-  validateSettingsTuitionPackageForm,
-} from './settings-module.js'
+  completeRequiredCredentialChange,
+  getCurrentSupabaseUser,
+  onSupabaseAuthStateChange,
+  resolveActiveCenterMembership,
+  signInWithEmailPassword,
+  signOutSupabase,
+  signUpWithEmailPassword,
+} from './supabase-auth.js'
 import {
-  getClassSessionDeletePolicyMap,
-  inspectAuthoritativeClassSessionDependencies,
-} from './class-session-lifecycle.js'
+  getSupabaseClient,
+  getSupabaseConfigStatus,
+  getSupabaseInstallationNamespace,
+} from './supabase-client.js'
 import {
-  buildPersonalWallpaperKey,
-  loadPersonalWallpaperBlob,
-  prepareWallpaperImage,
-  removePersonalWallpaperBlob,
-  resolveWallpaperPriority,
-  savePersonalWallpaperBlob,
-} from './wallpaper-preferences.js'
+  createTransactionImageSignedUrl,
+  deleteTransactionImageObject,
+  uploadTransactionImageBlob,
+} from './supabase-storage.js'
 import {
+  createEditTeacherFormState,
+  createEmptyTeacherFormState,
+  initialTeacherFilters,
+  renderTeacherModule,
+  validateTeacherForm,
+} from './teacher-module.js'
+import {
+  buildAttachmentFileName,
+  buildTransactionCode,
+  buildTransactionImageStoragePath,
+  createTransactionAttachmentMetadata,
+  deleteTransactionAttachmentMetadata,
+  getCurrentMonthKey,
+  isTransactionAttachmentRoleAllowed,
+  listTransactionAttachmentsByMonth,
+  listTransactionAttachmentsByTransactionCode,
+} from './transaction-attachments.js'
+import {
+  buildTuitionPaymentSummary,
   createEditTuitionFormState,
   createEmptyTuitionFormState,
   createPaymentFormState,
   createRenewTuitionFormState,
-  buildTuitionPaymentSummary,
-  getLinkedTuitionPaymentTransactions,
   getCurrentTuitionPeriodId,
-  getTuitionPeriodIdentity,
+  getLinkedTuitionPaymentTransactions,
   getTuitionDebtAmount,
+  getTuitionPeriodIdentity,
   hasUnreconciledLegacyTuitionPaidAmount,
   initialTuitionFilters,
   normalizePaymentFormValues,
@@ -771,6 +759,16 @@ import {
   validateRenewTuitionForm,
   validateTuitionForm,
 } from './tuition-module.js'
+import './tuition-theme.css'
+import { getUploaderDisplayName } from './uploader-display.js'
+import {
+  buildPersonalWallpaperKey,
+  loadPersonalWallpaperBlob,
+  prepareWallpaperImage,
+  removePersonalWallpaperBlob,
+  resolveWallpaperPriority,
+  savePersonalWallpaperBlob,
+} from './wallpaper-preferences.js'
 
 const app = document.querySelector('#app')
 const INTERNAL_CENTERS_ROUTE_HASH = '#/internal/centers'
@@ -23253,7 +23251,7 @@ function bindEvents() {
       cloudStatus = {
         ...cloudStatus,
         credentialChangeStatus: 'error',
-        credentialChangeMessage: getAccountLifecycleErrorMessage(error, 'Không đổi được mật khẩu. Vui lòng thử lại.'),
+        credentialChangeMessage: getAccountLifecycleErrorMessage(error, 'Mật khẩu phải có 12–128 ký tự, gồm ít nhất 1 chữ thường, 1 chữ hoa và 1 chữ số.'),
       }
       render()
     }
