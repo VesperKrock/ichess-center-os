@@ -946,6 +946,49 @@
   padding: 8px 9.6px;
 }
 
+.is-student-form-window .student-form-panel select {
+  color-scheme: light;
+}
+
+:root[data-ui-theme='dark'] .is-student-form-window .student-form-panel select {
+  color-scheme: dark;
+}
+
+.is-student-form-window .student-form-panel select option {
+  background: var(--student-input);
+  color: var(--student-text);
+}
+
+.is-student-form-window .student-form-panel select option:checked {
+  background: var(--student-primary);
+  color: var(--student-primary-text);
+}
+
+.is-student-form-window .student-form-panel input:not([type='checkbox']):not([type='radio']):hover,
+.is-student-form-window .student-form-panel select:hover,
+.is-student-form-window .student-form-panel textarea:hover,
+.is-student-form-window .student-form-panel input:not([type='checkbox']):not([type='radio']):focus,
+.is-student-form-window .student-form-panel select:focus,
+.is-student-form-window .student-form-panel textarea:focus {
+  border-color: var(--student-primary);
+  background: var(--student-input);
+  color: var(--student-text);
+  box-shadow: 0 0 0 3px var(--student-focus);
+  outline: none;
+}
+
+.is-student-form-window .student-form-panel input:read-only,
+.is-student-form-window .student-form-panel input:disabled,
+.is-student-form-window .student-form-panel select:disabled,
+.is-student-form-window .student-form-panel textarea:read-only,
+.is-student-form-window .student-form-panel textarea:disabled {
+  border-color: var(--student-border-soft);
+  background: var(--student-surface-soft);
+  color: var(--student-muted);
+  box-shadow: none;
+  cursor: default;
+}
+
 .is-student-form-window .student-form-panel textarea {
   min-height: 96px;
   padding: 9.6px;

@@ -690,6 +690,7 @@ import {
   getStudentFormSaveDisabledReason,
   initialStudentFilters,
   isStudentFormReady,
+  mergeStudentFormControlValues,
   renderStudentModule,
   validateStudentForm,
 } from './student-module.js'
@@ -31718,6 +31719,14 @@ function bindEvents() {
   document.querySelector('[data-student-action="save-form"]')?.addEventListener('click', async () => {
     if (studentFormState?.isSaving) {
       return
+    }
+
+    studentFormState = {
+      ...studentFormState,
+      values: mergeStudentFormControlValues(
+        studentFormState.values,
+        document.querySelectorAll('[data-student-form-field]'),
+      ),
     }
 
     if (!isStudentFormReady(studentFormState.values, classSessions)) {

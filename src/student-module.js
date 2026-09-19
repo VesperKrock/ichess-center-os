@@ -122,6 +122,7 @@ const requiredFields = {
 
 const parentCareRequiredFields = ['parentName', 'fatherPhone', 'motherPhone']
 const studentParentCareRequiredHint = 'Cần nhập thông tin phụ huynh/chăm sóc'
+const studentFormFieldNames = new Set(Object.keys(emptyStudentFormValues))
 
 export function createEmptyStudentFormState(options = {}) {
   return {
@@ -411,6 +412,14 @@ export function validateStudentForm(values, classSessions = []) {
 
 export function isStudentFormReady(values, classSessions = []) {
   return Object.keys(validateStudentForm(values, classSessions)).length === 0
+}
+
+export function mergeStudentFormControlValues(values = {}, controls = []) {
+  return Array.from(controls || []).reduce((nextValues, control) => {
+    const fieldName = String(control?.dataset?.studentFormField || '')
+    if (!studentFormFieldNames.has(fieldName)) return nextValues
+    return { ...nextValues, [fieldName]: control.value ?? '' }
+  }, { ...values })
 }
 
 export function isStudentParentCareInfoIncomplete(values) {
