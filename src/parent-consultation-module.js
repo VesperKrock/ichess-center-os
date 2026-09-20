@@ -229,14 +229,6 @@ const emptyParentContactValues = {
 
 const emptyEnrollmentDraft = {
   isReady: false,
-  studentName: '',
-  studentAge: '',
-  studentBirthYear: '',
-  parentName: '',
-  phone: '',
-  interestedProgram: '',
-  preferredSchedule: '',
-  learningGoal: '',
   expectedStartDate: '',
   expectedTrialDate: '',
   childChessLevel: '',
@@ -244,7 +236,6 @@ const emptyEnrollmentDraft = {
   trialAppointmentId: '',
   trialScheduledAt: '',
   note: '',
-  advisorName: '',
   readyAt: null,
   createdAt: null,
   updatedAt: null,
@@ -273,24 +264,20 @@ export function createEmptyParentAppointmentDraft() {
 }
 
 export function createEnrollmentDraftFromContact(contact = {}) {
-  const existingDraft = contact.enrollmentDraft
-
-  if (existingDraft && typeof existingDraft === 'object' && (existingDraft.createdAt || existingDraft.updatedAt)) {
-    return normalizeEnrollmentDraftForForm(existingDraft)
-  }
+  const existingDraft = normalizeEnrollmentDraftForForm(contact.enrollmentDraft)
+  const studentBirthYear = String(contact.studentBirthYear || '')
 
   return {
-    ...emptyEnrollmentDraft,
-    studentName: contact.leadStudentName || contact.studentName || '',
-    studentAge: contact.leadStudentAge || calculateAgeFromBirthYear(contact.studentBirthYear) || '',
-    studentBirthYear: contact.studentBirthYear || '',
-    parentName: contact.parentName || '',
-    phone: contact.phone || '',
-    interestedProgram: contact.interestedProgram || '',
-    preferredSchedule: contact.preferredSchedule || '',
-    learningGoal: contact.leadNeed || '',
-    expectedTrialDate: '',
-    childChessLevel: '',
+    ...existingDraft,
+    studentName: String(contact.leadStudentName || contact.studentName || ''),
+    studentAge: String(contact.leadStudentAge || calculateAgeFromBirthYear(studentBirthYear) || ''),
+    studentBirthYear,
+    parentName: String(contact.parentName || ''),
+    phone: String(contact.phone || ''),
+    interestedProgram: String(contact.interestedProgram || ''),
+    preferredSchedule: String(contact.preferredSchedule || ''),
+    learningGoal: String(contact.leadNeed || ''),
+    advisorName: String(contact.consultantName || contact.advisorName || ''),
   }
 }
 
@@ -335,10 +322,6 @@ export function applyAuthoritativeConsultantDefault(formState, eligibleConsultan
       ...formState.values,
       consultantId: consultant.userId,
       consultantName: consultant.label,
-    },
-    enrollmentDraft: {
-      ...(formState.enrollmentDraft ?? {}),
-      advisorName: consultant.label,
     },
   }
 }
@@ -549,7 +532,6 @@ export function saveEnrollmentDraftToParentContact(contact, draft) {
   const contactWithDraft = {
     ...contact,
     enrollmentDraft: {
-      ...emptyEnrollmentDraft,
       ...normalizedDraft,
       isReady: Boolean(existingDraft.isReady),
       readyAt: existingDraft.readyAt || null,
@@ -582,7 +564,7 @@ export function markEnrollmentReadyForParentContact(contact, draft) {
 }
 
 function upsertTrialLessonAppointment(contact, now) {
-  const draft = contact.enrollmentDraft ?? emptyEnrollmentDraft
+  const draft = createEnrollmentDraftFromContact(contact)
   const expectedTrialDate = String(draft.expectedTrialDate || draft.expectedStartDate || '').trim()
 
   if (!expectedTrialDate) {
@@ -640,20 +622,23 @@ function upsertTrialLessonAppointment(contact, now) {
 }
 
 function buildTrialLessonAppointmentNote(draft) {
+  const contactPhone = draft.phone || (draft.contactMethodProtected ? 'Được bảo vệ trong hồ sơ' : 'Chưa nhập')
+
   return [
     `Học viên: ${draft.studentName || 'Chưa nhập'}`,
     `Năm sinh: ${draft.studentBirthYear || 'Chưa nhập'}`,
     `Phụ huynh: ${draft.parentName || 'Chưa nhập'}`,
-    `Số điện thoại liên hệ: ${draft.phone || 'Chưa nhập'}`,
+    `Số điện thoại liên hệ: ${contactPhone}`,
     `Trình độ hiện tại: ${childChessLevelLabels[draft.childChessLevel] || 'Chưa nhập'}`,
-    `Lịch rảnh khi đăng ký học: ${draft.preferredSchedule || 'Chưa nhập'}`,
+    `Lịch rảnh mong muốn: ${draft.preferredSchedule || 'Chưa nhập'}`,
     draft.note ? `Ghi chú: ${draft.note}` : '',
   ].filter(Boolean).join('\n')
 }
 
 export function buildEnrollmentSummary(contact) {
-  const draft = contact.enrollmentDraft ?? emptyEnrollmentDraft
+  const draft = createEnrollmentDraftFromContact(contact)
   const age = draft.studentAge || calculateAgeFromBirthYear(draft.studentBirthYear)
+  const contactPhone = draft.phone || (draft.contactMethodProtected ? 'Được bảo vệ trong hồ sơ' : 'Chưa nhập')
   const birthYearLine = draft.studentBirthYear
     ? `${draft.studentBirthYear}${age ? ` (${age} tuổi)` : ''}`
     : age
@@ -666,9 +651,9 @@ export function buildEnrollmentSummary(contact) {
     `Học viên: ${draft.studentName || 'Chưa nhập'}`,
     `Năm sinh (tuổi): ${birthYearLine || 'Chưa nhập'}`,
     `Phụ huynh: ${draft.parentName || 'Chưa nhập'}`,
-    `Số điện thoại liên hệ: ${draft.phone || 'Chưa nhập'}`,
+    `Số điện thoại liên hệ: ${contactPhone}`,
     `Trình độ hiện tại: ${childChessLevelLabels[draft.childChessLevel] || 'Chưa nhập'}`,
-    `Lịch rảnh khi đăng ký học: ${draft.preferredSchedule || 'Chưa nhập'}`,
+    `Lịch rảnh mong muốn: ${draft.preferredSchedule || 'Chưa nhập'}`,
     `Ngày học thử dự kiến: ${draft.expectedTrialDate || draft.expectedStartDate || 'Chưa nhập'}`,
     `Người tư vấn / phụ trách: ${draft.advisorName || 'Chưa nhập'}`,
     '',
@@ -745,9 +730,10 @@ export function buildParentContactFromForm(values, existingContact = null, stude
     potentialLevel: String(values.potentialLevel ?? existingContact?.potentialLevel ?? '').trim(),
     careLogs,
     appointments: sortAppointments(existingContact?.appointments ?? []),
-    enrollmentDraft: existingContact?.enrollmentDraft
-      ? normalizeEnrollmentDraftForSave(existingContact.enrollmentDraft)
-      : createEnrollmentDraftFromContact({ ...values, parentName: values.parentName, leadStudentName: values.leadStudentName }),
+    enrollmentDraft: normalizeEnrollmentDraftForSave(
+      existingContact?.enrollmentDraft
+        || createEnrollmentDraftFromContact({ ...values, parentName: values.parentName, leadStudentName: values.leadStudentName }),
+    ),
     createdAt: existingContact?.createdAt || now,
     updatedAt: now,
   }
@@ -2166,10 +2152,8 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
           ${renderFormSelect('Nguồn', 'source', values.source, parentContactSourceLabels, errors.source)}
           ${renderConsultantAssignmentSelect(values.consultantId, values.consultantName, eligibleConsultants)}
           ${renderFormInput('Ngày tư vấn', 'consultedAt', values.consultedAt, '', 'date')}
-          ${renderFormInput('Ngày đăng ký', 'registeredAt', values.registeredAt, '', 'date')}
           ${renderFormInput('Lịch rảnh mong muốn', 'preferredSchedule', values.preferredSchedule)}
           ${renderFormInput('Hẹn gọi lại', 'nextFollowUpAt', values.nextFollowUpAt, '', 'datetime-local')}
-          ${renderFormInput('Mức tiềm năng', 'potentialLevel', values.potentialLevel)}
           ${renderFormTextarea('Ghi chú gần nhất', 'lastNote', values.lastNote)}
           ${renderQuickFillTextarea('Các công việc tiếp theo', 'nextAction', values.nextAction, parentNextActionQuickChoices)}
         </div>
@@ -2194,7 +2178,11 @@ function getParentContactWizardStep(step) {
 }
 
 function renderParentContactWizardStepFour(formState) {
-  const summary = buildEnrollmentSummary({ enrollmentDraft: formState.enrollmentDraft ?? {} })
+  const contact = {
+    ...(formState.values ?? {}),
+    enrollmentDraft: formState.enrollmentDraft ?? {},
+  }
+  const summary = buildEnrollmentSummary(contact)
   const compactSummary = summary
     .split('\n')
     .filter((line, index) => index > 0 || !line.toLocaleUpperCase('vi').includes('THÔNG TIN HỌC THỬ'))
@@ -2226,10 +2214,14 @@ function renderParentContactWizardStepFour(formState) {
 }
 
 function renderEnrollmentSection(formState, { showSummary = true } = {}) {
-  const draft = formState.enrollmentDraft ?? createEnrollmentDraftFromContact()
+  const contact = {
+    ...(formState.values ?? {}),
+    enrollmentDraft: formState.enrollmentDraft ?? {},
+  }
+  const draft = createEnrollmentDraftFromContact(contact)
   const errors = formState.enrollmentErrors ?? {}
   const message = formState.enrollmentMessage || ''
-  const summary = buildEnrollmentSummary({ enrollmentDraft: draft })
+  const summary = buildEnrollmentSummary(contact)
 
   return `
     <section class="parent-contact-form-section parent-enrollment-section">
@@ -2243,15 +2235,11 @@ function renderEnrollmentSection(formState, { showSummary = true } = {}) {
       </div>
       ${errors.summary ? `<div class="parent-enrollment-error">${escapeHtml(errors.summary)}</div>` : ''}
       ${message ? `<div class="parent-enrollment-message">${escapeHtml(message)}</div>` : ''}
+      ${renderEnrollmentAuthoritativeFacts(contact, draft)}
       <div class="parent-enrollment-form">
-        ${renderEnrollmentInput('Họ và tên học viên', 'studentName', draft.studentName, errors.studentName)}
-        ${renderEnrollmentBirthYearInput(draft.studentBirthYear, errors.studentBirthYear)}
-        ${renderEnrollmentInput('Tên phụ huynh', 'parentName', draft.parentName, errors.parentName)}
-        ${renderEnrollmentInput('Số điện thoại liên hệ', 'phone', draft.phone, errors.phone, 'text', draft.contactMethodProtected)}
+        ${renderFormInput('Ngày đăng ký', 'registeredAt', contact.registeredAt, '', 'date')}
         ${renderEnrollmentSelect('Trình độ của bé hiện tại', 'childChessLevel', draft.childChessLevel, { '': 'Chưa chọn', ...childChessLevelLabels })}
-        ${renderEnrollmentInput('Lịch rảnh khi đăng ký học', 'preferredSchedule', draft.preferredSchedule)}
         ${renderEnrollmentInput('Ngày học thử dự kiến', 'expectedTrialDate', draft.expectedTrialDate || draft.expectedStartDate, errors.expectedTrialDate, 'date')}
-        ${renderEnrollmentInput('Tư vấn phụ trách (theo phân công)', 'advisorName', draft.advisorName, '', 'text', true)}
         ${renderEnrollmentTextarea('Ghi chú', 'note', draft.note)}
       </div>
       <div class="parent-enrollment-actions">
@@ -2260,6 +2248,43 @@ function renderEnrollmentSection(formState, { showSummary = true } = {}) {
         <button type="button" data-parent-enrollment-action="copy">Copy tóm tắt học thử</button>
       </div>
       ${showSummary ? `<pre class="parent-enrollment-summary">${escapeHtml(summary)}</pre>` : ''}
+    </section>
+  `
+}
+
+function renderEnrollmentAuthoritativeFacts(contact, draft) {
+  const derivedAge = draft.studentAge || calculateAgeFromBirthYear(draft.studentBirthYear)
+  const birthYear = draft.studentBirthYear
+    ? `${draft.studentBirthYear}${derivedAge ? ` (${derivedAge} tuổi)` : ''}`
+    : 'Chưa nhập'
+  const protectedPhone = draft.contactMethodProtected && !draft.phone
+    ? 'Thông tin liên hệ được bảo vệ'
+    : draft.phone || 'Chưa nhập'
+  const facts = [
+    ['Học viên', draft.studentName || 'Chưa nhập'],
+    ['Năm sinh', birthYear],
+    ['Phụ huynh', draft.parentName || 'Chưa nhập'],
+    ['Liên hệ', protectedPhone],
+    ['Chương trình quan tâm', draft.interestedProgram || 'Chưa nhập'],
+    ['Nhu cầu ban đầu', draft.learningGoal || 'Chưa nhập'],
+    ['Lịch rảnh mong muốn', draft.preferredSchedule || 'Chưa nhập'],
+    ['Tư vấn phụ trách', draft.advisorName || 'Chưa gán tư vấn'],
+  ]
+
+  return `
+    <section class="parent-enrollment-authoritative" aria-label="Thông tin hồ sơ đã lưu">
+      <div class="parent-enrollment-authoritative-heading">
+        <h5>Thông tin đã lưu từ các bước trước</h5>
+        <span>Dữ liệu hồ sơ</span>
+      </div>
+      <dl>
+        ${facts.map(([label, value]) => `
+          <div>
+            <dt>${escapeHtml(label)}</dt>
+            <dd>${escapeHtml(value)}</dd>
+          </div>
+        `).join('')}
+      </dl>
     </section>
   `
 }
@@ -2855,7 +2880,6 @@ function getConsultantDisplayName(contact = {}) {
   return String(
     contact.consultantName ||
       contact.advisorName ||
-      contact.enrollmentDraft?.advisorName ||
       'Chưa gán tư vấn',
   ).trim()
 }
@@ -3058,7 +3082,21 @@ function normalizeEnrollmentDraftForForm(draft = {}) {
 }
 
 function normalizeEnrollmentDraftForSave(draft = {}) {
-  return normalizeEnrollmentDraftForForm(draft)
+  const normalized = normalizeEnrollmentDraftForForm(draft)
+
+  return {
+    isReady: normalized.isReady,
+    expectedStartDate: normalized.expectedStartDate,
+    expectedTrialDate: normalized.expectedTrialDate,
+    childChessLevel: normalized.childChessLevel,
+    trialDraftId: normalized.trialDraftId,
+    trialAppointmentId: normalized.trialAppointmentId,
+    trialScheduledAt: normalized.trialScheduledAt,
+    note: normalized.note,
+    readyAt: normalized.readyAt,
+    createdAt: normalized.createdAt,
+    updatedAt: normalized.updatedAt,
+  }
 }
 
 function getUpcomingAppointment(appointments) {

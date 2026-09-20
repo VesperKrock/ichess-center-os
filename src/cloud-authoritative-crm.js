@@ -264,9 +264,6 @@ export function buildC53SafeCaseState(contact = {}) {
     parentFeedbackAboutChild: cleanText(contact.parentFeedbackAboutChild),
     enrollmentDraft: {
       isReady: Boolean(enrollment.isReady),
-      interestedProgram: cleanText(enrollment.interestedProgram),
-      preferredSchedule: cleanText(enrollment.preferredSchedule),
-      learningGoal: cleanText(enrollment.learningGoal),
       expectedStartDate: cleanText(enrollment.expectedStartDate),
       expectedTrialDate: cleanText(enrollment.expectedTrialDate),
       childChessLevel: cleanText(enrollment.childChessLevel),
@@ -274,7 +271,6 @@ export function buildC53SafeCaseState(contact = {}) {
       trialAppointmentId: cleanText(enrollment.trialAppointmentId),
       trialScheduledAt: cleanText(enrollment.trialScheduledAt),
       note: cleanText(enrollment.note),
-      advisorName: cleanText(enrollment.advisorName),
       readyAt: enrollment.readyAt || null,
       createdAt: enrollment.createdAt || null,
       updatedAt: enrollment.updatedAt || null,

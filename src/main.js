@@ -28104,7 +28104,7 @@ function bindEvents() {
         ...collectedFormState,
         activeStep: nextStep,
         scrollTop: 0,
-      }, { forceContactValues: nextStep === 4 })
+      })
       skipNextParentContactScrollCapture = true
       render()
     })
@@ -28126,7 +28126,7 @@ function bindEvents() {
         ...collectedFormState,
         activeStep: nextStep,
         scrollTop: 0,
-      }, { forceContactValues: nextStep === 4 })
+      })
       skipNextParentContactScrollCapture = true
       render()
     })
@@ -28691,7 +28691,6 @@ function bindEvents() {
 
     parentConsultationFormState = syncParentContactWizardStep4Draft(
       collectParentContactWizardValuesFromDOM(parentConsultationFormState),
-      { forceContactValues: true },
     )
 
     const contact = parentConsultations.find(
@@ -31864,7 +31863,6 @@ async function saveParentEnrollmentDraft(markReady = false) {
 
   parentConsultationFormState = syncParentContactWizardStep4Draft(
     collectParentContactWizardValuesFromDOM(parentConsultationFormState),
-    { forceContactValues: true },
   )
 
   if (parentConsultationFormState.mode !== 'edit') {
@@ -32047,53 +32045,20 @@ function collectParentContactWizardValuesFromDOM(formState) {
   }
 }
 
-function syncParentContactWizardStep4Draft(formState, options = {}) {
+function syncParentContactWizardStep4Draft(formState) {
   if (!formState || Number(formState.activeStep) !== 4) {
     return formState
   }
 
-  const forceContactValues = options.forceContactValues !== false
   const draft = formState.enrollmentDraft ?? {}
   const values = formState.values ?? {}
-  const syncedDraft = createEnrollmentDraftFromContact({
-    ...values,
-    enrollmentDraft: draft,
-  })
-  const contactStudentName = values.leadStudentName || values.studentName || ''
-  const contactLearningGoal = values.leadNeed || ''
 
   return {
     ...formState,
-    enrollmentDraft: {
-      ...syncedDraft,
-      studentName: forceContactValues
-        ? contactStudentName
-        : draft.studentName || contactStudentName || syncedDraft.studentName,
-      studentAge: forceContactValues
-        ? values.leadStudentAge || ''
-        : draft.studentAge || values.leadStudentAge || syncedDraft.studentAge,
-      studentBirthYear: forceContactValues
-        ? values.studentBirthYear || ''
-        : draft.studentBirthYear || values.studentBirthYear || syncedDraft.studentBirthYear,
-      parentName: forceContactValues
-        ? values.parentName || ''
-        : draft.parentName || values.parentName || syncedDraft.parentName,
-      phone: forceContactValues
-        ? values.phone || ''
-        : draft.phone || values.phone || syncedDraft.phone,
-      interestedProgram: forceContactValues
-        ? values.interestedProgram || ''
-        : draft.interestedProgram || values.interestedProgram || syncedDraft.interestedProgram,
-      preferredSchedule: forceContactValues
-        ? values.preferredSchedule || ''
-        : draft.preferredSchedule || values.preferredSchedule || syncedDraft.preferredSchedule,
-      learningGoal: forceContactValues
-        ? contactLearningGoal
-        : draft.learningGoal || contactLearningGoal || syncedDraft.learningGoal,
-      advisorName: forceContactValues
-        ? values.consultantName || ''
-        : draft.advisorName || values.consultantName || syncedDraft.advisorName,
-    },
+    enrollmentDraft: createEnrollmentDraftFromContact({
+      ...values,
+      enrollmentDraft: draft,
+    }),
   }
 }
 

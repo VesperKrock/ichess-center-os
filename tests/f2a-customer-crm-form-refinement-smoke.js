@@ -286,8 +286,9 @@ const editStepFour = createEditParentContactFormState({
   enrollmentDraft: { advisorName: 'Tư vấn Linh' },
 })
 const stepFourHtml = renderForm({ ...editStepFour, activeStep: 4 })
-assert(stepFourHtml.includes('Tư vấn phụ trách (theo phân công)'))
-assert(/data-parent-enrollment-field="advisorName"[\s\S]*?disabled/.test(stepFourHtml))
+assert(stepFourHtml.includes('Tư vấn phụ trách'))
+assert(stepFourHtml.includes('Tư vấn Linh'))
+assert(!stepFourHtml.includes('data-parent-enrollment-field="advisorName"'))
 
 const mainSource = fs.readFileSync('src/main.js', 'utf8')
 assert(mainSource.includes("{ reason: 'update-next-action' }"))

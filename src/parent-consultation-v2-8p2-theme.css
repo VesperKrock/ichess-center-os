@@ -1414,7 +1414,7 @@
 .desktop-window.is-parent-consultation-window .parent-contact-step-four-layout > .parent-enrollment-section {
   box-sizing: border-box;
   display: block;
-  height: 376px;
+  min-height: 376px;
   border: 1px solid var(--parent-line-soft);
   border-radius: 10px;
   padding: 14px 15px;
@@ -1429,6 +1429,40 @@
   line-height: 26px;
 }
 
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-authoritative {
+  gap: 5px;
+  margin-top: 5px;
+  border-color: var(--parent-line-soft);
+  padding: 7px 10px;
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-authoritative-heading h5 {
+  color: var(--parent-text);
+  font-size: 13px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-authoritative-heading span {
+  border-color: var(--parent-line);
+  color: var(--parent-secondary);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-authoritative dl {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-authoritative dt {
+  color: var(--parent-secondary);
+  font-size: 10px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-authoritative dd {
+  color: var(--parent-text);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form {
   display: grid;
   grid-template-columns: 430px 440px;
@@ -1439,7 +1473,7 @@
 
 .desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form label { gap: 4px; }
 .desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form small { display: none; }
-.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form label:nth-child(9) { grid-column: 1 / 3; }
+.desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form label:last-child { grid-column: 1 / 3; }
 
 .desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form input,
 .desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-form select,
@@ -1457,6 +1491,54 @@
   font-size: 14px;
   line-height: 20px;
   resize: none;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-form input,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-form select,
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-form textarea {
+  border-color: var(--parent-line);
+  color: var(--parent-text);
+  background: var(--parent-field);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-form option {
+  color: var(--parent-text);
+  background: var(--parent-field);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-actions button {
+  border-color: var(--parent-line);
+  color: var(--parent-text);
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-actions button:first-child {
+  border-color: var(--parent-primary);
+  color: var(--parent-primary-text);
+  background: var(--parent-primary);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-actions button:nth-child(2) {
+  border-color: var(--parent-green-line);
+  color: var(--parent-green);
+  background: var(--parent-green-bg);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-summary {
+  border-color: var(--parent-line-soft);
+  color: var(--parent-secondary);
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-error {
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-enrollment-message {
+  border-color: var(--parent-green-line);
+  color: var(--parent-green);
+  background: var(--parent-green-bg);
 }
 
 .desktop-window.is-parent-consultation-window .parent-contact-step-four-layout .parent-enrollment-actions {

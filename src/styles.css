@@ -4292,6 +4292,62 @@ h3 {
   font-weight: 900;
 }
 
+.parent-enrollment-authoritative {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(118, 164, 231, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(118, 164, 231, 0.06);
+}
+
+.parent-enrollment-authoritative-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.parent-enrollment-authoritative-heading h5 {
+  margin: 0;
+  color: #edf4fc;
+  font-size: 0.82rem;
+}
+
+.parent-enrollment-authoritative-heading span {
+  border: 1px solid rgba(118, 164, 231, 0.25);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #b8d6f8;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.parent-enrollment-authoritative dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 14px;
+  margin: 0;
+}
+
+.parent-enrollment-authoritative dl > div {
+  min-width: 0;
+}
+
+.parent-enrollment-authoritative dt {
+  color: #9fb1c7;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.parent-enrollment-authoritative dd {
+  overflow-wrap: anywhere;
+  margin: 2px 0 0;
+  color: #f4f7fb;
+  font-size: 0.82rem;
+}
+
 .parent-enrollment-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
