@@ -9,7 +9,6 @@ import {
   renderScheduleModule,
   validateScheduleForm,
 } from '../src/schedule-module.js'
-import { getTeacherScheduleSessions } from '../src/teacher-module.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -18,17 +17,9 @@ const root = path.resolve(__dirname, '..')
 const scheduleSource = fs.readFileSync(path.join(root, 'src', 'schedule-module.js'), 'utf8')
 const mainSource = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8')
 
-const teacher = {
-  id: 'teacher-fixed-polish',
-  fullName: 'Teacher Fixed Polish',
-  displayName: 'Coach Polish',
-  status: 'active',
-}
-
 const student = {
   id: 'student-fixed-polish',
   fullName: 'Student Fixed Polish',
-  assignedTeacherId: teacher.id,
 }
 
 const classSession = {
@@ -62,7 +53,7 @@ const scheduleHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   weekStart,
   null,
@@ -71,7 +62,7 @@ const scheduleHtml = renderScheduleModule(
 
 assert(scheduleHtml.includes('T2 05:00-06:30'), 'Fixed slot card must show Settings class session name.')
 assert(scheduleHtml.includes('+ Thêm thông tin'), 'Empty fixed slot card must keep add-info action.')
-assert(scheduleHtml.includes('Chưa phân công'), 'Empty fixed slot card must show unassigned state.')
+assert(scheduleHtml.includes('Chưa xếp giáo viên'), 'Empty fixed slot card must show nonblocking unassigned state.')
 
 const assignFormState = {
   ...createEmptyScheduleFormState(),
@@ -101,7 +92,7 @@ const assignHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   weekStart,
   null,
@@ -113,7 +104,8 @@ assert(assignHtml.includes('schedule-form-panel'), 'Fixed slot assign must rende
 assert(assignHtml.includes('Gán thông tin ca học'), 'Fixed slot assign title should be compact.')
 assert(assignHtml.includes('schedule-fixed-slot-context'), 'Fixed slot assign must show compact slot context.')
 assert(assignHtml.includes('data-schedule-form-field="classSessionId"'), 'Fixed slot assign must keep classSessionId hidden.')
-assert(assignHtml.includes('data-schedule-form-field="teacherId"'), 'Fixed slot assign must keep teacher field.')
+assert(assignHtml.includes('Chưa xếp giáo viên'), 'Fixed slot assign must show the nullable Settings instructor state.')
+assert(!assignHtml.includes('data-schedule-form-field="teacherId"'), 'Fixed slot assign must stay decoupled from Teacher Registry.')
 assert(assignHtml.includes('data-schedule-form-field="room"'), 'Fixed slot assign must keep room field.')
 assert(assignHtml.includes('data-schedule-form-field="status"'), 'Fixed slot assign must keep status field.')
 assert(assignHtml.includes('data-schedule-form-field="note"'), 'Fixed slot assign must keep note field.')
@@ -141,17 +133,17 @@ assert.deepEqual(validateScheduleForm(assignFormState.values, [classSession]), {
 const assignment = buildScheduleSessionFromForm(
   {
     ...assignFormState.values,
-    teacherId: teacher.id,
     studentIds: [student.id],
     note: 'Operational note',
   },
   null,
-  [teacher],
+  [],
   [classSession],
 )
 
 assert.equal(assignment.classSessionId, classSession.id)
-assert.equal(assignment.teacherId, teacher.id)
+assert.equal(assignment.teacherId, '')
+assert.equal(assignment.teacherName, '')
 assert.deepEqual(assignment.studentIds, [student.id])
 assert.equal(assignment.title, '', 'Fixed slot assignment should not rename Settings class session from TKB.')
 assert.equal(assignment.groupName, '', 'Fixed slot assignment should not write custom group name from TKB.')
@@ -170,7 +162,7 @@ const assignedHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   weekStart,
   null,
@@ -178,7 +170,7 @@ const assignedHtml = renderScheduleModule(
 )
 
 assert(assignedHtml.includes('T2 05:00-06:30'), 'Assigned fixed slot must fall back to Settings class session name.')
-assert(getTeacherScheduleSessions(teacher, assignedSlots).length === 1, 'Teacher Portal must still read assigned fixed slot.')
+assert.equal(assignedSlots[0].teacherName, '', 'Unassigned slot must remain operational without a copied schedule instructor.')
 
 const clearedSlots = getVisibleScheduleSessions([], weekStart, [classSession])
 assert(clearedSlots[0].isEmptyClassSessionSlot, 'Clearing assignment must return slot to empty state.')
@@ -209,7 +201,7 @@ const oneOffHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   weekStart,
   null,

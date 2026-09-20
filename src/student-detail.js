@@ -24,14 +24,13 @@ export const emptyCareNoteDraft = {
   editingNoteId: '',
 }
 
-export function renderStudentDetail(student, teachers = [], classSessions = [], tuitionRecords = []) {
+export function renderStudentDetail(student, _teachers = [], classSessions = [], tuitionRecords = []) {
   if (!student) {
     return renderStudentNotFound()
   }
 
   const careNotes = getSortedCareNotes(student)
   const latestCareNote = careNotes[0]
-  const assignedTeacherLabel = getAssignedTeacherLabel(student, teachers)
   const classSessionLabel = getStudentClassSessionLabel(student, classSessions)
   const primaryParentPhone = student.motherPhone || student.fatherPhone || student.parentPhone
   const studentTuitionLink = buildStudentTuitionLink(student, tuitionRecords, classSessions)
@@ -72,7 +71,6 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
           <span class="student-detail-delete-slot"></span>
         </div>
         <div class="student-detail-quick-facts" aria-label="Tóm tắt học viên">
-          ${renderStudentQuickFact('GV phụ trách', assignedTeacherLabel)}
           ${renderStudentQuickFact('Ca học / Lớp', classSessionLabel)}
           ${renderStudentQuickFact(
             'Còn lại',
@@ -114,7 +112,6 @@ export function renderStudentDetail(student, teachers = [], classSessions = [], 
           ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
           ['Mốc bot', student.highestBotMilestone],
           ['Tính cách', student.personality],
-          ['GV phụ trách', assignedTeacherLabel],
           ['Ca học / Lớp', classSessionLabel],
         ])}
         ${renderOverviewTile(
@@ -397,23 +394,6 @@ function renderCareNoteHistory(student) {
   `
 }
 
-function getAssignedTeacherLabel(student, teachers = []) {
-  const assignedTeacherId = String(student?.assignedTeacherId ?? '').trim()
-
-  if (!assignedTeacherId) {
-    return 'Chưa phân công'
-  }
-
-  const teacher = teachers.find((item) => String(item?.id ?? '') === assignedTeacherId)
-
-  if (!teacher) {
-    return 'Không tìm thấy giáo viên'
-  }
-
-  const teacherName = String(teacher.displayName || teacher.fullName || 'Giáo viên').trim()
-  return `${teacherName} - ${getTeacherStatusLabel(teacher.status)}`
-}
-
 function getStudentClassSessionLabel(student, classSessions = []) {
   const classSessionIds = Array.isArray(student?.classSessionIds)
     ? Array.from(new Set(student.classSessionIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
@@ -453,16 +433,6 @@ function getStudentClassSessionLabel(student, classSessions = []) {
       return classSession.status === 'inactive' ? `${withDays} (Đã ngưng)` : withDays
     })
     .join(', ')
-}
-
-function getTeacherStatusLabel(status) {
-  const statusLabels = {
-    active: 'Đang dạy',
-    paused: 'Tạm nghỉ',
-    inactive: 'Ngừng dạy',
-  }
-
-  return statusLabels[status] ?? 'Chưa cập nhật'
 }
 
 function getSortedCareNotes(student) {

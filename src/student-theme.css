@@ -780,6 +780,16 @@
   font-weight: 500;
 }
 
+.is-student-form-window .student-form-steps button:hover,
+.is-student-form-window .student-form-steps button:focus-visible {
+  border: 0;
+  outline: 2px solid var(--student-primary);
+  outline-offset: 3px;
+  background: var(--student-surface);
+  color: var(--student-text);
+  transform: none;
+}
+
 .is-student-form-window .student-form-steps button::after {
   content: '';
   position: absolute;
@@ -791,8 +801,19 @@
 }
 
 .is-student-form-window .student-form-steps button.active {
+  background: transparent;
   color: var(--student-text);
   font-weight: 600;
+}
+
+.is-student-form-window .student-form-steps button.needs-attention {
+  border: 0;
+  background: transparent;
+  color: var(--student-paused-text);
+}
+
+.is-student-form-window .student-form-steps button.active.needs-attention {
+  color: var(--student-text);
 }
 
 .is-student-form-window .student-form-steps button.active::after {
@@ -1217,7 +1238,7 @@
 .is-student-profile-window .student-detail-quick-facts {
   display: grid;
   grid-area: facts;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   min-width: 0;
   min-height: 48px;

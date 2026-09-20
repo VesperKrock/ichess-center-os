@@ -16107,6 +16107,40 @@ h3 {
   width: 96px;
 }
 
+.settings-instructor-unassigned {
+  display: inline-flex;
+  border: 1px solid rgba(255, 178, 96, 0.36);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #ffd9ad;
+  background: rgba(168, 86, 18, 0.2);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.schedule-slot-instructor {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(111, 210, 138, 0.34);
+  border-radius: 8px;
+  background: rgba(37, 130, 69, 0.12);
+}
+
+.schedule-slot-instructor.is-unassigned {
+  border-color: rgba(255, 178, 96, 0.36);
+  background: rgba(168, 86, 18, 0.14);
+}
+
+.schedule-slot-instructor span,
+.schedule-slot-instructor small {
+  color: #b9c7d7;
+}
+
+.schedule-slot-instructor strong {
+  color: #ffffff;
+}
+
 .settings-form-grid textarea {
   min-height: 82px;
   resize: vertical;

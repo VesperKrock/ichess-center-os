@@ -180,7 +180,7 @@ export function renderScheduleModule(
   reportExtraState = null,
   isReportExtraExpanded = false,
   guestParticipantFormState = null,
-  teachers = [],
+  _teachers = [],
   students = [],
   weekStartDate = getCurrentScheduleWeekStartDate(),
   adminAttendanceState = null,
@@ -232,7 +232,7 @@ export function renderScheduleModule(
       )
     : []
   const visibleCenterCalendarItems = filterCenterCalendarItems(weekCenterCalendarItems, centerCalendarFilters)
-  const teacherLookup = createLookup(teachers)
+  const teacherLookup = new Map()
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
   const stats = getScheduleStats(visibleSessions, conflictMap)
@@ -241,7 +241,7 @@ export function renderScheduleModule(
         sessions: visibleSessions,
         attendanceRecords: deadlineOptions.attendanceRecords,
         sessionReports,
-        teachers,
+        teachers: [],
         now: deadlineOptions.now,
       })
     : []
@@ -315,7 +315,7 @@ export function renderScheduleModule(
       </div>
       ${formState ? renderScheduleForm(
         formState,
-        teachers,
+        [],
         students,
         sessions,
         normalizedWeekStart,
@@ -329,7 +329,7 @@ export function renderScheduleModule(
           ? renderScheduleReportPanel(
               reportState,
               visibleSessions,
-              teachers,
+              [],
               students,
               sessionReports,
               reportAttendanceState,
@@ -463,7 +463,7 @@ export function validateScheduleForm(values, classSessions = []) {
 export function buildScheduleSessionFromForm(
   values,
   existingSession = null,
-  teachers = [],
+  _teachers = [],
   classSessions = [],
 ) {
   const now = new Date().toISOString()
@@ -474,11 +474,10 @@ export function buildScheduleSessionFromForm(
     scheduleType === 'recurring'
       ? applyClassSessionToScheduleValues(values, selectedClassSession)
       : values
-  const teacherId = normalizeOptionalId(values.teacherId)
-  const teacher = teacherId ? teachers.find((item) => String(item.id) === teacherId) : null
-  const teacherName = teacher
-    ? getTeacherDisplayName(teacher)
-    : String(values.teacherName ?? '').trim()
+  const teacherId = scheduleType === 'oneOff'
+    ? normalizeOptionalId(existingSession?.teacherId) || ''
+    : ''
+  const teacherName = scheduleType === 'oneOff' ? String(values.teacherName ?? '').trim() : ''
   const date = scheduleType === 'oneOff' ? String(normalizedValues.date ?? '').trim() : null
   const dayOfWeek = scheduleType === 'oneOff'
     ? getDayOfWeekFromDate(date) || normalizedValues.dayOfWeek || 'monday'
@@ -874,7 +873,9 @@ export function buildTrelloReportText({
   const assistantNotes = normalizeMultilineReportText(report?.teachingAssistantNotes)
   const classSituation = normalizeMultilineReportText(report?.classSituation)
   const suggestions = normalizeMultilineReportText(report?.suggestions, false)
-  const teacherLine = teacher ? `Giáo viên: ${getTeacherDisplayName(teacher)}` : ''
+  const instructorName = String(session?.teacherName || '').trim()
+    || (teacher ? getTeacherDisplayName(teacher) : '')
+  const teacherLine = instructorName ? `Giáo viên: ${instructorName}` : ''
   const sessionTitle = getScheduleSessionTitleForDisplay(session, '')
   const sessionLine = sessionTitle ? `Buổi học: ${sessionTitle}` : ''
   const optionalHeader = [sessionLine, teacherLine].filter(Boolean).join('\n')
@@ -906,7 +907,9 @@ export function getVisibleScheduleSessions(
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const weekDateSet = new Set(weekDays.map((day) => day.date))
   const validClassSessionIds = getScheduleClassSessionIdSet(classSessions)
-  const cleanedSessions = purgeZombieLopThayThinhScheduleSessions(sessions, classSessions).scheduleSessions
+  const cleanedSessions = (Array.isArray(sessions) ? sessions : []).filter(
+    (session) => session && session.isDeleted !== true,
+  )
   const assignmentByClassSessionId = new Map(
     cleanedSessions
       .filter((session) => normalizeScheduleType(session?.scheduleType) === 'recurring')
@@ -994,44 +997,6 @@ export function isOrphanFixedScheduleRecord(session, classSessions = []) {
   }
 
   return !getScheduleClassSessionIdSet(classSessions).has(classSessionId)
-}
-
-export function purgeZombieLopThayThinhScheduleSessions(sessions = [], classSessions = []) {
-  const sourceSessions = Array.isArray(sessions) ? sessions : []
-  const scheduleSessions = sourceSessions.filter(
-    (session) => !isZombieLopThayThinhScheduleRecord(session, classSessions),
-  )
-
-  return {
-    scheduleSessions,
-    removedCount: sourceSessions.length - scheduleSessions.length,
-  }
-}
-
-export function isZombieLopThayThinhScheduleRecord(session, classSessions = []) {
-  if (!isOrphanFixedScheduleRecord(session, classSessions)) {
-    return false
-  }
-
-  const titleText = normalizeSearchText([
-    session?.title,
-    session?.groupName,
-    session?.name,
-  ].filter(Boolean).join(' '))
-  const teacherText = normalizeSearchText([
-    session?.teacherName,
-    session?.teacherDisplayName,
-    session?.teacherFallbackName,
-  ].filter(Boolean).join(' '))
-  const roomText = normalizeRoomText(session?.room)
-  const timeMatches = String(session?.startTime || '').trim() === '16:30' &&
-    String(session?.endTime || '').trim() === '18:00'
-  const titleMatches = titleText.includes('lop thay thinh') ||
-    titleText.includes('thay thinh')
-  const teacherMatches = teacherText.includes('thay thinh')
-  const roomMatches = roomText === '01' || roomText === '1'
-
-  return timeMatches && roomMatches && (titleMatches || teacherMatches)
 }
 
 export function getScheduleConflicts(visibleSessions = [], students = []) {
@@ -1836,8 +1801,7 @@ function formatCenterCalendarItemTime(item) {
 }
 
 function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
-  const teacher = session.teacherId ? teacherLookup.get(String(session.teacherId)) : null
-  const teacherLabel = getSessionTeacherLabel(session, teacher)
+  const teacherLabel = getSessionTeacherLabel(session)
   const studentSummary = getStudentSummary(session.studentIds, studentLookup)
   const conflicts = conflictMap.get(session.id)
   const isEmptySlot = Boolean(session.isEmptyClassSessionSlot)
@@ -1846,9 +1810,7 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
     ? classSessionLabel || 'Chưa gán thông tin'
     : String(session.title || session.groupName || classSessionLabel || 'Chưa gán thông tin')
   const title = repairScheduleDisplayText(rawTitle)
-  const meta = isEmptySlot
-    ? `Chưa phân công · ${session.room || 'Chưa có phòng'}`
-    : `${teacherLabel.name} · ${session.room || 'Chưa có phòng'}`
+  const meta = `${teacherLabel.name} · ${session.room || 'Chưa có phòng'}`
 
   return `
     <article
@@ -2054,7 +2016,7 @@ function renderScheduleForm(
   const deleteLabel = isFixedSlotForm
     ? 'Xóa phân công'
     : isOrphanFixedRecord
-      ? 'Xóa lịch cũ'
+      ? 'Ngưng lặp lịch cũ'
       : 'Xóa buổi học'
   const displayValues =
     scheduleType === 'recurring'
@@ -2134,15 +2096,18 @@ function renderScheduleForm(
             `
         }
         ${renderField('room', 'Phòng *', formState, 'text')}
-        ${renderTeacherSelect(formState, teachers)}
+        ${scheduleType === 'recurring'
+          ? renderSlotInstructorNotice(displayValues.teacherName)
+          : renderField('teacherName', 'Giáo viên thực tế (không bắt buộc)', formState, 'text', {
+              placeholder: 'Chưa xếp giáo viên',
+            })}
         ${isCompactFixedScheduleForm ? '' : '<h5 class="schedule-form-section-heading">Thông tin phân công</h5>'}
-        ${isCompactFixedScheduleForm ? '' : renderField('teacherName', 'Tên giáo viên fallback', formState, 'text')}
         ${isCompactFixedScheduleForm ? '' : renderField('groupName', 'Nhóm/lớp', formState, 'text')}
         ${isCompactFixedScheduleForm ? '' : renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
         ${renderSelectField('status', 'Trạng thái', formState, scheduleStatuses.map((status) => [status, getStatusLabel(status)]))}
         ${scheduleType === 'recurring' && options.recurringRosterManaged
           ? renderManagedRecurringRosterNotice(displayValues)
-          : renderStudentPicker(formState, students, teachers)}
+          : renderStudentPicker(formState, students)}
         ${renderTextareaField('note', scheduleType === 'oneOff' ? 'Ghi chú / lý do chi tiết' : 'Ghi chú', formState)}
       </div>
 
@@ -2651,16 +2616,11 @@ function renderScheduleReportPanel(
     return ''
   }
 
-  const teacherLookup = createLookup(teachers)
   const studentLookup = createLookup(students)
-  const teacher = session.teacherId ? teacherLookup.get(String(session.teacherId)) : null
-  const teacherLabel = getSessionTeacherLabel(session, teacher)
+  const teacher = null
+  const teacherLabel = getSessionTeacherLabel(session)
   const reportMode = reportState.mode || 'teacherReport'
   const existingReport = findSessionReport(sessionReports, session.id, session.occurrenceDate)
-
-  if (reportMode === 'roleGateway') {
-    return renderScheduleReportRoleGateway(session, teacherLabel, occurrenceAttendanceReady, occurrenceAttendanceStatus)
-  }
 
   if (reportMode === 'adminPlaceholder') {
     return renderScheduleAdminAttendanceForm(
@@ -2732,45 +2692,6 @@ function renderScheduleReportPanel(
         </div>
       </div>
 
-    </section>
-  `
-}
-
-function renderScheduleReportRoleGateway(
-  session,
-  teacherLabel,
-  occurrenceAttendanceReady = false,
-  occurrenceAttendanceStatus = 'unavailable',
-) {
-  const unavailableLabel = occurrenceAttendanceStatus === 'loading'
-    ? 'Đang tải điểm danh…'
-    : occurrenceAttendanceStatus === 'failed'
-      ? 'Điểm danh chưa tải được.'
-      : 'Điểm danh tại thời khóa biểu hiện chưa khả dụng.'
-  return `
-    <div class="schedule-form-backdrop" aria-hidden="true"></div>
-    <section class="schedule-report-panel schedule-role-gateway" aria-label="Chọn vai trò xử lý buổi học">
-      <div class="schedule-report-header">
-        <div class="schedule-report-compact-title">
-          <strong>Bạn là?</strong>
-          <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))}</span>
-          <span>${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
-          <span>Giáo viên: ${escapeHtml(teacherLabel.name)}</span>
-        </div>
-        <div class="schedule-report-header-actions">
-          <button type="button" data-schedule-action="close-report">Đóng</button>
-          <button type="button" data-schedule-action="close-report" aria-label="Đóng chọn vai trò">×</button>
-        </div>
-      </div>
-
-      <div class="schedule-role-gateway-body">
-        <p>Chọn chế độ xử lý cho buổi học này.</p>
-        ${occurrenceAttendanceReady ? '' : `<p class="schedule-form-warning" role="status">${escapeHtml(unavailableLabel)}</p>`}
-        <div class="schedule-role-options">
-          <button type="button" data-schedule-report-role="admin" ${occurrenceAttendanceReady ? '' : 'disabled aria-disabled="true"'}>Admin cơ sở</button>
-          <button type="button" data-schedule-report-role="teacher" ${occurrenceAttendanceReady ? '' : 'disabled aria-disabled="true"'}>Giáo viên</button>
-        </div>
-      </div>
     </section>
   `
 }
@@ -2858,7 +2779,6 @@ function renderScheduleAdminAttendanceForm(
         }
       </div>
       <footer class="schedule-admin-attendance-footer">
-        <button type="button" data-schedule-report-role="gateway">Quay lại chọn vai trò</button>
         <div class="schedule-admin-attendance-actions">
           <button type="button" class="is-danger-ghost" data-admin-attendance-action="clear">Xóa nhập liệu</button>
           <button type="button" class="is-primary" data-admin-attendance-action="save" ${occurrenceAttendanceReady ? '' : 'disabled aria-disabled="true"'}>Lưu điểm danh</button>
@@ -3514,7 +3434,7 @@ function renderOrphanFixedSlotContext(values) {
 function renderScheduleOrphanWarning() {
   return `
     <div class="schedule-orphan-warning" role="status">
-      Lịch cũ không còn trong Cài đặt cơ sở. Xóa sẽ xóa hẳn khỏi Thời khóa biểu.
+      Lịch cũ không còn trong Cài đặt cơ sở. Ngưng lặp chỉ loại bỏ các lần lặp tương lai; lịch sử điểm danh, báo cáo và dấu vết giáo viên được giữ nguyên.
     </div>
   `
 }
@@ -3523,27 +3443,22 @@ function renderHiddenScheduleField(name, value) {
   return `<input type="hidden" name="${escapeAttribute(name)}" value="${escapeAttribute(value ?? '')}" data-schedule-form-field="${escapeAttribute(name)}" />`
 }
 
-function renderTeacherSelect(formState, teachers) {
-  return renderSelectField(
-    'teacherId',
-    'Giáo viên thật',
-    formState,
-    [
-      ['', 'Chưa phân công'],
-      ...teachers.map((teacher) => [teacher.id, getTeacherOptionLabel(teacher)]),
-    ],
-  )
+function renderSlotInstructorNotice(instructorName = '') {
+  const normalizedName = String(instructorName ?? '').trim()
+  return `
+    <div class="schedule-slot-instructor ${normalizedName ? '' : 'is-unassigned'}" role="status">
+      <span>Giáo viên mặc định của ca học</span>
+      <strong>${escapeHtml(normalizedName || 'Chưa xếp giáo viên')}</strong>
+      <small>Cập nhật tại Cài đặt cơ sở → Ca học. Ca học vẫn hoạt động khi để trống.</small>
+    </div>
+  `
 }
 
-function renderStudentPicker(formState, students, teachers) {
+function renderStudentPicker(formState, students) {
   const selectedIds = new Set(normalizeIdArray(formState.values.studentIds))
-  const selectedTeacherId = normalizeOptionalId(formState.values.teacherId)
-  const sortedStudents = [...students].sort((firstStudent, secondStudent) => {
-    const firstMatch = selectedTeacherId && firstStudent.assignedTeacherId === selectedTeacherId ? 0 : 1
-    const secondMatch = selectedTeacherId && secondStudent.assignedTeacherId === selectedTeacherId ? 0 : 1
-    return firstMatch - secondMatch || compareText(firstStudent.fullName, secondStudent.fullName)
-  })
-  const teacherLookup = createLookup(teachers)
+  const sortedStudents = [...students].sort((firstStudent, secondStudent) =>
+    compareText(firstStudent.fullName, secondStudent.fullName),
+  )
 
   return `
     <details class="schedule-student-picker span-full ${formState.errors.studentIds ? 'has-error' : ''}" ${
@@ -3563,9 +3478,7 @@ function renderStudentPicker(formState, students, teachers) {
         ${
           sortedStudents.length
             ? sortedStudents
-                .map((student) =>
-                  renderStudentOption(student, selectedIds, selectedTeacherId, teacherLookup),
-                )
+                .map((student) => renderStudentOption(student, selectedIds))
                 .join('')
             : '<p>Chưa có học viên để chọn.</p>'
         }
@@ -3575,18 +3488,10 @@ function renderStudentPicker(formState, students, teachers) {
   `
 }
 
-function renderStudentOption(student, selectedIds, selectedTeacherId, teacherLookup) {
-  const assignedTeacher = student.assignedTeacherId
-    ? teacherLookup.get(String(student.assignedTeacherId))
-    : null
-  const assignedTeacherName = assignedTeacher
-    ? getTeacherDisplayName(assignedTeacher)
-    : 'Chưa phân công giáo viên'
-  const isSuggested = selectedTeacherId && student.assignedTeacherId === selectedTeacherId
-
+function renderStudentOption(student, selectedIds) {
   return `
     <label
-      class="schedule-student-option ${isSuggested ? 'is-suggested' : ''} ${selectedIds.has(String(student.id)) ? 'is-selected' : ''}"
+      class="schedule-student-option ${selectedIds.has(String(student.id)) ? 'is-selected' : ''}"
       data-schedule-student-option
     >
       <input
@@ -3598,7 +3503,7 @@ function renderStudentOption(student, selectedIds, selectedTeacherId, teacherLoo
       />
       <span>
         <strong>${escapeHtml(student.fullName || 'Học viên')}</strong>
-        <small>${escapeHtml(assignedTeacherName)}${isSuggested ? ' · Đúng GV phụ trách' : ''}</small>
+        <small>${escapeHtml(student.level || student.currentStatus || 'Học viên trong cơ sở')}</small>
       </span>
     </label>
   `
@@ -3976,32 +3881,7 @@ function getDayOfWeekFromDate(value) {
   return scheduleDays[dayIndex]?.id ?? ''
 }
 
-function getTeacherOptionLabel(teacher) {
-  const name = getTeacherDisplayName(teacher)
-  const status = getTeacherStatusLabel(teacher.status)
-
-  if (teacher.status === 'inactive') {
-    return `${name} - ${status}`
-  }
-
-  return `${name} - ${status} - ${getTeacherTypeLabel(teacher.teacherType)}`
-}
-
-function getSessionTeacherLabel(session, teacher) {
-  if (teacher) {
-    return {
-      name: getTeacherDisplayName(teacher),
-      warning: teacher.status === 'inactive' ? 'Ngừng dạy' : '',
-    }
-  }
-
-  if (session.teacherId && session.teacherName) {
-    return {
-      name: session.teacherName,
-      warning: 'Không tìm thấy GV',
-    }
-  }
-
+function getSessionTeacherLabel(session) {
   if (session.teacherName) {
     return {
       name: session.teacherName,
@@ -4010,8 +3890,8 @@ function getSessionTeacherLabel(session, teacher) {
   }
 
   return {
-    name: 'Chưa phân công',
-    warning: '',
+    name: 'Chưa xếp giáo viên',
+    warning: 'Không chặn vận hành',
   }
 }
 
@@ -4042,26 +3922,6 @@ function getStudentSummary(studentIds = [], studentLookup) {
 
 function getTeacherDisplayName(teacher) {
   return String(teacher?.displayName || teacher?.fullName || 'Giáo viên').trim()
-}
-
-function getTeacherStatusLabel(status) {
-  const labels = {
-    active: 'Đang dạy',
-    paused: 'Tạm nghỉ',
-    inactive: 'Ngừng dạy',
-  }
-
-  return labels[status] ?? 'Chưa cập nhật'
-}
-
-function getTeacherTypeLabel(teacherType) {
-  const labels = {
-    fulltime: 'Full-time',
-    parttime: 'Part-time',
-    collaborator: 'Cộng tác viên',
-  }
-
-  return labels[teacherType] ?? 'Full-time'
 }
 
 function getLevelLabel(level) {
@@ -4178,6 +4038,8 @@ function applyClassSessionToScheduleValues(values, classSession) {
     endTime: String(classSession.endTime ?? values.endTime ?? '').trim(),
     groupName: String(values.groupName ?? '').trim(),
     room: String(values.room ?? '').trim() || String(classSession.room || '').trim(),
+    teacherId: '',
+    teacherName: String(classSession.instructorName ?? '').trim(),
     level: scheduleLevels.includes(classSession.level) ? classSession.level : values.level,
   }
 }
@@ -4209,8 +4071,8 @@ function buildClassSessionScheduleSlot(classSession, assignment, dayOfWeek, occu
     startTime,
     endTime,
     room: String(classSession?.room ?? assignment?.room ?? '').trim(),
-    teacherId: assignment?.teacherId || '',
-    teacherName: assignment?.teacherName || '',
+    teacherId: '',
+    teacherName: String(classSession?.instructorName ?? '').trim(),
     studentIds: normalizeIdArray(assignment?.studentIds),
     groupName: hasAssignment ? assignmentGroupName : '',
     level: scheduleLevels.includes(assignment?.level)
@@ -4316,10 +4178,6 @@ function normalizeSearchText(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
-}
-
-function normalizeRoomText(value) {
-  return normalizeSearchText(value).replace(/^phong\s+/, '').padStart(2, '0')
 }
 
 function normalizeOccurrenceReason(value) {

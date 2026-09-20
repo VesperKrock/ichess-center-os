@@ -105,14 +105,6 @@ export function buildStudentCareWarnings(student = {}, parent = buildParentConta
     })
   }
 
-  if (!String(student?.assignedTeacherId ?? '').trim()) {
-    warnings.push({
-      key: 'missing-teacher',
-      label: 'Thiếu giáo viên phụ trách',
-      tone: 'info',
-    })
-  }
-
   if (String(student?.careNotes?.[0]?.content ?? student?.parentNotes ?? '').trim()) {
     warnings.push({
       key: 'care-note',

@@ -513,7 +513,6 @@ import {
   getVisibleScheduleSessions,
   isOrphanFixedScheduleRecord,
   isPastScheduleOccurrence,
-  purgeZombieLopThayThinhScheduleSessions,
   renderScheduleModule,
   updateSessionReportDraftAttendance,
   updateSessionReportExtraState,
@@ -989,7 +988,6 @@ const savingStaffAdministrativeGovernanceWindowIds = new Set()
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule([])
-scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'initial-load' })
 let sessionReports = getStoredSessionReports()
 let centerCalendarItems = []
 let centerCalendarTags = []
@@ -1457,7 +1455,7 @@ function createCurrentSchedulePrintSnapshot() {
     classSessions,
     centerCalendarItems,
     centerCalendarTags,
-    teachers: getCurrentTeacherReferenceProjection(),
+    teachers: [],
     activityFilters: scheduleCalendarFilters,
     createdAt: new Date().toISOString(),
   })
@@ -2182,23 +2180,6 @@ function resetTransientStateForCenterSwitch() {
   attendanceBoardNoteFormState = null
 }
 
-function purgeZombieScheduleSessions({ persist = false, reason = 'schedule-cleanup' } = {}) {
-  const purgeResult = purgeZombieLopThayThinhScheduleSessions(scheduleSessions, classSessions)
-
-  if (!purgeResult.removedCount) {
-    return scheduleSessions
-  }
-
-  scheduleSessions = purgeResult.scheduleSessions
-
-  if (persist) {
-    saveStoredSchedule(scheduleSessions)
-  }
-
-  console.info(`[TKB] Purged ${purgeResult.removedCount} zombie schedule record(s): ${reason}`)
-  return scheduleSessions
-}
-
 function reloadLocalDataForResolvedCenter() {
   ensureC5CloseoutLegacyCoreAttendancePreserved()
   cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
@@ -2220,7 +2201,6 @@ function reloadLocalDataForResolvedCenter() {
   staffAdministrativeDeletionRequests = []
   staffDepartments = []
   scheduleSessions = getStoredSchedule([])
-  scheduleSessions = purgeZombieScheduleSessions({ persist: true, reason: 'center-reload' })
   sessionReports = getStoredSessionReports([])
   centerCalendarItems = []
   centerCalendarTags = []
@@ -11011,9 +10991,7 @@ function getScheduleSettingsClassSessionLabel(classSession) {
 }
 
 function getScheduleAdminTeacherName(occurrence) {
-  const teacher = getCurrentTeacherReferenceProjection()
-    .find((item) => String(item.id || '') === String(occurrence?.teacherId || ''))
-  return teacher?.fullName || teacher?.name || teacher?.nickname || occurrence?.teacherName || null
+  return String(occurrence?.teacherName || '').trim() || null
 }
 
 function getAttendanceBaselineDraftRecords() {
@@ -12006,7 +11984,7 @@ function renderWindowBody(windowItem) {
       getStudentsWithCanonicalProjections(),
       studentFilters,
       studentFormState,
-      getCurrentTeacherReferenceProjection(),
+      [],
       classSessions,
       { enrollmentCapabilityStatus: v22StudentEnrollmentCapabilityState.status },
     )
@@ -12082,7 +12060,7 @@ function renderWindowBody(windowItem) {
       sessionReportExtraState,
       isSessionReportExtraExpanded,
       sessionReportGuestFormState,
-      getCurrentTeacherReferenceProjection(),
+      [],
       students,
       scheduleWeekStartDate,
       scheduleAdminAttendanceState,
@@ -12402,7 +12380,7 @@ function renderWindowBody(windowItem) {
 function renderStudentDetailWithDeleteAction(student, classSessions = []) {
   const detailHtml = renderStudentDetail(
     student,
-    getCurrentTeacherReferenceProjection(),
+    [],
     classSessions,
     tuitionRecords,
   )
@@ -16669,7 +16647,6 @@ function handleScheduleSessionRealtimeRecord(record) {
   }
 
   scheduleSessions = mergeResult.scheduleSessions
-  scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'schedule-realtime' })
   saveStoredSchedule(scheduleSessions)
   render()
 }
@@ -20638,7 +20615,6 @@ function applyCloudBootstrapSnapshotToLocal(snapshot) {
   classSessions = Array.isArray(snapshot.classSessions) ? snapshot.classSessions : []
   classSessionDeletePolicyOverrides = {}
   scheduleSessions = Array.isArray(snapshot.scheduleSessions) ? snapshot.scheduleSessions : []
-  scheduleSessions = purgeZombieScheduleSessions({ persist: false, reason: 'cloud-bootstrap' })
 
   saveStoredStudents(students)
   saveStoredTeachers(teachers)
@@ -29579,10 +29555,13 @@ function bindEvents() {
         scheduleReportState = {
           sessionId: session?.id || occurrence.id,
           occurrenceDate: occurrence.occurrenceDate,
-          mode: 'roleGateway',
+          mode: 'adminPlaceholder',
         }
         sessionReportAttendanceState = null
-        scheduleAdminAttendanceState = null
+        scheduleAdminAttendanceState = createScheduleAdminAttendanceState(
+          occurrence,
+          loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        )
         sessionReportLearningState = null
         sessionReportExtraState = null
         sessionReportLearningFormState = null
@@ -30117,85 +30096,6 @@ function bindEvents() {
 
       if (action === 'delete') {
         return
-      }
-    })
-  })
-
-  document.querySelectorAll('[data-schedule-report-role]').forEach((button) => {
-    button.addEventListener('click', () => {
-      if (!scheduleReportState) {
-        return
-      }
-
-      const role = button.dataset.scheduleReportRole
-
-      if (role === 'gateway') {
-        scheduleReportState = {
-          ...scheduleReportState,
-          mode: 'roleGateway',
-        }
-        sessionReportAttendanceState = null
-        scheduleAdminAttendanceState = null
-        sessionReportLearningState = null
-        sessionReportLearningFormState = null
-        sessionReportExtraState = null
-        isSessionReportExtraExpanded = false
-        sessionReportGuestFormState = null
-        render()
-        return
-      }
-
-      if (role === 'admin') {
-        const occurrence = getScheduleAdminAttendanceOccurrence()
-        scheduleReportState = {
-          ...scheduleReportState,
-          mode: 'adminPlaceholder',
-        }
-        scheduleAdminAttendanceState = occurrence
-          ? createScheduleAdminAttendanceState(occurrence, loadStoredAttendanceRecords(getCurrentResolvedCenterId()))
-          : null
-        sessionReportAttendanceState = null
-        sessionReportLearningState = null
-        sessionReportLearningFormState = null
-        sessionReportExtraState = null
-        isSessionReportExtraExpanded = false
-        sessionReportGuestFormState = null
-        render()
-        return
-      }
-
-      if (role === 'teacher') {
-        const occurrence = getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
-          (item) =>
-            item.id === scheduleReportState.sessionId &&
-            item.occurrenceDate === scheduleReportState.occurrenceDate,
-        )
-
-        if (!occurrence) {
-          return
-        }
-
-        const existingReport = findSessionReport(
-          sessionReports,
-          occurrence.id,
-          occurrence.occurrenceDate,
-        )
-        const storedAttendanceRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
-        scheduleReportState = {
-          ...scheduleReportState,
-          mode: 'teacherReport',
-        }
-        sessionReportAttendanceState = createSessionReportDraft(occurrence, existingReport, {
-          adminAttendanceRecords: getScheduleAdminAttendanceRecords(occurrence, storedAttendanceRecords),
-          teacherAttendanceRecords: getScheduleTeacherAttendanceRecords(occurrence, storedAttendanceRecords),
-        })
-        scheduleAdminAttendanceState = null
-        sessionReportLearningState = createSessionReportLearningState(occurrence, existingReport)
-        sessionReportExtraState = createSessionReportExtraState(occurrence, existingReport)
-        sessionReportLearningFormState = null
-        isSessionReportExtraExpanded = false
-        sessionReportGuestFormState = null
-        render()
       }
     })
   })
@@ -30975,15 +30875,6 @@ function bindEvents() {
         [fieldName]: control.value,
       }
 
-      if (fieldName === 'teacherId' && control.value) {
-        const selectedTeacher = getCurrentTeacherReferenceProjection()
-          .find((teacher) => teacher.id === control.value)
-
-        if (selectedTeacher) {
-          nextValues.teacherName = selectedTeacher.displayName || selectedTeacher.fullName || ''
-        }
-      }
-
       if (fieldName === 'scheduleType') {
         nextValues.allowOpenRange = ''
         if (control.value === 'oneOff' && !nextValues.occurrenceReason) {
@@ -31017,7 +30908,7 @@ function bindEvents() {
         },
       }
 
-      if (shouldRender || ['teacherId', 'scheduleType', 'classSessionId', 'date'].includes(fieldName)) {
+      if (shouldRender || ['scheduleType', 'classSessionId', 'date'].includes(fieldName)) {
         render()
       }
     }
@@ -31105,15 +30996,6 @@ function bindEvents() {
       formElement?.querySelectorAll('[data-schedule-student-field]:checked') ?? [],
     ).map((input) => input.value)
 
-    if (nextValues.teacherId) {
-      const selectedTeacher = getCurrentTeacherReferenceProjection()
-        .find((teacher) => String(teacher.id) === String(nextValues.teacherId))
-
-      if (selectedTeacher) {
-        nextValues.teacherName = selectedTeacher.displayName || selectedTeacher.fullName || ''
-      }
-    }
-
     return nextValues
   }
 
@@ -31194,7 +31076,7 @@ function bindEvents() {
       const updatedSession = buildScheduleSessionFromForm(
         formValues,
         existingSession,
-        getCurrentTeacherReferenceProjection(),
+        [],
         classSessions,
       )
       savedScheduleSession = updatedSession
@@ -31202,7 +31084,7 @@ function bindEvents() {
       const createdSession = buildScheduleSessionFromForm(
         formValues,
         null,
-        getCurrentTeacherReferenceProjection(),
+        [],
         classSessions,
       )
       savedScheduleSession = { ...createdSession, id: commandLocalId, createdAt: commandCreatedAt }
@@ -31254,7 +31136,9 @@ function bindEvents() {
     const confirmed = window.confirm(
       deletingClassSessionAssignment
         ? 'Xóa phân công của slot này? Slot vẫn còn vì được khai báo ở Cài đặt cơ sở. Muốn xóa hẳn khung giờ, hãy xóa/ngưng ca học/lớp trong Cài đặt cơ sở.'
-        : 'Xóa buổi học này khỏi lịch tuần?',
+        : isOrphanFixedSchedule
+          ? 'Ngưng lặp lịch cũ này trong tương lai? Lịch sử điểm danh, báo cáo và dấu vết giáo viên được giữ nguyên.'
+          : 'Xóa buổi học này khỏi lịch tuần?',
     )
 
     if (!confirmed) {
@@ -31268,6 +31152,12 @@ function bindEvents() {
             status: 'cancelled',
             isDeleted: true,
             deletedAt: new Date().toISOString(),
+            ...(isOrphanFixedSchedule
+              ? {
+                  futureRecurrenceRetired: true,
+                  retirementReason: 'orphaned-class-session',
+                }
+              : {}),
             updatedAt: new Date().toISOString(),
           }
         : null,

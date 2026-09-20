@@ -227,8 +227,6 @@ const VALID_INVENTORY_REQUEST_USAGE_MODES = [
   'clubPartner',
   'other',
 ]
-const LEGACY_SAMPLE_TEACHER_NAMES = ['Tháº§y Tháº¯ng', 'CĂ´ VĂ¢n', 'Tháº§y Háº£i']
-const UNASSIGNED_TEACHER_NAME = 'ChÆ°a phĂ¢n cĂ´ng'
 const STUDENT_LEVELS = [
   'Dolphin 1',
   'Dolphin 2',
@@ -1358,8 +1356,9 @@ export function saveStoredInventoryRequests(requests) {
 
 function normalizeStudents(students) {
   return students.map((student, index) => {
-    const mainTeacherName = normalizeStudentTeacherName(student.mainTeacherName)
-    const assignedTeacherId = normalizeStudentAssignedTeacherId(student.assignedTeacherId)
+    const studentWithoutInstructor = { ...student }
+    delete studentWithoutInstructor.mainTeacherName
+    delete studentWithoutInstructor.assignedTeacherId
     const deletionState = normalizeStudentDeletionState(student)
     const level = normalizeStudentLevel(student.level)
     const fatherPhone = String(student.fatherPhone ?? '')
@@ -1372,10 +1371,8 @@ function normalizeStudents(students) {
 
     if (Array.isArray(student.careNotes)) {
       return {
-        ...student,
+        ...studentWithoutInstructor,
         studentCode,
-        mainTeacherName,
-        assignedTeacherId,
         level,
         fatherPhone,
         motherPhone,
@@ -1392,10 +1389,8 @@ function normalizeStudents(students) {
       !legacyNote.toLowerCase().includes('chÆ°a cĂ³ ghi chĂº')
 
     return {
-      ...student,
+      ...studentWithoutInstructor,
       studentCode,
-      mainTeacherName,
-      assignedTeacherId,
       level,
       fatherPhone,
       motherPhone,
@@ -1445,6 +1440,7 @@ export function normalizeClassSession(classSession, index = 0) {
     dayLabel: daysLabel,
     startTime,
     endTime,
+    instructorName: String(classSession.instructorName || '').trim(),
     displayLabel: String(classSession.displayLabel || generatedLabel || name || `Ca học ${index + 1}`).trim(),
     status: classSession.status === 'inactive' ? 'inactive' : 'active',
     note: String(classSession.note || ''),
@@ -1557,17 +1553,6 @@ function normalizeStudentDeletionState(student) {
     isDeleted: Boolean(student.isDeleted),
     deletedAt: student.isDeleted ? student.deletedAt || '' : '',
   }
-}
-
-function normalizeStudentTeacherName(mainTeacherName) {
-  return LEGACY_SAMPLE_TEACHER_NAMES.includes(mainTeacherName)
-    ? UNASSIGNED_TEACHER_NAME
-    : mainTeacherName
-}
-
-function normalizeStudentAssignedTeacherId(value) {
-  const teacherId = String(value ?? '').trim()
-  return teacherId || null
 }
 
 export function normalizeStudentLevel(value) {

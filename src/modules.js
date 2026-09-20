@@ -90,7 +90,7 @@ export const modules = [
     plannedData: [
       'Lịch theo ngày',
       'Lịch theo tuần',
-      'Giáo viên phụ trách',
+      'Giáo viên theo ca học',
       'Nhân viên trực',
     ],
   },

@@ -110,6 +110,7 @@ export function createEmptySettingsClassSessionFormState() {
       daysOfWeek: [],
       startTime: '',
       endTime: '',
+      instructorName: '',
       note: '',
       status: 'active',
     },
@@ -127,6 +128,7 @@ export function createEditSettingsClassSessionFormState(classSession) {
       daysOfWeek: normalizeClassSessionDaysOfWeek(classSession.daysOfWeek, classSession.daysLabel || classSession.dayLabel),
       startTime: classSession.startTime || '',
       endTime: classSession.endTime || '',
+      instructorName: classSession.instructorName || '',
       note: classSession.note || '',
       status: classSession.status === 'inactive' ? 'inactive' : 'active',
     },
@@ -158,6 +160,10 @@ export function validateSettingsClassSessionForm(values) {
     errors.endTime = 'Giờ kết thúc cần đúng dạng HH:mm.'
   }
 
+  if (String(values.instructorName ?? '').trim().length > 160) {
+    errors.instructorName = 'Tên giáo viên tối đa 160 ký tự.'
+  }
+
   return errors
 }
 
@@ -183,6 +189,7 @@ export function buildSettingsClassSessionFromForm(
     dayLabel: daysLabel,
     startTime,
     endTime,
+    instructorName: String(values.instructorName ?? '').trim(),
     displayLabel,
     status: values.status === 'inactive' ? 'inactive' : 'active',
     note: String(values.note ?? '').trim(),
@@ -261,7 +268,7 @@ export function renderSettingsModule(
         <div class="settings-panel-header">
           <div>
             <h4>Ca học / Lớp</h4>
-            <p>Danh mục ca học dùng khi phân lớp học viên và lập thời khóa biểu.</p>
+            <p>Danh mục ca học dùng khi phân lớp học viên và lập thời khóa biểu. Giáo viên có thể để trống.</p>
           </div>
           <button type="button" data-settings-class-session-action="open-create">
             + Thêm ca học
@@ -296,6 +303,7 @@ export function renderSettingsModule(
                 <th>Ca học / Lớp</th>
                 <th>Ngày học</th>
                 <th>Giờ học</th>
+                <th>Giáo viên mặc định</th>
                 <th>Số học viên</th>
                 <th>Trạng thái</th>
                 <th>Ghi chú</th>
@@ -589,6 +597,7 @@ export function getFilteredSettingsClassSessions(
           classSession.daysLabel,
           classSession.startTime,
           classSession.endTime,
+          classSession.instructorName,
           classSession.note,
         ].some((value) => normalizeSearchText(value).includes(query))
 
@@ -642,6 +651,9 @@ function renderClassSessionRow(classSession, students = [], deletePolicy = null)
       </td>
       <td>${escapeHtml(classSession.daysLabel || '—')}</td>
       <td>${escapeHtml(formatClassSessionTimeRange(classSession))}</td>
+      <td>${classSession.instructorName
+        ? escapeHtml(classSession.instructorName)
+        : '<span class="settings-instructor-unassigned">Chưa xếp giáo viên</span>'}</td>
       <td>${studentCount} học viên</td>
       <td>
         <span class="settings-status-badge ${classSession.status === 'inactive' ? 'inactive' : ''}">
@@ -680,7 +692,7 @@ function renderEmptyClassSessionRow(totalClassSessions = 0) {
 
   return `
     <tr>
-      <td class="settings-empty" colspan="7">${message}</td>
+      <td class="settings-empty" colspan="8">${message}</td>
     </tr>
   `
 }
@@ -851,6 +863,9 @@ function renderSettingsClassSessionForm(formState) {
           ${renderClassSessionAutoNamePreview(autoName)}
           ${renderDaysOfWeekField(values.daysOfWeek, errors.daysOfWeek)}
           ${renderClassSessionTimeFields(values, errors)}
+          ${renderField('instructorName', 'Giáo viên mặc định (không bắt buộc)', values.instructorName, errors.instructorName, {
+            placeholder: 'Chưa xếp giáo viên',
+          })}
           ${renderStatusField(values.status)}
           ${renderField('note', 'Ghi chú', values.note, errors.note)}
         </div>

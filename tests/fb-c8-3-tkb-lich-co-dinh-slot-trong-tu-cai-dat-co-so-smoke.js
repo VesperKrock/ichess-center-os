@@ -6,29 +6,21 @@ import {
   getVisibleScheduleSessions,
   renderScheduleModule,
 } from '../src/schedule-module.js'
-import { getTeacherScheduleSessions } from '../src/teacher-module.js'
 
-const teacher = {
-  id: 'teacher-thinh',
-  fullName: 'Nguyen Truong Thinh',
-  displayName: 'Thay Thinh',
-  status: 'active',
-  teacherType: 'fulltime',
-}
 const student = {
   id: 'student-slot',
   fullName: 'Hoc vien slot',
-  assignedTeacherId: teacher.id,
 }
 const classSession = {
-  id: 'class-session-t3-1630',
-  name: 'T3 16:30-18:00',
-  displayLabel: 'T3 16:30-18:00',
+  id: 'class-session-synthetic',
+  name: 'Synthetic recurring slot',
+  displayLabel: 'Synthetic recurring slot',
   daysOfWeek: ['tue'],
   daysLabel: 'T3',
-  startTime: '16:30',
-  endTime: '18:00',
-  room: 'Phong 01',
+  startTime: '13:15',
+  endTime: '14:45',
+  room: 'QA',
+  instructorName: '',
   level: 'beginner',
   status: 'active',
 }
@@ -55,26 +47,26 @@ const emptyHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   '2026-07-06',
   null,
   { classSessions: [classSession] },
 )
 assert(emptyHtml.includes('is-empty-slot'), 'Empty fixed slot needs distinct visual state.')
-assert(emptyHtml.includes('T3 16:30-18:00'), 'Empty slot should show the Settings class session name.')
-assert(emptyHtml.includes('Chưa phân công'), 'Empty slot should be clearly unassigned.')
+assert(emptyHtml.includes('Synthetic recurring slot'), 'Empty slot should show the Settings class session name.')
+assert(emptyHtml.includes('Chưa xếp giáo viên'), 'Empty slot should show the nonblocking unassigned instructor state.')
 assert(emptyHtml.includes('+ Thêm thông tin'), 'Empty slot should invite assignment.')
-assert(!emptyHtml.includes('Lớp thầy Thịnh'), 'Empty slot must not resurrect deleted assignment title.')
+assert(!emptyHtml.includes('Synthetic legacy assignment'), 'Empty slot must not resurrect deleted assignment title.')
 
 const assignmentValues = {
   scheduleType: 'recurring',
   classSessionId: classSession.id,
-  title: 'Lớp thầy Thịnh',
+  title: 'Synthetic legacy assignment',
   startDate: '',
   endDate: '',
   room: '',
-  teacherId: teacher.id,
+  teacherId: 'obsolete-registry-id',
   teacherName: '',
   studentIds: [student.id],
   groupName: 'Nhóm T3',
@@ -82,9 +74,10 @@ const assignmentValues = {
   status: 'scheduled',
   note: 'Assignment only',
 }
-const assignment = buildScheduleSessionFromForm(assignmentValues, null, [teacher], [classSession])
+const assignment = buildScheduleSessionFromForm(assignmentValues, null, [], [classSession])
 assert.equal(assignment.classSessionId, classSession.id)
-assert.equal(assignment.teacherId, teacher.id)
+assert.equal(assignment.teacherId, '')
+assert.equal(assignment.teacherName, '')
 assert.deepEqual(assignment.studentIds, [student.id])
 assert.equal(assignment.startTime, classSession.startTime)
 assert.equal(assignment.endTime, classSession.endTime)
@@ -92,12 +85,9 @@ assert.equal(assignment.endTime, classSession.endTime)
 const assignedSlots = getVisibleScheduleSessions([assignment], '2026-07-06', [classSession])
 assert.equal(assignedSlots.length, 1)
 assert.equal(assignedSlots[0].isEmptyClassSessionSlot, false)
-assert.equal(assignedSlots[0].title, 'Lớp thầy Thịnh')
-assert.equal(assignedSlots[0].teacherId, teacher.id)
-
-const teacherSessions = getTeacherScheduleSessions(teacher, [assignment])
-assert.equal(teacherSessions.length, 1, 'Teacher Portal must see assigned fixed slot by teacherId.')
-assert.equal(getTeacherScheduleSessions(teacher, []).length, 0, 'Teacher Portal must not see empty fixed slots.')
+assert.equal(assignedSlots[0].title, 'Synthetic legacy assignment')
+assert.equal(assignedSlots[0].teacherId, '')
+assert.equal(assignedSlots[0].teacherName, '')
 
 const clearedSlots = getVisibleScheduleSessions([], '2026-07-06', [classSession])
 assert.equal(clearedSlots.length, 1, 'Clear assignment must leave the Settings slot visible.')
@@ -146,7 +136,7 @@ const oneOffHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   '2026-07-06',
   null,

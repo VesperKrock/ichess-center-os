@@ -14,7 +14,6 @@ import {
   renderSettingsModule,
   validateSettingsClassSessionForm,
 } from '../src/settings-module.js'
-import { getTeacherScheduleSessions } from '../src/teacher-module.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -24,14 +23,14 @@ const mainSource = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8')
 const settingsSource = fs.readFileSync(path.join(root, 'src', 'settings-module.js'), 'utf8')
 const stylesSource = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8')
 
-const teacher = { id: 'teacher-ui-overlay', fullName: 'Teacher UI Overlay', displayName: 'Coach UI' }
-const student = { id: 'student-ui-overlay', fullName: 'Student UI Overlay', assignedTeacherId: teacher.id }
+const student = { id: 'student-ui-overlay', fullName: 'Student UI Overlay' }
 
 const classSession = buildSettingsClassSessionFromForm(
   {
     daysOfWeek: ['mon', 'tue'],
     startTime: '17:00',
     endTime: '18:30',
+    instructorName: 'Coach UI',
     status: 'active',
     note: '',
   },
@@ -93,8 +92,6 @@ const assignState = {
     startTime: classSession.startTime,
     endTime: classSession.endTime,
     groupName: classSession.displayLabel,
-    teacherId: teacher.id,
-    teacherName: teacher.displayName,
     studentIds: [student.id],
     status: 'scheduled',
   },
@@ -111,7 +108,7 @@ const assignHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   '2026-07-06',
   null,
@@ -121,7 +118,8 @@ const assignHtml = renderScheduleModule(
 assert(assignHtml.includes('schedule-form-backdrop'), 'Clicking an empty fixed slot must render backdrop.')
 assert(assignHtml.includes('schedule-form-panel'), 'Clicking an empty fixed slot must render dialog content, not only backdrop.')
 assert(assignHtml.includes('data-schedule-form-field="classSessionId"'), 'Assignment form must keep classSessionId context.')
-assert(assignHtml.includes('data-schedule-form-field="teacherId"'), 'Assignment form must allow teacher assignment.')
+assert(assignHtml.includes('Giáo viên mặc định của ca học'), 'Assignment form must show the Settings slot instructor.')
+assert(!assignHtml.includes('data-schedule-form-field="teacherId"'), 'Assignment form must stay decoupled from Teacher Registry.')
 assert(assignHtml.includes('data-schedule-student-field'), 'Assignment form must allow student assignment.')
 
 const backdropZ = Number(stylesSource.match(/\.schedule-form-backdrop\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1])
@@ -131,11 +129,12 @@ assert(panelZ > backdropZ, 'Schedule dialog must be above backdrop.')
 assert(panelZ >= 181, 'Schedule dialog z-index must be above app windows/system overlays audited for this flow.')
 assert(stylesSource.includes('max-height: min(680px, calc(100vh - 28px))'), 'Schedule dialog height must be viewport-based, not clipped by module container.')
 
-const assignment = buildScheduleSessionFromForm(assignState.values, null, [teacher], [classSession])
+const assignment = buildScheduleSessionFromForm(assignState.values, null, [], [classSession])
 assert.equal(assignment.classSessionId, classSession.id)
-assert.equal(assignment.teacherId, teacher.id)
+assert.equal(assignment.teacherId, '')
+assert.equal(assignment.teacherName, '')
 assert.deepEqual(assignment.studentIds, [student.id])
-assert.equal(getTeacherScheduleSessions(teacher, [assignment]).length, 1, 'C8.4 Teacher Portal must still read assigned fixed slot.')
+assert.equal(getVisibleScheduleSessions([assignment], '2026-07-06', [classSession])[0].teacherName, 'Coach UI')
 assert.equal(getVisibleScheduleSessions([], '2026-07-06', [classSession])[0].isEmptyClassSessionSlot, true)
 
 const oneOffHtml = renderScheduleModule(
@@ -158,7 +157,7 @@ const oneOffHtml = renderScheduleModule(
   null,
   false,
   null,
-  [teacher],
+  [],
   [student],
   '2026-07-06',
   null,
