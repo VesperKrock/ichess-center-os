@@ -1286,6 +1286,115 @@
 .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid textarea { height: 72px; min-height: 72px; }
 .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-contact-form-grid small { height: 16px; color: var(--parent-secondary); font-size: 12px; line-height: 16px; }
 
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-child-consultation-layout {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: auto;
+  align-items: start;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-child-new-card {
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid > label:nth-child(n) {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-crm-program-field,
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-crm-guided-field {
+  grid-column: 1 / -1;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-student-picker-guidance {
+  grid-column: 2;
+  grid-row: 1;
+  height: auto;
+  margin-top: 0;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-guided-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-guided-field > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-quick-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-quick-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-quick-group > strong {
+  color: var(--parent-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-quick-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-quick-choice {
+  min-height: 30px;
+  border: 1px solid var(--parent-line);
+  border-radius: 999px;
+  padding: 5px 11px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-quick-choice:hover,
+.desktop-window.is-parent-consultation-window .parent-crm-quick-choice:focus-visible {
+  border-color: var(--parent-primary);
+  outline: 2px solid color-mix(in srgb, var(--parent-primary) 32%, transparent);
+  outline-offset: 1px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-crm-quick-choice.is-selected {
+  border-color: var(--parent-primary);
+  color: var(--parent-primary-text);
+  background: var(--parent-primary);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-crm-next-action-field {
+  grid-column: 1 / -1;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='3'] .parent-crm-next-action-field textarea {
+  height: 56px;
+  min-height: 56px;
+}
+
 .desktop-window.is-parent-consultation-window .parent-contact-step-four > h3 {
   height: 28px;
   margin: 0;
@@ -1439,4 +1548,12 @@
   .desktop-window.is-parent-consultation-window .parent-consultation-toolbar label:nth-of-type(4),
   .desktop-window.is-parent-consultation-window .parent-consultation-toolbar label:nth-of-type(5),
   .desktop-window.is-parent-consultation-window .parent-consultation-filter-count { display: none; }
+  .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-child-consultation-layout,
+  .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-contact-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .desktop-window.is-parent-consultation-window .parent-contact-form-scroll[data-parent-contact-step='2'] .parent-student-picker-guidance {
+    grid-column: 1;
+    grid-row: 2;
+  }
 }

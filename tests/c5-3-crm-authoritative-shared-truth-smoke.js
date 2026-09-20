@@ -217,7 +217,7 @@ includesAll(content.storage, [
 assert(writeSlice.lastIndexOf('c53CrmRetryCommands.delete(retryScope)')
   > writeSlice.indexOf('if (!projection.ok)'), 'Retry key must survive committed projection-refresh failure')
 includesAll(content.module, [
-  'data-parent-crm-action="refresh"',
+  'data-parent-contact-action="open-create"',
   'Dữ liệu dùng chung',
   'identityReadOnly',
   'Tư vấn phụ trách',

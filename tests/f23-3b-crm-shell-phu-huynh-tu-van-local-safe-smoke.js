@@ -82,17 +82,17 @@ const html = renderParentConsultationModule(
   { status: 'ready', moduleRefreshStatus: 'fresh', links: [] },
 )
 
-assert(html.includes('Phụ huynh / Tư vấn'))
+assert(html.includes('Khách hàng'))
 assert(!html.includes('CRM khách hàng gia đình'), 'Redundant CRM subtitle should not take dashboard space.')
 assert(!html.includes('parent-consultation-title'), 'Redundant inner title block should be removed.')
-assert(html.includes('Khách mới'))
+assert(html.includes('Khách hàng mới'))
 assert(html.includes('Đang tư vấn'))
 assert(html.includes('Đã chuyển đổi'))
 assert(html.includes('data-parent-consultation-filter="customerStage"'), 'Stage filter is present.')
 assert(html.includes('+ Thêm khách mới'), 'Create lead CTA is present.')
 assert(html.includes('Tư vấn / Nguồn'), 'CRM list shows consultant/source column.')
 assert(html.includes('Nhu cầu / Bé'), 'CRM list shows need/student column.')
-assert(html.includes('Next action'), 'CRM list shows next action column.')
+assert(html.includes('Các công việc tiếp theo'), 'CRM list shows the customer-facing next-action label.')
 assert(html.includes('student-existing-1') || html.includes('1 học viên liên kết'))
 assert(html.includes('Ghi chú chăm sóc'), 'Detail shows CRM care notes.')
 assert(html.includes('data-parent-quick-note-contact-id="old-consulting"'), 'Detail can add a CRM care note.')
@@ -155,7 +155,7 @@ const createHtml = renderParentConsultationModule(
 
 assert(createHtml.includes('parent-child-consultation-layout'), 'Step 2 uses polished child consultation layout.')
 assert(createHtml.includes('Họ và tên bé tư vấn'), 'Step 2 keeps the child name input.')
-assert(createHtml.includes('Nhu cầu học / ghi chú ban đầu'), 'Step 2 has a clearer need/initial note label.')
+assert(createHtml.includes('Nhu cầu học / Mong muốn từ phụ huynh ban đầu'), 'Step 2 uses the approved parent-needs wording.')
 
 const filteredLead = getFilteredParentConsultations([oldLead, oldConsulting, converted], {
   ...initialParentConsultationFilters,

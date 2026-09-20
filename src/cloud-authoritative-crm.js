@@ -73,13 +73,21 @@ export async function pullC53CrmSharedTruth({ supabase, centerId } = {}) {
     ))) {
       return failure('INVALID_SERVER_RESULT', getC53CrmOutcomeMessage('INVALID_SERVER_RESULT'), data)
     }
+    const consultantLabels = new Map(
+      eligibleConsultants.map((consultant) => [cleanText(consultant.userId), cleanText(consultant.label)]),
+    )
+    const projectedRecords = records.map((record) => {
+      const consultantId = cleanText(record.consultantId)
+      const authoritativeLabel = consultantLabels.get(consultantId)
+      return authoritativeLabel ? { ...record, consultantName: authoritativeLabel } : record
+    })
     return {
       ok: true,
       outcome_code: data.outcome_code,
       centerId: normalizedCenterId,
       cachePolicy: data.projection_cache_policy || C53_CRM_MASKED_CACHE_POLICY,
       eligibleConsultants,
-      records,
+      records: projectedRecords,
     }
   } catch (error) {
     return failure('CRM_SHARED_TRUTH_READ_FAILED', String(error?.message || error), error)
@@ -244,6 +252,7 @@ export function buildC53SafeCaseState(contact = {}) {
     customerStage: cleanText(contact.customerStage) || 'lead',
     consultationStatus: cleanText(contact.consultationStatus) || 'newLead',
     source: cleanText(contact.source) || 'unknown',
+    studentBirthYear: cleanText(contact.studentBirthYear),
     interestedProgram: cleanText(contact.interestedProgram),
     preferredSchedule: cleanText(contact.preferredSchedule),
     locationArea: cleanText(contact.locationArea),

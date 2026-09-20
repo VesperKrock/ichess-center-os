@@ -449,16 +449,20 @@ import {
   addQuickNoteToParentContact,
   buildEnrollmentSummary,
   buildParentContactFromForm,
+  applyAuthoritativeConsultantDefault,
   createEditParentContactFormState,
   createEmptyParentAppointmentDraft,
   createEmptyParentCareLogDraft,
   createEmptyParentContactFormState,
   createEnrollmentDraftFromContact,
+  getParentCrmQuickChoices,
   initialParentConsultationFilters,
   markEnrollmentReadyForParentContact,
   mergeParentContactsWithStudents,
+  parentInterestedProgramChoices,
   renderParentConsultationModule,
   saveEnrollmentDraftToParentContact,
+  toggleParentCrmQuickChoice,
   updateParentAppointmentStatus,
   validateEnrollmentReadyDraft,
   validateParentAppointmentDraft,
@@ -27972,6 +27976,11 @@ function bindEvents() {
       const calculatedLeadStudentAge = fieldName === 'studentBirthYear'
         ? calculateParentContactAgeFromBirthYear(fieldValue)
         : ''
+      const selectedConsultant = fieldName === 'consultantId'
+        ? c53CrmSharedTruthState.eligibleConsultants.find(
+            (consultant) => String(consultant?.userId || '') === fieldValue,
+          )
+        : null
 
       parentConsultationFormState = {
         ...parentConsultationFormState,
@@ -27980,6 +27989,9 @@ function bindEvents() {
           [fieldName]: fieldValue,
           ...(fieldName === 'studentBirthYear'
             ? { leadStudentAge: calculatedLeadStudentAge }
+            : {}),
+          ...(fieldName === 'consultantId'
+            ? { consultantName: String(selectedConsultant?.label || '') }
             : {}),
         },
         errors: {
@@ -27998,6 +28010,68 @@ function bindEvents() {
         if (ageControl) {
           ageControl.value = calculatedLeadStudentAge
         }
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-parent-crm-choice-field]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!parentConsultationFormState) return
+
+      const fieldName = String(button.dataset.parentCrmChoiceField || '')
+      const choice = String(button.dataset.parentCrmChoiceValue || '')
+      const mode = String(button.dataset.parentCrmChoiceMode || '')
+      const group = String(button.dataset.parentCrmChoiceGroup || '')
+      const currentValue = String(parentConsultationFormState.values?.[fieldName] || '')
+      const standardPrograms = parentInterestedProgramChoices.filter((program) => program !== 'Khác')
+      let fieldValue = currentValue
+
+      if (mode === 'toggle') {
+        fieldValue = toggleParentCrmQuickChoice(currentValue, group, choice)
+      } else if (mode === 'fill') {
+        fieldValue = currentValue.trim() === choice ? '' : choice
+      } else if (mode === 'program') {
+        if (choice === 'Khác') {
+          fieldValue = standardPrograms.includes(currentValue.trim())
+            ? 'Khác'
+            : currentValue.trim() === 'Khác'
+              ? ''
+              : currentValue
+        } else {
+          fieldValue = currentValue.trim() === choice ? '' : choice
+        }
+      }
+
+      parentConsultationFormState = {
+        ...parentConsultationFormState,
+        values: {
+          ...parentConsultationFormState.values,
+          [fieldName]: fieldValue,
+        },
+        errors: {
+          ...parentConsultationFormState.errors,
+          [fieldName]: '',
+        },
+      }
+
+      const fieldControl = document.querySelector(`[data-parent-contact-field="${fieldName}"]`)
+      if (fieldControl && 'value' in fieldControl) fieldControl.value = fieldValue
+
+      document.querySelectorAll(`[data-parent-crm-choice-field="${fieldName}"]`).forEach((choiceButton) => {
+        const buttonMode = String(choiceButton.dataset.parentCrmChoiceMode || '')
+        const buttonValue = String(choiceButton.dataset.parentCrmChoiceValue || '')
+        const buttonGroup = String(choiceButton.dataset.parentCrmChoiceGroup || '')
+        const isSelected = buttonMode === 'toggle'
+          ? getParentCrmQuickChoices(fieldValue, buttonGroup).includes(buttonValue)
+          : buttonMode === 'program' && buttonValue === 'Khác'
+            ? Boolean(fieldValue.trim() && !standardPrograms.includes(fieldValue.trim()))
+            : fieldValue.trim() === buttonValue
+        choiceButton.classList.toggle('is-selected', isSelected)
+        choiceButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false')
+      })
+
+      if (mode === 'program' && choice === 'Khác') {
+        fieldControl?.focus()
       }
     })
   })
@@ -28255,7 +28329,10 @@ function bindEvents() {
   })
 
   document.querySelector('[data-parent-contact-action="open-create"]')?.addEventListener('click', () => {
-    parentConsultationFormState = createEmptyParentContactFormState()
+    parentConsultationFormState = applyAuthoritativeConsultantDefault(
+      createEmptyParentContactFormState(),
+      c53CrmSharedTruthState.eligibleConsultants,
+    )
     render()
   })
 
@@ -28351,6 +28428,10 @@ function bindEvents() {
         baseContact,
         parentConsultationFormState.enrollmentDraft,
       )
+      const nextActionChanged = Boolean(
+        existingContact
+        && String(nextContact.nextAction || '').trim() !== String(existingContact.nextAction || '').trim(),
+      )
       let command
       try {
         command = existingContact
@@ -28410,6 +28491,38 @@ function bindEvents() {
             errors: {
               ...parentConsultationFormState.errors,
               summary: getParentFriendlyCrmOutcomeMessage(assignmentResult),
+            },
+          }
+          render()
+          return
+        }
+      }
+      if (nextActionChanged) {
+        const refreshedContact = parentConsultations.find((contact) => contact.id === nextContact.id)
+        if (!refreshedContact) {
+          parentConsultationFormState = {
+            ...parentConsultationFormState,
+            errors: { ...parentConsultationFormState.errors, summary: 'Hồ sơ đã được lưu nhưng chưa tải lại được công việc tiếp theo. Hãy làm mới trước khi tiếp tục.' },
+          }
+          render()
+          return
+        }
+        const nextActionResult = await writeC53CrmCommand(
+          buildC53AppendCareLogCommand(refreshedContact, {
+            contactedAt: new Date().toISOString(),
+            channel: 'note',
+            content: 'Cập nhật các công việc tiếp theo trong hồ sơ khách hàng.',
+            result: '',
+            nextAction: String(nextContact.nextAction || '').trim(),
+          }),
+          { reason: 'update-next-action' },
+        )
+        if (!nextActionResult.ok) {
+          parentConsultationFormState = {
+            ...parentConsultationFormState,
+            errors: {
+              ...parentConsultationFormState.errors,
+              summary: getParentFriendlyCrmOutcomeMessage(nextActionResult),
             },
           }
           render()

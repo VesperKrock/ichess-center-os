@@ -263,12 +263,12 @@ const crmRefreshFailedHtml = renderParentConsultationModule(
 assert.match(crmRefreshFailedHtml, /Hồ sơ đã được lưu nhưng chưa tải lại/)
 assert.doesNotMatch(crmRefreshFailedHtml, /Đã tải liên kết/)
 
-// The V2 launcher keeps Parent capability-driven while reducing the product surface to ten tiles.
+// The launcher keeps Parent capability-driven while Teacher stays hidden after F1.5.
 const visibleModules = getProductionLauncherModules()
-assert.equal(visibleModules.length, 10)
-assert.equal(visibleModules.filter((item) => isProductionModuleAvailable(item.id)).length, 8)
+assert.equal(visibleModules.length, 9)
+assert.equal(visibleModules.filter((item) => isProductionModuleAvailable(item.id)).length, 7)
 assert.equal(isProductionModuleAvailable('khach-hang-tu-van'), false)
-assert.equal(8 + Number(isParentFirstCapabilityReady(ready, centerId)), 9)
+assert.equal(7 + Number(isParentFirstCapabilityReady(ready, centerId)), 8)
 
 // Runtime activation is capability-driven; switch boundaries clear old links before I/O.
 for (const token of [

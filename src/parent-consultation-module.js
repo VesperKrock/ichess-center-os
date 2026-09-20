@@ -15,7 +15,7 @@ export const initialParentConsultationFilters = {
 export const parentCustomerStages = ['lead', 'consulting', 'converted']
 
 export const parentCustomerStageLabels = {
-  lead: 'Khách mới',
+  lead: 'Khách hàng mới',
   consulting: 'Đang tư vấn',
   converted: 'Đã chuyển đổi',
 }
@@ -39,6 +39,65 @@ const activeCareStatuses = new Set([
   'trialScheduled',
 ])
 
+export const parentInterestedProgramChoices = [
+  'Chương trình cờ vua mầm non',
+  'Chương trình cờ vua giáo dục',
+  'Chương trình cờ vua thể thao',
+  'Chương trình đào tạo 1-1 (tại nhà/trực tuyến)',
+  'Khác',
+]
+
+export const parentEvaluationQuickChoiceGroups = [
+  {
+    label: 'Tính cách & Hành vi',
+    choices: [
+      'Chăm chú / Tập trung tốt',
+      'Nhanh chán / Dễ phân tâm',
+      'Tự tin / Năng động',
+      'Ít nói / Ngại giao tiếp',
+      'Cẩn thận / Điềm đạm',
+      'Nóng vội / Hấp tấp',
+      'Thích thể hiện / Có tính cạnh tranh cao',
+      'Nhạy cảm / Dễ nản khi thua',
+    ],
+  },
+  {
+    label: 'Tiếp thu & Kỹ năng tư duy',
+    choices: [
+      'Tiếp thu nhanh / Nhanh nhạy',
+      'Cần hướng dẫn kỹ / Tiếp thu chậm',
+      'Nhớ tốt mặt cờ & luật',
+      'Tư duy hình ảnh tốt',
+      'Thích đặt câu hỏi / Tò mò',
+    ],
+  },
+  {
+    label: 'Kinh nghiệm cờ vua của bé',
+    choices: [
+      'Hoàn toàn mới (chưa biết đi quân)',
+      'Đã biết đi quân cơ bản',
+      'Thường chơi ở nhà với bố mẹ',
+      'Đã từng học qua trung tâm khác',
+    ],
+  },
+]
+
+export const parentGoalQuickChoices = [
+  'Rèn tính kiên nhẫn & tập trung',
+  'Giảm thời gian xem điện thoại/iPad',
+  'Học để giải trí / Xả stress',
+  'Định hướng thi đấu / Chuyên sâu',
+  'Rèn tư duy logic & tính toán',
+  'Muốn con dạn dĩ hơn',
+]
+
+export const parentNextActionQuickChoices = [
+  'Cần gọi tư vấn',
+  'Hẹn lịch test',
+  'Hẹn phản hồi',
+  'Hẹn học thử',
+]
+
 const parentCareSuggestionChips = [
   'Cần gọi lại',
   'Đã tư vấn học thử',
@@ -59,7 +118,7 @@ export const parentContactWizardSteps = [
 ]
 
 export const parentContactTypeLabels = {
-  currentParent: 'Phụ huynh hiện tại',
+  currentParent: 'Phụ huynh',
   consultingLead: 'Khách tư vấn mới',
   reservedParent: 'Phụ huynh bảo lưu',
   stoppedParent: 'Phụ huynh đã ngưng',
@@ -67,13 +126,13 @@ export const parentContactTypeLabels = {
 
 export const parentConsultationStatusLabels = {
   activeCare: 'Đang chăm sóc',
-  newLead: 'Khách mới',
+  newLead: 'Khách hàng mới',
   waitingResponse: 'Chờ phản hồi',
   trialScheduled: 'Đã hẹn học thử',
   pendingEnrollment: 'Sẵn sàng đăng ký',
   converted: 'Đã đăng ký',
   paused: 'Tạm dừng',
-  closed: 'Đóng',
+  closed: 'Khách chưa phù hợp',
 }
 
 export const parentContactSourceLabels = {
@@ -251,6 +310,75 @@ export function createEmptyParentContactFormState() {
     scrollTop: 0,
     errors: {},
   }
+}
+
+export function applyAuthoritativeConsultantDefault(formState, eligibleConsultants = []) {
+  if (!formState || formState.mode !== 'create' || String(formState.values?.consultantId || '').trim()) {
+    return formState
+  }
+
+  const consultants = (Array.isArray(eligibleConsultants) ? eligibleConsultants : [])
+    .map((consultant) => ({
+      userId: String(consultant?.userId || '').trim(),
+      label: String(consultant?.label || '').trim(),
+    }))
+    .filter((consultant) => consultant.userId && consultant.label)
+
+  if (consultants.length !== 1) {
+    return formState
+  }
+
+  const [consultant] = consultants
+  return {
+    ...formState,
+    values: {
+      ...formState.values,
+      consultantId: consultant.userId,
+      consultantName: consultant.label,
+    },
+    enrollmentDraft: {
+      ...(formState.enrollmentDraft ?? {}),
+      advisorName: consultant.label,
+    },
+  }
+}
+
+export function getParentCrmQuickChoices(value, groupLabel) {
+  const prefix = `${String(groupLabel || '').trim()}:`
+  if (prefix === ':') return []
+
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line) => line.trim().startsWith(prefix))
+    .flatMap((line) => line.trim().slice(prefix.length).split(';'))
+    .map((choice) => choice.trim())
+    .filter((choice, index, choices) => choice && choices.indexOf(choice) === index)
+}
+
+export function toggleParentCrmQuickChoice(value, groupLabel, choice) {
+  const normalizedLabel = String(groupLabel || '').trim()
+  const normalizedChoice = String(choice || '').trim()
+  if (!normalizedLabel || !normalizedChoice) return String(value ?? '')
+
+  const prefix = `${normalizedLabel}:`
+  const lines = String(value ?? '').replace(/\r\n/g, '\n').split('\n')
+  const firstGroupIndex = lines.findIndex((line) => line.trim().startsWith(prefix))
+  const choices = getParentCrmQuickChoices(value, normalizedLabel)
+  const nextChoices = choices.includes(normalizedChoice)
+    ? choices.filter((item) => item !== normalizedChoice)
+    : [...choices, normalizedChoice]
+  const remainingLines = lines.filter((line) => !line.trim().startsWith(prefix))
+
+  if (!nextChoices.length) {
+    return remainingLines.join('\n').replace(/^\n+|\n+$/g, '')
+  }
+
+  const insertionIndex = firstGroupIndex < 0
+    ? remainingLines.length
+    : Math.min(firstGroupIndex, remainingLines.length)
+  remainingLines.splice(insertionIndex, 0, `${normalizedLabel}: ${nextChoices.join('; ')}`)
+  return remainingLines.join('\n').replace(/^\n+|\n+$/g, '')
 }
 
 export function createEditParentContactFormState(contact) {
@@ -1035,7 +1163,7 @@ export function renderParentConsultationModule(
       </div>
       <div class="parent-consultation-stats" aria-label="Tổng quan tư vấn">
         ${renderStatCard('Tổng khách', visibleStats.total)}
-        ${renderStatCard('Khách mới', visibleStats.leads)}
+        ${renderStatCard('Khách hàng mới', visibleStats.leads)}
         ${renderStatCard('Đang tư vấn', visibleStats.consulting, 'is-active')}
         ${renderStatCard('Cần follow-up', visibleStats.callbacks, 'is-warning')}
         ${renderStatCard('Đã chuyển đổi', visibleStats.converted, 'is-success')}
@@ -1123,7 +1251,7 @@ function renderContactsTable(contacts) {
             <th>Stage / Trạng thái</th>
             <th>Tư vấn / Nguồn</th>
             <th>Nhu cầu / Bé</th>
-            <th>Next action</th>
+            <th>Các công việc tiếp theo</th>
             <th>Ghi chú</th>
           </tr>
         </thead>
@@ -1232,7 +1360,7 @@ function renderParentContactDetailPanel(contact) {
                 <strong>${escapeHtml(contact.leadNeed || contact.interestedProgram || 'Chưa nhập')}</strong>
               </article>
               <article>
-                <span>Next action</span>
+                <span>Các công việc tiếp theo</span>
                 <strong>${escapeHtml(contact.nextAction || 'Chưa có việc tiếp theo')}</strong>
               </article>
               <article>
@@ -1316,7 +1444,7 @@ function renderParentConvertEntry(contact, customerStage, relatedStudents = []) 
   }
 
   const warningText = customerStage === 'lead'
-    ? 'Khách mới có thể chưa đủ dữ liệu. Bản xem trước chỉ giúp kiểm tra trước khi thao tác thật ở phase sau.'
+    ? 'Khách hàng mới có thể chưa đủ dữ liệu. Bản xem trước chỉ giúp kiểm tra trước khi thao tác thật ở phase sau.'
     : 'Bản xem trước chỉ đọc dữ liệu hiện tại, không tạo học viên, phụ huynh hoặc học phí.'
 
   return `
@@ -1895,7 +2023,7 @@ function renderNoteHistoryItem(log) {
       </div>
       <p>${escapeHtml(log.content || 'Chưa có nội dung.')}</p>
       ${log.result ? `<small><strong>Kết quả:</strong> ${escapeHtml(log.result)}</small>` : ''}
-      ${log.nextAction ? `<small><strong>Việc tiếp theo:</strong> ${escapeHtml(log.nextAction)}</small>` : ''}
+      ${log.nextAction ? `<small><strong>Các công việc tiếp theo:</strong> ${escapeHtml(log.nextAction)}</small>` : ''}
     </article>
   `
 }
@@ -2004,11 +2132,20 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
           <div class="parent-child-new-card">
             <div class="parent-contact-form-grid">
               ${renderFormInput('Họ và tên bé tư vấn', 'leadStudentName', values.leadStudentName)}
-              ${renderBirthYearInput(values.studentBirthYear, errors.studentBirthYear)}
-              ${renderFormInput('Tuổi bé', 'leadStudentAge', values.leadStudentAge)}
-              ${renderFormInput('Chương trình quan tâm', 'interestedProgram', values.interestedProgram)}
-              ${renderFormTextarea('Nhu cầu học / ghi chú ban đầu', 'leadNeed', values.leadNeed)}
-              ${renderFormTextarea('Phụ huynh nhận xét về bé (nếu có)', 'parentFeedbackAboutChild', values.parentFeedbackAboutChild)}
+              ${renderBirthYearInput(values.studentBirthYear, errors.studentBirthYear, values.leadStudentAge)}
+              ${renderInterestedProgramField(values.interestedProgram)}
+              ${renderGuidedTextarea(
+                'Nhu cầu học / Mong muốn từ phụ huynh ban đầu',
+                'leadNeed',
+                values.leadNeed,
+                [{ label: 'Mục tiêu của phụ huynh', choices: parentGoalQuickChoices }],
+              )}
+              ${renderGuidedTextarea(
+                'Phụ huynh nhận xét về bé (nếu có)',
+                'parentFeedbackAboutChild',
+                values.parentFeedbackAboutChild,
+                parentEvaluationQuickChoiceGroups,
+              )}
             </div>
           </div>
           <div class="parent-student-picker parent-student-picker-guidance">
@@ -2027,14 +2164,14 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
         <div class="parent-contact-form-grid">
           ${renderFormSelect('Trạng thái', 'consultationStatus', values.consultationStatus, parentConsultationStatusLabels, errors.consultationStatus)}
           ${renderFormSelect('Nguồn', 'source', values.source, parentContactSourceLabels, errors.source)}
-          ${renderConsultantAssignmentSelect(values.consultantId, eligibleConsultants)}
+          ${renderConsultantAssignmentSelect(values.consultantId, values.consultantName, eligibleConsultants)}
           ${renderFormInput('Ngày tư vấn', 'consultedAt', values.consultedAt, '', 'date')}
           ${renderFormInput('Ngày đăng ký', 'registeredAt', values.registeredAt, '', 'date')}
           ${renderFormInput('Lịch rảnh mong muốn', 'preferredSchedule', values.preferredSchedule)}
           ${renderFormInput('Hẹn gọi lại', 'nextFollowUpAt', values.nextFollowUpAt, '', 'datetime-local')}
           ${renderFormInput('Mức tiềm năng', 'potentialLevel', values.potentialLevel)}
           ${renderFormTextarea('Ghi chú gần nhất', 'lastNote', values.lastNote)}
-          ${renderFormTextarea('Việc tiếp theo', 'nextAction', values.nextAction)}
+          ${renderQuickFillTextarea('Các công việc tiếp theo', 'nextAction', values.nextAction, parentNextActionQuickChoices)}
         </div>
       </section>
     `
@@ -2114,7 +2251,7 @@ function renderEnrollmentSection(formState, { showSummary = true } = {}) {
         ${renderEnrollmentSelect('Trình độ của bé hiện tại', 'childChessLevel', draft.childChessLevel, { '': 'Chưa chọn', ...childChessLevelLabels })}
         ${renderEnrollmentInput('Lịch rảnh khi đăng ký học', 'preferredSchedule', draft.preferredSchedule)}
         ${renderEnrollmentInput('Ngày học thử dự kiến', 'expectedTrialDate', draft.expectedTrialDate || draft.expectedStartDate, errors.expectedTrialDate, 'date')}
-        ${renderEnrollmentInput('Người tư vấn / phụ trách', 'advisorName', draft.advisorName)}
+        ${renderEnrollmentInput('Tư vấn phụ trách (theo phân công)', 'advisorName', draft.advisorName, '', 'text', true)}
         ${renderEnrollmentTextarea('Ghi chú', 'note', draft.note)}
       </div>
       <div class="parent-enrollment-actions">
@@ -2242,7 +2379,7 @@ function renderCareLogForm(draft) {
       ${renderCareSelect('Kênh liên hệ', 'channel', draft.channel, parentCareLogChannelLabels, draft.errors?.channel)}
       ${renderCareTextarea('Nội dung trao đổi', 'content', draft.content, draft.errors?.content)}
       ${renderCareTextarea('Kết quả', 'result', draft.result)}
-      ${renderCareTextarea('Việc tiếp theo', 'nextAction', draft.nextAction)}
+      ${renderCareTextarea('Các công việc tiếp theo', 'nextAction', draft.nextAction)}
       <button type="button" data-parent-care-log-action="add">Thêm ghi chú chăm sóc</button>
     </div>
   `
@@ -2287,6 +2424,94 @@ function renderFormTextarea(label, field, value, error = '') {
   `
 }
 
+function renderInterestedProgramField(value = '') {
+  const normalizedValue = String(value || '').trim()
+  const usesCustomValue = Boolean(
+    normalizedValue && !parentInterestedProgramChoices.includes(normalizedValue),
+  )
+
+  return `
+    <div class="parent-crm-guided-field parent-crm-program-field">
+      <label>
+        <span>Chương trình quan tâm</span>
+        <input
+          type="text"
+          value="${escapeAttribute(value)}"
+          placeholder="Chọn nhanh hoặc nhập chương trình khác"
+          data-parent-contact-field="interestedProgram"
+        />
+      </label>
+      <div class="parent-crm-quick-choices" aria-label="Chọn nhanh chương trình quan tâm">
+        ${parentInterestedProgramChoices.map((choice) => {
+          const selected = choice === 'Khác'
+            ? usesCustomValue || normalizedValue === choice
+            : normalizedValue === choice
+          return renderCrmChoiceButton({
+            field: 'interestedProgram',
+            value: choice,
+            mode: 'program',
+            selected,
+          })
+        }).join('')}
+      </div>
+    </div>
+  `
+}
+
+function renderGuidedTextarea(label, field, value, groups = [], error = '') {
+  return `
+    <div class="parent-crm-guided-field ${error ? 'has-error' : ''}">
+      ${renderFormTextarea(label, field, value, error)}
+      <div class="parent-crm-quick-groups">
+        ${groups.map((group) => `
+          <section class="parent-crm-quick-group" aria-label="${escapeAttribute(group.label)}">
+            <strong>${escapeHtml(group.label)}</strong>
+            <div class="parent-crm-quick-choices">
+              ${group.choices.map((choice) => renderCrmChoiceButton({
+                field,
+                group: group.label,
+                value: choice,
+                mode: 'toggle',
+                selected: getParentCrmQuickChoices(value, group.label).includes(choice),
+              })).join('')}
+            </div>
+          </section>
+        `).join('')}
+      </div>
+    </div>
+  `
+}
+
+function renderQuickFillTextarea(label, field, value, choices = [], error = '') {
+  return `
+    <div class="parent-crm-guided-field parent-crm-next-action-field ${error ? 'has-error' : ''}">
+      ${renderFormTextarea(label, field, value, error)}
+      <div class="parent-crm-quick-choices" aria-label="Chọn nhanh ${escapeAttribute(label.toLocaleLowerCase('vi'))}">
+        ${choices.map((choice) => renderCrmChoiceButton({
+          field,
+          value: choice,
+          mode: 'fill',
+          selected: String(value || '').trim() === choice,
+        })).join('')}
+      </div>
+    </div>
+  `
+}
+
+function renderCrmChoiceButton({ field, group = '', value, mode, selected = false }) {
+  return `
+    <button
+      type="button"
+      class="parent-crm-quick-choice ${selected ? 'is-selected' : ''}"
+      data-parent-crm-choice-field="${escapeAttribute(field)}"
+      data-parent-crm-choice-group="${escapeAttribute(group)}"
+      data-parent-crm-choice-value="${escapeAttribute(value)}"
+      data-parent-crm-choice-mode="${escapeAttribute(mode)}"
+      aria-pressed="${selected ? 'true' : 'false'}"
+    >${escapeHtml(value)}</button>
+  `
+}
+
 function renderFormSelect(label, field, selectedValue, optionsByValue, error = '') {
   const options = Object.entries(optionsByValue)
     .map(
@@ -2309,11 +2534,22 @@ function renderFormSelect(label, field, selectedValue, optionsByValue, error = '
   `
 }
 
-function renderConsultantAssignmentSelect(selectedUserId = '', eligibleConsultants = []) {
+function renderConsultantAssignmentSelect(selectedUserId = '', selectedLabel = '', eligibleConsultants = []) {
   const normalizedSelected = String(selectedUserId || '')
+  const consultants = Array.isArray(eligibleConsultants) ? eligibleConsultants : []
+  const hasEligibleSelected = consultants.some(
+    (consultant) => String(consultant?.userId || '') === normalizedSelected,
+  )
+  const currentAssignmentLabel = String(selectedLabel || '').trim()
+  const safeCurrentAssignmentLabel = currentAssignmentLabel && currentAssignmentLabel !== normalizedSelected
+    ? currentAssignmentLabel
+    : 'Người phụ trách hiện tại'
   const options = [
     `<option value="" ${normalizedSelected ? 'disabled' : 'selected'}>Chưa gán người phụ trách</option>`,
-    ...(Array.isArray(eligibleConsultants) ? eligibleConsultants : []).map((consultant) => {
+    ...(!normalizedSelected || hasEligibleSelected
+      ? []
+      : [`<option value="${escapeAttribute(normalizedSelected)}" selected disabled>${escapeHtml(safeCurrentAssignmentLabel)}</option>`]),
+    ...consultants.map((consultant) => {
       const userId = String(consultant?.userId || '')
       const label = String(consultant?.label || userId)
       return `<option value="${escapeAttribute(userId)}" ${normalizedSelected === userId ? 'selected' : ''}>${escapeHtml(label)}</option>`
@@ -2500,9 +2736,14 @@ function renderEnrollmentTextarea(label, field, value, error = '') {
   `
 }
 
-function renderBirthYearInput(value, error = '') {
+function renderBirthYearInput(value, error = '', legacyAge = '') {
   const age = calculateAgeFromBirthYear(value)
-  const hint = age ? `${age} tuổi` : 'Nhập năm sinh để tự tính tuổi.'
+  const preservedLegacyAge = String(legacyAge || '').trim()
+  const hint = age
+    ? `${age} tuổi (tự tính)`
+    : preservedLegacyAge
+      ? `Tuổi đã lưu trước đây: ${preservedLegacyAge}. Nhập năm sinh để chuẩn hóa.`
+      : 'Nhập năm sinh để tự tính tuổi.'
 
   return `
     <label class="${error ? 'has-error' : ''}">
@@ -2901,7 +3142,7 @@ function getParentConvertSource(contact = {}) {
     interestedProgram: contact.interestedProgram || '',
     preferredSchedule: contact.preferredSchedule || '',
     customerStage,
-    customerStageLabel: parentCustomerStageLabels[customerStage] || 'Khách mới',
+    customerStageLabel: parentCustomerStageLabels[customerStage] || 'Khách hàng mới',
     consultationStatusLabel: parentConsultationStatusLabels[contact.consultationStatus] || 'Chưa rõ',
     careLogCount: Array.isArray(contact.careLogs) ? contact.careLogs.length : 0,
     appointmentCount: Array.isArray(contact.appointments) ? contact.appointments.length : 0,
