@@ -33,7 +33,152 @@
 .is-student-form-window .student-recurring-enrollment-list {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 8px;
+}
+
+.is-student-form-window .student-schedule-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(112px, 1fr));
+  gap: 8px;
+  padding: 1px 1px 8px;
+}
+
+.is-student-form-window .student-schedule-day-column {
+  min-width: 0;
+  border: 1px solid var(--student-border);
+  border-radius: 8px;
+  background: var(--student-surface-soft);
+}
+
+.is-student-form-window .student-schedule-day-column > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 8px 9px;
+  border-bottom: 1px solid var(--student-border);
+  color: var(--student-text);
+}
+
+.is-student-form-window .student-schedule-day-column > header strong {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.is-student-form-window .student-schedule-day-column > header span {
+  color: var(--student-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.is-student-form-window .student-schedule-day-column > div {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 70px;
+  padding: 7px;
+}
+
+.is-student-form-window .student-schedule-slot {
+  position: relative;
+  display: block;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.is-student-form-window .student-schedule-slot input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  opacity: 0;
+}
+
+.is-student-form-window .student-schedule-slot > span {
+  display: grid;
+  gap: 3px;
+  min-height: 58px;
+  align-content: center;
+  padding: 7px 8px;
+  border: 1px solid var(--student-border);
+  border-radius: 6px;
+  color: var(--student-text);
+  background: var(--student-input);
+}
+
+.is-student-form-window .student-schedule-slot > span strong,
+.is-student-form-window .student-schedule-slot > span small,
+.is-student-form-window .student-schedule-slot > span em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.is-student-form-window .student-schedule-slot > span strong {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.is-student-form-window .student-form-section .student-schedule-slot > span small {
+  color: var(--student-muted);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.is-student-form-window .student-form-section .student-schedule-slot > span small.is-unassigned {
+  color: var(--student-paused-text);
+  font-weight: 700;
+}
+
+.is-student-form-window .student-schedule-slot > span em {
+  color: var(--student-paused-text);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.is-student-form-window .student-schedule-slot input:checked + span {
+  border-color: var(--student-primary);
+  color: var(--student-primary-text);
+  background: var(--student-primary);
+}
+
+.is-student-form-window .student-form-section .student-schedule-slot input:checked + span small,
+.is-student-form-window .student-form-section .student-schedule-slot input:checked + span small.is-unassigned,
+.is-student-form-window .student-schedule-slot input:checked + span em {
+  color: var(--student-primary-text);
+}
+
+.is-student-form-window .student-schedule-slot input:focus-visible + span {
+  outline: 3px solid var(--student-focus);
+  outline-offset: 2px;
+}
+
+.is-student-form-window .student-schedule-slot.is-inactive > span,
+.is-student-form-window .student-schedule-slot.needs-review > span {
+  border-color: var(--student-paused-text);
+}
+
+.is-student-form-window .student-schedule-day-empty {
+  padding: 8px 2px;
+  color: var(--student-muted-soft);
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+}
+
+.is-student-form-window .student-schedule-invalid-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--student-paused-text);
+  border-radius: 8px;
+  color: var(--student-text);
+  background: var(--student-paused-bg);
 }
 
 .is-student-form-window .student-recurring-enrollment-option {
@@ -712,8 +857,15 @@
 .is-student-list-window .student-class-session-badge,
 .is-student-list-window .student-class-session-more,
 .is-student-list-window .student-class-session-unassigned {
+  border: 1px solid var(--student-border);
   background: var(--student-surface-soft);
   color: var(--student-muted);
+}
+
+.is-student-list-window .student-class-session-badge small,
+.is-student-list-window .student-class-session-badge em {
+  color: inherit;
+  opacity: 1;
 }
 
 .is-student-list-window .student-class-session-badge.missing,
@@ -1372,6 +1524,113 @@
 
 .is-student-profile-window .student-overview-tile:nth-child(3) dl div {
   grid-template-columns: minmax(112px, 128px) minmax(0, 1fr);
+}
+
+.is-student-profile-window .student-schedule-overview-tile {
+  grid-column: 1 / -1;
+  min-height: 0;
+}
+
+.is-student-profile-window .student-profile-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(104px, 1fr));
+  gap: 7px;
+  margin-top: 6px;
+  overflow-x: auto;
+}
+
+.is-student-profile-window .student-profile-schedule-grid > section {
+  min-width: 104px;
+  border: 1px solid var(--student-border);
+  border-radius: 7px;
+  background: var(--student-surface-soft);
+}
+
+.is-student-profile-window .student-profile-schedule-grid > section > header {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--student-border);
+  color: var(--student-text);
+  font-size: 12px;
+  text-align: center;
+}
+
+.is-student-profile-window .student-profile-schedule-grid > section > div {
+  display: grid;
+  gap: 5px;
+  min-height: 46px;
+  align-content: start;
+  padding: 6px;
+}
+
+.is-student-profile-window .student-profile-schedule-slot {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--student-border);
+  border-radius: 5px;
+  color: var(--student-text);
+  background: var(--student-input);
+}
+
+.is-student-profile-window .student-profile-schedule-slot strong,
+.is-student-profile-window .student-profile-schedule-slot span,
+.is-student-profile-window .student-profile-schedule-slot small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.is-student-profile-window .student-profile-schedule-slot strong {
+  font-size: 12px;
+}
+
+.is-student-profile-window .student-profile-schedule-slot span {
+  color: var(--student-muted);
+  font-size: 10px;
+}
+
+.is-student-profile-window .student-profile-schedule-slot span.is-unassigned,
+.is-student-profile-window .student-profile-schedule-slot small {
+  color: var(--student-paused-text);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.is-student-profile-window .student-profile-schedule-slot.is-inactive {
+  border-color: var(--student-paused-text);
+  background: var(--student-paused-bg);
+}
+
+.is-student-profile-window .student-profile-schedule-empty,
+.is-student-profile-window .student-profile-schedule-unassigned {
+  color: var(--student-muted-soft);
+  font-size: 12px;
+  text-align: center;
+}
+
+.is-student-profile-window .student-profile-schedule-unassigned {
+  margin: 8px 0 0;
+  padding: 10px;
+  border: 1px solid var(--student-border);
+  border-radius: 6px;
+  background: var(--student-surface-soft);
+}
+
+.is-student-profile-window .student-profile-schedule-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.is-student-profile-window .student-profile-schedule-warnings span {
+  padding: 3px 7px;
+  border: 1px solid var(--student-paused-text);
+  border-radius: 999px;
+  color: var(--student-paused-text);
+  background: var(--student-paused-bg);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .is-student-profile-window .student-detail-open-button {

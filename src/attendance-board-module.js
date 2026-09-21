@@ -16,6 +16,7 @@ import {
   loadAttendanceBaselineState,
   loadStoredAttendanceRecords,
 } from './attendance-records.js'
+import { buildMonthlyAbsenceCareStates } from './attendance-absence-care.js'
 
 export const ATTENDANCE_BOARD_DEMO_BATCH_ID = 'attendance-board-demo-foundation'
 export const ATTENDANCE_BOARD_DEMO_SOURCE = 'bang-diem-danh-demo'
@@ -445,6 +446,11 @@ export function buildAttendanceBoardRows(
       ? storedAttendanceRecords
       : loadStoredAttendanceRecords(),
   })
+  const absenceCareByStudentId = buildMonthlyAbsenceCareStates(
+    attendanceRecords,
+    normalizedFilters.month,
+    { throughDate: availability.today || new Date() },
+  )
   const classSessionById = buildAttendanceClassSessionMap(classSessions, sessionReports, attendanceRecords)
   const tuitionByStudentId = new Map(tuitionRecords.map((record) => [record.studentId, record]))
   const reportLookup = buildAttendanceReportLookup(attendanceRecords, normalizedFilters.month, classSessions)
@@ -493,6 +499,13 @@ export function buildAttendanceBoardRows(
       )
       const advisoryNote = advisoryNoteByStudentId.get(student.id)
       const reminders = remindersByStudentId.get(String(student.id)) || []
+      const reminderPresentation = getV28AAttendanceReminderPresentation(reminders)
+      const absenceCare = absenceCareByStudentId.get(String(student.id)) || {
+        count: 0,
+        key: 'none',
+        label: '',
+        tone: 'normal',
+      }
 
       return {
         index,
@@ -506,7 +519,12 @@ export function buildAttendanceBoardRows(
         attendanceSummary,
         attendanceOperationsReady,
         reminders,
-        reminderPresentation: getV28AAttendanceReminderPresentation(reminders),
+        reminderPresentation,
+        absenceCare,
+        studentAttentionTone: getAttendanceStudentAttentionTone(
+          reminderPresentation,
+          absenceCare,
+        ),
         cellNoteByOccurrence,
         careStatus: tuitionAvailable ? getCareStatusLabel(tuition) : 'Chưa tải đối chiếu',
         note: getAttendanceBoardNote(student, advisoryNote, attendanceBoardNoteByStudentId.get(student.id)),
@@ -768,10 +786,13 @@ function renderAttendanceBoardRow(row, rowIndex, dates, baselineState, hideClass
   return `
     <tr class="${row.isUnassigned ? 'is-unassigned' : ''}">
       <td class="is-sticky">${rowIndex + 1}</td>
-      <td class="is-sticky attendance-student-cell is-${escapeAttribute(row.reminderPresentation?.tone || 'normal')}">
+      <td class="is-sticky attendance-student-cell is-${escapeAttribute(row.studentAttentionTone || 'normal')}">
         <strong>${escapeHtml(cleanDisplayText(row.student.fullName || ''))}</strong>
+        ${row.absenceCare?.label
+          ? `<small class="attendance-absence-care is-${escapeAttribute(row.absenceCare.tone)}">${escapeHtml(row.absenceCare.label)}</small>`
+          : ''}
         ${row.reminderPresentation?.count
-          ? `<small>${escapeHtml(row.reminderPresentation.statusText)}</small>`
+          ? `<small class="attendance-operation-reminder">${escapeHtml(row.reminderPresentation.statusText)}</small>`
           : ''}
       </td>
       ${hideClassSessionColumn ? '' : `<td class="attendance-class-session-column">${renderClassSessionList(row.classSessions, row.student.id)}</td>`}
@@ -780,6 +801,21 @@ function renderAttendanceBoardRow(row, rowIndex, dates, baselineState, hideClass
       <td class="attendance-note-cell">${renderAttendanceNoteCell(row)}</td>
     </tr>
   `
+}
+
+function getAttendanceStudentAttentionTone(reminderPresentation = {}, absenceCare = {}) {
+  if (
+    reminderPresentation.tone === 'danger' ||
+    ['danger', 'critical'].includes(absenceCare.tone)
+  ) {
+    return 'danger'
+  }
+
+  if (reminderPresentation.tone === 'warning' || absenceCare.tone === 'warning') {
+    return 'warning'
+  }
+
+  return 'normal'
 }
 
 function renderAttendancePackageSessions(row) {

@@ -7,6 +7,7 @@ import { CASHFLOW_EVIDENCE_ACCEPT, formatFileSize } from './cashflow-module.js'
 import { getStudentAttendanceCredits } from './attendance-records.js'
 import { createTuitionRecordPackageLocalId } from './cloud-tuition-record-package-bridge.js'
 import { buildStudentTuitionLink } from './student-tuition-links.js'
+import { formatOperatorDate } from './operator-date-format.js'
 
 export const initialTuitionFilters = {
   query: '',
@@ -2410,7 +2411,7 @@ function renderTuitionDetailContent(
         true,
       )}
       ${renderDetailMetric('Còn lại', remainingSessions === null ? 'Chưa rõ' : remainingSessions)}
-      ${renderDetailMetric('Hạn đóng / ngày nhắc', tuitionRecord.dueDate || 'Chưa đặt')}
+      ${renderDetailMetric('Hạn đóng / ngày nhắc', formatOperatorDate(tuitionRecord.dueDate, 'Chưa đặt'))}
       ${renderDetailMetric('Trạng thái', status.label)}
       ${renderDetailMetric('Thanh toán', financeAvailable ? paymentSummary.statusLabel : getTuitionDomainPlaceholder(financeStatus))}
       ${renderDetailMetric('Số lần thanh toán', financeAvailable ? paymentSummary.paymentCount : getTuitionDomainPlaceholder(financeStatus))}

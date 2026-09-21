@@ -1,10 +1,22 @@
 import { botMilestones, sampleStudents, studentStatuses } from './student-data.js'
+import { formatOperatorDate, parseCanonicalDateParts } from './operator-date-format.js'
 import {
   V22_WEEKDAY_LABELS,
+  V22_WEEKDAY_ORDER,
   getV22ClassSessionWeekdays,
   normalizeV22Enrollments,
   validateV22EnrollmentSelection,
 } from './student-recurring-enrollment.js'
+
+const studentScheduleWeekdayNames = Object.freeze({
+  mon: 'Thứ Hai',
+  tue: 'Thứ Ba',
+  wed: 'Thứ Tư',
+  thu: 'Thứ Năm',
+  fri: 'Thứ Sáu',
+  sat: 'Thứ Bảy',
+  sun: 'Chủ nhật',
+})
 
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
@@ -754,6 +766,19 @@ function renderRecurringEnrollmentEditor(formState, classSessions = []) {
   const reviewCount = enrollments.filter(
     (entry) => entry.legacyReviewRequired && !entry.weekdays.length,
   ).length
+  const slotsByWeekday = new Map(V22_WEEKDAY_ORDER.map((weekday) => [weekday, []]))
+  const invalidClassSessions = []
+  selectableClassSessions.forEach((classSession) => {
+    const availableDays = getV22ClassSessionWeekdays(classSession)
+    if (!availableDays.length) {
+      invalidClassSessions.push(classSession)
+      return
+    }
+    availableDays.forEach((weekday) => {
+      slotsByWeekday.get(weekday)?.push(classSession)
+    })
+  })
+  slotsByWeekday.forEach((slots) => slots.sort(compareStudentScheduleSlots))
 
   return `
     <div class="student-class-session-field student-recurring-enrollment-field span-full ${formState.errors.recurringEnrollments ? 'has-error' : ''}">
@@ -768,33 +793,35 @@ function renderRecurringEnrollmentEditor(formState, classSessions = []) {
         <button class="student-secondary-button" type="button" data-student-action="open-settings-module">Mở Cài đặt cơ sở</button>
       </div>
       <div class="student-recurring-enrollment-list">
-        ${selectableClassSessions.length || missingLegacyEnrollments.length
-          ? selectableClassSessions.map((classSession) => {
-              const entry = enrollmentLookup.get(String(classSession.id))
-              const selectedDays = new Set(entry?.weekdays || [])
-              const availableDays = getV22ClassSessionWeekdays(classSession)
-              return `
-                <fieldset class="student-recurring-enrollment-option ${classSession.status === 'inactive' ? 'is-inactive' : ''} ${entry?.legacyReviewRequired ? 'needs-review' : ''}">
-                  <legend>${escapeHtml(getClassSessionDisplayLabel(classSession))}${classSession.status === 'inactive' ? ' · Đã ngưng' : ''}</legend>
-                  <div class="student-recurring-enrollment-days">
-                    ${availableDays.map((weekday) => `
-                      <label>
-                        <input type="checkbox"
-                          value="${weekday}"
-                          data-student-enrollment-day
-                          data-class-session-id="${escapeAttribute(classSession.id)}"
-                          ${selectedDays.has(weekday) ? 'checked' : ''}
-                        />
-                        <span>${V22_WEEKDAY_LABELS[weekday]}</span>
-                      </label>
-                    `).join('') || '<span class="student-enrollment-invalid">Ca học chưa có ngày hợp lệ.</span>'}
+        ${selectableClassSessions.length
+          ? `<div class="student-schedule-slot-grid" aria-label="Lịch ca học từ Thứ Hai đến Chủ nhật">
+              ${V22_WEEKDAY_ORDER.map((weekday) => `
+                <section class="student-schedule-day-column" data-student-schedule-weekday="${weekday}">
+                  <header>
+                    <strong>${V22_WEEKDAY_LABELS[weekday]}</strong>
+                    <span>${studentScheduleWeekdayNames[weekday]}</span>
+                  </header>
+                  <div>
+                    ${slotsByWeekday.get(weekday).length
+                      ? slotsByWeekday.get(weekday).map((classSession) =>
+                          renderStudentScheduleSlotOption(
+                            classSession,
+                            weekday,
+                            enrollmentLookup.get(String(classSession.id)),
+                          )).join('')
+                      : '<span class="student-schedule-day-empty">Chưa có ca học</span>'}
                   </div>
-                  ${entry?.legacyReviewRequired && !entry.weekdays.length
-                    ? '<small>Liên kết cũ chưa xác định ngày. Vui lòng chọn ngày thực tế.</small>'
-                    : ''}
-                </fieldset>
-              `
-            }).join('') + missingLegacyEnrollments.map((entry) => `
+                </section>
+              `).join('')}
+            </div>`
+          : '<p class="student-class-session-empty">Chưa có ca học đang sử dụng.</p>'}
+        ${invalidClassSessions.map((classSession) => `
+          <div class="student-schedule-invalid-slot">
+            <strong>${escapeHtml(getClassSessionDisplayLabel(classSession))}</strong>
+            <span class="student-enrollment-invalid">Ca học chưa có ngày hợp lệ.</span>
+          </div>
+        `).join('')}
+        ${missingLegacyEnrollments.map((entry) => `
               <fieldset class="student-recurring-enrollment-option needs-review is-missing">
                 <legend>Ca học cũ không còn trong danh mục</legend>
                 <p class="student-enrollment-invalid">Không thể tự suy ra ngày học cho liên kết này.</p>
@@ -804,12 +831,53 @@ function renderRecurringEnrollmentEditor(formState, classSessions = []) {
                   data-student-enrollment-remove-legacy="${escapeAttribute(entry.classSessionId)}"
                 >Bỏ liên kết cũ</button>
               </fieldset>
-            `).join('')
-          : '<p class="student-class-session-empty">Chưa có ca học đang sử dụng.</p>'}
+            `).join('')}
       </div>
       ${formState.errors.recurringEnrollments ? `<small>${escapeHtml(formState.errors.recurringEnrollments)}</small>` : ''}
     </div>
   `
+}
+
+function renderStudentScheduleSlotOption(classSession, weekday, enrollment = null) {
+  const selectedDays = new Set(enrollment?.weekdays || [])
+  const isSelected = selectedDays.has(weekday)
+  const isInactive = classSession.status === 'inactive'
+  const instructorName = String(classSession.instructorName || '').trim()
+  const timeLabel = formatStudentClassSessionTime(classSession)
+
+  return `
+    <label class="student-schedule-slot ${isSelected ? 'is-selected' : ''} ${isInactive ? 'is-inactive' : ''} ${enrollment?.legacyReviewRequired && !enrollment.weekdays.length ? 'needs-review' : ''}" title="${escapeAttribute(getClassSessionDisplayLabel(classSession))}">
+      <input
+        type="checkbox"
+        value="${weekday}"
+        data-student-enrollment-day
+        data-class-session-id="${escapeAttribute(classSession.id)}"
+        ${renderStudentFormTabIndex('classSessionIds')}
+        ${isSelected ? 'checked' : ''}
+      />
+      <span>
+        <strong>${escapeHtml(timeLabel)}</strong>
+        <small class="${instructorName ? '' : 'is-unassigned'}">${escapeHtml(instructorName || 'Chưa xếp giáo viên')}</small>
+        ${isInactive ? '<em>Đã ngưng</em>' : ''}
+      </span>
+    </label>
+  `
+}
+
+function compareStudentScheduleSlots(first, second) {
+  return (
+    String(first?.startTime || '').localeCompare(String(second?.startTime || '')) ||
+    String(first?.endTime || '').localeCompare(String(second?.endTime || '')) ||
+    getClassSessionDisplayLabel(first).localeCompare(getClassSessionDisplayLabel(second), 'vi')
+  )
+}
+
+function formatStudentClassSessionTime(classSession = {}) {
+  const startTime = String(classSession.startTime || '').trim()
+  const endTime = String(classSession.endTime || '').trim()
+  return startTime && endTime
+    ? `${startTime}–${endTime}`
+    : startTime || endTime || getClassSessionDisplayLabel(classSession)
 }
 
 function renderParentNoteSuggestions() {
@@ -1256,12 +1324,10 @@ function countByStatus(students, status) {
 }
 
 function formatBirthDate(value) {
-  const birthDate = new Date(value)
-  const age = new Date().getFullYear() - birthDate.getFullYear()
-  const day = String(birthDate.getDate()).padStart(2, '0')
-  const month = String(birthDate.getMonth() + 1).padStart(2, '0')
-  const year = birthDate.getFullYear()
-  return `${day}/${month}/${year} · ${age} tuổi`
+  const birthDate = parseCanonicalDateParts(value)
+  if (!birthDate) return String(value || '—')
+  const age = new Date().getFullYear() - birthDate.year
+  return `${formatOperatorDate(birthDate.canonical)} · ${age} tuổi`
 }
 
 function formatPhoneNumber(value) {

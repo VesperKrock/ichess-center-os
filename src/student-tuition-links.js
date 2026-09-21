@@ -1,3 +1,5 @@
+import { formatOperatorDate } from './operator-date-format.js'
+
 const missingValue = '—'
 
 export function buildStudentTuitionLink(student = {}, tuitionRecords = [], classSessions = []) {
@@ -247,20 +249,7 @@ function displayValue(value) {
 }
 
 function formatDate(value) {
-  if (!value) {
-    return ''
-  }
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return ''
-  }
-
-  return date.toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
+  return formatOperatorDate(value)
 }
 
 function formatMoney(value) {

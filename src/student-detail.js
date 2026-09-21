@@ -1,5 +1,15 @@
 import { buildStudentTuitionLink } from './student-tuition-links.js'
-import { V22_WEEKDAY_LABELS, normalizeV22Enrollments } from './student-recurring-enrollment.js'
+import {
+  formatOperatorDate,
+  formatOperatorDateTime,
+  parseCanonicalDateParts,
+} from './operator-date-format.js'
+import {
+  V22_WEEKDAY_LABELS,
+  V22_WEEKDAY_ORDER,
+  getV22ClassSessionWeekdays,
+  normalizeV22Enrollments,
+} from './student-recurring-enrollment.js'
 
 const baseUrl = import.meta.env?.BASE_URL ?? '/'
 const defaultAvatarUrl = `${baseUrl}images/avatar.jpg`
@@ -114,6 +124,7 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
           ['Tính cách', student.personality],
           ['Ca học / Lớp', classSessionLabel],
         ])}
+        ${renderStudentScheduleOverview(student, classSessions)}
         ${renderOverviewTile(
           'Chăm sóc',
           [
@@ -435,6 +446,101 @@ function getStudentClassSessionLabel(student, classSessions = []) {
     .join(', ')
 }
 
+function renderStudentScheduleOverview(student, classSessions = []) {
+  const classSessionIds = Array.isArray(student?.classSessionIds)
+    ? Array.from(new Set(student.classSessionIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
+    : []
+  const classSessionLookup = new Map(
+    classSessions
+      .filter((classSession) => classSession?.id)
+      .map((classSession) => [String(classSession.id), classSession]),
+  )
+  const enrollmentLookup = new Map(
+    normalizeV22Enrollments(student?.recurringEnrollments)
+      .map((entry) => [entry.classSessionId, entry]),
+  )
+  const slotsByWeekday = new Map(V22_WEEKDAY_ORDER.map((weekday) => [weekday, []]))
+  const unresolved = []
+
+  classSessionIds.forEach((classSessionId) => {
+    const classSession = classSessionLookup.get(classSessionId)
+    const enrollment = enrollmentLookup.get(classSessionId)
+    if (!classSession) {
+      unresolved.push('Ca học cũ không còn trong danh mục')
+      return
+    }
+
+    const availableDays = new Set(getV22ClassSessionWeekdays(classSession))
+    const enrolledDays = (enrollment?.weekdays || []).filter((weekday) => availableDays.has(weekday))
+    if (!enrolledDays.length) {
+      unresolved.push(`${getStudentClassSessionDisplayLabel(classSession)} · Cần chọn ngày`)
+      return
+    }
+
+    enrolledDays.forEach((weekday) => {
+      slotsByWeekday.get(weekday)?.push(classSession)
+    })
+  })
+  slotsByWeekday.forEach((slots) => slots.sort(compareStudentProfileScheduleSlots))
+
+  return `
+    <section class="student-overview-tile student-schedule-overview-tile" aria-label="Lịch học định kỳ từ Thứ Hai đến Chủ nhật">
+      <div class="student-overview-tile-header">
+        <h4>Lịch học định kỳ</h4>
+      </div>
+      ${classSessionIds.length
+        ? `<div class="student-profile-schedule-grid">
+            ${V22_WEEKDAY_ORDER.map((weekday) => `
+              <section data-student-profile-weekday="${weekday}">
+                <header><strong>${V22_WEEKDAY_LABELS[weekday]}</strong></header>
+                <div>
+                  ${slotsByWeekday.get(weekday).length
+                    ? slotsByWeekday.get(weekday).map(renderStudentProfileScheduleSlot).join('')
+                    : '<span class="student-profile-schedule-empty">—</span>'}
+                </div>
+              </section>
+            `).join('')}
+          </div>`
+        : '<p class="student-profile-schedule-unassigned">Chưa phân lớp</p>'}
+      ${unresolved.length
+        ? `<div class="student-profile-schedule-warnings">${unresolved.map((message) => `<span>${escapeHtml(message)}</span>`).join('')}</div>`
+        : ''}
+    </section>
+  `
+}
+
+function renderStudentProfileScheduleSlot(classSession) {
+  const instructorName = String(classSession?.instructorName || '').trim()
+  const isInactive = classSession?.status === 'inactive'
+  return `
+    <article class="student-profile-schedule-slot ${isInactive ? 'is-inactive' : ''}">
+      <strong>${escapeHtml(formatStudentProfileScheduleTime(classSession))}</strong>
+      <span class="${instructorName ? '' : 'is-unassigned'}">${escapeHtml(instructorName || 'Chưa xếp giáo viên')}</span>
+      ${isInactive ? '<small>Đã ngưng</small>' : ''}
+    </article>
+  `
+}
+
+function compareStudentProfileScheduleSlots(first, second) {
+  return (
+    String(first?.startTime || '').localeCompare(String(second?.startTime || '')) ||
+    String(first?.endTime || '').localeCompare(String(second?.endTime || '')) ||
+    getStudentClassSessionDisplayLabel(first).localeCompare(getStudentClassSessionDisplayLabel(second), 'vi')
+  )
+}
+
+function formatStudentProfileScheduleTime(classSession = {}) {
+  const startTime = String(classSession.startTime || '').trim()
+  const endTime = String(classSession.endTime || '').trim()
+  return startTime && endTime
+    ? `${startTime}–${endTime}`
+    : startTime || endTime || getStudentClassSessionDisplayLabel(classSession)
+}
+
+function getStudentClassSessionDisplayLabel(classSession = {}) {
+  return String(classSession.displayLabel || classSession.name || 'Ca học').trim()
+}
+
 function getSortedCareNotes(student) {
   return [...(student.careNotes ?? [])].sort(
     (firstNote, secondNote) => new Date(secondNote.createdAt) - new Date(firstNote.createdAt),
@@ -532,11 +638,7 @@ function formatBirthDate(value) {
     return '—'
   }
 
-  const birthDate = new Date(value)
-  const day = String(birthDate.getDate()).padStart(2, '0')
-  const month = String(birthDate.getMonth() + 1).padStart(2, '0')
-  const year = birthDate.getFullYear()
-  return `${day}/${month}/${year}`
+  return formatOperatorDate(value, '—')
 }
 
 function getAge(value) {
@@ -544,12 +646,13 @@ function getAge(value) {
     return null
   }
 
-  const birthDate = new Date(value)
+  const birthDate = parseCanonicalDateParts(value)
+  if (!birthDate) return null
   const today = new Date()
-  let age = today.getFullYear() - birthDate.getFullYear()
-  const monthDelta = today.getMonth() - birthDate.getMonth()
+  let age = today.getFullYear() - birthDate.year
+  const monthDelta = today.getMonth() + 1 - birthDate.month
 
-  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) {
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.day)) {
     age -= 1
   }
 
@@ -608,13 +711,7 @@ function formatTestScore(value) {
 }
 
 function formatDateTime(value) {
-  return new Date(value).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatOperatorDateTime(value, '—')
 }
 
 function escapeAttribute(value) {

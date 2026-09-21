@@ -534,9 +534,17 @@
   width: 228px;
   min-width: 228px;
   max-width: 228px;
+  text-align: left;
 }
 
-.desktop-window.is-attendance-window .attendance-student-cell { position: sticky; }
+.desktop-window.is-attendance-window .attendance-board-sheet th.is-sticky:nth-child(2) {
+  padding-left: 18px;
+}
+
+.desktop-window.is-attendance-window .attendance-student-cell {
+  position: sticky;
+  padding-left: 36px;
+}
 
 .desktop-window.is-attendance-window .attendance-student-cell strong {
   display: block;
@@ -556,6 +564,22 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 16px;
+}
+
+.desktop-window.is-attendance-window .attendance-student-cell .attendance-absence-care.is-info {
+  color: var(--attendance-accent);
+}
+
+.desktop-window.is-attendance-window .attendance-student-cell .attendance-absence-care.is-warning,
+.desktop-window.is-attendance-window .attendance-student-cell .attendance-operation-reminder {
+  color: var(--attendance-warning);
+}
+
+.desktop-window.is-attendance-window .attendance-student-cell .attendance-absence-care.is-danger,
+.desktop-window.is-attendance-window .attendance-student-cell .attendance-absence-care.is-critical,
+.desktop-window.is-attendance-window .attendance-student-cell.is-danger .attendance-operation-reminder {
+  color: var(--attendance-danger);
+  font-weight: 650;
 }
 
 .desktop-window.is-attendance-window .attendance-student-cell.is-warning::before,

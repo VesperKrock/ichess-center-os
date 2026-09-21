@@ -1,4 +1,5 @@
-const WEEKDAYS = Object.freeze(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
+export const V22_WEEKDAY_ORDER = Object.freeze(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
+const WEEKDAYS = V22_WEEKDAY_ORDER
 const WEEKDAY_SET = new Set(WEEKDAYS)
 const ACTIVE_STUDENT_STATUS = 'đang theo học'
 
