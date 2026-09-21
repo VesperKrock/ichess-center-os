@@ -6,7 +6,7 @@ const COUNTED_ATTENDANCE_STATUSES = new Set([
 
 export const advisoryCareStatusLabels = {
   auto: 'Tự động',
-  needReview: 'Cần chăm sóc',
+  needReview: 'Cần theo dõi & chăm sóc',
   sentComment: 'Đã gửi nhận xét',
   contactedParent: 'Đã liên hệ phụ huynh',
   waitingParent: 'Chờ phụ huynh phản hồi',
@@ -144,6 +144,10 @@ export function getAttendanceAdvisoryWarning({
     return { key: 'missing-data', label: 'Chưa đủ dữ liệu', tone: 'muted' }
   }
 
+  if (remainingSessions === 4) {
+    return { key: 'remaining-4', label: 'Còn 4 buổi', tone: 'info' }
+  }
+
   if (remainingSessions > 2) {
     return { key: 'normal', label: 'Bình thường', tone: 'normal' }
   }
@@ -168,6 +172,10 @@ export function getAttendanceAdvisoryWarning({
 }
 
 function getAutomaticCareSuggestion(remainingSessions, warningKey) {
+  if (warningKey === 'remaining-4') {
+    return 'Cần theo dõi & chăm sóc'
+  }
+
   if (warningKey === 'remaining-2') {
     return 'Chuẩn bị gửi file nhận xét/chăm sóc'
   }

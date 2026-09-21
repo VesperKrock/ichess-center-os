@@ -113,8 +113,10 @@ excludesAll(content.main, [
 for (const moduleSource of [content.schedule, content.tuition, content.attendanceBoard]) {
   includesAll(moduleSource, ['data-module-authoritative-refresh', 'Làm mới'], 'C5.7 refresh UX')
 }
-assert(content.main.includes('const result = await commitStudentProjection({'),
-  'Tuition care note must remain on canonical C5.1 Student authority')
+assert(content.main.includes('const result = await commitAuthoritativeStudentCareNotes('),
+  'Tuition care note must remain on canonical C5.1 Student care-note authority')
+assert(content.main.includes('return commitAuthoritativeStudentCoreProjection('),
+  'Care-note persistence must use the C5.1 Student core authority without rewriting enrollments')
 assert(content.main.includes('draft: reportState.draft'), 'Unsaved Report editor draft remains an in-memory draft')
 assert(!content.reportModule.includes('data-report-action="save"'), 'Report draft must not gain a second saved authority')
 

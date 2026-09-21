@@ -130,8 +130,9 @@ assert(
   tuitionRenderBlock.includes('buildUnifiedAttendanceRecords'),
   'Follow-up read-only phase should now pass canonical attendance into tuition render path',
 )
-assert(tuitionSource.includes('const rows = buildTuitionRows(students, tuitionRecords, attendanceRecords)'), 'Tuition rows receive attendance records for read-only comparison')
-assert(tuitionSource.includes('const remainingSessions = tuition.totalSessions - tuition.usedSessions'), 'Tuition remaining sessions use stored usedSessions')
+assert(/const rows = buildTuitionRows\(\s*students,\s*tuitionRecords,\s*attendanceRecords,/.test(tuitionSource), 'Tuition rows receive attendance records for read-only comparison')
+assert(tuitionSource.includes('getLegacyTuitionRemainingSessions(tuition)'), 'Tuition remaining sessions use validated stored session truth')
+assert(tuitionSource.includes('return totalSessions - usedSessions'), 'Legacy Tuition remaining sessions stay derived from stored usedSessions')
 assert(tuitionSource.includes('getStudentAttendanceCredits'), 'Read-only follow-up uses canonical attendance credit helper for comparison')
 assert(studentTuitionLinksSource.includes('const usedSessions = normalizeSafeNumber(tuition?.usedSessions)'), 'Student tuition links use stored usedSessions')
 assert(advisorySource.includes('const reportCounts = getAttendanceCountsByStudent(sessionReports, monthKey)'), 'Advisory reads sessionReports')

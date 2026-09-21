@@ -78,8 +78,12 @@ assert(html.includes('data-tuition-action="open-care-notes"'), 'Tuition note bad
 assert(html.includes('data-tuition-action="open-advisory-window"'), 'Tuition main view has monthly care entry button.')
 assert(html.includes('Chăm sóc cuối tháng'), 'Tuition main view keeps a compact monthly care entry.')
 assert(!html.includes('class="tuition-advisory-table"'), 'Monthly care table is not rendered inline in the main tuition view.')
-assert(html.includes('Chưa có ghi chú'), 'Student without notes shows empty note badge.')
-assert(html.includes('Có ghi chú (1)'), 'Student with notes shows note badge with count.')
+assert.equal(
+  (html.match(/data-tuition-action="open-care-notes"/g) || []).length,
+  2,
+  'Every tuition row exposes the shared care-note action.',
+)
+assert(html.includes('Chăm sóc / Ghi chú'), 'Care-note actions use the current compact operator label.')
 assert(!html.includes('Legacy row note must not render inline'), 'Tuition table no longer renders long note inline.')
 assert(html.includes('data-tuition-action="open-rollback-preview"'), 'Tuition audit history button remains available.')
 
@@ -148,15 +152,21 @@ assert(studentHtml.includes('data-student-note-action="open-care-notes"'), 'Stud
 assert(studentHtml.includes('Có ghi chú'), 'Tuition-created care notes make Student module show note badge.')
 
 const saveFunctionBlock = mainSource.slice(
-  mainSource.indexOf('function saveTuitionCareNote'),
-  mainSource.indexOf('function renderPlannedList'),
+  mainSource.indexOf('async function saveTuitionCareNote'),
+  mainSource.indexOf('function openInternalOwnerHandoffConfirm'),
 )
 assert(saveFunctionBlock.includes("sourceModule: 'tuition'"), 'Tuition notes are marked with sourceModule=tuition.')
-assert(saveFunctionBlock.includes('saveStoredStudents(students)'), 'Tuition notes persist through shared student storage.')
+assert(saveFunctionBlock.includes('commitAuthoritativeStudentCareNotes('), 'Tuition notes persist through shared authoritative Student care-note storage.')
 assert(!saveFunctionBlock.includes('saveStoredTuition'), 'Saving tuition notes must not mutate tuition records.')
-assert(!saveFunctionBlock.includes('queueCoreCloudSync'), 'Tuition note hotfix must not trigger cloud sync.')
-assert(!saveFunctionBlock.includes('writeStudentThroughCloud'), 'Tuition note hotfix must not call Supabase/cloud write.')
 assert(!saveFunctionBlock.includes('attendance'), 'Tuition note save must not touch attendance.')
+const careAuthorityBlock = mainSource.slice(
+  mainSource.indexOf('async function commitAuthoritativeStudentCareNotes'),
+  mainSource.indexOf('async function commitStudentProjection'),
+)
+assert(careAuthorityBlock.includes('commitAuthoritativeStudentCoreProjection('), 'Care notes use the canonical C5.1 Student core authority.')
+assert(careAuthorityBlock.includes('careNotes: nextCareNotes'), 'Care-note authority changes only the canonical Student care-note projection.')
+assert(!careAuthorityBlock.includes('v2_2_mutate_student_with_enrollments'), 'Care-only saves do not rewrite enrollment authority.')
+assert(!careAuthorityBlock.includes('usedSessions'), 'Care-note authority cannot mutate tuition session consumption.')
 const openCareNotesBlock = mainSource.slice(
   mainSource.indexOf('document.querySelectorAll(\'[data-tuition-action="open-care-notes"]\')'),
   mainSource.indexOf('document.querySelectorAll(\'[data-tuition-action="open-advisory-window"]\')'),

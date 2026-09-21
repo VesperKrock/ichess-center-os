@@ -419,7 +419,7 @@ export function buildParentFollowupNotificationCandidates(parentConsultations) {
         sourceLabel: notificationSourceLabels['khach-hang-tu-van'],
         type: 'parent-followup',
         severity: contact.consultationStatus === 'waitingResponse' ? 'warning' : 'info',
-        title: `Cần follow-up: ${contact.parentName || contact.name || 'Phụ huynh'}`,
+        title: `Cần theo dõi & chăm sóc: ${contact.parentName || contact.name || 'Phụ huynh'}`,
         message: nextAction,
         entityId: contact.id,
         entityType: 'parentConsultation',

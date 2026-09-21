@@ -12488,8 +12488,10 @@ function createTuitionCareNoteState(studentId, patch = {}) {
       content: '',
       ...(patch.values || {}),
     },
+    editingNoteId: '',
     error: '',
     saveState: '',
+    isSaving: false,
     ...patch,
   }
 }
@@ -12525,28 +12527,55 @@ async function saveTuitionCareNote() {
   const noteContent = content || tag
   const student = getStudentById(studentId)
   const currentCareNotes = Array.isArray(student?.careNotes) ? student.careNotes : []
-  const nextCareNotes = [
-    {
-      id: `tuition-note-${studentId}-${Date.now()}`,
-      createdAt: now,
-      updatedAt: now,
-      author: cloudStatus.user?.email || 'Người dùng hiện tại',
-      content: noteContent,
-      tags: tag ? [tag] : ['Học phí'],
-      sourceModule: 'tuition',
-    },
-    ...currentCareNotes,
-  ]
-  const result = await commitStudentProjection({
-    ...student,
-    careNotes: nextCareNotes,
-    latestCareNote: getLatestCareNoteContent(nextCareNotes),
-    updatedAt: now,
-  }, 'student-tuition-care-note')
+  const editingNoteId = String(tuitionCareNoteState.editingNoteId || '')
+  if (editingNoteId && !currentCareNotes.some((note) => String(note.id) === editingNoteId)) {
+    tuitionCareNoteState = createTuitionCareNoteState(studentId, {
+      values: tuitionCareNoteState.values,
+      editingNoteId,
+      error: 'Ghi chú đã thay đổi hoặc không còn tồn tại. Hãy tải lại trước khi lưu.',
+    })
+    render()
+    return
+  }
+  const nextCareNotes = editingNoteId
+    ? currentCareNotes.map((note) => String(note.id) === editingNoteId
+      ? {
+          ...note,
+          updatedAt: now,
+          content: noteContent,
+          tags: tag ? [tag] : ['Học phí'],
+          sourceModule: note.sourceModule || 'tuition',
+        }
+      : note)
+    : [
+        {
+          id: `tuition-note-${studentId}-${Date.now()}`,
+          createdAt: now,
+          updatedAt: now,
+          author: cloudStatus.user?.email || 'Người dùng hiện tại',
+          content: noteContent,
+          tags: tag ? [tag] : ['Học phí'],
+          sourceModule: 'tuition',
+        },
+        ...currentCareNotes,
+      ]
+  tuitionCareNoteState = {
+    ...tuitionCareNoteState,
+    isSaving: true,
+    error: '',
+    saveState: '',
+  }
+  render()
+  const result = await commitAuthoritativeStudentCareNotes(
+    studentId,
+    nextCareNotes,
+    'student-tuition-care-note',
+  )
 
   if (!result.ok) {
     tuitionCareNoteState = createTuitionCareNoteState(studentId, {
       values: tuitionCareNoteState.values,
+      editingNoteId,
       error: result.error || 'Ghi chú chưa được lưu.',
     })
     render()
@@ -16008,7 +16037,7 @@ function applyAuthoritativeCoreSaveUiResult(result) {
   render()
 }
 
-async function commitLegacyStudentProjection(student, reason, idempotencyKey) {
+async function commitAuthoritativeStudentCoreProjection(student, reason, idempotencyKey) {
   const commandCenterId = getCurrentCanonicalCenterContext().centerId
   const {
     recurringEnrollments: _recurringEnrollments,
@@ -16034,6 +16063,31 @@ async function commitLegacyStudentProjection(student, reason, idempotencyKey) {
   })
   applyAuthoritativeCoreSaveUiResult(result)
   return result
+}
+
+async function commitLegacyStudentProjection(student, reason, idempotencyKey) {
+  return commitAuthoritativeStudentCoreProjection(student, reason, idempotencyKey)
+}
+
+async function commitAuthoritativeStudentCareNotes(studentId, nextCareNotes, reason) {
+  const authoritativeStudent = students.find(
+    (student) => String(student?.id || '') === String(studentId || ''),
+  )
+  if (!authoritativeStudent) {
+    return {
+      ok: false,
+      committed: false,
+      outcome_code: 'STUDENT_NOT_FOUND',
+      error: 'Không tìm thấy học viên trong dữ liệu vừa tải. Hãy làm mới rồi thử lại.',
+    }
+  }
+
+  return commitAuthoritativeStudentCoreProjection({
+    ...authoritativeStudent,
+    careNotes: nextCareNotes,
+    latestCareNote: getLatestCareNoteContent(nextCareNotes),
+    updatedAt: new Date().toISOString(),
+  }, reason)
 }
 
 async function commitStudentProjection(student, reason, idempotencyKey) {
@@ -25790,7 +25844,32 @@ function bindEvents() {
         return
       }
 
+      if (action === 'edit') {
+        const studentId = tuitionCareNoteState?.studentId
+        const noteId = String(button.dataset.tuitionCareNoteId || '')
+        const note = getStudentById(studentId)?.careNotes?.find(
+          (item) => String(item.id) === noteId,
+        )
+        if (!studentId || !note) {
+          tuitionCareNoteState = createTuitionCareNoteState(studentId, {
+            error: 'Không tìm thấy ghi chú trong dữ liệu vừa tải. Hãy làm mới rồi thử lại.',
+          })
+          render()
+          return
+        }
+        tuitionCareNoteState = createTuitionCareNoteState(studentId, {
+          editingNoteId: noteId,
+          values: {
+            tag: Array.isArray(note.tags) ? String(note.tags[0] || '') : '',
+            content: String(note.content || ''),
+          },
+        })
+        render()
+        return
+      }
+
       if (action === 'save') {
+        if (tuitionCareNoteState?.isSaving) return
         saveTuitionCareNote()
       }
       }, event)
@@ -31626,12 +31705,11 @@ function bindEvents() {
 
       const student = getStudentById(careNoteStudentId)
       const nextCareNotes = (student?.careNotes ?? []).filter((note) => note.id !== careNoteId)
-      const result = await commitStudentProjection({
-        ...student,
-        careNotes: nextCareNotes,
-        latestCareNote: getLatestCareNoteContent(nextCareNotes),
-        updatedAt: new Date().toISOString(),
-      }, 'student-care-note')
+      const result = await commitAuthoritativeStudentCareNotes(
+        careNoteStudentId,
+        nextCareNotes,
+        'student-care-note',
+      )
 
       if (!result.ok) return
 
@@ -31685,12 +31763,11 @@ function bindEvents() {
               ...currentCareNotes,
             ]
 
-      const result = await commitStudentProjection({
-        ...student,
-        careNotes: nextCareNotes,
-        latestCareNote: getLatestCareNoteContent(nextCareNotes),
-        updatedAt: new Date().toISOString(),
-      }, 'student-care-note')
+      const result = await commitAuthoritativeStudentCareNotes(
+        studentId,
+        nextCareNotes,
+        'student-care-note',
+      )
 
       if (!result.ok) return
 

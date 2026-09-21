@@ -5,7 +5,11 @@ export function buildStudentTuitionLink(student = {}, tuitionRecords = [], class
   const amounts = tuition ? calculateTuitionAmounts(tuition) : null
   const totalSessions = normalizeSafeNumber(tuition?.totalSessions)
   const usedSessions = normalizeSafeNumber(tuition?.usedSessions)
-  const hasSessionData = tuition && Number.isFinite(totalSessions) && Number.isFinite(usedSessions)
+  const hasSessionData = tuition
+    && tuition.hasTotalSessionsData !== false
+    && tuition.hasUsedSessionsData !== false
+    && Number.isFinite(totalSessions)
+    && Number.isFinite(usedSessions)
   const remainingSessions = hasSessionData ? totalSessions - usedSessions : null
   const parent = buildParentContact(student)
   const classSummary = buildClassSummary(student, classSessions)
@@ -21,7 +25,7 @@ export function buildStudentTuitionLink(student = {}, tuitionRecords = [], class
         debtAmount: amounts.remainingDebt,
         dueDate: displayValue(formatDate(tuition.dueDate)),
         statusLabel: getTuitionStatusLabel(remainingSessions, amounts.remainingDebt),
-        label: `${displayValue(tuition.packageName)} · ${formatMoney(amounts.remainingDebt)} còn nợ`,
+        label: `${displayValue(tuition.packageName)} · ${formatMoney(amounts.remainingDebt)} nợ học phí`,
       }
     : {
         hasTuition: false,
@@ -198,7 +202,7 @@ function calculateTuitionAmounts(tuitionRecord = {}) {
 
 function getTuitionStatusLabel(remainingSessions, debtAmount) {
   if (debtAmount > 0) {
-    return 'Còn nợ học phí'
+    return 'Nợ học phí'
   }
 
   if (!Number.isFinite(remainingSessions)) {

@@ -1151,7 +1151,7 @@ export function renderParentConsultationModule(
         ${renderStatCard('Tổng khách', visibleStats.total)}
         ${renderStatCard('Khách hàng mới', visibleStats.leads)}
         ${renderStatCard('Đang tư vấn', visibleStats.consulting, 'is-active')}
-        ${renderStatCard('Cần follow-up', visibleStats.callbacks, 'is-warning')}
+        ${renderStatCard('Cần theo dõi & chăm sóc', visibleStats.callbacks, 'is-warning')}
         ${renderStatCard('Đã chuyển đổi', visibleStats.converted, 'is-success')}
       </div>
       ${body}

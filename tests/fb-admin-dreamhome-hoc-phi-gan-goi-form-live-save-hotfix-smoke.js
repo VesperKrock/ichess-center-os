@@ -60,7 +60,7 @@ assert(
   'Main wiring must refresh only the tuition preview DOM.',
 )
 assert(
-  mainSource.includes('const handleTuitionFormSave = (event) =>') &&
+  mainSource.includes('const handleTuitionFormSave = async (event, options = {}) =>') &&
     mainSource.includes('event?.preventDefault?.()') &&
     mainSource.includes('event?.stopPropagation?.()'),
   'Tuition save handler must block native form submission.',
@@ -84,7 +84,7 @@ assert(
   'Old noisy full-render trigger for every money input should be removed.',
 )
 assert(
-  tuitionSource.includes('<div class="is-paid"><dt>Đã thanh toán</dt><dd>-${formatMoney(amounts.paidAmount)}</dd></div>'),
+  tuitionSource.includes('<div class="is-paid"><dt>Đã thanh toán</dt><dd>${financeAvailable ? `-${formatMoney(amounts.paidAmount)}`'),
   'Paid amount must remain negative because it represents a debt deduction.',
 )
 assert(
