@@ -12163,6 +12163,12 @@ function renderWindowBody(windowItem) {
         ),
         packageCycleStudentStates: v24PackageCycleStudentStates,
         packageCycleCatalog: v24PackageCycleCatalog,
+        tuitionPackageCatalog: isV21CenterSettingsCapabilityReady(
+          v21CenterSettingsCapabilityState,
+          getCurrentCanonicalCenterContext().centerId,
+        )
+          ? v21TuitionPackages
+          : null,
       },
     )
   }
@@ -25885,30 +25891,72 @@ function bindEvents() {
     })
   })
 
-  document.querySelectorAll('[data-tuition-package-suggestion]').forEach((button) => {
+  document.querySelectorAll('[data-tuition-package-option-id]').forEach((button) => {
     button.addEventListener('click', () => {
       if (!tuitionFormState) {
         return
       }
 
-      const totalSessions = button.dataset.tuitionPackageSuggestion
+      const packageId = String(button.dataset.tuitionPackageOptionId || '')
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      const authoritativeCatalog = isV21CenterSettingsCapabilityReady(
+        v21CenterSettingsCapabilityState,
+        centerId,
+      )
+        ? v21TuitionPackages
+        : v24PackageCycleCatalog
+      const tuitionPackage = authoritativeCatalog
+        .find((item) => item?.id === packageId && item?.isActive === true)
+      if (!tuitionPackage) {
+        tuitionFormState = {
+          ...tuitionFormState,
+          errors: {
+            ...tuitionFormState.errors,
+            form: 'Gói vừa chọn không còn hoạt động. Hãy tải lại danh mục gói.',
+          },
+        }
+        render()
+        return
+      }
       tuitionFormState = {
         ...tuitionFormState,
         commandIdempotencyKey: null,
         pendingAuthoritativeRecord: null,
         values: {
           ...tuitionFormState.values,
-          packageName: `Gói ${totalSessions} buổi`,
-          totalSessions,
+          packageCatalogId: tuitionPackage.id,
+          packageName: tuitionPackage.packageName,
+          totalSessions: String(tuitionPackage.totalSessions),
+          totalAmount: formatMoneyInputForRuntime(tuitionPackage.defaultAmount),
         },
         errors: {
           ...tuitionFormState.errors,
+          form: undefined,
           packageName: undefined,
           totalSessions: undefined,
+          totalAmount: undefined,
         },
       }
       render()
     })
+  })
+
+  document.querySelector('[data-tuition-package-custom]')?.addEventListener('click', () => {
+    if (!tuitionFormState) return
+    tuitionFormState = {
+      ...tuitionFormState,
+      commandIdempotencyKey: null,
+      pendingAuthoritativeRecord: null,
+      values: {
+        ...tuitionFormState.values,
+        packageCatalogId: '',
+      },
+      errors: {
+        ...tuitionFormState.errors,
+        form: undefined,
+      },
+    }
+    render()
   })
 
   document.querySelector('[data-tuition-action="open-renew"]')?.addEventListener('click', (event) => {
@@ -26125,6 +26173,7 @@ function bindEvents() {
       }
 
       const fieldName = control.dataset.tuitionFormField
+      const clearsCatalogSelection = ['packageName', 'totalSessions', 'totalAmount'].includes(fieldName)
 
       tuitionFormState = {
         ...tuitionFormState,
@@ -26132,6 +26181,7 @@ function bindEvents() {
         pendingAuthoritativeRecord: null,
         values: {
           ...tuitionFormState.values,
+          ...(clearsCatalogSelection ? { packageCatalogId: '' } : {}),
           [fieldName]: control.value,
         },
         errors: {
@@ -26139,6 +26189,16 @@ function bindEvents() {
           [fieldName]: undefined,
           discountAmount: undefined,
         },
+      }
+
+      if (clearsCatalogSelection) {
+        document.querySelectorAll('[data-tuition-package-option-id]').forEach((button) => {
+          button.classList.remove('active')
+          button.setAttribute('aria-pressed', 'false')
+        })
+        const customButton = document.querySelector('[data-tuition-package-custom]')
+        customButton?.classList.add('active')
+        customButton?.setAttribute('aria-pressed', 'true')
       }
 
       if (fieldName === 'discountPreset') {
@@ -32151,6 +32211,7 @@ function createRenewedTuitionRecord(currentRecord, normalizedValues, cashflowLed
   const currentTermSnapshot = {
     id: currentRecord.currentTermId || `term-${currentRecord.id}-${currentTermNumber}`,
     termNumber: currentTermNumber,
+    packageCatalogId: currentRecord.packageCatalogId || '',
     packageName: currentRecord.packageName,
     totalSessions: currentRecord.totalSessions,
     usedSessions: currentRecord.usedSessions,

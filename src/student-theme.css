@@ -693,6 +693,21 @@
   color: var(--student-note-text);
 }
 
+.is-student-list-window .student-note-badge.has-note {
+  border: 1px solid var(--student-note-text);
+  background: var(--student-note-bg);
+  color: var(--student-note-text);
+}
+
+.is-student-list-window .student-note-badge.has-note:hover,
+.is-student-list-window .student-note-badge.has-note:focus-visible {
+  border-color: var(--student-primary);
+  outline: 2px solid var(--student-focus);
+  outline-offset: 1px;
+  background: var(--student-note-bg);
+  color: var(--student-note-text);
+}
+
 .is-student-list-window .student-note-badge:not(.has-note),
 .is-student-list-window .student-class-session-badge,
 .is-student-list-window .student-class-session-more,
@@ -1400,6 +1415,12 @@
   color: var(--student-paused-text);
   font-size: 12px;
   font-weight: 600;
+}
+
+.is-student-profile-window .student-link-warning.is-info {
+  border: 1px solid var(--student-note-text);
+  background: var(--student-note-bg);
+  color: var(--student-note-text);
 }
 
 .is-student-profile-window .student-overview-tile:last-child {

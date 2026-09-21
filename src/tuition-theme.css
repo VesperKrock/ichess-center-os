@@ -1036,7 +1036,7 @@
 
 .desktop-window.is-tuition-window .tuition-package-suggestions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 6px;
 }
 
@@ -1050,12 +1050,40 @@
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  text-align: left;
+}
+
+.desktop-window.is-tuition-window .tuition-package-suggestions button strong,
+.desktop-window.is-tuition-window .tuition-package-suggestions button span {
+  display: block;
+}
+
+.desktop-window.is-tuition-window .tuition-package-suggestions button span {
+  margin-top: 2px;
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .desktop-window.is-tuition-window .tuition-package-suggestions button.active {
   border-color: var(--tuition-primary);
   color: var(--tuition-primary-text);
   background: var(--tuition-primary);
+}
+
+.desktop-window.is-tuition-window .tuition-package-suggestions button.active span {
+  color: var(--tuition-primary-text);
+}
+
+.desktop-window.is-tuition-window .tuition-package-catalog-note {
+  margin: 0;
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.desktop-window.is-tuition-window .tuition-package-catalog-note.is-warning {
+  color: var(--tuition-warning);
 }
 
 .desktop-window.is-tuition-window .tuition-form-grid {

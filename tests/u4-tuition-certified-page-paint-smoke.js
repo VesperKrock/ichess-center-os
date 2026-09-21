@@ -75,6 +75,13 @@ const availability = {
   calendarNotesAvailable: true,
   financeAvailable: true,
   canVoidPayments: true,
+  tuitionPackageCatalog: [{
+    id: '11111111-1111-4111-8111-111111111111',
+    packageName: 'Gói 12 buổi QA',
+    totalSessions: 12,
+    defaultAmount: 2400000,
+    isActive: true,
+  }],
 }
 
 const render = ({
@@ -362,7 +369,9 @@ for (const token of [
   'data-tuition-form',
   'Cập nhật gói học phí',
   'aria-label="Thiết lập gói"',
-  'data-tuition-package-suggestion="8"',
+  'data-tuition-package-option-id="11111111-1111-4111-8111-111111111111"',
+  'Gói 12 buổi QA',
+  'data-tuition-package-custom',
   'data-tuition-form-field="packageName"',
   'data-tuition-form-field="totalSessions"',
   'data-tuition-form-field="usedSessions"',

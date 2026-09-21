@@ -26,15 +26,6 @@ const statusOptions = [
   { value: 'debt', label: 'Nợ học phí' },
 ]
 
-const packageOptions = [
-  { value: 'all', label: 'Tất cả gói' },
-  { value: '8', label: '8 buổi' },
-  { value: '16', label: '16 buổi' },
-  { value: '32', label: '32 buổi' },
-  { value: 'other', label: 'Gói khác' },
-  { value: 'no-package', label: 'Chưa có gói' },
-]
-
 const paymentMethodOptions = [
   { value: 'cash', label: 'Tiền mặt' },
   { value: 'transfer', label: 'Chuyển khoản' },
@@ -76,8 +67,9 @@ export function createEmptyTuitionFormState(student) {
     mode: 'create',
     studentId: student.id,
     values: {
-      packageName: 'Gói 8 buổi',
-      totalSessions: '8',
+      packageCatalogId: '',
+      packageName: '',
+      totalSessions: '',
       usedSessions: '0',
       totalAmount: '',
       discountPreset: 'none',
@@ -100,6 +92,7 @@ export function createEditTuitionFormState(student, tuitionRecord) {
     tuitionId: tuitionRecord.id,
     record: tuitionRecord,
     values: {
+      packageCatalogId: tuitionRecord.packageCatalogId || '',
       packageName: tuitionRecord.packageName,
       totalSessions: String(tuitionRecord.totalSessions),
       usedSessions: String(tuitionRecord.usedSessions),
@@ -123,8 +116,9 @@ export function createRenewTuitionFormState(student, tuitionRecord) {
     tuitionId: tuitionRecord.id,
     record: tuitionRecord,
     values: {
+      packageCatalogId: tuitionRecord.packageCatalogId || '',
       packageName: tuitionRecord.packageName,
-      totalSessions: String(tuitionRecord.totalSessions || 8),
+      totalSessions: String(tuitionRecord.totalSessions || ''),
       usedSessions: '0',
       totalAmount: formatMoneyInput(tuitionRecord.totalAmount),
       ...discountFormValues,
@@ -236,6 +230,9 @@ export function renderTuitionModule(
   const packageCycleCatalog = Array.isArray(availability.packageCycleCatalog)
     ? availability.packageCycleCatalog
     : []
+  const tuitionPackageCatalog = Array.isArray(availability.tuitionPackageCatalog)
+    ? availability.tuitionPackageCatalog
+    : packageCycleCatalog
   const rows = buildTuitionRows(
     students,
     tuitionRecords,
@@ -251,6 +248,7 @@ export function renderTuitionModule(
     },
   )
   const visibleRows = filterTuitionRows(rows, filters)
+  const packageFilterOptions = buildTuitionPackageFilterOptions(rows, tuitionPackageCatalog)
   const stats = getTuitionStats(rows)
   const formStudent = formState ? students.find((student) => student.id === formState.studentId) : null
   const paymentStudent = paymentFormState
@@ -333,7 +331,7 @@ export function renderTuitionModule(
             <label>
               <span>Gói buổi</span>
               <select data-tuition-filter="package">
-                ${renderOptions(packageOptions, filters.package)}
+                ${renderOptions(packageFilterOptions, filters.package)}
               </select>
             </label>
           </div>
@@ -375,7 +373,15 @@ export function renderTuitionModule(
         </div>
       </div>
       ${formState && formStudent
-        ? renderTuitionForm(formStudent, formState, cashflowTransactions, centerId, financeAvailable, financeStatus)
+        ? renderTuitionForm(
+            formStudent,
+            formState,
+            cashflowTransactions,
+            centerId,
+            financeAvailable,
+            financeStatus,
+            tuitionPackageCatalog,
+          )
         : ''}
       ${
         paymentFormState && paymentStudent && paymentTuition
@@ -1314,6 +1320,7 @@ export function normalizeTuitionFormValues(values) {
   const discount = getDiscountCalculation(values, totalAmount)
 
   return {
+    packageCatalogId: String(values.packageCatalogId || '').trim(),
     packageName: String(values.packageName || '').trim(),
     totalSessions: normalizeInteger(values.totalSessions),
     usedSessions: normalizeInteger(values.usedSessions),
@@ -1337,8 +1344,12 @@ export function validateTuitionForm(values) {
     errors.packageName = 'Cần nhập tên gói học phí.'
   }
 
-  if (!Number.isInteger(normalizedValues.totalSessions) || normalizedValues.totalSessions <= 0) {
-    errors.totalSessions = 'Tổng số buổi phải lớn hơn 0.'
+  if (
+    !Number.isInteger(normalizedValues.totalSessions) ||
+    normalizedValues.totalSessions <= 0 ||
+    normalizedValues.totalSessions > 1000
+  ) {
+    errors.totalSessions = 'Tổng số buổi phải là số nguyên từ 1 đến 1000.'
   }
 
   if (!Number.isInteger(normalizedValues.usedSessions) || normalizedValues.usedSessions < 0) {
@@ -1432,6 +1443,30 @@ function filterTuitionRows(rows, filters) {
     const matchesPackage = filters.package === 'all' || row.packageKind === filters.package
     return matchesQuery && matchesStatus && matchesPackage
   })
+}
+
+export function buildTuitionPackageFilterOptions(rows = [], packageCatalog = []) {
+  const sessionCounts = new Set()
+  const candidates = [
+    ...(Array.isArray(packageCatalog) ? packageCatalog : []),
+    ...(Array.isArray(rows) ? rows : []),
+  ]
+
+  candidates.forEach((item) => {
+    const totalSessions = Number(item?.totalSessions ?? item?.tuition?.totalSessions)
+    if (Number.isSafeInteger(totalSessions) && totalSessions > 0) {
+      sessionCounts.add(totalSessions)
+    }
+  })
+
+  return [
+    { value: 'all', label: 'Tất cả gói' },
+    ...[...sessionCounts]
+      .sort((first, second) => first - second)
+      .map((totalSessions) => ({ value: String(totalSessions), label: `${totalSessions} buổi` })),
+    { value: 'other', label: 'Dữ liệu gói khác' },
+    { value: 'no-package', label: 'Chưa có gói' },
+  ]
 }
 
 function renderTuitionRow(row) {
@@ -1853,6 +1888,7 @@ function renderTuitionForm(
   centerId = '',
   financeAvailable = true,
   financeStatus = 'ready',
+  packageCatalog = [],
 ) {
   const isEdit = formState.mode === 'edit'
   const isRenew = formState.mode === 'renew'
@@ -1878,6 +1914,25 @@ function renderTuitionForm(
             financeStatus,
           }
       : baseDiscountPreview
+  const activePackages = (Array.isArray(packageCatalog) ? packageCatalog : [])
+    .filter((tuitionPackage) => tuitionPackage?.isActive === true)
+    .sort((first, second) =>
+      Number(first.totalSessions) - Number(second.totalSessions) ||
+      String(first.packageName || '').localeCompare(String(second.packageName || ''), 'vi'),
+    )
+  const selectedPackageId = String(values.packageCatalogId || '')
+  const selectedPackage = activePackages.find((tuitionPackage) => tuitionPackage.id === selectedPackageId)
+  const usesHistoricalPackage = Boolean(
+    (isEdit || isRenew) &&
+    values.packageName &&
+    !activePackages.some((tuitionPackage) =>
+      tuitionPackage.id === selectedPackageId ||
+      (
+        tuitionPackage.packageName === values.packageName &&
+        Number(tuitionPackage.totalSessions) === Number(values.totalSessions)
+      ),
+    ),
+  )
 
   return `
     <div class="tuition-form-backdrop" data-tuition-action="cancel-form"></div>
@@ -1907,21 +1962,38 @@ function renderTuitionForm(
           <h5>Thiết lập gói</h5>
           <p>${isEdit ? 'Chỉnh cấu hình gói hiện tại của học viên' : 'Thiết lập gói học phí cho học viên'}</p>
         </div>
-        <div class="tuition-package-suggestions" aria-label="Gợi ý gói buổi">
-          ${[8, 16, 32]
+        <div class="tuition-package-suggestions" aria-label="Gói học phí của cơ sở">
+          ${activePackages
             .map(
-              (sessionCount) => `
+              (tuitionPackage) => `
                 <button
-                  class="${String(values.totalSessions) === String(sessionCount) ? 'active' : ''}"
+                  class="${selectedPackage?.id === tuitionPackage.id ? 'active' : ''}"
                   type="button"
-                  data-tuition-package-suggestion="${sessionCount}"
+                  data-tuition-package-option-id="${escapeAttribute(tuitionPackage.id)}"
+                  aria-pressed="${selectedPackage?.id === tuitionPackage.id ? 'true' : 'false'}"
                 >
-                  ${sessionCount} buổi
+                  <strong>${escapeHtml(tuitionPackage.packageName)}</strong>
+                  <span>${tuitionPackage.totalSessions} buổi · ${formatMoney(tuitionPackage.defaultAmount)}</span>
                 </button>
               `,
             )
             .join('')}
+          <button
+            class="${selectedPackage ? '' : 'active'}"
+            type="button"
+            data-tuition-package-custom
+            aria-pressed="${selectedPackage ? 'false' : 'true'}"
+          >
+            <strong>Nhập tùy chỉnh</strong>
+            <span>Tên, số buổi và học phí</span>
+          </button>
         </div>
+        ${activePackages.length
+          ? '<p class="tuition-package-catalog-note">Danh mục được quản lý tại Cài đặt cơ sở → Gói học phí. Gói ngưng hoạt động không dùng cho lượt gán mới.</p>'
+          : '<p class="tuition-package-catalog-note is-warning">Chưa có gói đang hoạt động. Có thể nhập gói tùy chỉnh hoặc cấu hình tại Cài đặt cơ sở → Gói học phí.</p>'}
+        ${usesHistoricalPackage
+          ? '<p class="tuition-package-catalog-note">Hồ sơ đang giữ nguyên gói lịch sử/tùy chỉnh dù gói không còn trong danh mục hoạt động.</p>'
+          : ''}
         <div class="tuition-form-grid">
           ${renderTextField('packageName', 'Tên gói', values.packageName, errors.packageName)}
           ${renderTextField('totalSessions', 'Tổng số buổi', values.totalSessions, errors.totalSessions, 'number')}
@@ -2688,7 +2760,11 @@ function renderTextField(fieldName, label, value, error, type = 'text', scope = 
         type="${type}"
         value="${escapeHtml(value)}"
         ${dataAttribute}
-        ${type === 'number' ? 'min="0" step="1"' : ''}
+        ${type === 'number'
+          ? fieldName === 'totalSessions'
+            ? 'min="1" max="1000" step="1"'
+            : 'min="0" step="1"'
+          : ''}
       />
       ${error ? `<small>${error}</small>` : ''}
     </label>
@@ -2698,7 +2774,7 @@ function renderTextField(fieldName, label, value, error, type = 'text', scope = 
 function renderDiscountPresetField(values, errors) {
   return `
     <label class="${errors.discountAmount ? 'has-error' : ''}">
-      <span>Kiểu ưu đãi / Mức ưu đãi</span>
+      <span>Ưu đãi (nếu có)</span>
       <select data-tuition-form-field="discountPreset">
         ${discountPresetOptions
           .map(
@@ -2794,11 +2870,10 @@ function renderOptions(options, selectedValue) {
 }
 
 function getPackageKind(totalSessions) {
-  if ([8, 16, 32].includes(totalSessions)) {
-    return String(totalSessions)
-  }
-
-  return 'other'
+  const normalizedTotalSessions = Number(totalSessions)
+  return Number.isSafeInteger(normalizedTotalSessions) && normalizedTotalSessions > 0
+    ? String(normalizedTotalSessions)
+    : 'other'
 }
 
 function createDiscountFormValues(tuitionRecord) {

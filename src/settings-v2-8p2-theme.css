@@ -926,6 +926,23 @@
   bottom: 18px;
   z-index: 2;
   max-width: 480px;
+  border: 1px solid var(--settings-green-line);
+  color: var(--settings-green);
+  background: var(--settings-green-bg);
+  font-weight: 600;
+  opacity: 1;
+}
+
+.desktop-window.is-settings-window .settings-wallpaper-message.is-error {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-settings-window .settings-wallpaper-message.is-error {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+  background: #3f1d22;
 }
 
 .desktop-window.is-settings-window .settings-data-status-panel {

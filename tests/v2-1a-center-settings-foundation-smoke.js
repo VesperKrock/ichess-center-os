@@ -221,7 +221,8 @@ const readyHtml = renderSettingsModule([], [], undefined, null, null, {
 assert.match(readyHtml, /Gói 12 buổi/)
 assert.doesNotMatch(readyHtml, /KHÔNG ĐƯỢC SUY DIỄN/)
 assert.match(readyHtml, /data-settings-package-action="open-create"/)
-assert.match(readyHtml, /Việc gán gói và tự động hóa chu kỳ thuộc bước V2-4/)
+assert.match(readyHtml, /Có thể nhập số buổi từ 1 đến 1000/)
+assert.match(readyHtml, /hồ sơ học phí cũ vẫn được giữ nguyên/)
 
 const unavailableHtml = renderSettingsModule([], [], undefined, null, null, {
   activeTab: 'center-info',

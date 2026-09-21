@@ -414,11 +414,11 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
       <div class="settings-panel-header">
         <div>
           <h4>Gói học phí</h4>
-          <p>Danh mục độc lập để Học viên và Học phí tham chiếu ở các bước V2 tiếp theo.</p>
+          <p>Cấu hình các gói mà cơ sở dùng khi gán học phí cho học viên.</p>
         </div>
         <button type="button" data-settings-package-action="open-create" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>+ Thêm gói</button>
       </div>
-      <p class="settings-product-note">Danh mục này không được tự tạo từ hồ sơ học phí học viên. Việc gán gói và tự động hóa chu kỳ thuộc bước V2-4.</p>
+      <p class="settings-product-note">Có thể nhập số buổi từ 1 đến 1000. Gói đã ngưng không dùng cho lượt gán mới; hồ sơ học phí cũ vẫn được giữ nguyên.</p>
       <div class="settings-class-session-table-wrap">
         <table class="settings-class-session-table">
           <thead>
