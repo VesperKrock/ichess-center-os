@@ -1476,7 +1476,7 @@ function renderTuitionRow(row) {
   const attendanceStatus = resolveTuitionDomainUiState(row.attendanceStatus, attendanceAvailable)
   const financeAvailable = row.financeAvailable !== false
   const financeStatus = resolveTuitionDomainUiState(row.financeStatus, financeAvailable)
-  const compactStudentName = getCompactStudentName(row.student.fullName)
+  const studentName = String(row.student.fullName || '').trim()
   const careNotes = Array.isArray(row.careNotes) ? row.careNotes : []
   const hasOverpayment = tuition ? Math.max((row.amounts?.paidAmount || 0) - (row.amounts?.payableAmount || 0), 0) > 0 : false
   const conflictMarker = tuition?.conflictMarker || null
@@ -1508,7 +1508,7 @@ function renderTuitionRow(row) {
     >
       <td>
         <div class="tuition-student-cell" title="${escapeHtml(row.student.fullName)}">
-          <strong>${escapeHtml(compactStudentName)}</strong>
+          <strong>${escapeHtml(studentName)}</strong>
           <span>PH: ${escapeHtml(familyLink.parent.parentName || 'Chưa cập nhật')}</span>
           <small>${escapeHtml(familyLink.parent.primaryPhone || 'Chưa có SĐT')}</small>
         </div>
@@ -3099,16 +3099,6 @@ function normalizePercent(value) {
 
 function getTodayInputValue() {
   return new Date().toISOString().slice(0, 10)
-}
-
-function getCompactStudentName(fullName) {
-  const nameParts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean)
-
-  if (nameParts.length <= 2) {
-    return nameParts.join(' ')
-  }
-
-  return nameParts.slice(-2).join(' ')
 }
 
 function getPaymentMethodLabel(method) {

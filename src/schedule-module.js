@@ -2938,7 +2938,7 @@ function renderTeacherAttendanceLockNotice(draft = {}) {
 }
 
 function renderAttendanceRow(attendanceItem, student, options = {}) {
-  const studentName = getShortStudentName(student?.fullName || student?.name || 'Học viên không tìm thấy')
+  const studentName = getAuthoritativeStudentName(student?.fullName || student?.name || 'Học viên không tìm thấy')
   const studentMeta = [
     student?.level,
     student?.parentName,
@@ -2987,7 +2987,7 @@ function renderGuestParticipantRow(guest) {
   return `
     <div class="session-report-student-row is-guest">
       <div class="session-report-student-name">
-        <strong>${escapeHtml(getShortStudentName(guest.displayName))}</strong>
+        <strong>${escapeHtml(getAuthoritativeStudentName(guest.displayName))}</strong>
         <span>${escapeHtml(guestLabel)} · học viên tạm</span>
       </div>
       <div class="session-report-guest-type">${escapeHtml(guestLabel)}</div>
@@ -3906,7 +3906,7 @@ function getStudentSummary(studentIds = [], studentLookup) {
   }
 
   const students = ids.map((id) => studentLookup.get(id)).filter(Boolean)
-  const names = students.map((student) => getShortName(student.fullName || 'Học viên'))
+  const names = students.map((student) => getAuthoritativeStudentName(student.fullName || 'Học viên'))
   const missingCount = ids.length - students.length
   const visibleNames = names.slice(0, 2).join(', ')
   const extraCount = Math.max(0, ids.length - 2)
@@ -3950,12 +3950,12 @@ function getAttendanceStatusLabel(status) {
 }
 
 function getStudentDisplayName(student) {
-  return getShortStudentName(student?.fullName || student?.name || 'Học viên không xác định')
+  return getAuthoritativeStudentName(student?.fullName || student?.name || 'Học viên không xác định')
 }
 
 function formatAttendanceStudentName(attendanceItem, studentLookup) {
   const studentName = attendanceItem.isGuest
-    ? getShortStudentName(attendanceItem.displayName)
+    ? getAuthoritativeStudentName(attendanceItem.displayName)
     : getStudentDisplayName(studentLookup.get(attendanceItem.studentId))
 
   if (attendanceItem.attendanceStatus === 'makeup') {
@@ -3969,14 +3969,8 @@ function formatAttendanceStudentName(attendanceItem, studentLookup) {
   return studentName
 }
 
-function getShortStudentName(fullName) {
-  const nameParts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean)
-  return nameParts.length > 2 ? nameParts.slice(-2).join(' ') : nameParts.join(' ')
-}
-
-function getShortName(fullName) {
-  const nameParts = String(fullName ?? '').trim().split(/\s+/).filter(Boolean)
-  return nameParts.slice(-2).join(' ') || String(fullName || '').trim()
+function getAuthoritativeStudentName(fullName) {
+  return String(fullName ?? '').trim()
 }
 
 function createLookup(items = []) {

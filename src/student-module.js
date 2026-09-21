@@ -1012,7 +1012,7 @@ function renderStudentRow(student, classSessions = []) {
         <div class="student-person">
           ${renderStudentAvatar(student)}
           <div>
-            <strong title="${escapeAttribute(student.fullName)}">${getShortName(student.fullName)}</strong>
+            <strong title="${escapeAttribute(student.fullName)}">${escapeHtml(getAuthoritativeStudentName(student.fullName))}</strong>
             <span>${formatBirthDate(student.birthDate)}</span>
           </div>
         </div>
@@ -1208,6 +1208,10 @@ function getShortName(value) {
   }
 
   return parts.slice(-2).join(' ')
+}
+
+function getAuthoritativeStudentName(value) {
+  return String(value ?? '').trim()
 }
 
 export function getLevelLabel(level) {
