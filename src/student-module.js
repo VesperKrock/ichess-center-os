@@ -278,7 +278,6 @@ export function renderStudentModule(
                   <th>SĐT</th>
                   <th>Trạng thái</th>
                   <th>${renderSortableHeader('Cấp độ', 'level', filters)}</th>
-                  <th>Trường học</th>
                   <th>Ca học</th>
                   <th>Ghi chú</th>
                 </tr>
@@ -1018,7 +1017,6 @@ function renderStudentRow(student, classSessions = []) {
       <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
       <td><span class="student-status ${getStudentStatusToneClass(student.currentStatus)}">${student.currentStatus}</span></td>
       <td>${escapeHtml(getLevelLabel(student.level))}</td>
-      <td title="${escapeAttribute(student.schoolName)}">${getShortSchoolName(student.schoolName)}</td>
       <td>${renderStudentClassSessionCell(student, classSessionLookup)}</td>
       <td>
         ${hasCareNote

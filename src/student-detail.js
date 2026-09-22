@@ -42,8 +42,12 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
   const careNotes = getSortedCareNotes(student)
   const latestCareNote = careNotes[0]
   const classSessionLabel = getStudentClassSessionLabel(student, classSessions)
-  const primaryParentPhone = student.motherPhone || student.fatherPhone || student.parentPhone
   const studentTuitionLink = buildStudentTuitionLink(student, tuitionRecords, classSessions)
+  const studentStatusFact = ['Trạng thái', student.currentStatus]
+  const primaryParentPhone = studentTuitionLink.parent.primaryPhone
+    || student.motherPhone
+    || student.fatherPhone
+    || student.parentPhone
   const readOnlyProjection = student.readOnlyProjection === true
 
   return `
@@ -64,9 +68,12 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
         </div>
         <div class="student-detail-hero-main">
           <h3>${student.fullName}</h3>
-          <p>${displayValue(student.currentStatus)} · ${getEscapedLevelLabel(student.level)} · Mốc bot: ${displayValue(student.highestBotMilestone)}</p>
-          <p>${formatBirthDate(student.birthDate)} · ${formatAgeLabel(student.birthDate)} · ${getGenderLabel(student.gender)}</p>
-          <p>Trường: ${getSchoolLabel(student)} · PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(primaryParentPhone))}</p>
+          <div class="student-detail-hero-badges" aria-label="Trạng thái và cấp độ học viên">
+            <span class="student-detail-status-badge ${getStudentProfileStatusClass(studentStatusFact[1])}" aria-label="${studentStatusFact[0]}">${displayValue(studentStatusFact[1])}</span>
+            <span class="student-detail-level-badge">${getEscapedLevelLabel(student.level)}</span>
+          </div>
+          <p class="student-detail-identity-meta">${formatBirthDate(student.birthDate)} · ${formatAgeLabel(student.birthDate)} · ${getGenderLabel(student.gender)}</p>
+          <p class="student-detail-contact-meta">PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(primaryParentPhone))}</p>
         </div>
         <div class="student-detail-hero-actions">
           <button
@@ -80,78 +87,61 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
           </button>
           <span class="student-detail-delete-slot"></span>
         </div>
-        <div class="student-detail-quick-facts" aria-label="Tóm tắt học viên">
-          ${renderStudentQuickFact('Ca học / Lớp', classSessionLabel)}
-          ${renderStudentQuickFact(
-            'Còn lại',
-            Number.isFinite(studentTuitionLink.tuition.remainingSessions)
-              ? `${studentTuitionLink.tuition.remainingSessions} buổi`
-              : '—',
-          )}
-          ${renderStudentQuickFact(
-            'Cần thanh toán',
-            studentTuitionLink.tuition.hasTuition
-              ? formatMoney(studentTuitionLink.tuition.payableAmount)
-              : '—',
-          )}
-        </div>
       </div>
 
       <div class="student-overview-grid">
-        ${renderOverviewTile('Thông tin học viên', [
-          ['Họ và tên', student.fullName],
-          ['Trạng thái', student.currentStatus],
-          ['Ngày sinh', formatBirthDate(student.birthDate)],
-          ['Tuổi', formatAgeLabel(student.birthDate)],
-          ['Giới tính', getGenderLabel(student.gender)],
-          ['Trường', getSchoolLabel(student)],
-          ['Tỉnh/TP', student.hometown],
-          ['Sở thích', student.hobbies],
-          ['Quốc tịch', student.nationality],
-        ])}
-        ${renderOverviewTile('Phụ huynh / Liên hệ', [
-          ['Phụ huynh', student.parentName],
-          ['SĐT ba', formatPhoneNumber(student.fatherPhone)],
-          ['SĐT mẹ', formatPhoneNumber(student.motherPhone || (!student.fatherPhone ? student.parentPhone : ''))],
-          ['Năm sinh / tuổi', formatParentAge(student.parentBirthYear)],
-          ['Nghề nghiệp phụ huynh liên hệ', student.parentJob],
-          ['Khu vực sinh sống', student.parentArea],
-        ])}
-        ${renderStudentFamilyTuitionTile(studentTuitionLink)}
-        ${renderOverviewTile('Trạng thái học', [
-          ['Cấp độ học', getEscapedLevelLabel(student.level)],
-          ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
-          ['Mốc bot', student.highestBotMilestone],
-          ['Tính cách', student.personality],
-          ['Ca học / Lớp', classSessionLabel],
-        ])}
+        <div class="student-operational-grid">
+          ${renderOverviewTile(
+            'Học tập',
+            [
+              ['Cấp độ hiện tại', getEscapedLevelLabel(student.level)],
+              ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
+              ['Mốc bot', student.highestBotMilestone],
+              ['Tính cách', student.personality],
+              ['Ca học / Lớp', classSessionLabel],
+            ],
+            '',
+            'student-learning-summary-tile',
+          )}
+          ${renderStudentParentContactTile(student, studentTuitionLink)}
+          ${renderStudentTuitionTile(studentTuitionLink)}
+        </div>
         ${renderStudentScheduleOverview(student, classSessions)}
+        <div class="student-secondary-grid">
+          ${renderOverviewTile(
+            'Chăm sóc',
+            [
+              ['Số ghi chú', `${careNotes.length}`],
+              ['Ghi chú mới nhất', summarizeText(latestCareNote?.content)],
+              ['Thành tích', summarizeText(student.achievements)],
+              ['Lưu ý phụ huynh', summarizeText(student.parentNotes)],
+            ],
+            `<button type="button" class="student-detail-open-button" data-student-detail-action="open-care-notes" data-student-id="${student.id}">Mở chi tiết</button>`,
+            'student-care-summary-tile',
+          )}
+          ${renderOverviewTile(
+            'Kết quả học tập',
+            [
+              ['Cấp độ học hiện tại', getEscapedLevelLabel(student.level)],
+              ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
+              ['Mốc bot', student.highestBotMilestone],
+            ],
+            '',
+            'student-learning-result-tile',
+          )}
+        </div>
         ${renderOverviewTile(
-          'Chăm sóc',
+          'Thông tin bổ sung',
           [
-            ['Số ghi chú', `${careNotes.length}`],
-            ['Ghi chú mới nhất', summarizeText(latestCareNote?.content)],
-            ['Thành tích', summarizeText(student.achievements)],
-            ['Lưu ý phụ huynh', summarizeText(student.parentNotes)],
+            ['Trường', student.schoolName],
+            ['Bậc học', student.schoolLevel],
+            ['Tỉnh/TP', student.hometown],
+            ['Sở thích', student.hobbies],
+            ['Quốc tịch', student.nationality],
           ],
-          `<button type="button" class="student-detail-open-button" data-student-detail-action="open-care-notes" data-student-id="${student.id}">Mở chi tiết</button>`,
+          '',
+          'student-supplementary-tile',
         )}
-        ${renderOverviewTile(
-          'Kết quả học tập',
-          [
-            ['Cấp độ học hiện tại', getEscapedLevelLabel(student.level)],
-            ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
-            ['Mốc bot', student.highestBotMilestone],
-            ['Nhận xét GV', 'Sẽ cập nhật sau'],
-            ['Kế hoạch học tập', 'Sẽ cập nhật sau'],
-          ],
-        )}
-        ${renderOverviewTile('Tự động sau', [
-          ['Chuyên cần', 'Tự động cập nhật sau'],
-          ['Ca học chính', 'Tự động cập nhật sau'],
-          ['Tái đăng ký', 'Tự động cập nhật sau'],
-          ['Tình trạng thu phí', 'Tự động cập nhật sau'],
-        ])}
       </div>
     </section>
   `
@@ -240,18 +230,6 @@ export function renderStudentLearningResult(student) {
         ${renderLearningStat('Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore))}
         ${renderLearningStat('Mốc bot', displayValue(student.highestBotMilestone))}
       </div>
-      <section class="student-learning-panel">
-        <h4>Biểu đồ tiến bộ</h4>
-        <p>Chưa có dữ liệu học tập thật. Giáo viên sẽ cập nhật ở phase sau.</p>
-      </section>
-      <section class="student-learning-panel">
-        <h4>Nhận xét giáo viên</h4>
-        <p>Sẽ cập nhật sau.</p>
-      </section>
-      <section class="student-learning-panel">
-        <h4>Kế hoạch học tập tiếp theo</h4>
-        <p>Sẽ cập nhật sau.</p>
-      </section>
     </section>
   `
 }
@@ -276,49 +254,95 @@ function renderStudentNotFound() {
   `
 }
 
-function renderOverviewTile(title, rows, action = '') {
+function renderOverviewTile(title, rows, action = '', className = '', footer = '') {
   return `
-    <section class="student-overview-tile">
+    <section class="student-overview-tile${className ? ` ${className}` : ''}">
       <div class="student-overview-tile-header">
         <h4>${title}</h4>
         ${action ? `<div class="student-overview-actions">${action}</div>` : ''}
       </div>
-      <dl>
-        ${rows
-          .map(
-            ([label, value]) => `
-              <div class="${isStudentOverviewMetricLabel(label) ? 'student-overview-metric-row' : ''}">
-                <dt>${label}</dt>
-                <dd>${displayValue(value)}</dd>
-              </div>
-            `,
-          )
-          .join('')}
-      </dl>
+      ${rows.length
+        ? `<dl>
+            ${rows
+              .map(
+                ([label, value]) => `
+                  <div class="${isStudentOverviewMetricLabel(label) ? 'student-overview-metric-row' : ''}">
+                    <dt>${label}</dt>
+                    <dd>${displayValue(value)}</dd>
+                  </div>
+                `,
+              )
+              .join('')}
+          </dl>`
+        : ''}
+      ${footer}
     </section>
   `
 }
 
-function renderStudentQuickFact(label, value) {
-  return `
-    <div>
-      <span>${label}</span>
-      <strong>${displayValue(value)}</strong>
-    </div>
-  `
-}
-
 function isStudentOverviewMetricLabel(label) {
-  return ['GV phụ trách', 'Ca học / Lớp', 'Còn lại', 'Cần thanh toán'].includes(label)
+  return ['Ca học / Lớp', 'Còn lại', 'Cần thanh toán', 'Đã thanh toán'].includes(label)
 }
 
-function renderStudentFamilyTuitionTile(link) {
-  const warningHtml = link.warnings.length
-    ? `
-      <div class="student-link-warning-list" aria-label="Cảnh báo chăm sóc">
-        <strong>Cảnh báo chăm sóc</strong>
+function renderStudentParentContactTile(student, link) {
+  const hasParentDetails = link.parent.hasContact
+    || [student.parentBirthYear, student.parentJob, student.parentArea]
+      .some((value) => String(value ?? '').trim())
+  const parentWarnings = hasParentDetails
+    ? link.warnings.filter((warning) => ['missing-parent-name', 'missing-parent-phone'].includes(warning.key))
+    : []
+
+  return renderOverviewTile(
+    'Phụ huynh / Liên hệ',
+    hasParentDetails
+      ? [
+          ['Phụ huynh', link.parent.parentName],
+          ['Số liên hệ chính', formatPhoneNumber(link.parent.primaryPhone)],
+          ['SĐT ba', formatPhoneNumber(link.parent.fatherPhone)],
+          ['SĐT mẹ', formatPhoneNumber(link.parent.motherPhone)],
+          ['Năm sinh / tuổi', formatParentAge(student.parentBirthYear)],
+          ['Nghề nghiệp', student.parentJob],
+          ['Khu vực sinh sống', student.parentArea],
+        ]
+      : [],
+    '',
+    'student-parent-contact-tile',
+    `${hasParentDetails ? '' : '<p class="student-profile-card-empty">Chưa có thông tin phụ huynh/người liên hệ.</p>'}${renderStudentWarningList(parentWarnings)}`,
+  )
+}
+
+function renderStudentTuitionTile(link) {
+  const tuitionWarnings = link.tuition.hasTuition
+    ? link.warnings.filter((warning) => ['tuition-debt', 'tuition-low-session'].includes(warning.key))
+    : []
+
+  return renderOverviewTile(
+    'Học phí',
+    link.tuition.hasTuition
+      ? [
+          ['Gói học phí', link.tuition.packageName],
+          ['Trạng thái', link.tuition.statusLabel],
+          ['Còn lại', Number.isFinite(link.tuition.remainingSessions) ? `${link.tuition.remainingSessions} buổi` : '—'],
+          ['Cần thanh toán', formatMoney(link.tuition.payableAmount)],
+          ['Đã thanh toán', formatMoney(link.tuition.paidAmount)],
+        ]
+      : [],
+    '',
+    'student-tuition-summary-tile',
+    `${link.tuition.hasTuition ? '' : '<p class="student-profile-card-empty">Chưa có dữ liệu học phí.</p>'}${renderStudentWarningList(tuitionWarnings)}`,
+  )
+}
+
+function renderStudentWarningList(warnings = []) {
+  if (!warnings.length) {
+    return ''
+  }
+
+  return `
+      <div class="student-link-warning-list" aria-label="Lưu ý hồ sơ">
+        <strong>Lưu ý</strong>
         <div>
-          ${link.warnings
+          ${warnings
             .map(
               (warning) => `
                 <span class="student-link-warning is-${warning.tone}">
@@ -330,29 +354,6 @@ function renderStudentFamilyTuitionTile(link) {
         </div>
       </div>
     `
-    : '<p class="student-family-tuition-empty">Không có cảnh báo chăm sóc nổi bật.</p>'
-  const contactEmpty = link.parent.hasContact
-    ? ''
-    : '<p class="student-family-tuition-empty">Chưa có thông tin phụ huynh/người liên hệ.</p>'
-  const tuitionEmpty = link.tuition.hasTuition
-    ? ''
-    : '<p class="student-family-tuition-empty">Chưa có dữ liệu học phí liên kết cho học viên này.</p>'
-
-  return renderOverviewTile(
-    'Liên kết phụ huynh & học phí',
-    [
-      ['Phụ huynh/người chăm sóc', link.parent.parentName],
-      ['SĐT ba', formatPhoneNumber(link.parent.fatherPhone)],
-      ['SĐT mẹ', formatPhoneNumber(link.parent.motherPhone)],
-      ['Số liên hệ chính', formatPhoneNumber(link.parent.primaryPhone)],
-      ['Trạng thái học viên', link.studentStatus],
-      ['Tổng quan học phí', link.tuition.label],
-      ['Còn lại', Number.isFinite(link.tuition.remainingSessions) ? `${link.tuition.remainingSessions} buổi` : '—'],
-      ['Cần thanh toán', link.tuition.hasTuition ? formatMoney(link.tuition.payableAmount) : '—'],
-      ['Đã thanh toán', link.tuition.hasTuition ? formatMoney(link.tuition.paidAmount) : '—'],
-    ],
-    '',
-  ).replace('</section>', `${contactEmpty}${tuitionEmpty}${warningHtml}</section>`)
 }
 
 function renderLearningStat(label, value) {
@@ -501,7 +502,10 @@ function renderStudentScheduleOverview(student, classSessions = []) {
               </section>
             `).join('')}
           </div>`
-        : '<p class="student-profile-schedule-unassigned">Chưa phân lớp</p>'}
+        : `<div class="student-profile-schedule-unassigned">
+            <strong>Chưa phân lớp</strong>
+            <span>Học viên chưa có lịch học định kỳ.</span>
+          </div>`}
       ${unresolved.length
         ? `<div class="student-profile-schedule-warnings">${unresolved.map((message) => `<span>${escapeHtml(message)}</span>`).join('')}</div>`
         : ''}
@@ -573,6 +577,24 @@ function getGenderLabel(value) {
   return genderLabels[value] ?? 'Chưa cập nhật giới tính'
 }
 
+function getStudentProfileStatusClass(value) {
+  const status = String(value ?? '').trim().toLowerCase()
+
+  if (status === 'đang theo học') {
+    return 'is-active'
+  }
+
+  if (status === 'bảo lưu') {
+    return 'is-paused'
+  }
+
+  if (status === 'ngưng học') {
+    return 'is-stopped'
+  }
+
+  return ''
+}
+
 function getLevelLabel(level) {
   const studentLevelOptions = [
     'Dolphin 1',
@@ -620,17 +642,6 @@ function getLevelLabel(level) {
 
 function getEscapedLevelLabel(level) {
   return escapeHtml(getLevelLabel(level))
-}
-
-function getSchoolLabel(student) {
-  const schoolName = displayValue(student.schoolName)
-  const schoolLevel = displayValue(student.schoolLevel)
-
-  if (schoolName === '—') {
-    return schoolLevel === '—' ? '—' : schoolLevel
-  }
-
-  return schoolLevel === '—' ? schoolName : `${schoolName} (${schoolLevel})`
 }
 
 function formatBirthDate(value) {

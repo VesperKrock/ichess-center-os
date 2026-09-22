@@ -1293,7 +1293,7 @@
   min-width: 0;
   min-height: 0;
   flex: 1;
-  padding: 11.2px 32px 16px;
+  padding: 16px 24px 24px;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -1302,24 +1302,22 @@
 }
 
 .is-student-profile-window .student-detail-page-title {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   color: var(--student-text);
-  font-size: 25px;
+  font-size: 24px;
   font-weight: 600;
   line-height: normal;
 }
 
 .is-student-profile-window .student-detail-hero {
   display: grid;
-  grid-template-areas:
-    'avatar identity actions'
-    'facts facts facts';
+  grid-template-areas: 'avatar identity actions';
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px 12px;
-  min-height: 145.6px;
+  align-items: center;
+  gap: 16px;
+  min-height: 0;
   flex: 0 0 auto;
-  padding: 11.2px 16px 0;
+  padding: 16px;
   border: 0.8px solid var(--student-border);
   border-radius: 9.6px;
   background: var(--student-surface);
@@ -1330,7 +1328,7 @@
   display: grid;
   grid-area: avatar;
   justify-items: center;
-  gap: 4px;
+  gap: 5px;
 }
 
 .is-student-profile-window .student-detail-hero-main {
@@ -1339,12 +1337,12 @@
 }
 
 .is-student-profile-window .student-detail-avatar {
-  width: 41.6px;
-  height: 41.6px;
+  width: 56px;
+  height: 56px;
   border: 0;
   background: var(--student-border);
   color: var(--student-muted);
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .is-student-profile-window .student-avatar-clear {
@@ -1357,19 +1355,61 @@
 }
 
 .is-student-profile-window .student-detail-hero-main h3 {
-  margin: 0 0 1.6px;
+  margin: 0 0 6px;
   color: var(--student-text);
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 600;
-  line-height: normal;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
 }
 
 .is-student-profile-window .student-detail-hero-main p {
-  margin: 1.6px 0;
+  margin: 4px 0 0;
   color: var(--student-muted);
   font-size: 14px;
   font-weight: 400;
-  line-height: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.is-student-profile-window .student-detail-hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.is-student-profile-window .student-detail-status-badge,
+.is-student-profile-window .student-detail-level-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--student-border);
+  border-radius: 999px;
+  background: var(--student-surface-soft);
+  color: var(--student-text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.is-student-profile-window .student-detail-status-badge.is-active {
+  border-color: var(--student-success-text);
+  background: var(--student-success-bg);
+  color: var(--student-success-text);
+}
+
+.is-student-profile-window .student-detail-status-badge.is-paused {
+  border-color: var(--student-paused-text);
+  background: var(--student-paused-bg);
+  color: var(--student-paused-text);
+}
+
+.is-student-profile-window .student-detail-status-badge.is-stopped {
+  border-color: var(--student-stopped-text);
+  background: var(--student-stopped-bg);
+  color: var(--student-stopped-text);
 }
 
 .is-student-profile-window .student-detail-hero-actions {
@@ -1382,11 +1422,11 @@
 
 .is-student-profile-window .student-detail-edit,
 .is-student-profile-window .student-detail-delete-button {
-  min-height: 35.2px;
-  padding: 8px 14.4px;
+  min-height: 34px;
+  padding: 7px 12px;
   border-radius: 6.4px;
   box-shadow: none;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -1402,60 +1442,37 @@
   color: var(--student-danger);
 }
 
-.is-student-profile-window .student-detail-quick-facts {
-  display: grid;
-  grid-area: facts;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  min-width: 0;
-  min-height: 48px;
-  margin-top: 2px;
-  border-top: 0.8px solid var(--student-border-soft);
-}
-
-.is-student-profile-window .student-detail-quick-facts > div {
-  display: grid;
-  min-width: 0;
-  align-content: center;
-  gap: 1.6px;
-  padding: 6px 11.2px;
-  border-right: 0.8px solid var(--student-border);
-}
-
-.is-student-profile-window .student-detail-quick-facts > div:last-child {
-  border-right: 0;
-}
-
-.is-student-profile-window .student-detail-quick-facts span {
-  color: var(--student-muted);
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.is-student-profile-window .student-detail-quick-facts strong {
-  min-width: 0;
-  color: var(--student-text);
-  font-size: 16px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
 .is-student-profile-window .student-overview-grid {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 0.92fr) minmax(0, 1.16fr);
-  gap: 12.8px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   align-items: stretch;
-  margin-top: 8px;
+  margin-top: 12px;
+}
+
+.is-student-profile-window .student-operational-grid,
+.is-student-profile-window .student-secondary-grid {
+  display: grid;
+  min-width: 0;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.is-student-profile-window .student-operational-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.is-student-profile-window .student-secondary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .is-student-profile-window .student-overview-tile {
   display: flex;
   min-width: 0;
-  min-height: 208px;
+  min-height: 0;
   flex-direction: column;
-  padding: 8px 14.4px;
+  padding: 14px;
   overflow: visible;
   border: 0.8px solid var(--student-border);
   border-radius: 9.6px;
@@ -1475,24 +1492,24 @@
 .is-student-profile-window .student-overview-tile h4 {
   margin: 0;
   color: var(--student-text);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   line-height: normal;
 }
 
 .is-student-profile-window .student-overview-tile dl {
   display: grid;
-  gap: 0.8px;
-  margin: 3.2px 0 0;
+  gap: 5px;
+  margin: 10px 0 0;
 }
 
 .is-student-profile-window .student-overview-tile dl div {
   display: grid;
-  grid-template-columns: minmax(112px, 128px) minmax(0, 1fr);
-  gap: 8px;
-  min-height: 20px;
-  align-items: baseline;
-  padding: 0;
+  grid-template-columns: minmax(108px, 42%) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  align-items: start;
+  padding: 2px 0;
   border: 0;
 }
 
@@ -1504,7 +1521,7 @@
 
 .is-student-profile-window .student-overview-tile dt {
   color: var(--student-muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -1512,35 +1529,25 @@
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--student-text);
-  font-size: 16px;
-  font-weight: 400;
+  font-size: 14px;
+  font-weight: 500;
   text-align: left;
 }
 
-.is-student-profile-window .student-overview-tile:nth-child(3) dl {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.8px 16px;
-}
-
-.is-student-profile-window .student-overview-tile:nth-child(3) dl div {
-  grid-template-columns: minmax(112px, 128px) minmax(0, 1fr);
-}
-
 .is-student-profile-window .student-schedule-overview-tile {
-  grid-column: 1 / -1;
   min-height: 0;
 }
 
 .is-student-profile-window .student-profile-schedule-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(104px, 1fr));
-  gap: 7px;
-  margin-top: 6px;
+  grid-template-columns: repeat(7, minmax(112px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
   overflow-x: auto;
 }
 
 .is-student-profile-window .student-profile-schedule-grid > section {
-  min-width: 104px;
+  min-width: 112px;
   border: 1px solid var(--student-border);
   border-radius: 7px;
   background: var(--student-surface-soft);
@@ -1575,9 +1582,7 @@
 .is-student-profile-window .student-profile-schedule-slot strong,
 .is-student-profile-window .student-profile-schedule-slot span,
 .is-student-profile-window .student-profile-schedule-slot small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .is-student-profile-window .student-profile-schedule-slot strong {
@@ -1609,11 +1614,25 @@
 }
 
 .is-student-profile-window .student-profile-schedule-unassigned {
-  margin: 8px 0 0;
-  padding: 10px;
+  display: inline-grid;
+  gap: 2px;
+  width: min(100%, 360px);
+  margin: 10px 0 0;
+  padding: 10px 12px;
   border: 1px solid var(--student-border);
   border-radius: 6px;
   background: var(--student-surface-soft);
+  text-align: left;
+}
+
+.is-student-profile-window .student-profile-schedule-unassigned strong {
+  color: var(--student-text);
+  font-size: 13px;
+}
+
+.is-student-profile-window .student-profile-schedule-unassigned span {
+  color: var(--student-muted);
+  font-size: 12px;
 }
 
 .is-student-profile-window .student-profile-schedule-warnings {
@@ -1652,8 +1671,8 @@
 }
 
 .is-student-profile-window .student-link-warning-list,
-.is-student-profile-window .student-family-tuition-empty {
-  margin: 4px 0 0;
+.is-student-profile-window .student-profile-card-empty {
+  margin: 10px 0 0;
   color: var(--student-muted);
   font-size: 13px;
   opacity: 1;
@@ -1663,6 +1682,10 @@
   color: var(--student-muted);
   font-size: 13px;
   font-weight: 500;
+}
+
+.is-student-profile-window .student-link-warning-list > div {
+  margin-top: 2px;
 }
 
 .is-student-profile-window .student-link-warning {
@@ -1682,52 +1705,36 @@
   color: var(--student-note-text);
 }
 
-.is-student-profile-window .student-overview-tile:last-child {
-  grid-column: 1 / -1;
-  min-height: 35px;
-  padding: 6px 16px;
+.is-student-profile-window .student-supplementary-tile {
+  padding: 12px 14px;
 }
 
-.is-student-profile-window .student-overview-tile:last-child .student-overview-tile-header {
-  display: none;
-}
-
-.is-student-profile-window .student-overview-tile:last-child dl {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.is-student-profile-window .student-supplementary-tile dl {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0;
-  margin: 0;
+  margin-top: 8px;
 }
 
-.is-student-profile-window .student-overview-tile:last-child dl div {
-  display: flex;
-  min-width: 0;
-  min-height: 22px;
-  gap: 6px;
-  padding: 0 16px;
-  border-right: 0.8px solid var(--student-border);
+.is-student-profile-window .student-supplementary-tile dl div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  padding: 0 12px;
+  border-right: 1px solid var(--student-border-soft);
 }
 
-.is-student-profile-window .student-overview-tile:last-child dl div:first-child {
+.is-student-profile-window .student-supplementary-tile dl div:first-child {
   padding-left: 0;
 }
 
-.is-student-profile-window .student-overview-tile:last-child dl div:last-child {
+.is-student-profile-window .student-supplementary-tile dl div:last-child {
   padding-right: 0;
   border-right: 0;
 }
 
-.is-student-profile-window .student-overview-tile:last-child dt {
-  flex: 0 0 auto;
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.is-student-profile-window .student-overview-tile:last-child dd {
-  overflow: hidden;
-  color: var(--student-muted);
-  font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.is-student-profile-window .student-supplementary-tile dd {
+  color: var(--student-text);
+  overflow-wrap: anywhere;
 }
 
 /* Care / Notes — certified frames 80:4 / 82:2. */
@@ -1995,16 +2002,21 @@
     grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(150px, 1fr));
   }
 
-  .is-student-profile-window .student-overview-grid {
+  .is-student-profile-window .student-operational-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .is-student-profile-window .student-overview-tile:last-child {
+  .is-student-profile-window .student-tuition-summary-tile {
     grid-column: 1 / -1;
   }
 
-  .is-student-profile-window .student-overview-tile:nth-child(3) dl {
-    grid-template-columns: 1fr;
+  .is-student-profile-window .student-supplementary-tile dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 0;
+  }
+
+  .is-student-profile-window .student-supplementary-tile dl div:nth-child(3) {
+    border-right: 0;
   }
 
   .is-student-care-notes-window .student-care-layout {
@@ -2043,8 +2055,7 @@
   .is-student-profile-window .student-detail-hero {
     grid-template-areas:
       'avatar identity'
-      'actions actions'
-      'facts facts';
+      'actions actions';
     grid-template-columns: auto minmax(0, 1fr);
   }
 
@@ -2053,28 +2064,8 @@
     justify-content: flex-start;
   }
 
-  .is-student-profile-window .student-detail-quick-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .is-student-profile-window .student-detail-quick-facts > div:nth-child(2) {
-    border-right: 0;
-  }
-
-  .is-student-profile-window .student-detail-quick-facts > div:nth-child(-n + 2) {
-    border-bottom: 0.8px solid var(--student-border);
-  }
-
-  .is-student-profile-window .student-overview-tile:last-child dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .is-student-profile-window .student-overview-tile:last-child dl div {
-    padding: 4px 10px;
-  }
-
-  .is-student-profile-window .student-overview-tile:last-child dl div:nth-child(2) {
-    border-right: 0;
+  .is-student-profile-window .student-detail-hero-actions {
+    padding-top: 4px;
   }
 }
 
@@ -2108,24 +2099,44 @@
     grid-template-columns: 1fr;
   }
 
-  .is-student-profile-window .student-overview-grid {
+  .is-student-profile-window .student-operational-grid,
+  .is-student-profile-window .student-secondary-grid {
     grid-template-columns: 1fr;
   }
 
-  .is-student-profile-window .student-overview-tile:last-child {
+  .is-student-profile-window .student-tuition-summary-tile {
     grid-column: auto;
   }
 
-  .is-student-profile-window .student-overview-tile:last-child dl {
+  .is-student-profile-window .student-detail-hero {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .is-student-profile-window .student-detail-hero-main h3 {
+    font-size: 22px;
+  }
+
+  .is-student-profile-window .student-detail-hero-actions {
+    flex-wrap: wrap;
+  }
+
+  .is-student-profile-window .student-supplementary-tile dl {
     grid-template-columns: 1fr;
+    gap: 0;
   }
 
-  .is-student-profile-window .student-overview-tile:last-child dl div {
+  .is-student-profile-window .student-supplementary-tile dl div,
+  .is-student-profile-window .student-supplementary-tile dl div:first-child,
+  .is-student-profile-window .student-supplementary-tile dl div:last-child {
+    grid-template-columns: minmax(108px, 42%) minmax(0, 1fr);
+    gap: 10px;
+    padding: 6px 0;
     border-right: 0;
-    border-bottom: 0.8px solid var(--student-border);
+    border-bottom: 1px solid var(--student-border-soft);
   }
 
-  .is-student-profile-window .student-overview-tile:last-child dl div:last-child {
+  .is-student-profile-window .student-supplementary-tile dl div:last-child {
     border-bottom: 0;
   }
 
