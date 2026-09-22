@@ -129,6 +129,107 @@ export async function mutateC53CrmSharedTruth({
   }
 }
 
+export async function convertF4bCrmCaseToStudent({
+  supabase,
+  centerId,
+  caseId,
+  candidateId,
+  expectedCaseVersion,
+  expectedCandidateVersion,
+  mode,
+  studentId = '',
+  expectedStudentVersion = 0,
+  studentPayload = null,
+  guardianRole = 'UNSPECIFIED',
+  guardianOccupation = '',
+  idempotencyKey = createC53CrmIdempotencyKey(),
+} = {}) {
+  if (!supabase || typeof supabase.rpc !== 'function') {
+    return failure('CLIENT_NOT_READY', getF4bConversionOutcomeMessage('CLIENT_NOT_READY'), null, idempotencyKey)
+  }
+
+  const normalizedCenterId = cleanText(centerId)
+  const normalizedMode = cleanText(mode).toUpperCase()
+  const caseVersion = Number(expectedCaseVersion)
+  const candidateVersion = Number(expectedCandidateVersion)
+  const studentVersion = Number(expectedStudentVersion)
+  if (!normalizedCenterId || !isUuid(caseId) || !isUuid(candidateId)
+    || !Number.isSafeInteger(caseVersion) || caseVersion < 1
+    || !Number.isSafeInteger(candidateVersion) || candidateVersion < 1
+    || !['CREATE_NEW', 'LINK_EXISTING'].includes(normalizedMode)
+    || !Number.isSafeInteger(studentVersion) || studentVersion < 0
+    || !isUuid(idempotencyKey)) {
+    return failure('INVALID_COMMAND', getF4bConversionOutcomeMessage('INVALID_COMMAND'), null, idempotencyKey)
+  }
+  if (normalizedMode === 'CREATE_NEW' && (!isPlainObject(studentPayload) || studentVersion !== 0)) {
+    return failure('INVALID_STUDENT_PAYLOAD', getF4bConversionOutcomeMessage('INVALID_STUDENT_PAYLOAD'), null, idempotencyKey)
+  }
+  if (normalizedMode === 'LINK_EXISTING' && (!cleanText(studentId) || studentVersion < 1)) {
+    return failure('INVALID_STUDENT_TARGET', getF4bConversionOutcomeMessage('INVALID_STUDENT_TARGET'), null, idempotencyKey)
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('f4b_convert_crm_case_to_student', {
+      p_center_id: normalizedCenterId,
+      p_case_id: caseId,
+      p_candidate_id: candidateId,
+      p_expected_case_version: caseVersion,
+      p_expected_candidate_version: candidateVersion,
+      p_mode: normalizedMode,
+      p_student_local_id: normalizedMode === 'LINK_EXISTING' ? cleanText(studentId) : '',
+      p_expected_student_version: normalizedMode === 'LINK_EXISTING' ? studentVersion : 0,
+      p_student_payload: normalizedMode === 'CREATE_NEW' ? studentPayload : null,
+      p_guardian_role: cleanText(guardianRole).toUpperCase() || 'UNSPECIFIED',
+      p_guardian_occupation: cleanText(guardianOccupation),
+      p_idempotency_key: idempotencyKey,
+    })
+    if (error) {
+      return failure('F4B_CONVERSION_FAILED', String(error.message || error), error, idempotencyKey)
+    }
+    if (!data?.ok || data.outcome_code !== 'COMMITTED' || !cleanText(data.student_id)) {
+      const outcomeCode = cleanText(data?.outcome_code) || 'INVALID_SERVER_RESULT'
+      return failure(outcomeCode, getF4bConversionOutcomeMessage(outcomeCode), data, idempotencyKey)
+    }
+    if (cleanText(data.center_id) !== normalizedCenterId
+      || cleanText(data.case_id) !== cleanText(caseId)
+      || cleanText(data.candidate_id) !== cleanText(candidateId)) {
+      return failure('CENTER_CONTEXT_CHANGED', getF4bConversionOutcomeMessage('CENTER_CONTEXT_CHANGED'), data, idempotencyKey)
+    }
+    return { ...data, ok: true, idempotencyKey }
+  } catch (error) {
+    return failure('F4B_CONVERSION_FAILED', String(error?.message || error), error, idempotencyKey)
+  }
+}
+
+export function getF4bConversionOutcomeMessage(outcomeCode = '') {
+  const messages = {
+    CLIENT_NOT_READY: 'Cần đăng nhập lại trước khi chuyển đổi.',
+    INVALID_COMMAND: 'Lệnh chuyển đổi không hợp lệ. Hãy kiểm tra lại thông tin.',
+    INVALID_STUDENT_PAYLOAD: 'Thông tin Học viên mới chưa hợp lệ.',
+    INVALID_STUDENT_TARGET: 'Học viên có sẵn không còn hợp lệ. Hãy tải lại danh sách.',
+    CENTER_ACCESS_DENIED: 'Không được phép chuyển đổi dữ liệu của cơ sở khác.',
+    WRITE_ROLE_REQUIRED: 'Tài khoản hiện tại không có quyền chuyển đổi Khách hàng.',
+    RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy hồ sơ hiện tại hoặc bạn không có quyền truy cập.',
+    CASE_VERSION_STALE: 'Hồ sơ Khách hàng đã thay đổi. Hãy làm mới trước khi thử lại.',
+    CANDIDATE_VERSION_STALE: 'Thông tin bé đã thay đổi. Hãy làm mới trước khi thử lại.',
+    STUDENT_VERSION_STALE: 'Hồ sơ Học viên đã thay đổi. Hãy làm mới trước khi ghép.',
+    CONVERSION_NOT_ELIGIBLE: 'Khách hàng chưa ở trạng thái Sẵn sàng đăng ký.',
+    CONVERSION_TARGET_CONFLICT: 'Hồ sơ này đã chuyển đổi sang một Học viên khác.',
+    STUDENT_BIRTH_DATE_REQUIRED: 'Cần nhập ngày sinh đầy đủ của Học viên.',
+    STUDENT_BIRTH_DATE_INVALID: 'Ngày sinh Học viên không hợp lệ.',
+    STUDENT_BIRTH_YEAR_MISMATCH: 'Năm sinh không khớp hồ sơ tư vấn.',
+    STUDENT_SCHOOL_REQUIRED: 'Cần nhập trường học của Học viên.',
+    STUDENT_LEVEL_REQUIRED: 'Cần chọn cấp độ học cờ.',
+    STUDENT_NOT_CURRENT_OR_NOT_FOUND: 'Học viên có sẵn không còn hoạt động hoặc không tồn tại.',
+    LINK_COLLISION_REVIEW_REQUIRED: 'Học viên đã có liên hệ chính khác; cần rà soát trước khi ghép.',
+    IDEMPOTENCY_KEY_REUSED_WITH_CHANGED_INTENT: 'Nội dung đã thay đổi sau lần gửi trước. Hãy đóng và mở lại thao tác.',
+    CENTER_CONTEXT_CHANGED: 'Cơ sở đang hoạt động đã thay đổi; kết quả không được sử dụng.',
+    INVALID_SERVER_RESULT: 'Máy chủ trả về kết quả chuyển đổi không hợp lệ.',
+  }
+  return messages[cleanText(outcomeCode).toUpperCase()]
+    || 'Chưa thể hoàn tất chuyển đổi. Không có dữ liệu dở dang được giữ lại.'
+}
+
 export function buildC53CreateLeadCommand(contact = {}) {
   const phones = [contact.phone, contact.secondaryPhone].map(cleanText).filter(Boolean)
   const emails = [contact.email].map(cleanText).filter(Boolean)
@@ -343,6 +444,14 @@ function failure(outcomeCode, error, detail = null, idempotencyKey = null) {
 
 function cleanText(value) {
   return String(value ?? '').trim()
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleanText(value))
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 function requireText(value, message) {

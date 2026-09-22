@@ -1623,6 +1623,79 @@
 
 :root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button.is-active strong { background: var(--parent-primary); }
 
+.desktop-window.is-parent-consultation-window .parent-convert-preview-modal {
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+}
+
+.desktop-window.is-parent-consultation-window .parent-convert-preview-modal .parent-contact-form-scroll {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  overflow: auto;
+}
+
+.desktop-window.is-parent-consultation-window .f4b-conversion-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .f4b-conversion-grid label,
+.desktop-window.is-parent-consultation-window .parent-convert-preview-modal > .parent-contact-form-scroll > label {
+  display: grid;
+  gap: 6px;
+  color: var(--parent-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.desktop-window.is-parent-consultation-window .f4b-conversion-grid input,
+.desktop-window.is-parent-consultation-window .f4b-conversion-grid select,
+.desktop-window.is-parent-consultation-window .parent-convert-preview-modal > .parent-contact-form-scroll > label select {
+  min-height: 38px;
+  border: 1px solid var(--parent-line);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+}
+
+.desktop-window.is-parent-consultation-window .f4b-conversion-grid label.has-error input,
+.desktop-window.is-parent-consultation-window .f4b-conversion-grid label.has-error select,
+.desktop-window.is-parent-consultation-window .parent-convert-preview-modal label.has-error select {
+  border-color: #dc2626;
+}
+
+.desktop-window.is-parent-consultation-window .parent-convert-preview-modal label.has-error small {
+  color: #dc2626;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--parent-line);
+  padding: 14px 20px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-actions button {
+  min-height: 38px;
+  border: 1px solid var(--parent-line);
+  border-radius: 8px;
+  padding: 0 16px;
+  color: var(--parent-text);
+  background: var(--parent-panel);
+  font-weight: 700;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-form-actions button[type='submit'],
+.desktop-window.is-parent-consultation-window .parent-contact-form-actions button[data-f4b-conversion-action='open-student'] {
+  border-color: var(--parent-primary);
+  color: var(--parent-primary-text);
+  background: var(--parent-primary);
+}
+
 @media (max-width: 1000px) {
   .desktop-window.is-parent-consultation-window .parent-consultation-module { padding: 16px; }
   .desktop-window.is-parent-consultation-window .parent-consultation-page-heading p { display: none; }
@@ -1638,4 +1711,5 @@
     grid-column: 1;
     grid-row: 2;
   }
+  .desktop-window.is-parent-consultation-window .f4b-conversion-grid { grid-template-columns: minmax(0, 1fr); }
 }

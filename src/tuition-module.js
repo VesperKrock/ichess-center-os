@@ -1397,6 +1397,29 @@ export function validateRenewTuitionForm(values) {
   return errors
 }
 
+export function deriveTuitionRegistrationClassification(tuitionRecord = null, packageCycleState = null) {
+  const hasCycleHistory = Boolean(
+    packageCycleState?.currentCycle
+    || (Array.isArray(packageCycleState?.cycles) && packageCycleState.cycles.length),
+  )
+  const hasLocalHistory = Boolean(
+    tuitionRecord
+    || (Array.isArray(tuitionRecord?.termHistory) && tuitionRecord.termHistory.length),
+  )
+  return hasCycleHistory || hasLocalHistory ? 'Tái đăng ký' : 'Đăng ký mới'
+}
+
+export function groupTuitionPackagesByProgram(packageCatalog = []) {
+  const groups = new Map()
+  packageCatalog.forEach((tuitionPackage) => {
+    const programName = String(tuitionPackage?.programName || '').trim() || 'Dùng chung'
+    const items = groups.get(programName) || []
+    items.push(tuitionPackage)
+    groups.set(programName, items)
+  })
+  return [...groups.entries()].map(([programName, packages]) => ({ programName, packages }))
+}
+
 export function normalizePaymentFormValues(values) {
   return {
     amount: normalizeMoney(values.amount),
@@ -1918,9 +1941,11 @@ function renderTuitionForm(
   const activePackages = (Array.isArray(packageCatalog) ? packageCatalog : [])
     .filter((tuitionPackage) => tuitionPackage?.isActive === true)
     .sort((first, second) =>
+      String(first.programName || '').localeCompare(String(second.programName || ''), 'vi') ||
       Number(first.totalSessions) - Number(second.totalSessions) ||
       String(first.packageName || '').localeCompare(String(second.packageName || ''), 'vi'),
     )
+  const packageGroups = groupTuitionPackagesByProgram(activePackages)
   const selectedPackageId = String(values.packageCatalogId || '')
   const selectedPackage = activePackages.find((tuitionPackage) => tuitionPackage.id === selectedPackageId)
   const usesHistoricalPackage = Boolean(
@@ -1946,6 +1971,7 @@ function renderTuitionForm(
         <div>
           <h4>${escapeHtml(student.fullName)}</h4>
           <p>${isRenew ? 'Chốt kỳ hiện tại & tạo kỳ mới' : isEdit ? 'Cập nhật gói học phí' : 'Gán gói học phí'} · PH: ${escapeHtml(student.parentName || 'Chưa cập nhật')} · ${escapeHtml(student.parentPhone || 'Chưa có SĐT')}</p>
+          <span class="tuition-registration-classification">${escapeHtml(deriveTuitionRegistrationClassification(formState.record))}</span>
         </div>
         <button type="button" data-tuition-action="cancel-form" aria-label="Đóng form">X</button>
       </div>
@@ -1964,9 +1990,12 @@ function renderTuitionForm(
           <p>${isEdit ? 'Chỉnh cấu hình gói hiện tại của học viên' : 'Thiết lập gói học phí cho học viên'}</p>
         </div>
         <div class="tuition-package-suggestions" aria-label="Gói học phí của cơ sở">
-          ${activePackages
-            .map(
-              (tuitionPackage) => `
+          ${packageGroups
+            .map(({ programName, packages }) => `
+              <section class="tuition-package-program-group" aria-label="Chương trình ${escapeAttribute(programName)}">
+                <h6>${escapeHtml(programName)}</h6>
+                <div class="tuition-package-program-options">
+                ${packages.map((tuitionPackage) => `
                 <button
                   class="${selectedPackage?.id === tuitionPackage.id ? 'active' : ''}"
                   type="button"
@@ -1976,8 +2005,10 @@ function renderTuitionForm(
                   <strong>${escapeHtml(tuitionPackage.packageName)}</strong>
                   <span>${tuitionPackage.totalSessions} buổi · ${formatMoney(tuitionPackage.defaultAmount)}</span>
                 </button>
-              `,
-            )
+                `).join('')}
+                </div>
+              </section>
+            `)
             .join('')}
           <button
             class="${selectedPackage ? '' : 'active'}"
@@ -2033,7 +2064,7 @@ function renderTuitionForm(
               '">Hoàn tác kỳ mới</button>'
             : ''
         }
-        <button type="button" data-tuition-action="save-form">${isRenew ? 'Chốt kỳ & tạo kỳ mới' : 'Lưu gói'}</button>
+        <button type="button" data-tuition-action="save-form">${isRenew ? 'Chốt kỳ & tạo kỳ mới' : 'Lưu'}</button>
       </div>
     </form>
   `
@@ -2345,6 +2376,7 @@ function renderTuitionDetailPanel(
           `
       }
       <div class="tuition-form-actions">
+        ${tuitionRecord ? `<button type="button" data-tuition-detail-action="edit" data-tuition-student-id="${escapeAttribute(student.id)}">Chỉnh sửa</button>` : ''}
         <button type="button" data-tuition-detail-action="close-detail">Đóng</button>
       </div>
     </section>
@@ -2401,6 +2433,8 @@ function renderTuitionDetailContent(
         )
       : ''}
     <section class="tuition-detail-overview" aria-label="Tổng quan kỳ hiện tại">
+      ${renderDetailMetric('Phân loại đăng ký', deriveTuitionRegistrationClassification(tuitionRecord, packageCycleState))}
+      ${renderDetailMetric('Chương trình', escapeHtml(packageCycle?.programName || 'Dùng chung'))}
       ${renderDetailMetric('Gói hiện tại', escapeHtml(packageCycle?.packageName || tuitionRecord.packageName))}
       ${renderDetailMetric('Kỳ', packageCycle ? `Chu kỳ ${packageCycle.cycleNumber}` : `Kỳ ${tuitionRecord.currentTermNumber || 1}`)}
       ${renderDetailMetric('Tổng số buổi', formatTuitionSessionCount(packageCycle?.totalSessions ?? tuitionRecord.totalSessions, packageCycle ? true : tuitionRecord.hasTotalSessionsData))}

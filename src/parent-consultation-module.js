@@ -1024,9 +1024,15 @@ export function mergeParentContactsWithStudents(contacts = [], students = [], li
 
   return [...exactContacts, ...derivedContacts].sort(
     (firstContact, secondContact) =>
+      getContactSortTime(secondContact) - getContactSortTime(firstContact) ||
       compareContactText(firstContact.parentName, secondContact.parentName) ||
       compareContactText(firstContact.phone, secondContact.phone),
   )
+}
+
+function getContactSortTime(contact = {}) {
+  const timestamp = Date.parse(contact.createdAt || contact.consultedAt || contact.updatedAt || '')
+  return Number.isFinite(timestamp) ? timestamp : 0
 }
 
 export function buildDerivedParentContactsFromStudents(students = []) {
@@ -1161,6 +1167,7 @@ export function renderParentConsultationModule(
       ${ready && quickNoteState ? renderQuickNoteModal(mergedContacts, quickNoteState) : ''}
       ${ready && integrationState.linkReviewState ? renderParentLinkReviewModal(integrationState.linkReviewState, mergedContacts, students) : ''}
       ${ready && integrationState.identityEditState ? renderParentIdentityEditModal(integrationState.identityEditState) : ''}
+      ${ready && integrationState.f4bConversionState ? renderF4bConversionModal(mergedContacts, students, integrationState.f4bConversionState) : ''}
     </section>
   `
 }
@@ -1234,9 +1241,9 @@ function renderContactsTable(contacts) {
         <thead>
           <tr>
             <th>Phụ huynh / Liên hệ</th>
+            <th>Họ và tên bé</th>
             <th>Stage / Trạng thái</th>
             <th>Tư vấn / Nguồn</th>
-            <th>Nhu cầu / Bé</th>
             <th>Các công việc tiếp theo</th>
             <th>Ghi chú</th>
           </tr>
@@ -1265,6 +1272,12 @@ function renderContactRow(contact) {
         </div>
       </td>
       <td>
+        <div class="parent-student-cell">
+          <strong>${escapeHtml(studentSummary.title)}</strong>
+          <span>${escapeHtml(studentSummary.subtitle)}</span>
+        </div>
+      </td>
+      <td>
         <div class="parent-stage-cell">
           <span class="parent-stage-badge is-${escapeAttribute(customerStage)}">
             ${escapeHtml(parentCustomerStageLabels[customerStage])}
@@ -1278,12 +1291,6 @@ function renderContactRow(contact) {
         <div class="parent-advisor-cell">
           <strong>${escapeHtml(getConsultantDisplayName(contact))}</strong>
           <span class="parent-source-badge">${escapeHtml(contact.sourceLabel || parentContactSourceLabels[contact.source] || 'Chưa rõ')}</span>
-        </div>
-      </td>
-      <td>
-        <div class="parent-student-cell">
-          <strong>${escapeHtml(studentSummary.title)}</strong>
-          <span>${escapeHtml(studentSummary.subtitle)}</span>
           ${contact.interestedProgram ? `<small>${escapeHtml(contact.interestedProgram)}</small>` : ''}
         </div>
       </td>
@@ -1355,6 +1362,7 @@ function renderParentContactDetailPanel(contact) {
               </article>
             </div>
           </section>
+          ${renderF4bConversionEntry(contact, customerStage, relatedStudents)}
           <section class="parent-linked-students parent-contact-detail-section is-students" aria-label="Học viên liên quan">
             <div class="parent-detail-section-heading">
               <h4>Học viên liên quan</h4>
@@ -1393,7 +1401,179 @@ function renderParentContactDetailPanel(contact) {
   `
 }
 
+export function canConvertParentContactToStudent(contact = {}) {
+  const caseVersion = Number(contact.cloudCaseVersion)
+  const candidateVersion = Number(contact.cloudCandidateVersion)
+  return Boolean(
+    !contact.isDerivedFromStudents
+    && contact.consultationStatus === 'pendingEnrollment'
+    && contact.canonicalContactId
+    && contact.canonicalCaseId
+    && contact.canonicalCandidateId
+    && Number.isSafeInteger(caseVersion) && caseVersion >= 1
+    && Number.isSafeInteger(candidateVersion) && candidateVersion >= 1
+  )
+}
+
+export function createF4bConversionFormState(contact = {}) {
+  return {
+    contactId: contact.id || '',
+    mode: 'CREATE_NEW',
+    idempotencyKey: '',
+    isSaving: false,
+    result: null,
+    errors: {},
+    values: {
+      birthDate: '',
+      schoolName: '',
+      schoolLevel: 'Khác',
+      level: contact.potentialLevel || 'Nhập môn',
+      gender: 'other',
+      currentStatus: 'Đang theo học',
+      studentId: '',
+      guardianRole: 'UNSPECIFIED',
+      guardianOccupation: '',
+    },
+  }
+}
+
+export function validateF4bConversionForm(contact = {}, state = {}, students = []) {
+  const errors = {}
+  const values = state.values || {}
+  if (!canConvertParentContactToStudent(contact)) {
+    errors.form = 'Hồ sơ không còn ở trạng thái Sẵn sàng đăng ký. Hãy làm mới trước khi tiếp tục.'
+    return errors
+  }
+  if (state.mode === 'LINK_EXISTING') {
+    const student = students.find((item) => item.id === values.studentId && !item.isDeleted)
+    if (!student || !Number.isSafeInteger(Number(student.cloudVersion)) || Number(student.cloudVersion) < 1) {
+      errors.studentId = 'Chọn một Học viên hiện có đã đồng bộ lên cloud.'
+    }
+  } else {
+    const birthDate = String(values.birthDate || '').trim()
+    const parsedBirthDate = new Date(`${birthDate}T00:00:00Z`)
+    const isExactDate = /^\d{4}-\d{2}-\d{2}$/.test(birthDate)
+      && !Number.isNaN(parsedBirthDate.getTime())
+      && parsedBirthDate.toISOString().slice(0, 10) === birthDate
+    if (!isExactDate || parsedBirthDate.getTime() >= Date.now()) {
+      errors.birthDate = 'Nhập ngày sinh đầy đủ và hợp lệ.'
+    } else if (String(contact.studentBirthYear || '').trim()
+      && birthDate.slice(0, 4) !== String(contact.studentBirthYear).trim()) {
+      errors.birthDate = `Ngày sinh phải thuộc năm ${String(contact.studentBirthYear).trim()} như hồ sơ tư vấn.`
+    }
+    if (!String(values.schoolName || '').trim()) errors.schoolName = 'Nhập tên trường học.'
+    if (!String(values.level || '').trim()) errors.level = 'Chọn cấp độ học cờ.'
+  }
+  if (String(values.guardianOccupation || '').trim().length > 160) {
+    errors.guardianOccupation = 'Nghề nghiệp tối đa 160 ký tự.'
+  }
+  return errors
+}
+
+export function buildF4bStudentPayload(contact = {}, values = {}) {
+  return {
+    fullName: String(contact.leadStudentName || contact.studentName || '').trim(),
+    birthDate: String(values.birthDate || '').trim(),
+    schoolName: String(values.schoolName || '').trim(),
+    schoolLevel: String(values.schoolLevel || '').trim() || 'Khác',
+    level: String(values.level || '').trim(),
+    gender: String(values.gender || '').trim() || 'other',
+    currentStatus: String(values.currentStatus || '').trim() || 'Đang theo học',
+    classSessionIds: [],
+    recurringEnrollments: [],
+    careNotes: [],
+  }
+}
+
+function renderF4bConversionEntry(contact, customerStage, relatedStudents = []) {
+  if (customerStage === 'converted' || contact.consultationStatus === 'converted') {
+    return `
+      <section class="parent-convert-preview parent-contact-detail-section" aria-label="Chuyển đổi Khách hàng thành Học viên">
+        <div><h4>Đã chuyển đổi thành Học viên</h4><p>Lịch sử CRM được giữ nguyên và liên kết với hồ sơ vận hành.</p></div>
+        ${relatedStudents.length ? `<button type="button" data-parent-linked-student-id="${escapeAttribute(relatedStudents[0].id)}">Mở hồ sơ Học viên</button>` : '<span class="parent-convert-status">Đã chuyển đổi</span>'}
+      </section>
+    `
+  }
+  if (canConvertParentContactToStudent(contact)) {
+    return `
+      <section class="parent-convert-preview parent-contact-detail-section" aria-label="Chuyển đổi Khách hàng thành Học viên">
+        <div><h4>Chuyển đổi thành Học viên</h4><p>Tạo mới hoặc ghép đúng một hồ sơ Học viên; toàn bộ lịch sử CRM vẫn được giữ lại.</p></div>
+        <button type="button" data-f4b-conversion-action="open" data-contact-id="${escapeAttribute(contact.id)}">Chuyển đổi thành Học viên</button>
+      </section>
+    `
+  }
+  return `
+    <section class="parent-convert-preview parent-contact-detail-section" aria-label="Điều kiện chuyển đổi Khách hàng">
+      <div><h4>Chuyển đổi thành Học viên</h4><p>Chọn “Sẵn sàng đăng ký” trong hồ sơ tư vấn trước khi chuyển đổi.</p></div>
+      <span class="parent-convert-status">Chưa sẵn sàng</span>
+    </section>
+  `
+}
+
+function renderF4bConversionModal(contacts, students, state) {
+  const contact = contacts.find((item) => item.id === state.contactId)
+  if (!contact) return ''
+  const values = state.values || {}
+  const errors = state.errors || {}
+  const activeStudents = students.filter((student) => student && !student.isDeleted && Number(student.cloudVersion) >= 1)
+  const completedStudentId = state.result?.student_id || ''
+  const fieldError = (name) => errors[name] ? `<small>${escapeHtml(errors[name])}</small>` : ''
+  return `
+    <div class="parent-contact-form-backdrop" role="presentation">
+      <form class="parent-contact-form parent-convert-preview-modal" data-f4b-conversion-form role="dialog" aria-modal="true" aria-label="Chuyển đổi Khách hàng thành Học viên">
+        <div class="parent-contact-form-header">
+          <div><h3>Chuyển đổi ${escapeHtml(contact.leadStudentName || 'Khách hàng')}</h3><span>CRM → Học viên vận hành · lịch sử CRM được giữ nguyên</span></div>
+          <button type="button" data-f4b-conversion-action="cancel" aria-label="Đóng" ${state.isSaving ? 'disabled' : ''}>X</button>
+        </div>
+        <div class="parent-contact-form-scroll parent-link-review-body">
+          ${errors.form ? `<div class="parent-contact-form-error" role="alert">${escapeHtml(errors.form)}</div>` : ''}
+          ${state.result ? `
+            <section class="parent-link-review-summary" role="status">
+              <strong>Đã chuyển đổi thành công</strong>
+              <span>${state.result.business_replayed ? 'Lần thử lại trả về đúng Học viên đã tạo trước đó.' : 'Học viên và liên kết phụ huynh đã được tạo trong cùng một giao dịch.'}</span>
+            </section>
+          ` : `
+            <section><h4>Hồ sơ nguồn</h4><div class="parent-link-review-summary"><strong>${escapeHtml(contact.leadStudentName || 'Chưa có tên bé')}</strong><span>Phụ huynh: ${escapeHtml(contact.parentName || 'Chưa có tên')} · Năm sinh: ${escapeHtml(contact.studentBirthYear || 'Chưa nhập')}</span></div></section>
+            <section>
+              <h4>Phương án chuyển đổi</h4>
+              <div class="parent-convert-mode-tabs" role="group" aria-label="Phương án chuyển đổi">
+                <button type="button" class="${state.mode === 'CREATE_NEW' ? 'is-active' : ''}" data-f4b-conversion-action="mode" data-conversion-mode="CREATE_NEW">Tạo Học viên mới</button>
+                <button type="button" class="${state.mode === 'LINK_EXISTING' ? 'is-active' : ''}" data-f4b-conversion-action="mode" data-conversion-mode="LINK_EXISTING">Ghép Học viên có sẵn</button>
+              </div>
+            </section>
+            ${state.mode === 'LINK_EXISTING' ? `
+              <label class="${errors.studentId ? 'has-error' : ''}"><span>Học viên hiện có *</span><select data-f4b-conversion-field="studentId"><option value="">Chọn Học viên</option>${activeStudents.map((student) => `<option value="${escapeAttribute(student.id)}" ${student.id === values.studentId ? 'selected' : ''}>${escapeHtml(student.fullName || student.name || student.id)}</option>`).join('')}</select>${fieldError('studentId')}</label>
+            ` : `
+              <div class="f4b-conversion-grid">
+                <label class="${errors.birthDate ? 'has-error' : ''}"><span>Ngày sinh *${contact.studentBirthYear ? ` (năm ${escapeHtml(contact.studentBirthYear)})` : ''}</span><input type="date" value="${escapeAttribute(values.birthDate)}" data-f4b-conversion-field="birthDate">${fieldError('birthDate')}</label>
+                <label class="${errors.schoolName ? 'has-error' : ''}"><span>Trường học *</span><input value="${escapeAttribute(values.schoolName)}" data-f4b-conversion-field="schoolName">${fieldError('schoolName')}</label>
+                <label><span>Bậc học</span><select data-f4b-conversion-field="schoolLevel">${['Mẫu giáo','Cấp 1','Cấp 2','Cấp 3','Cao đẳng/Đại học','Khác'].map((item) => `<option ${item === values.schoolLevel ? 'selected' : ''}>${escapeHtml(item)}</option>`).join('')}</select></label>
+                <label class="${errors.level ? 'has-error' : ''}"><span>Cấp độ học cờ *</span><select data-f4b-conversion-field="level">${['Nhập môn','Cơ bản','Trung cấp','Nâng cao'].map((item) => `<option ${item === values.level ? 'selected' : ''}>${escapeHtml(item)}</option>`).join('')}</select>${fieldError('level')}</label>
+                <label><span>Giới tính</span><select data-f4b-conversion-field="gender"><option value="male" ${values.gender === 'male' ? 'selected' : ''}>Nam</option><option value="female" ${values.gender === 'female' ? 'selected' : ''}>Nữ</option><option value="other" ${values.gender === 'other' ? 'selected' : ''}>Khác</option></select></label>
+                <label><span>Trạng thái Học viên</span><select data-f4b-conversion-field="currentStatus"><option>Đang theo học</option><option>Bảo lưu</option><option>Ngưng học</option></select></label>
+              </div>
+            `}
+            <section><h4>Quan hệ người chăm sóc</h4><div class="f4b-conversion-grid">
+              <label><span>Vai trò</span><select data-f4b-conversion-field="guardianRole"><option value="UNSPECIFIED">Chưa xác định</option><option value="FATHER" ${values.guardianRole === 'FATHER' ? 'selected' : ''}>Ba</option><option value="MOTHER" ${values.guardianRole === 'MOTHER' ? 'selected' : ''}>Mẹ</option><option value="OTHER" ${values.guardianRole === 'OTHER' ? 'selected' : ''}>Khác</option></select></label>
+              <label class="${errors.guardianOccupation ? 'has-error' : ''}"><span>Nghề nghiệp người liên hệ</span><input value="${escapeAttribute(values.guardianOccupation)}" data-f4b-conversion-field="guardianOccupation" maxlength="160">${fieldError('guardianOccupation')}</label>
+            </div></section>
+          `}
+        </div>
+        <div class="parent-contact-form-actions">
+          ${state.result ? `<button type="button" data-f4b-conversion-action="open-student" data-student-id="${escapeAttribute(completedStudentId)}">Mở hồ sơ Học viên</button><button type="button" data-f4b-conversion-action="open-tuition" data-student-id="${escapeAttribute(completedStudentId)}">Thiết lập học phí</button><button type="button" data-f4b-conversion-action="cancel">Đóng</button>` : `<button type="button" data-f4b-conversion-action="cancel" ${state.isSaving ? 'disabled' : ''}>Hủy</button><button type="submit" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang chuyển đổi…' : 'Xác nhận chuyển đổi'}</button>`}
+        </div>
+      </form>
+    </div>
+  `
+}
+
 function renderLinkedStudentCard(student, link = null) {
+  const guardianRoleLabel = {
+    FATHER: 'Ba',
+    MOTHER: 'Mẹ',
+    OTHER: 'Người chăm sóc khác',
+    UNSPECIFIED: 'Chưa xác định vai trò',
+  }[link?.guardianRole] || ''
   return `
     <article class="parent-linked-student-card">
       <button type="button" data-parent-linked-student-id="${escapeAttribute(student.id)}">
@@ -1402,7 +1582,7 @@ function renderLinkedStudentCard(student, link = null) {
       </button>
       ${link ? `
         <div class="parent-linked-student-actions">
-          <span>${escapeHtml(getRelationshipTypeLabel(link.relationshipType))}${link.isPrimaryContact ? ' · Liên hệ chính' : ''}</span>
+          <span>${escapeHtml(getRelationshipTypeLabel(link.relationshipType))}${link.isPrimaryContact ? ' · Liên hệ chính' : ''}${guardianRoleLabel ? ` · ${escapeHtml(guardianRoleLabel)}` : ''}${link.occupation ? ` · ${escapeHtml(link.occupation)}` : ''}</span>
           <button type="button" data-parent-link-action="edit" data-link-id="${escapeAttribute(link.linkId)}">Sửa liên kết</button>
           <button type="button" class="is-danger" data-parent-link-action="end" data-link-id="${escapeAttribute(link.linkId)}">Ngắt liên kết</button>
         </div>

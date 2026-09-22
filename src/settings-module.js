@@ -40,6 +40,7 @@ export function createEmptySettingsTuitionPackageFormState() {
     packageId: '',
     values: {
       packageName: '',
+      programName: '',
       totalSessions: '',
       defaultAmount: '',
       isActive: true,
@@ -56,6 +57,7 @@ export function createEditSettingsTuitionPackageFormState(tuitionPackage = {}) {
     packageId: tuitionPackage.id || '',
     values: {
       packageName: tuitionPackage.packageName || '',
+      programName: tuitionPackage.programName || '',
       totalSessions: String(tuitionPackage.totalSessions || ''),
       defaultAmount: String(tuitionPackage.defaultAmount ?? ''),
       isActive: tuitionPackage.isActive !== false,
@@ -73,6 +75,7 @@ export function validateSettingsTuitionPackageForm(values = {}) {
   const defaultAmount = Number(values.defaultAmount)
   if (!packageName) errors.packageName = 'Nhập tên gói học phí.'
   if (packageName.length > 120) errors.packageName = 'Tên gói tối đa 120 ký tự.'
+  if (String(values.programName || '').trim().length > 120) errors.programName = 'Chương trình tối đa 120 ký tự.'
   if (!Number.isSafeInteger(totalSessions) || totalSessions < 1 || totalSessions > 1000) {
     errors.totalSessions = 'Số buổi cần là số nguyên từ 1 đến 1.000.'
   }
@@ -424,6 +427,7 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
           <thead>
             <tr>
               <th>Tên gói</th>
+              <th>Chương trình</th>
               <th>Số buổi</th>
               <th>Mức mặc định</th>
               <th>Trạng thái</th>
@@ -437,6 +441,7 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
                 ? tuitionPackages.map((tuitionPackage) => `
                   <tr>
                     <td><strong>${escapeHtml(tuitionPackage.packageName)}</strong></td>
+                    <td>${escapeHtml(tuitionPackage.programName || 'Dùng chung')}</td>
                     <td>${escapeHtml(tuitionPackage.totalSessions)}</td>
                     <td>${escapeHtml(formatMoney(tuitionPackage.defaultAmount))}</td>
                     <td><span class="settings-status-badge ${tuitionPackage.isActive ? '' : 'inactive'}">${tuitionPackage.isActive ? 'Đang dùng' : 'Đã ngưng'}</span></td>
@@ -444,7 +449,7 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
                     <td><div class="settings-class-session-actions"><button type="button" data-settings-package-action="open-edit" data-settings-package-id="${escapeAttribute(tuitionPackage.id)}" ${state.isSaving ? 'disabled' : ''}>Sửa</button><button type="button" data-settings-package-action="toggle-status" data-settings-package-id="${escapeAttribute(tuitionPackage.id)}" ${state.isSaving ? 'disabled' : ''}>${tuitionPackage.isActive ? 'Ngưng dùng' : 'Kích hoạt'}</button></div></td>
                   </tr>
                 `).join('')
-                : `<tr><td class="settings-empty" colspan="6">${ready ? 'Chưa có gói học phí nào trong danh mục.' : 'Danh mục gói học phí chưa tải.'}</td></tr>`
+                : `<tr><td class="settings-empty" colspan="7">${ready ? 'Chưa có gói học phí nào trong danh mục.' : 'Danh mục gói học phí chưa tải.'}</td></tr>`
             }
           </tbody>
         </table>
@@ -498,6 +503,7 @@ function renderTuitionPackageForm(formState, state) {
         <div class="settings-form-header"><h4>${isEdit ? 'Sửa' : 'Thêm'} gói học phí</h4><button type="button" data-settings-package-action="cancel" aria-label="Đóng">×</button></div>
         <div class="settings-form-grid">
           ${renderSettingsTextField('package', 'packageName', 'Tên gói *', values.packageName, errors.packageName, { className: 'span-full' })}
+          ${renderSettingsTextField('package', 'programName', 'Chương trình', values.programName, errors.programName, { placeholder: 'Để trống nếu gói dùng chung' })}
           ${renderSettingsTextField('package', 'totalSessions', 'Tổng số buổi *', values.totalSessions, errors.totalSessions, { type: 'number', min: '1', max: '1000' })}
           ${renderSettingsTextField('package', 'defaultAmount', 'Học phí mặc định (VNĐ) *', values.defaultAmount, errors.defaultAmount, { type: 'number', min: '0', step: '1000' })}
           <label><span>Trạng thái</span><select data-settings-package-field="isActive"><option value="true" ${values.isActive !== false ? 'selected' : ''}>Đang dùng</option><option value="false" ${values.isActive === false ? 'selected' : ''}>Đã ngưng</option></select></label>
@@ -515,6 +521,7 @@ function renderSettingsTextField(scope, name, label, value, error = '', options 
     options.min ? `min="${escapeAttribute(options.min)}"` : '',
     options.max ? `max="${escapeAttribute(options.max)}"` : '',
     options.step ? `step="${escapeAttribute(options.step)}"` : '',
+    options.placeholder ? `placeholder="${escapeAttribute(options.placeholder)}"` : '',
   ].filter(Boolean).join(' ')
   return `<label class="${[options.className || '', error ? 'has-error' : ''].filter(Boolean).join(' ')}"><span>${escapeHtml(label)}</span><input type="${escapeAttribute(options.type || 'text')}" value="${escapeAttribute(value ?? '')}" data-settings-${scope}-field="${escapeAttribute(name)}" ${attrs}/>${error ? `<small>${escapeHtml(error)}</small>` : ''}</label>`
 }

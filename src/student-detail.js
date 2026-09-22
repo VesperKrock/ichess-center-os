@@ -100,6 +100,7 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
       <div class="student-overview-grid">
         ${renderOverviewTile('Thông tin học viên', [
           ['Họ và tên', student.fullName],
+          ['Trạng thái', student.currentStatus],
           ['Ngày sinh', formatBirthDate(student.birthDate)],
           ['Tuổi', formatAgeLabel(student.birthDate)],
           ['Giới tính', getGenderLabel(student.gender)],
@@ -113,8 +114,8 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
           ['SĐT ba', formatPhoneNumber(student.fatherPhone)],
           ['SĐT mẹ', formatPhoneNumber(student.motherPhone || (!student.fatherPhone ? student.parentPhone : ''))],
           ['Năm sinh / tuổi', formatParentAge(student.parentBirthYear)],
-          ['Nghề nghiệp', student.parentJob],
-          ['Khu vực', student.parentArea],
+          ['Nghề nghiệp phụ huynh liên hệ', student.parentJob],
+          ['Khu vực sinh sống', student.parentArea],
         ])}
         ${renderStudentFamilyTuitionTile(studentTuitionLink)}
         ${renderOverviewTile('Trạng thái học', [
@@ -128,7 +129,6 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
         ${renderOverviewTile(
           'Chăm sóc',
           [
-            ['Trạng thái', student.currentStatus],
             ['Số ghi chú', `${careNotes.length}`],
             ['Ghi chú mới nhất', summarizeText(latestCareNote?.content)],
             ['Thành tích', summarizeText(student.achievements)],

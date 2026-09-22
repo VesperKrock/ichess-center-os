@@ -192,6 +192,7 @@ export function projectParentStudentLink(row = {}) {
   const relationshipType = cleanText(row.relationship_type).toUpperCase()
   const financialContactRole = cleanText(row.financial_contact_role).toUpperCase()
   const academicContactRole = cleanText(row.academic_contact_role).toUpperCase()
+  const guardianRole = cleanText(row.guardian_role).toUpperCase() || 'UNSPECIFIED'
   if (
     !UUID_PATTERN.test(linkId)
     || !UUID_PATTERN.test(contactId)
@@ -207,6 +208,7 @@ export function projectParentStudentLink(row = {}) {
     || !RELATIONSHIP_TYPES.has(relationshipType)
     || !CONTACT_ROLES.has(financialContactRole)
     || !CONTACT_ROLES.has(academicContactRole)
+    || !['FATHER', 'MOTHER', 'OTHER', 'UNSPECIFIED'].includes(guardianRole)
     || typeof row.contact_identity_available !== 'boolean'
     || typeof row.student_available !== 'boolean'
   ) return null
@@ -219,6 +221,10 @@ export function projectParentStudentLink(row = {}) {
     isPrimaryContact: Boolean(row.is_primary_contact),
     financialContactRole,
     academicContactRole,
+    guardianRole,
+    occupation: cleanText(row.occupation),
+    originConsultationCaseId: cleanText(row.origin_consultation_case_id),
+    originCandidateStudentId: cleanText(row.origin_candidate_student_id),
     endedReasonCode: cleanText(row.ended_reason_code),
     endedAt: cleanText(row.ended_at),
     contactId,

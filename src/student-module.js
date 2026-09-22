@@ -278,7 +278,6 @@ export function renderStudentModule(
                   <th>SĐT</th>
                   <th>Trạng thái</th>
                   <th>${renderSortableHeader('Cấp độ', 'level', filters)}</th>
-                  <th>Elo</th>
                   <th>Trường học</th>
                   <th>Ca học</th>
                   <th>Ghi chú</th>
@@ -497,8 +496,6 @@ function renderStudentForm(
   const enrollmentAuthorityPending = ['idle', 'loading', 'failed'].includes(enrollmentStatus)
     || (enrollmentStatus === 'unavailable'
       && formState.values.useAuthoritativeEnrollment === true)
-  const isReadyToSave = isStudentFormReady(formState.values, classSessions)
-    && !enrollmentAuthorityPending
   const disabledReason = enrollmentAuthorityPending
     ? enrollmentStatus === 'failed'
       ? 'Chưa tải được đăng ký lịch học; nội dung đang nhập vẫn được giữ nguyên.'
@@ -536,7 +533,7 @@ function renderStudentForm(
               class="student-save-button"
               type="button"
               data-student-action="save-form"
-              ${isReadyToSave && !formState.isSaving ? '' : 'disabled'}
+              ${!enrollmentAuthorityPending && !formState.isSaving ? '' : 'disabled'}
             >
               ${formState.isSaving ? 'Đang lưu…' : isEdit ? 'Lưu thay đổi' : 'Lưu học viên'}
             </button>
@@ -568,6 +565,7 @@ function renderStudentForm(
                   renderField('nationality', 'Quốc tịch', formState, 'text'),
                 ])}
                 ${renderFormSection('C. Trạng thái học', [
+                  renderSelectField('currentStatus', 'Trạng thái hiện tại', formState, studentStatuses),
                   renderStudentLevelField(formState),
                   renderSelectField('highestBotMilestone', 'Mốc bot đã vượt qua', formState, botMilestones),
                   formState.values.useAuthoritativeEnrollment === true
@@ -599,11 +597,10 @@ function renderStudentForm(
                   renderField('motherPhone', 'SĐT mẹ', formState, 'tel', {
                     placeholder: '0901 001 001',
                   }),
-                  renderField('parentJob', 'Nghề nghiệp', formState, 'text'),
+                  renderField('parentJob', 'Nghề nghiệp phụ huynh liên hệ', formState, 'text'),
                   renderField('parentArea', 'Khu vực sinh sống', formState, 'text'),
                 ])}
                 ${renderFormSection('D. Chăm sóc / ghi chú ban đầu', [
-                  renderSelectField('currentStatus', 'Trạng thái hiện tại', formState, studentStatuses),
                   renderTextareaField('achievements', 'Thành tích học viên đạt được', formState, {
                     className: 'span-full',
                   }),
@@ -1021,7 +1018,6 @@ function renderStudentRow(student, classSessions = []) {
       <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
       <td><span class="student-status ${getStudentStatusToneClass(student.currentStatus)}">${student.currentStatus}</span></td>
       <td>${escapeHtml(getLevelLabel(student.level))}</td>
-      <td>${student.elo ?? '—'}</td>
       <td title="${escapeAttribute(student.schoolName)}">${getShortSchoolName(student.schoolName)}</td>
       <td>${renderStudentClassSessionCell(student, classSessionLookup)}</td>
       <td>
@@ -1175,7 +1171,7 @@ function renderStudentAvatar(student) {
 function renderEmptyState() {
   return `
     <tr>
-      <td class="student-empty" colspan="10">
+      <td class="student-empty" colspan="8">
         Không tìm thấy học viên phù hợp với bộ lọc hiện tại.
       </td>
     </tr>

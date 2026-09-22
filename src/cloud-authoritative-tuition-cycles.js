@@ -228,6 +228,7 @@ function projectCycle(row = {}, centerId = '', studentId = '') {
     tuitionLocalId: cleanText(row.tuition_local_id),
     packageCatalogId: cleanText(row.package_catalog_id),
     packageName: cleanText(row.package_name),
+    programName: cleanText(row.program_name),
     totalSessions,
     price: row.price == null ? null : Number(row.price),
     baselineUsed: Number(row.baseline_used) || 0,
@@ -271,7 +272,7 @@ function projectContribution(row = {}, centerId = '') {
     attendanceStatus: cleanText(row.attendance_status),
     contributionUnits, allocationState: cleanText(row.allocation_state),
     makeupReason: cleanText(row.makeup_reason), cycleId: cleanText(row.cycle_id),
-    cycleNumber, packageName: cleanText(row.package_name), totalSessions,
+    cycleNumber, packageName: cleanText(row.package_name), programName: cleanText(row.program_name), totalSessions,
     sessionNumber, remainingSessions,
     lifecycleStatus: cleanText(row.cycle_lifecycle_status),
     paymentStatus: cleanText(row.payment_status),
@@ -286,6 +287,7 @@ function projectCycleHistory(row = {}, centerId = '', studentId = '') {
   return {
     id: row.id, centerId, studentId, cycleNumber,
     packageName: cleanText(row.package_name),
+    programName: cleanText(row.program_name),
     totalSessions: row.total_sessions == null ? null : Number(row.total_sessions),
     usedSessions: Number(row.used_sessions) || 0,
     lifecycleStatus: cleanText(row.lifecycle_status),
@@ -304,7 +306,7 @@ function projectCatalogPackage(row = {}, centerId = '') {
     || !Number.isSafeInteger(totalSessions) || totalSessions < 1
     || !Number.isSafeInteger(defaultAmount) || defaultAmount < 0) return null
   return {
-    id: row.id, centerId, packageName: cleanText(row.package_name), totalSessions,
+    id: row.id, centerId, packageName: cleanText(row.package_name), programName: cleanText(row.program_name), totalSessions,
     defaultAmount, isActive: row.is_active === true, version,
   }
 }

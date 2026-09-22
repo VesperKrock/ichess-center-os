@@ -1040,6 +1040,40 @@
   gap: 6px;
 }
 
+.desktop-window.is-tuition-window .tuition-package-program-group {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--tuition-border);
+  border-radius: 8px;
+}
+
+.desktop-window.is-tuition-window .tuition-package-program-group h6 {
+  margin: 0;
+  color: var(--tuition-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-tuition-window .tuition-package-program-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 6px;
+}
+
+.desktop-window.is-tuition-window .tuition-registration-classification {
+  display: inline-flex;
+  margin-top: 6px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--tuition-primary);
+  background: color-mix(in srgb, var(--tuition-primary) 12%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .desktop-window.is-tuition-window .tuition-package-suggestions button {
   min-height: 34px;
   border: 1px solid var(--tuition-border);

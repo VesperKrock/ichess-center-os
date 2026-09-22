@@ -159,7 +159,9 @@ import {
   buildC53SaveCaseCommand,
   buildC53UpsertAppointmentCommand,
   canWriteC53CrmSharedTruth,
+  convertF4bCrmCaseToStudent,
   createC53CrmIdempotencyKey,
+  getF4bConversionOutcomeMessage,
   mutateC53CrmSharedTruth,
   pullC53CrmSharedTruth,
 } from './cloud-authoritative-crm.js'
@@ -449,12 +451,15 @@ import {
   addQuickNoteToParentContact,
   buildEnrollmentSummary,
   buildParentContactFromForm,
+  buildF4bStudentPayload,
+  canConvertParentContactToStudent,
   applyAuthoritativeConsultantDefault,
   createEditParentContactFormState,
   createEmptyParentAppointmentDraft,
   createEmptyParentCareLogDraft,
   createEmptyParentContactFormState,
   createEnrollmentDraftFromContact,
+  createF4bConversionFormState,
   getParentCrmQuickChoices,
   initialParentConsultationFilters,
   markEnrollmentReadyForParentContact,
@@ -465,6 +470,7 @@ import {
   toggleParentCrmQuickChoice,
   updateParentAppointmentStatus,
   validateEnrollmentReadyDraft,
+  validateF4bConversionForm,
   validateParentAppointmentDraft,
   validateParentCareLogDraft,
   validateParentContactForm,
@@ -692,7 +698,6 @@ import {
   formatStudentPhoneNumber,
   getStudentFormSaveDisabledReason,
   initialStudentFilters,
-  isStudentFormReady,
   mergeStudentFormControlValues,
   renderStudentModule,
   validateStudentForm,
@@ -880,6 +885,7 @@ let parentContactDetailId = null
 let parentStudentLinks = []
 let parentLinkReviewState = null
 let parentIdentityEditState = null
+let f4bConversionState = null
 let parentFirstCapabilityState = createParentFirstCapabilityState()
 let parentFirstCapabilityRunId = 0
 let c53CrmSharedTruthState = {
@@ -1716,6 +1722,7 @@ function resetParentFirstRuntimeForAccessBoundary(centerId = '') {
   parentStudentLinks = []
   parentLinkReviewState = null
   parentIdentityEditState = null
+  f4bConversionState = null
   parentContactDetailId = null
   parentFirstCapabilityState = createParentFirstCapabilityState({ centerId })
 }
@@ -2099,6 +2106,7 @@ function resetTransientStateForCenterSwitch() {
   parentQuickNoteState = null
   parentNoteHistoryContactId = null
   parentContactDetailId = null
+  f4bConversionState = null
   parentStudentLinks = []
   parentLinkReviewState = null
   parentIdentityEditState = null
@@ -12011,6 +12019,7 @@ function renderWindowBody(windowItem) {
         links: parentStudentLinks,
         linkReviewState: parentLinkReviewState,
         identityEditState: parentIdentityEditState,
+        f4bConversionState,
       },
     )
   }
@@ -17134,6 +17143,91 @@ async function saveParentIdentityEdit() {
   render()
 }
 
+async function saveF4bConversion() {
+  const state = f4bConversionState
+  if (!state || state.isSaving || !isProductionModuleAvailable('khach-hang-tu-van')) return
+  const contact = getMergedParentConsultations().find((item) => item.id === state.contactId)
+  const projectedStudents = getStudentsWithCanonicalProjections()
+  const errors = validateF4bConversionForm(contact, state, projectedStudents)
+  if (Object.keys(errors).length) {
+    f4bConversionState = { ...state, errors }
+    render()
+    queueMicrotask(() => {
+      document.querySelector('.parent-convert-preview-modal .has-error input, .parent-convert-preview-modal .has-error select')?.focus()
+    })
+    return
+  }
+
+  const centerContext = getCurrentCanonicalCenterContext()
+  if (!centerContext.ok || !canConvertParentContactToStudent(contact)) {
+    f4bConversionState = {
+      ...state,
+      errors: { form: 'Hồ sơ hoặc cơ sở đã thay đổi. Hãy làm mới trước khi tiếp tục.' },
+    }
+    render()
+    return
+  }
+  const selectedStudent = state.mode === 'LINK_EXISTING'
+    ? projectedStudents.find((student) => student.id === state.values.studentId && !student.isDeleted)
+    : null
+  const idempotencyKey = state.idempotencyKey || createC53CrmIdempotencyKey()
+  f4bConversionState = { ...state, idempotencyKey, isSaving: true, errors: {} }
+  render()
+
+  const readiness = await checkCloudDbReadiness(centerContext.centerId)
+  if (!readiness.ok || readiness.centerId !== getCurrentCanonicalCenterContext().centerId) {
+    f4bConversionState = {
+      ...state,
+      idempotencyKey,
+      isSaving: false,
+      errors: { form: 'Không kết nối được đúng cơ sở hiện tại. Chưa có dữ liệu nào được chuyển đổi.' },
+    }
+    render()
+    return
+  }
+  const result = await convertF4bCrmCaseToStudent({
+    supabase: readiness.supabase,
+    centerId: centerContext.centerId,
+    caseId: contact.canonicalCaseId,
+    candidateId: contact.canonicalCandidateId,
+    expectedCaseVersion: contact.cloudCaseVersion,
+    expectedCandidateVersion: contact.cloudCandidateVersion,
+    mode: state.mode,
+    studentId: selectedStudent?.id || '',
+    expectedStudentVersion: Number(selectedStudent?.cloudVersion) || 0,
+    studentPayload: state.mode === 'CREATE_NEW' ? buildF4bStudentPayload(contact, state.values) : null,
+    guardianRole: state.values.guardianRole,
+    guardianOccupation: state.values.guardianOccupation,
+    idempotencyKey,
+  })
+  if (!result.ok) {
+    f4bConversionState = {
+      ...state,
+      idempotencyKey,
+      isSaving: false,
+      errors: { form: result.error || getF4bConversionOutcomeMessage(result.outcome_code) },
+    }
+    render()
+    return
+  }
+
+  const resultState = { ...state, idempotencyKey, isSaving: false, errors: {}, result }
+  const [studentRefresh, crmRefresh, linkRefresh] = await Promise.all([
+    refreshStudentModuleCoreProjection(centerContext.centerId),
+    refreshC53CrmSharedTruth({ reason: 'f4b-conversion', silent: true }),
+    refreshParentStudentLinksSharedTruth({ reason: 'f4b-conversion' }),
+  ])
+  const refreshFailed = [studentRefresh, crmRefresh, linkRefresh].some((item) => !item?.ok)
+  f4bConversionState = {
+    ...resultState,
+    errors: refreshFailed
+      ? { form: 'Chuyển đổi đã hoàn tất nhưng một danh sách chưa tải lại được. Bấm Làm mới trước khi thao tác tiếp.' }
+      : {},
+  }
+  parentContactDetailId = parentConsultations.find((item) => item.canonicalCaseId === contact.canonicalCaseId)?.id || null
+  render()
+}
+
 function getParentFriendlyCrmOutcomeMessage(result = {}) {
   const code = String(result.outcome_code || '').toUpperCase()
   if (['CASE_VERSION_STALE', 'STATE_VERSION_STALE', 'CANDIDATE_VERSION_STALE', 'CONTACT_VERSION_STALE', 'CONCURRENT_CONFLICT'].includes(code)) {
@@ -17163,6 +17257,7 @@ async function refreshC53CrmSharedTruth({ reason = 'manual-refresh', silent = fa
   parentQuickNoteState = null
   parentNoteHistoryContactId = null
   parentContactDetailId = null
+  f4bConversionState = null
   notifications = syncAppNotifications(notifications)
   c53CrmSharedTruthState = {
     ...c53CrmSharedTruthState,
@@ -25941,6 +26036,12 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-tuition-detail-action="edit"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openTuitionPackageForm(button.dataset.tuitionStudentId)
+    })
+  })
+
   document.querySelector('[data-tuition-package-custom]')?.addEventListener('click', () => {
     if (!tuitionFormState) return
     tuitionFormState = {
@@ -27864,6 +27965,74 @@ function bindEvents() {
       parentContactDetailId = null
       render()
     })
+  })
+
+  document.querySelectorAll('[data-f4b-conversion-action="open"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const contact = getMergedParentConsultations().find((item) => item.id === button.dataset.contactId)
+      if (!canConvertParentContactToStudent(contact)) return
+      f4bConversionState = {
+        ...createF4bConversionFormState(contact),
+        idempotencyKey: createC53CrmIdempotencyKey(),
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-f4b-conversion-action="cancel"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (f4bConversionState?.isSaving) return
+      f4bConversionState = null
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-f4b-conversion-action="mode"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!f4bConversionState || f4bConversionState.isSaving) return
+      f4bConversionState = {
+        ...f4bConversionState,
+        mode: button.dataset.conversionMode,
+        idempotencyKey: createC53CrmIdempotencyKey(),
+        errors: {},
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-f4b-conversion-field]').forEach((control) => {
+    control.addEventListener(control.matches('select') ? 'change' : 'input', () => {
+      if (!f4bConversionState || f4bConversionState.isSaving) return
+      const fieldName = control.dataset.f4bConversionField
+      f4bConversionState = {
+        ...f4bConversionState,
+        idempotencyKey: createC53CrmIdempotencyKey(),
+        values: { ...f4bConversionState.values, [fieldName]: control.value },
+        errors: { ...f4bConversionState.errors, [fieldName]: '', form: '' },
+      }
+    })
+  })
+
+  document.querySelector('[data-f4b-conversion-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    void saveF4bConversion()
+  })
+
+  document.querySelector('[data-f4b-conversion-action="open-student"]')?.addEventListener('click', (event) => {
+    const studentId = event.currentTarget.dataset.studentId
+    if (!studentId) return
+    f4bConversionState = null
+    parentContactDetailId = null
+    openStudentDetailWindowFromChildInteraction(studentId)
+  })
+
+  document.querySelector('[data-f4b-conversion-action="open-tuition"]')?.addEventListener('click', (event) => {
+    const studentId = event.currentTarget.dataset.studentId
+    if (!studentId) return
+    f4bConversionState = null
+    parentContactDetailId = null
+    openModuleWindowFromChildInteraction('hoc-phi')
+    openTuitionPackageForm(studentId)
   })
 
   document.querySelectorAll('[data-parent-link-action="open-derived"]').forEach((button) => {
@@ -31868,23 +32037,23 @@ function bindEvents() {
       ),
     }
 
-    if (!isStudentFormReady(studentFormState.values, classSessions)) {
-      studentFormState = {
-        ...studentFormState,
-        errors: validateStudentForm(studentFormState.values, classSessions),
-      }
-      render()
-      return
-    }
-
     const errors = validateStudentForm(studentFormState.values, classSessions)
 
     if (Object.keys(errors).length) {
+      const firstErrorField = Object.keys(errors).find((field) => field !== 'form') || ''
+      const secondStepFields = new Set([
+        'parentName', 'parentBirthYear', 'fatherPhone', 'motherPhone', 'parentJob',
+        'parentArea', 'achievements', 'parentNotes',
+      ])
       studentFormState = {
         ...studentFormState,
         errors,
+        step: secondStepFields.has(firstErrorField) ? 2 : 1,
       }
       render()
+      queueMicrotask(() => {
+        document.querySelector(`[data-student-form-field="${firstErrorField}"]`)?.focus()
+      })
       return
     }
 
@@ -33134,7 +33303,7 @@ function updateStudentFormSaveButton() {
       ? 'Chưa tải được đăng ký lịch học; nội dung đang nhập vẫn được giữ nguyên.'
       : 'Đang kiểm tra đăng ký lịch học theo từng ngày.'
     : getStudentFormSaveDisabledReason(studentFormState.values, classSessions)
-  saveButton.disabled = Boolean(disabledReason || studentFormState.isSaving)
+  saveButton.disabled = Boolean(enrollmentAuthorityPending || studentFormState.isSaving)
   saveButton.removeAttribute('aria-describedby')
 
   if (reasonWrap) {

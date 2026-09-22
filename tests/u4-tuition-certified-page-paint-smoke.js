@@ -389,7 +389,7 @@ const assignHtml = render({
   form: createEmptyTuitionFormState(students[99]),
 })
 assert(assignHtml.includes('Gán gói học phí'))
-assert(assignHtml.includes('Lưu gói'))
+assert(assignHtml.includes('data-tuition-action="save-form">Lưu</button>'))
 assert(!assignHtml.includes('data-tuition-action="open-renew"'))
 assert(assignHtml.includes('data-preserve-scroll-key="qa-tuition-student-100:create"'))
 
