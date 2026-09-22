@@ -33,7 +33,7 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
       'collected-balance': ['finance'],
     },
   ),
-  entry('nhom-tai-chinh', [], ['C5.4 Finance/Cashbook wrapper'], ['finance']),
+  entry('nhom-tai-chinh', ['C5.4 Finance ledger', 'C5.4 Cashbook'], [], ['finance']),
   entry('thu-chi', ['C5.4 Finance'], [], ['finance']),
   entry('so-quy', ['C5.4 Cashbook'], ['C5.4 Finance ledger'], ['finance']),
   entry(

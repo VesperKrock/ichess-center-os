@@ -159,10 +159,11 @@ export function renderCashbookModule(
     <section class="cashbook-module" aria-labelledby="cashbook-title">
       <div class="cashbook-toolbar">
         <div class="cashbook-heading">
-          <p class="finance-breadcrumb">Nhóm Tài chính / Sổ quỹ</p>
-          <h3 id="cashbook-title">Sổ quỹ</h3>
+          <p class="finance-breadcrumb">Sổ quỹ Thu chi / Đối soát quỹ</p>
+          <h3 id="cashbook-title">Sổ quỹ Thu chi</h3>
         </div>
         <div class="cashbook-date-actions" aria-label="Chọn ngày xem sổ quỹ">
+          <button type="button" data-finance-workspace-view="transactions">Giao dịch Thu chi</button>
           <label>
             <span>Ngày</span>
             <input
@@ -613,8 +614,8 @@ function renderCashbookTransactionList(transactions) {
           <tr>
             <th>Ngày</th>
             <th>Loại</th>
-            <th>Danh mục</th>
-            <th>Nội dung / Người liên quan</th>
+            <th>Hạng mục</th>
+            <th>Nội dung chi tiết</th>
             <th title="Phương thức">P.thức</th>
             <th>Số tiền</th>
             <th title="Người ghi nhận">Ghi nhận</th>
@@ -634,8 +635,8 @@ function renderCashbookTransactionRow(transaction) {
     <tr class="cashbook-row">
       <td>${formatDate(transaction.transactionDate)}</td>
       <td><span class="cashbook-type-badge is-${transaction.type}">${getTypeLabel(transaction.type)}</span></td>
-      <td title="${escapeAttribute(transaction.category)}">${escapeHtml(transaction.category || 'Khác')}</td>
-      <td title="${escapeAttribute(transaction.personName)}">${transaction.personName ? escapeHtml(transaction.personName) : '—'}</td>
+      <td title="${escapeAttribute(transaction.category)}">${escapeHtml(transaction.category || 'Chưa phân loại')}</td>
+      <td title="${escapeAttribute(transaction.personName)}">${transaction.personName ? escapeHtml(transaction.personName) : 'Chưa có nội dung chi tiết'}</td>
       <td title="${escapeAttribute(transaction.method)}">${escapeHtml(transaction.method || 'Khác')}</td>
       <td class="cashbook-amount is-${transaction.type}">${formatMoney(transaction.amount)}</td>
       <td title="${escapeAttribute(transaction.recordedBy)}">${escapeHtml(getRecordedByDisplayName(transaction.recordedBy))}</td>

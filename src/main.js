@@ -353,7 +353,11 @@ import {
   runAuthoritativeCoreSave,
 } from './core-save-recovery.js'
 import './finance-theme.css'
-import { renderFinanceWorkspaceModule } from './finance-workspace-module.js'
+import {
+  FINANCE_WORKSPACE_VIEWS,
+  normalizeFinanceWorkspaceView,
+  renderFinanceWorkspaceModule,
+} from './finance-workspace-module.js'
 import {
   INSTALLATION_CAPABILITY_STATUS,
   armInstallationHandoff,
@@ -1089,6 +1093,7 @@ let tuitionAdvisoryWindowState = null
 let cashflowTransactions = []
 let cashflowCategories = []
 let cashflowFilters = { ...initialCashflowFilters }
+let financeWorkspaceView = FINANCE_WORKSPACE_VIEWS.TRANSACTIONS
 let cashflowFormState = null
 let cashflowTransactionDetailState = null
 let cashflowTransactionDetailHydrateToken = 0
@@ -2096,6 +2101,7 @@ function resetTransientStateForCenterSwitch() {
   settingsClassSessionFormState = null
   tuitionFilters = { ...initialTuitionFilters }
   cashflowFilters = { ...initialCashflowFilters }
+  financeWorkspaceView = FINANCE_WORKSPACE_VIEWS.TRANSACTIONS
   inventoryFilters = { ...initialInventoryFilters }
   inventoryMovementFilters = { ...initialInventoryMovementFilters }
   inventoryRequestFilters = { ...initialInventoryRequestFilters }
@@ -11492,11 +11498,16 @@ function renderModuleWindow(windowItem) {
     : headerTitle
   const financeSurface = !windowItem.type
     ? {
-        'nhom-tai-chinh': 'gateway',
+        'nhom-tai-chinh': 'consolidated',
         'so-quy': 'cashbook',
         'thu-chi': 'cashflow',
       }[windowItem.moduleId] || ''
     : ''
+  const financeSurfaceClasses = financeSurface === 'consolidated'
+    ? `is-finance-window is-finance-consolidated-window is-finance-${financeWorkspaceView === FINANCE_WORKSPACE_VIEWS.CASHBOOK ? 'cashbook' : 'cashflow'}-window`
+    : financeSurface
+      ? `is-finance-window is-finance-${financeSurface}-window`
+      : ''
 
   if (!title || !headerTitle || windowItem.minimized) {
     return ''
@@ -11512,7 +11523,7 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${isInventoryWindow ? 'is-inventory-window' : ''} ${isParentConsultationWindow ? 'is-parent-consultation-window' : ''} ${isSettingsWindow ? 'is-settings-window' : ''} ${financeSurface ? `is-finance-window is-finance-${financeSurface}-window` : ''}"
+      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${isInventoryWindow ? 'is-inventory-window' : ''} ${isParentConsultationWindow ? 'is-parent-consultation-window' : ''} ${isSettingsWindow ? 'is-settings-window' : ''} ${financeSurfaceClasses}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
@@ -12183,7 +12194,48 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'nhom-tai-chinh') {
-    return renderFinanceWorkspaceModule()
+    const transactionCodes = getCashflowTransactionCodes()
+    const centerInfo = getCurrentCanonicalCenterContext()
+
+    return renderFinanceWorkspaceModule(
+      financeWorkspaceView,
+      () => renderCashflowModule(
+        cashflowTransactions,
+        cashflowFilters,
+        cashflowFormState,
+        cashflowCategories,
+        isCashflowCategoryPanelOpen,
+        cashflowCategoryFormState,
+        renderCashflowCloudAuthNotice(cloudStatus),
+        {
+          canUpload:
+            cloudStatus.configStatus === 'configured' &&
+            cloudStatus.authStatus === 'signed-in' &&
+            cloudStatus.membershipStatus === 'loaded' &&
+            Boolean(cloudStatus.role),
+          transactionCodes,
+          attachmentCounts: getCloudAttachmentCounts(),
+          attachmentFileNames: getCloudAttachmentFileNames(),
+          uploadingTransactionId: cloudUploadingTransactionId,
+          printingTransactionId: cashflowTransactionPrintState.transactionId,
+        },
+        transactionImageManagerState,
+        cloudGalleryState,
+        cashflowTransactionDetailState,
+        c54FinanceSharedTruthState,
+        centerInfo.centerName,
+      ),
+      () => renderCashbookModule(
+        cashflowTransactions,
+        cashbookSelectedDate,
+        cashbookSettings,
+        cashbookSettingsFormState,
+        cashbookReconciliations,
+        cashbookReconciliationFormState,
+        c54FinanceSharedTruthState,
+        centerInfo.centerName,
+      ),
+    )
   }
 
   if (moduleItem.id === 'thu-chi') {
@@ -13549,7 +13601,7 @@ function isActiveFinanceWindowOpen() {
 
 function getFinanceTaskbarWindowTitle(windowItem) {
   return !windowItem.type && ['nhom-tai-chinh', 'so-quy', 'thu-chi'].includes(windowItem.moduleId)
-    ? 'Nhóm Tài chính'
+    ? 'Sổ quỹ Thu chi'
     : ''
 }
 
@@ -13583,7 +13635,22 @@ function getModuleLauncherFromEventTarget(target) {
   return launcher
 }
 
+function getCanonicalFinanceModuleId(moduleId) {
+  return ['so-quy', 'thu-chi'].includes(moduleId) ? 'nhom-tai-chinh' : moduleId
+}
+
+function selectFinanceWorkspaceViewForModule(moduleId) {
+  if (moduleId === 'so-quy') {
+    financeWorkspaceView = FINANCE_WORKSPACE_VIEWS.CASHBOOK
+  } else if (moduleId === 'thu-chi') {
+    financeWorkspaceView = FINANCE_WORKSPACE_VIEWS.TRANSACTIONS
+  }
+}
+
 function openModuleWindow(moduleId) {
+  selectFinanceWorkspaceViewForModule(moduleId)
+  moduleId = getCanonicalFinanceModuleId(moduleId)
+
   if (!isProductionModuleAvailable(moduleId)) {
     return false
   }
@@ -13955,11 +14022,12 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
 }
 
 function openModuleWindowFromChildInteraction(moduleId) {
-  const beforeWindow = openWindows.find((windowItem) => windowItem.moduleId === moduleId)
+  const targetModuleId = getCanonicalFinanceModuleId(moduleId)
+  const beforeWindow = openWindows.find((windowItem) => windowItem.moduleId === targetModuleId)
   if (!openModuleWindow(moduleId)) {
     return
   }
-  const targetWindow = beforeWindow || openWindows.find((windowItem) => windowItem.moduleId === moduleId)
+  const targetWindow = beforeWindow || openWindows.find((windowItem) => windowItem.moduleId === targetModuleId)
 
   if (!targetWindow) {
     return
@@ -23949,9 +24017,14 @@ function bindEvents() {
     })
   })
 
-  document.querySelectorAll('[data-finance-open-module]').forEach((button) => {
+  document.querySelectorAll('[data-finance-workspace-view]').forEach((button) => {
     button.addEventListener('click', () => {
-      openModuleWindow(button.dataset.financeOpenModule)
+      financeWorkspaceView = normalizeFinanceWorkspaceView(button.dataset.financeWorkspaceView)
+      cashflowFormState = null
+      cashflowTransactionDetailState = null
+      cashbookSettingsFormState = null
+      cashbookReconciliationFormState = null
+      render()
     })
   })
 

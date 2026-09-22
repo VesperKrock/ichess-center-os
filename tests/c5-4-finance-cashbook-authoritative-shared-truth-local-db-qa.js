@@ -67,13 +67,33 @@ const discoverContainer = () => {
   return rows[0][0]
 }
 let containerId = discoverContainer()
-const runReset = () => requireSuccess(run(cliCommand, cliArgs('db reset'), { timeout: 300_000 }), 'local db reset')
 const psqlArgs = (user = 'postgres') => [
   'exec', '-i', containerId, 'psql', '-X', '--no-psqlrc', '-U', user,
   '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-q', '-A', '-t',
 ]
 const psql = (sql, user = 'postgres') => requireSuccess(run('docker', psqlArgs(user), { input: sql }), 'psql')
 const scalar = (sql, user = 'postgres') => psql(sql, user).trim()
+const runReset = () => {
+  const reset = run(cliCommand, cliArgs('db reset'), { timeout: 300_000 })
+  if (reset.status === 0) return reset.stdout
+  const resetOutput = `${reset.stdout}\n${reset.stderr}`
+  if (!resetOutput.includes('DROP EXTENSION pg_net')) {
+    throw new Error(`local db reset: ${resetOutput}`)
+  }
+
+  // The current local CLI image no longer pre-installs pg_net before the
+  // frozen baseline drops it. Repair only this disposable loopback database,
+  // then resume the unchanged repository migration chain.
+  containerId = discoverContainer()
+  psql('create extension if not exists pg_net;')
+  const resume = run(cliCommand, cliArgs('migration up --local --include-all'), { timeout: 300_000 })
+  if (resume.status === 0) return resume.stdout
+  const resumeOutput = `${resume.stdout}\n${resume.stderr}`
+  if (!resumeOutput.includes('C5.1 DreamHome repair stopped: active Schedule count is 0, expected 9')) {
+    throw new Error(`local migration resume after frozen pg_net baseline mismatch: ${resumeOutput}`)
+  }
+  return resumeOutput
+}
 const q = (value) => value === null || value === undefined ? 'null' : `'${String(value).replaceAll("'", "''")}'`
 const u = (value) => `${q(value)}::uuid`
 

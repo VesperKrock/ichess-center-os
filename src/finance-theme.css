@@ -693,6 +693,10 @@
   width: 92px;
 }
 
+.desktop-window.is-finance-cashflow-window .cashflow-cashbook-button {
+  width: 128px;
+}
+
 .desktop-window.is-finance-cashflow-window .cashflow-category-button {
   width: 104px;
 }
@@ -803,7 +807,7 @@
   left: 0;
   display: grid;
   height: 44px;
-  grid-template-columns: 480px 148px 220px 172px 88px;
+  grid-template-columns: minmax(260px, 1fr) 130px 190px 160px 88px;
   align-items: center;
   justify-content: start;
   gap: 10px;
@@ -936,7 +940,7 @@
   left: 32px;
   height: 332px;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid var(--finance-border);
   border-radius: 8px;
   background: var(--finance-surface);
@@ -951,21 +955,23 @@
 }
 
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(1),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(1) { width: 102px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(1) { width: 90px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(2),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(2) { width: 180px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(2) { width: 75px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(3),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(3) { width: 280px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(3) { width: 145px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(4),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(4) { width: 140px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(4) { width: 210px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(5),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(5) { width: 160px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(5) { width: 115px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(6),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(6) { width: 112px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(6) { width: 130px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(7),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(7) { width: 338px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(7) { width: 90px; }
 .desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(8),
-.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(8) { width: 158px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(8) { width: 300px; }
+.desktop-window.is-finance-cashflow-window .cashflow-table th:nth-child(9),
+.desktop-window.is-finance-cashflow-window .cashflow-table td:nth-child(9) { width: 148px; }
 
 .desktop-window.is-finance-cashflow-window .cashflow-table th {
   height: 43px;
@@ -1008,6 +1014,7 @@
 }
 
 .desktop-window.is-finance-cashflow-window .cashflow-transaction-cell,
+.desktop-window.is-finance-cashflow-window .cashflow-category-cell,
 .desktop-window.is-finance-cashflow-window .cashflow-person-cell,
 .desktop-window.is-finance-cashflow-window .cashflow-cloud-attachment-cell {
   position: relative;
@@ -1025,6 +1032,16 @@
   font-size: 15px;
   font-weight: 600;
   text-overflow: ellipsis;
+}
+
+.desktop-window.is-finance-cashflow-window .cashflow-category-cell > strong {
+  display: block;
+  overflow: hidden;
+  color: var(--finance-text);
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .desktop-window.is-finance-cashflow-window .cashflow-type-badge {
@@ -1368,31 +1385,35 @@
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(2),
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(2),
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(2),
-.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(2) { width: 180px; }
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(2) { width: 88px; }
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(3),
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(3),
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(3),
-.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(3) { width: 300px; }
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(3) { width: 170px; }
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(4),
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(4),
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(4),
-.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(4) { width: 130px; }
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(4) { width: 240px; }
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(5),
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(5),
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(5),
-.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(5) { width: 150px; }
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(5) { width: 125px; }
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(6),
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(6),
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(6),
-.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(6) { width: 120px; }
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(6) { width: 145px; }
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(7),
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(7),
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(7),
-.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(7) { width: 330px; }
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(7) { width: 110px; }
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(8),
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(8),
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(8),
-.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(8) { width: 160px; }
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(8) { width: 290px; }
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table th:nth-child(9),
+.desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td:nth-child(9),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(9),
+.desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(9) { width: 150px; }
 
 .desktop-window.is-finance-cashflow-window:has(.cloud-gallery-backdrop) .cashflow-table td,
 .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td {
@@ -1635,19 +1656,21 @@
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(1),
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(1) { width: 102px; }
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(2),
-:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(2) { width: 180px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(2) { width: 92px; }
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(3),
-:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(3) { width: 280px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(3) { width: 180px; }
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(4),
-:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(4) { width: 140px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(4) { width: 250px; }
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(5),
-:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(5) { width: 160px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(5) { width: 132px; }
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(6),
-:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(6) { width: 112px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(6) { width: 150px; }
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(7),
-:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(7) { width: 338px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(7) { width: 112px; }
 :root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(8),
-:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(8) { width: 158px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(8) { width: 300px; }
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table th:nth-child(9),
+:root[data-ui-theme='dark'] .desktop-window.is-finance-cashflow-window:has(.cashflow-form-backdrop) .cashflow-table td:nth-child(9) { width: 148px; }
 
 /* SỔ QUỸ — 405:4 / 409:2 */
 
@@ -2178,8 +2201,27 @@
 
 .desktop-window.is-finance-cashbook-window .cashbook-table-wrap {
   min-height: 0;
-  border: 0;
-  background: transparent;
+  overflow: auto;
+  border: 1px solid var(--finance-border);
+  border-radius: 8px;
+  background: var(--finance-surface);
+}
+
+.desktop-window.is-finance-cashbook-window .cashbook-table {
+  color: var(--finance-text);
+  background: var(--finance-surface);
+}
+
+.desktop-window.is-finance-cashbook-window .cashbook-table th {
+  border-color: var(--finance-border);
+  color: var(--finance-muted);
+  background: var(--finance-surface-soft);
+}
+
+.desktop-window.is-finance-cashbook-window .cashbook-table td {
+  border-color: var(--finance-border);
+  color: var(--finance-text);
+  background: var(--finance-surface);
 }
 
 /* Approved Finance modal states. */

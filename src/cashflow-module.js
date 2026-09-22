@@ -183,11 +183,19 @@ export function renderCashflowModule(
     <section class="cashflow-module" aria-labelledby="cashflow-title">
       <div class="cashflow-toolbar">
         <div class="cashflow-heading">
-          <p class="finance-breadcrumb">Nhóm Tài chính / Thu chi</p>
-          <h3 id="cashflow-title">Thu chi</h3>
+          <p class="finance-breadcrumb">Sổ quỹ Thu chi / Giao dịch</p>
+          <h3 id="cashflow-title">Sổ quỹ Thu chi</h3>
           <p>Ghi nhận và quản lý giao dịch thu/chi của cơ sở ${escapeHtml(centerName || 'hiện tại')}, bao gồm khoản thu học phí được đồng bộ tự động.</p>
         </div>
         <div class="cashflow-toolbar-actions">
+          <button
+            class="cashflow-cashbook-button"
+            type="button"
+            data-finance-workspace-view="cashbook"
+            title="Mở số dư và đối soát quỹ"
+          >
+            Đối soát quỹ
+          </button>
           <button
             class="cashflow-export-button"
             type="button"
@@ -210,7 +218,7 @@ export function renderCashflowModule(
             <input
               type="search"
               value="${escapeAttribute(activeFilters.query)}"
-              placeholder="Tìm danh mục, nội dung, người liên quan..."
+              placeholder="Tìm hạng mục, nội dung chi tiết..."
               data-cashflow-filter="query"
             />
           </label>
@@ -260,8 +268,9 @@ export function renderCashflowModule(
           <thead>
             <tr>
               <th>Ngày</th>
-              <th>Giao dịch</th>
-              <th>Nội dung / Người liên quan</th>
+              <th>Loại</th>
+              <th>Hạng mục</th>
+              <th>Nội dung chi tiết</th>
               <th title="Phương thức thanh toán">THANH TOÁN</th>
               <th>Số tiền</th>
               <th title="Người ghi nhận">Ghi nhận</th>
@@ -449,7 +458,7 @@ export function buildCashflowCsvExport(transactions, filters = initialCashflowFi
   const stats = getCashflowStats(filteredTransactions)
   const periodLabel = getCashflowPeriodLabel(activeFilters) || 'Tất cả'
   const rows = [
-    ['Báo cáo Thu chi'],
+    ['Sổ quỹ Thu chi'],
     ['Kỳ', periodLabel],
     ['Tổng thu', stats.totalIncome],
     ['Tổng chi', stats.totalExpense],
@@ -459,8 +468,8 @@ export function buildCashflowCsvExport(transactions, filters = initialCashflowFi
     [
       'Ngày',
       'Loại',
-      'Danh mục',
-      'Nội dung / Người liên quan',
+      'Hạng mục',
+      'Nội dung chi tiết',
       'Thanh toán',
       'Số tiền',
       'Người ghi nhận',
@@ -740,7 +749,7 @@ function renderCashflowForm(formState, categories = []) {
             ['expense', 'Chi'],
           ])}
           ${renderSelectField(
-            'Danh mục',
+            'Hạng mục',
             'category',
             formState,
             categoryOptions.map((category) => [
@@ -756,7 +765,7 @@ function renderCashflowForm(formState, categories = []) {
             formState,
             cashflowMethods.map((method) => [method, method]),
           )}
-          ${renderInputField('Người liên quan', 'personName', formState, 'text', 'Phụ huynh, giáo viên, nhà cung cấp...')}
+          ${renderInputField('Nội dung chi tiết', 'personName', formState, 'text', 'Tên phụ huynh, giáo viên, nhà cung cấp...')}
           ${renderInputField('Người ghi nhận', 'recordedBy', formState)}
           ${renderEvidenceField(formState)}
           <label class="cashflow-field cashflow-field-wide">
@@ -1073,17 +1082,20 @@ function renderTransactionRow(transaction, cloudAttachmentOptions = {}) {
   const canUpload = Boolean(cloudAttachmentOptions.canUpload) && !isUploading
   const printLabel = isPrinting ? 'Đang chuẩn bị bản in...' : 'In / PDF'
   const noteTitle = getTransactionNoteTitle(transaction)
+  const categoryLabel = String(transaction.category || '').trim() || 'Chưa phân loại'
+  const detailLabel = String(transaction.personName || '').trim()
 
   return `
     <tr class="cashflow-row" data-cashflow-transaction-id="${transaction.id}" tabindex="0">
       <td>${formatDate(transaction.transactionDate)}</td>
       <td class="cashflow-transaction-cell">
         <span class="cashflow-type-badge is-${transaction.type}">${getTypeLabel(transaction.type)}</span>
-        <strong title="${escapeAttribute(transaction.category)}">${escapeHtml(transaction.category)}</strong>
       </td>
-      <td class="cashflow-person-cell" title="${escapeAttribute(transaction.personName)}">
-        <strong>${transaction.personName ? escapeHtml(transaction.personName) : '—'}</strong>
-        <span>${transaction.personName ? 'Người liên quan' : 'Không có nội dung/người liên quan'}</span>
+      <td class="cashflow-category-cell" title="${escapeAttribute(categoryLabel)}">
+        <strong>${escapeHtml(categoryLabel)}</strong>
+      </td>
+      <td class="cashflow-person-cell" title="${escapeAttribute(detailLabel)}">
+        <strong>${detailLabel ? escapeHtml(detailLabel) : 'Chưa có nội dung chi tiết'}</strong>
       </td>
       <td>${escapeHtml(getTransactionMethodDisplay(transaction.method))}</td>
       <td class="cashflow-amount is-${transaction.type}">${formatMoney(transaction.amount)}</td>
@@ -1138,11 +1150,11 @@ function renderCashflowTransactionDetail(state) {
   const rows = [
     ['Mã giao dịch', transactionCode],
     ['Loại', getTypeLabel(transaction.type)],
-    ['Danh mục', transaction.category],
+    ['Hạng mục', transaction.category],
     ['Số tiền', formatMoney(transaction.amount)],
     ['Ngày giao dịch', formatDate(transaction.transactionDate)],
     ['Phương thức', getTransactionMethodDisplay(transaction.method)],
-    ['Người nộp / liên quan', transaction.personName],
+    ['Nội dung chi tiết', transaction.personName],
     ['Người ghi nhận', getRecordedByDisplayName(transaction.recordedBy)],
     ['Ghi chú', transaction.note],
     ['Học viên', sourceContext.studentName],
@@ -1898,7 +1910,7 @@ function getCategoryTypeLabel(type) {
 function renderEmptyState() {
   return `
     <tr>
-      <td class="cashflow-empty" colspan="8">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
+      <td class="cashflow-empty" colspan="9">Không tìm thấy giao dịch phù hợp với bộ lọc hiện tại.</td>
     </tr>
   `
 }
