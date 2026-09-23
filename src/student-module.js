@@ -47,6 +47,11 @@ const genderOptions = [
   { value: 'male', label: 'Nam' },
   { value: 'female', label: 'Nữ' },
 ]
+const priorChessKnowledgeOptions = [
+  { value: '', label: 'Chưa cập nhật' },
+  { value: 'known', label: 'Đã biết' },
+  { value: 'not_known', label: 'Chưa biết' },
+]
 const parentNoteSuggestions = [
   'Phụ huynh muốn đổi lịch học',
   'Cần nhắc học phí',
@@ -60,27 +65,31 @@ const parentNoteSuggestions = [
 
 export const studentFormTabOrder = {
   fullName: 1,
-  birthDate: 2,
+  homeName: 2,
   schoolName: 3,
-  hometown: 4,
-  gender: 5,
-  schoolLevel: 6,
-  nationality: 7,
-  level: 8,
-  highestBotMilestone: 9,
-  classSessionIds: 10,
-  personality: 11,
-  hobbies: 12,
-  testScore: 13,
-  parentName: 101,
-  parentBirthYear: 102,
-  fatherPhone: 103,
+  schoolGrade: 4,
+  birthDate: 5,
+  gender: 6,
+  registrationDate: 7,
+  priorChessKnowledge: 8,
+  hobbies: 9,
+  personality: 10,
+  parentGoal: 11,
+  hometown: 12,
+  nationality: 13,
+  schoolLevel: 14,
+  currentStatus: 15,
+  level: 16,
+  highestBotMilestone: 17,
+  classSessionIds: 18,
+  testScore: 19,
+  fatherName: 101,
+  fatherPhone: 102,
+  motherName: 103,
   motherPhone: 104,
-  parentJob: 105,
-  parentArea: 106,
-  currentStatus: 107,
-  achievements: 108,
-  parentNotes: 109,
+  parentArea: 105,
+  achievements: 106,
+  parentNotes: 107,
 }
 
 export const initialStudentFilters = {
@@ -95,15 +104,23 @@ export const initialStudentFilters = {
 
 export const emptyStudentFormValues = {
   fullName: '',
+  homeName: '',
   birthDate: '',
+  registrationDate: '',
   avatarUrl: '',
   schoolName: '',
+  schoolGrade: '',
   schoolLevel: 'Khác',
   gender: '',
   hometown: '',
   hobbies: '',
+  priorChessKnowledge: '',
+  parentGoal: '',
   nationality: 'Việt Nam',
+  fatherName: '',
+  motherName: '',
   parentName: '',
+  parentPhone: '',
   parentBirthYear: '',
   fatherPhone: '',
   motherPhone: '',
@@ -126,11 +143,10 @@ const requiredFields = {
   fullName: 'Họ và tên học viên',
   birthDate: 'Ngày tháng năm sinh',
   schoolName: 'Tên trường',
-  parentName: 'Họ và tên phụ huynh',
   level: 'Cấp độ học',
 }
 
-const parentCareRequiredFields = ['parentName', 'fatherPhone', 'motherPhone']
+const parentCareRequiredFields = ['fatherName', 'fatherPhone', 'motherName', 'motherPhone']
 const studentParentCareRequiredHint = 'Cần nhập thông tin phụ huynh/chăm sóc'
 const studentFormFieldNames = new Set(Object.keys(emptyStudentFormValues))
 
@@ -141,6 +157,7 @@ export function createEmptyStudentFormState(options = {}) {
     studentId: null,
     values: {
       ...emptyStudentFormValues,
+      registrationDate: getCurrentLocalDateKey(),
       useAuthoritativeEnrollment: options.useAuthoritativeEnrollment === true,
     },
     errors: {},
@@ -154,20 +171,26 @@ export function createEditStudentFormState(student) {
     studentId: student.id,
     values: {
       fullName: student.fullName ?? '',
+      homeName: student.homeName ?? '',
       birthDate: student.birthDate ?? '',
+      registrationDate: student.registrationDate ?? '',
       avatarUrl: student.avatarUrl ?? '',
       schoolName: student.schoolName ?? '',
+      schoolGrade: student.schoolGrade ?? '',
       schoolLevel: student.schoolLevel ?? getSchoolLevelFromName(student.schoolName),
       gender: student.gender ?? '',
       hometown: student.hometown ?? '',
       hobbies: student.hobbies ?? '',
+      priorChessKnowledge: student.priorChessKnowledge ?? '',
+      parentGoal: student.parentGoal ?? '',
       nationality: student.nationality ?? '',
+      fatherName: student.fatherName ?? '',
+      motherName: student.motherName ?? '',
       parentName: student.parentName ?? '',
+      parentPhone: formatPhoneNumber(student.parentPhone ?? ''),
       parentBirthYear: student.parentBirthYear ? String(student.parentBirthYear) : '',
       fatherPhone: formatPhoneNumber(student.fatherPhone ?? ''),
-      motherPhone: formatPhoneNumber(
-        student.motherPhone ?? (!student.fatherPhone ? student.parentPhone : '') ?? '',
-      ),
+      motherPhone: formatPhoneNumber(student.motherPhone ?? ''),
       parentJob: student.parentJob ?? '',
       parentArea: student.parentArea ?? '',
       level: getLevelLabel(student.level),
@@ -362,9 +385,33 @@ export function validateStudentForm(values, classSessions = []) {
 
   const fatherPhoneDigits = String(values.fatherPhone ?? '').replace(/\D/g, '')
   const motherPhoneDigits = String(values.motherPhone ?? '').replace(/\D/g, '')
+  const legacyPhoneDigits = String(values.parentPhone ?? '').replace(/\D/g, '')
+  const fatherName = String(values.fatherName ?? '').trim()
+  const motherName = String(values.motherName ?? '').trim()
+  const legacyParentName = String(values.parentName ?? '').trim()
+  const hasFatherRoute = Boolean(fatherName && fatherPhoneDigits)
+  const hasMotherRoute = Boolean(motherName && motherPhoneDigits)
+  const usesLegacyOnly = Boolean(legacyParentName && !fatherName && !motherName)
+  const hasLegacyRoute = Boolean(
+    usesLegacyOnly && (legacyPhoneDigits || fatherPhoneDigits || motherPhoneDigits),
+  )
 
-  if (!fatherPhoneDigits && !motherPhoneDigits) {
-    errors.motherPhone = 'Cần nhập ít nhất một SĐT ba hoặc SĐT mẹ.'
+  if (!usesLegacyOnly) {
+    if (fatherName && !fatherPhoneDigits) {
+      errors.fatherPhone = 'Cần nhập SĐT ba khi đã có họ tên ba.'
+    } else if (!fatherName && fatherPhoneDigits) {
+      errors.fatherName = 'Cần nhập họ tên ba cho số điện thoại này.'
+    }
+
+    if (motherName && !motherPhoneDigits) {
+      errors.motherPhone = 'Cần nhập SĐT mẹ khi đã có họ tên mẹ.'
+    } else if (!motherName && motherPhoneDigits) {
+      errors.motherName = 'Cần nhập họ tên mẹ cho số điện thoại này.'
+    }
+  }
+
+  if (!hasFatherRoute && !hasMotherRoute && !hasLegacyRoute) {
+    errors.motherPhone = 'Cần ít nhất một liên hệ đủ họ tên và SĐT ba hoặc mẹ.'
   }
 
   if (values.fatherPhone && fatherPhoneDigits.length !== 10) {
@@ -373,17 +420,6 @@ export function validateStudentForm(values, classSessions = []) {
 
   if (values.motherPhone && motherPhoneDigits.length !== 10) {
     errors.motherPhone = 'SĐT mẹ cần đủ 10 chữ số.'
-  }
-
-  const parentBirthYear = String(values.parentBirthYear ?? '').trim()
-  const currentYear = new Date().getFullYear()
-
-  if (parentBirthYear) {
-    const year = Number(parentBirthYear)
-
-    if (!/^\d{4}$/.test(parentBirthYear) || year < 1950 || year > currentYear) {
-      errors.parentBirthYear = `Năm sinh phụ huynh cần từ 1950 đến ${currentYear}.`
-    }
   }
 
   const testScore = String(values.testScore ?? '').trim()
@@ -426,11 +462,18 @@ export function mergeStudentFormControlValues(values = {}, controls = []) {
 }
 
 export function isStudentParentCareInfoIncomplete(values) {
-  const hasParentName = String(values.parentName ?? '').trim()
+  const fatherName = String(values.fatherName ?? '').trim()
+  const motherName = String(values.motherName ?? '').trim()
+  const legacyParentName = String(values.parentName ?? '').trim()
   const hasFatherPhone = String(values.fatherPhone ?? '').replace(/\D/g, '')
   const hasMotherPhone = String(values.motherPhone ?? '').replace(/\D/g, '')
+  const hasLegacyPhone = String(values.parentPhone ?? '').replace(/\D/g, '')
 
-  return !hasParentName || (!hasFatherPhone && !hasMotherPhone)
+  return !(
+    (fatherName && hasFatherPhone)
+    || (motherName && hasMotherPhone)
+    || (legacyParentName && !fatherName && !motherName && (hasLegacyPhone || hasFatherPhone || hasMotherPhone))
+  )
 }
 
 export function getStudentFormSaveDisabledReason(values, classSessions = []) {
@@ -457,6 +500,7 @@ export function buildStudentFromForm(values, existingStudent = null) {
   const existingStudentWithoutInstructor = { ...(existingStudent ?? {}) }
   delete existingStudentWithoutInstructor.assignedTeacherId
   delete existingStudentWithoutInstructor.mainTeacherName
+  const compatibleParent = getCompatibleParentProjection(values, existingStudent)
   const normalizedValues = {
     ...values,
     avatarUrl: values.avatarUrl || existingStudent?.avatarUrl || '',
@@ -465,9 +509,8 @@ export function buildStudentFromForm(values, existingStudent = null) {
     parentBirthYear: values.parentBirthYear ? Number(values.parentBirthYear) : '',
     fatherPhone: formatPhoneNumber(values.fatherPhone),
     motherPhone: formatPhoneNumber(values.motherPhone),
-    parentPhone: formatPhoneNumber(
-      values.motherPhone || values.fatherPhone || existingStudent?.parentPhone || '',
-    ),
+    parentName: compatibleParent.name,
+    parentPhone: compatibleParent.phone,
     testScore: values.testScore ? Number(String(values.testScore).replace(',', '.')) : '',
     latestCareNote: values.parentNotes || 'Chưa có ghi chú chăm sóc.',
   }
@@ -480,6 +523,31 @@ export function buildStudentFromForm(values, existingStudent = null) {
     createdAt: existingStudent?.createdAt ?? now,
     updatedAt: now,
   }
+}
+
+function getCompatibleParentProjection(values, existingStudent = null) {
+  const fatherName = String(values.fatherName ?? '').trim()
+  const motherName = String(values.motherName ?? '').trim()
+  const fatherPhone = formatPhoneNumber(values.fatherPhone)
+  const motherPhone = formatPhoneNumber(values.motherPhone)
+  const legacyName = String(values.parentName ?? existingStudent?.parentName ?? '').trim()
+  const legacyPhone = formatPhoneNumber(
+    values.parentPhone
+      || existingStudent?.parentPhone
+      || motherPhone
+      || fatherPhone
+      || '',
+  )
+
+  if (motherName && motherPhone) {
+    return { name: motherName, phone: motherPhone }
+  }
+
+  if (fatherName && fatherPhone) {
+    return { name: fatherName, phone: fatherPhone }
+  }
+
+  return { name: legacyName, phone: legacyPhone }
 }
 
 function renderStudentForm(
@@ -549,15 +617,38 @@ function renderStudentForm(
             currentStep === 1
               ? `
                 ${renderFormSection('A. Thông tin học viên', [
-                  renderField('fullName', 'Họ và tên học viên *', formState, 'text', {
-                    className: 'span-full',
-                  }),
-                  renderField('birthDate', 'Ngày sinh *', formState, 'date'),
-                  renderSelectField('gender', 'Giới tính', formState, genderOptions),
+                  renderField('fullName', 'Họ và tên học viên *', formState, 'text'),
+                  renderField('homeName', 'Tên ở nhà', formState, 'text'),
                   renderField('schoolName', 'Tên trường *', formState, 'text', {
                     placeholder: 'Ví dụ: Sao Mai, Cao Thắng, Lê Quý Đôn',
                   }),
-                  renderSelectField('schoolLevel', 'Bậc học', formState, schoolLevelOptions),
+                  renderField('schoolGrade', 'Đang học lớp', formState, 'text', {
+                    placeholder: 'Ví dụ: Lớp 2',
+                  }),
+                  renderField('birthDate', 'Ngày sinh *', formState, 'date'),
+                  renderSelectField('gender', 'Giới tính', formState, genderOptions),
+                  renderField('registrationDate', 'Ngày đăng ký', formState, 'date'),
+                  renderSelectField(
+                    'priorChessKnowledge',
+                    'Bé đã biết về cờ Vua chưa?',
+                    formState,
+                    priorChessKnowledgeOptions,
+                  ),
+                  renderField('hobbies', 'Sở thích', formState, 'text', {
+                    className: 'span-full',
+                  }),
+                  renderTextareaField(
+                    'personality',
+                    'Nhận xét của phụ huynh về tính cách của bé',
+                    formState,
+                    { className: 'span-full student-intake-compact-textarea' },
+                  ),
+                  renderTextareaField(
+                    'parentGoal',
+                    'Mong muốn của phụ huynh khi cho bé học tập cờ Vua tại IC',
+                    formState,
+                    { className: 'span-full student-intake-compact-textarea' },
+                  ),
                   renderField('hometown', 'Tỉnh/thành phố', formState, 'text', {
                     placeholder: 'Ví dụ: TP.HCM, Bình Dương, Đồng Nai',
                   }),
@@ -570,10 +661,6 @@ function renderStudentForm(
                   formState.values.useAuthoritativeEnrollment === true
                     ? renderRecurringEnrollmentEditor(formState, classSessions)
                     : renderClassSessionCheckboxes(formState, classSessions, options),
-                  renderTextareaField('personality', 'Tính cách học viên', formState, {
-                    className: 'span-full',
-                  }),
-                  renderField('hobbies', 'Sở thích', formState, 'text'),
                   renderField('testScore', 'Điểm bài kiểm tra gần nhất', formState, 'number', {
                     placeholder: '0-10, không bắt buộc',
                     min: '0',
@@ -584,20 +671,17 @@ function renderStudentForm(
               `
               : `
                 ${renderFormSection('B. Thông tin phụ huynh', [
-                  renderField('parentName', 'Họ và tên phụ huynh *', formState, 'text'),
-                  renderField('parentBirthYear', 'Năm sinh phụ huynh', formState, 'text', {
-                    inputmode: 'numeric',
-                    maxlength: '4',
-                    placeholder: `Từ 1950 đến ${new Date().getFullYear()}`,
-                  }),
+                  renderField('fatherName', 'Họ và tên ba', formState, 'text'),
                   renderField('fatherPhone', 'SĐT ba', formState, 'tel', {
                     placeholder: '0901 001 001',
                   }),
+                  renderField('motherName', 'Họ và tên mẹ', formState, 'text'),
                   renderField('motherPhone', 'SĐT mẹ', formState, 'tel', {
                     placeholder: '0901 001 001',
                   }),
-                  renderField('parentJob', 'Nghề nghiệp phụ huynh liên hệ', formState, 'text'),
-                  renderField('parentArea', 'Khu vực sinh sống', formState, 'text'),
+                  renderField('parentArea', 'Nơi ở hiện tại', formState, 'text', {
+                    className: 'span-full',
+                  }),
                 ])}
                 ${renderFormSection('D. Chăm sóc / ghi chú ban đầu', [
                   renderTextareaField('achievements', 'Thành tích học viên đạt được', formState, {
@@ -654,7 +738,7 @@ function renderTextareaField(name, label, formState, options = {}) {
   return `
     <label class="${options.className ?? ''}">
       <span>${label}</span>
-      <textarea data-student-form-field="${name}" ${renderStudentFormTabIndex(name)}>${formState.values[name] ?? ''}</textarea>
+      <textarea data-student-form-field="${name}" ${renderStudentFormTabIndex(name)}>${escapeHtml(formState.values[name] ?? '')}</textarea>
       ${options.after ?? ''}
     </label>
   `
@@ -1319,6 +1403,11 @@ function getStudentStats(students) {
 
 function countByStatus(students, status) {
   return students.filter((student) => student.currentStatus === status).length
+}
+
+function getCurrentLocalDateKey(now = new Date()) {
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().slice(0, 10)
 }
 
 function formatBirthDate(value) {

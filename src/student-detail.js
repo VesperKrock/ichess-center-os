@@ -77,6 +77,14 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
         </div>
         <div class="student-detail-hero-actions">
           <button
+            class="student-detail-pdf-action"
+            type="button"
+            data-student-detail-action="export-intake-pdf"
+            data-student-id="${student.id}"
+          >
+            In / Xuất PDF
+          </button>
+          <button
             class="student-detail-edit"
             type="button"
             data-student-action="edit-from-detail"

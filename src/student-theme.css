@@ -1184,6 +1184,11 @@
   line-height: 1.5;
 }
 
+.is-student-form-window .student-form-section label.student-intake-compact-textarea textarea {
+  height: 52px;
+  min-height: 52px;
+}
+
 .is-student-form-window .student-form-panel input::placeholder,
 .is-student-form-window .student-form-panel textarea::placeholder {
   color: var(--student-muted-soft);
@@ -1421,6 +1426,7 @@
 }
 
 .is-student-profile-window .student-detail-edit,
+.is-student-profile-window .student-detail-pdf-action,
 .is-student-profile-window .student-detail-delete-button {
   min-height: 34px;
   padding: 7px 12px;
@@ -1428,6 +1434,12 @@
   box-shadow: none;
   font-size: 14px;
   font-weight: 600;
+}
+
+.is-student-profile-window .student-detail-pdf-action {
+  border: 0.8px solid var(--student-primary);
+  background: transparent;
+  color: var(--student-primary);
 }
 
 .is-student-profile-window .student-detail-edit {

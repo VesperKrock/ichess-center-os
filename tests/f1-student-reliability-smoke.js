@@ -15,8 +15,10 @@ const original = {
   birthDate: '2014-01-02',
   schoolName: 'F1 School',
   level: 'Dolphin 1',
+  motherName: 'Guardian Before',
   parentName: 'Guardian Before',
   motherPhone: '0901001001',
+  parentPhone: '0901001001',
   parentArea: 'Area Before',
   currentStatus: 'Đang theo học',
   recurringEnrollments: [],
@@ -34,12 +36,12 @@ const editMarkup = renderStudentModule(
   { enrollmentCapabilityStatus: 'ready' },
 )
 assert(editMarkup.includes('data-student-id="student-f1"'))
-assert(editMarkup.includes('data-student-form-field="parentName"'))
+assert(editMarkup.includes('data-student-form-field="motherName"'))
 assert(editMarkup.includes('value="Guardian Before"'))
 assert(editMarkup.includes('data-student-form-field="motherPhone"'))
 assert(editMarkup.includes('data-student-form-field="parentArea"'))
 const controls = [
-  { dataset: { studentFormField: 'parentName' }, value: 'Guardian After' },
+  { dataset: { studentFormField: 'motherName' }, value: 'Guardian After' },
   { dataset: { studentFormField: 'motherPhone' }, value: '0909 222 333' },
   { dataset: { studentFormField: 'parentArea' }, value: 'Area After' },
   { dataset: { studentFormField: 'unknownField' }, value: 'must be ignored' },
@@ -47,15 +49,16 @@ const controls = [
 
 // Reproduces the reported boundary: visible controls can contain the final
 // edit while the event-backed form state still contains the previous values.
-assert.equal(state.values.parentName, 'Guardian Before')
+assert.equal(state.values.motherName, 'Guardian Before')
 const submittedValues = mergeStudentFormControlValues(state.values, controls)
-assert.equal(submittedValues.parentName, 'Guardian After')
+assert.equal(submittedValues.motherName, 'Guardian After')
 assert.equal(submittedValues.motherPhone, '0909 222 333')
 assert.equal(submittedValues.parentArea, 'Area After')
 assert.equal(submittedValues.unknownField, undefined)
 
 const submittedStudent = buildStudentFromForm(submittedValues, original)
 assert.equal(submittedStudent.parentName, 'Guardian After')
+assert.equal(submittedStudent.motherName, 'Guardian After')
 assert.equal(submittedStudent.motherPhone, '0909 222 333')
 assert.equal(submittedStudent.parentPhone, '0909 222 333')
 assert.equal(submittedStudent.parentArea, 'Area After')
@@ -98,9 +101,11 @@ const committed = await mutateV22StudentWithEnrollments({
 })
 assert.equal(committed.ok, true)
 assert.equal(authoritativePayload.parentName, 'Guardian After')
+assert.equal(authoritativePayload.motherName, 'Guardian After')
 assert.equal(authoritativePayload.motherPhone, '0909 222 333')
 assert.equal(authoritativePayload.parentArea, 'Area After')
 assert.equal(committed.student.parentName, 'Guardian After')
+assert.equal(committed.student.motherName, 'Guardian After')
 assert.equal(committed.student.motherPhone, '0909 222 333')
 assert.equal(committed.student.parentArea, 'Area After')
 assert.equal(committed.student.cloudVersion, 8)
