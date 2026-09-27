@@ -1,4 +1,4 @@
-import { buildStudentTuitionLink } from './student-tuition-links.js'
+import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
 import {
   formatOperatorDate,
   formatOperatorDateTime,
@@ -34,18 +34,24 @@ export const emptyCareNoteDraft = {
   editingNoteId: '',
 }
 
-export function renderStudentDetail(student, _teachers = [], classSessions = [], tuitionRecords = []) {
+export function renderStudentDetail(student, _teachers = [], classSessions = [], _tuitionRecords = [], options = {}) {
   if (!student) {
     return renderStudentNotFound()
   }
 
   const careNotes = getSortedCareNotes(student)
   const latestCareNote = careNotes[0]
-  const classSessionLabel = getStudentClassSessionLabel(student, classSessions)
-  const studentTuitionLink = buildStudentTuitionLink(student, tuitionRecords, classSessions)
+  const activeClassSessions = classSessions.filter((item) => item.status !== 'inactive')
+  const activeStudent = { ...student, classSessionIds: (student.classSessionIds || [])
+    .filter((id) => activeClassSessions.some((item) => String(item.id) === String(id))) }
+  const inactiveClassSessions = classSessions.filter((item) => item.status === 'inactive')
+  const inactiveStudent = { ...student, classSessionIds: (student.classSessionIds || [])
+    .filter((id) => inactiveClassSessions.some((item) => String(item.id) === String(id))) }
+  const classSessionLabel = getStudentClassSessionLabel(activeStudent, activeClassSessions)
+  const tuitionRow = options.tuitionRows?.find((row) => row.student.id === student.id) || null
+  const nextAction = getStudentNextAction(student, classSessions, tuitionRow)
   const studentStatusFact = ['Trạng thái', student.currentStatus]
-  const primaryParentPhone = studentTuitionLink.parent.primaryPhone
-    || student.motherPhone
+  const primaryParentPhone = student.motherPhone
     || student.fatherPhone
     || student.parentPhone
   const readOnlyProjection = student.readOnlyProjection === true
@@ -97,25 +103,34 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
         </div>
       </div>
 
+      <section class="student-next-action student-overview-tile" aria-label="Việc tiếp theo" data-student-next-action="${nextAction.key}">
+        <div>
+          <h4>Việc tiếp theo</h4>
+          <strong>${escapeHtml(nextAction.title)}</strong>
+          <p>${escapeHtml(nextAction.description)}</p>
+        </div>
+        ${renderStudentOverviewAction(student, nextAction, 'student-detail-open-button')}
+      </section>
       <div class="student-overview-grid">
         <div class="student-operational-grid">
           ${renderOverviewTile(
             'Học tập',
             [
-              ['Cấp độ hiện tại', getEscapedLevelLabel(student.level)],
               ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
               ['Mốc bot', student.highestBotMilestone],
-              ['Tính cách', student.personality],
               ['Ca học / Lớp', classSessionLabel],
             ],
-            '',
+            '<button type="button" class="student-detail-open-button" data-student-overview-action="schedule">Mở thời khóa biểu</button>',
             'student-learning-summary-tile',
           )}
-          ${renderStudentParentContactTile(student, studentTuitionLink)}
-          ${renderStudentTuitionTile(studentTuitionLink)}
+          ${renderStudentCurrentPeriodTile(tuitionRow)}
+          ${renderStudentTuitionTile(student, tuitionRow)}
         </div>
-        ${renderStudentScheduleOverview(student, classSessions)}
+        ${renderStudentScheduleOverview(activeStudent, activeClassSessions)}
+        <details class="student-profile-more">
+          <summary>Xem thêm · Phụ huynh, chăm sóc và thông tin bổ sung</summary>
         <div class="student-secondary-grid">
+          ${renderStudentParentContactTile(student, options.customerIds?.[student.id])}
           ${renderOverviewTile(
             'Chăm sóc',
             [
@@ -127,29 +142,24 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
             `<button type="button" class="student-detail-open-button" data-student-detail-action="open-care-notes" data-student-id="${student.id}">Mở chi tiết</button>`,
             'student-care-summary-tile',
           )}
-          ${renderOverviewTile(
-            'Kết quả học tập',
-            [
-              ['Cấp độ học hiện tại', getEscapedLevelLabel(student.level)],
-              ['Điểm bài kiểm tra gần nhất', formatTestScore(student.testScore)],
-              ['Mốc bot', student.highestBotMilestone],
-            ],
-            '',
-            'student-learning-result-tile',
-          )}
         </div>
         ${renderOverviewTile(
           'Thông tin bổ sung',
           [
             ['Trường', student.schoolName],
+            ['Lớp ở trường', student.schoolGrade],
             ['Bậc học', student.schoolLevel],
+            ['Tính cách', student.personality],
             ['Tỉnh/TP', student.hometown],
             ['Sở thích', student.hobbies],
             ['Quốc tịch', student.nationality],
+            ...(inactiveStudent.classSessionIds.length
+              ? [['Ca học đã ngưng', getStudentClassSessionLabel(inactiveStudent, inactiveClassSessions)]] : []),
           ],
           '',
           'student-supplementary-tile',
         )}
+        </details>
       </div>
     </section>
   `
@@ -276,7 +286,7 @@ function renderOverviewTile(title, rows, action = '', className = '', footer = '
                 ([label, value]) => `
                   <div class="${isStudentOverviewMetricLabel(label) ? 'student-overview-metric-row' : ''}">
                     <dt>${label}</dt>
-                    <dd>${displayValue(value)}</dd>
+                    <dd>${escapeHtml(displayValue(value))}</dd>
                   </div>
                 `,
               )
@@ -292,52 +302,60 @@ function isStudentOverviewMetricLabel(label) {
   return ['Ca học / Lớp', 'Còn lại', 'Cần thanh toán', 'Đã thanh toán'].includes(label)
 }
 
-function renderStudentParentContactTile(student, link) {
-  const hasParentDetails = link.parent.hasContact
+function renderStudentParentContactTile(student, customerId = '') {
+  const hasParentDetails = [student.parentName, student.parentPhone, student.fatherPhone, student.motherPhone,
+    student.fatherName, student.motherName]
+    .some((value) => String(value ?? '').trim())
     || [student.parentBirthYear, student.parentJob, student.parentArea]
       .some((value) => String(value ?? '').trim())
-  const parentWarnings = hasParentDetails
-    ? link.warnings.filter((warning) => ['missing-parent-name', 'missing-parent-phone'].includes(warning.key))
-    : []
 
   return renderOverviewTile(
     'Phụ huynh / Liên hệ',
     hasParentDetails
       ? [
-          ['Phụ huynh', link.parent.parentName],
-          ['Số liên hệ chính', formatPhoneNumber(link.parent.primaryPhone)],
-          ['SĐT ba', formatPhoneNumber(link.parent.fatherPhone)],
-          ['SĐT mẹ', formatPhoneNumber(link.parent.motherPhone)],
+          ['Phụ huynh', student.parentName],
+          ['Số liên hệ chính', formatPhoneNumber(student.motherPhone || student.fatherPhone || student.parentPhone)],
+          ['SĐT ba', formatPhoneNumber(student.fatherPhone || '')],
+          ['SĐT mẹ', formatPhoneNumber(student.motherPhone || '')],
           ['Năm sinh / tuổi', formatParentAge(student.parentBirthYear)],
           ['Nghề nghiệp', student.parentJob],
           ['Khu vực sinh sống', student.parentArea],
         ]
       : [],
-    '',
+    customerId ? `<button type="button" class="student-detail-open-button" data-student-overview-action="customer" data-customer-id="${escapeAttribute(customerId)}">Xem khách hàng</button>` : '',
     'student-parent-contact-tile',
-    `${hasParentDetails ? '' : '<p class="student-profile-card-empty">Chưa có thông tin phụ huynh/người liên hệ.</p>'}${renderStudentWarningList(parentWarnings)}`,
+    hasParentDetails ? '' : '<p class="student-profile-card-empty">Chưa có thông tin phụ huynh/người liên hệ.</p>',
   )
 }
 
-function renderStudentTuitionTile(link) {
-  const tuitionWarnings = link.tuition.hasTuition
-    ? link.warnings.filter((warning) => ['tuition-debt', 'tuition-low-session'].includes(warning.key))
-    : []
+function renderStudentCurrentPeriodTile(row) {
+  const cycle = row?.packageCycleState?.currentCycle
+  const hasPeriod = Boolean(cycle || row?.tuition)
+  const remainingSessions = cycle?.remainingSessions ?? row?.remainingSessions
+  return renderOverviewTile('Kỳ hiện tại', hasPeriod ? [
+    ['Gói học', cycle?.packageName || row?.tuition?.packageName],
+    ['Đã học / Tổng số', cycle ? `${cycle.usedSessions} / ${cycle.totalSessions} buổi` : 'Mở Học phí để kiểm tra số buổi'],
+    ['Còn lại', Number.isFinite(remainingSessions) ? `${remainingSessions} buổi` : 'Chưa đủ dữ liệu'],
+  ] : [], '', 'student-period-summary-tile', hasPeriod ? ''
+    : `<p class="student-profile-card-empty">${row && row.tuitionAvailable !== false ? 'Chưa có gói học.' : 'Chưa có thông tin kỳ học mới nhất.'}</p>`)
+}
+
+function renderStudentTuitionTile(student, row) {
+  const hasMoney = row?.financeAvailable && row?.amounts
+  const nextPaid = row?.packageCycleState?.preparedNextCycle?.paymentStatus === 'PAID'
 
   return renderOverviewTile(
     'Học phí',
-    link.tuition.hasTuition
+    row?.tuition
       ? [
-          ['Gói học phí', link.tuition.packageName],
-          ['Trạng thái', link.tuition.statusLabel],
-          ['Còn lại', Number.isFinite(link.tuition.remainingSessions) ? `${link.tuition.remainingSessions} buổi` : '—'],
-          ['Cần thanh toán', formatMoney(link.tuition.payableAmount)],
-          ['Đã thanh toán', formatMoney(link.tuition.paidAmount)],
+          ['Đã thanh toán', hasMoney ? formatMoney(row.amounts.paidAmount) : 'Chưa tải được số đã thu'],
+          ['Còn phải thanh toán', hasMoney ? formatMoney(row.debtAmount) : 'Chưa tải được dữ liệu thanh toán'],
+          ...(nextPaid ? [['Kỳ tiếp theo', 'Đã thanh toán · Chờ kết thúc kỳ hiện tại']] : []),
         ]
       : [],
-    '',
+    '<button type="button" class="student-detail-open-button" data-student-overview-action="tuition" data-student-id="' + escapeAttribute(student.id) + '">Mở chi tiết học phí</button>',
     'student-tuition-summary-tile',
-    `${link.tuition.hasTuition ? '' : '<p class="student-profile-card-empty">Chưa có dữ liệu học phí.</p>'}${renderStudentWarningList(tuitionWarnings)}`,
+    row?.tuition ? '' : '<p class="student-profile-card-empty">Chưa có dữ liệu học phí.</p>',
   )
 }
 
@@ -420,7 +438,7 @@ function getStudentClassSessionLabel(student, classSessions = []) {
     : []
 
   if (!classSessionIds.length) {
-    return 'Chưa phân lớp'
+    return 'Chưa có ca học hiện tại'
   }
 
   const classSessionLookup = new Map(
@@ -437,7 +455,7 @@ function getStudentClassSessionLabel(student, classSessions = []) {
     .map((classSessionId) => {
       const classSession = classSessionLookup.get(classSessionId)
       if (!classSession) {
-        return 'Ca học không tìm thấy'
+        return 'Chưa có ca học hiện tại'
       }
 
       const label = classSession.displayLabel || classSession.name || 'Ca học'
@@ -475,7 +493,7 @@ function renderStudentScheduleOverview(student, classSessions = []) {
     const classSession = classSessionLookup.get(classSessionId)
     const enrollment = enrollmentLookup.get(classSessionId)
     if (!classSession) {
-      unresolved.push('Ca học cũ không còn trong danh mục')
+      unresolved.push('Ca học trước đây không còn hoạt động')
       return
     }
 
@@ -499,7 +517,7 @@ function renderStudentScheduleOverview(student, classSessions = []) {
       </div>
       ${classSessionIds.length
         ? `<div class="student-profile-schedule-grid">
-            ${V22_WEEKDAY_ORDER.map((weekday) => `
+            ${V22_WEEKDAY_ORDER.filter((weekday) => slotsByWeekday.get(weekday).length).map((weekday) => `
               <section data-student-profile-weekday="${weekday}">
                 <header><strong>${V22_WEEKDAY_LABELS[weekday]}</strong></header>
                 <div>
@@ -511,7 +529,7 @@ function renderStudentScheduleOverview(student, classSessions = []) {
             `).join('')}
           </div>`
         : `<div class="student-profile-schedule-unassigned">
-            <strong>Chưa phân lớp</strong>
+            <strong>Chưa có ca học hiện tại</strong>
             <span>Học viên chưa có lịch học định kỳ.</span>
           </div>`}
       ${unresolved.length

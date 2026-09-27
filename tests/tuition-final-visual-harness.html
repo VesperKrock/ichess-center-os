@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tuition Final Visual QA</title>
+  <link rel="stylesheet" href="../src/styles.css">
+  <link rel="stylesheet" href="../src/tuition-theme.css">
+</head>
+<body>
+  <main id="app" class="desktop-window is-tuition-window" style="position:fixed;inset:0;display:block">
+    <div class="window-content"></div>
+  </main>
+  <script type="module">
+    import {
+      createEmptyTuitionFormState,
+      createPaymentFormState,
+      initialTuitionFilters,
+      renderTuitionModule,
+    } from '../src/tuition-module.js'
+
+    const params = new URLSearchParams(location.search)
+    document.documentElement.dataset.uiTheme = params.get('theme') === 'dark' ? 'dark' : 'light'
+    const mode = params.get('mode') || 'list'
+    const student = {
+      id: 'student-visual', fullName: 'Nguyễn Minh Tú', parentName: 'Nguyễn Thị An',
+      parentPhone: '0900 000 000', status: 'active',
+    }
+    const packageItem = {
+      id: '27092700-0000-4000-8000-000000000001', packageName: 'Gói 16 buổi',
+      programName: 'Cờ vua', totalSessions: 16, defaultAmount: 2400000,
+      isActive: true, version: 1,
+    }
+    const tuition = {
+      id: 'tuition-visual', studentId: student.id, packageCatalogId: packageItem.id,
+      packageName: packageItem.packageName, totalSessions: 16, usedSessions: 6,
+      totalAmount: 2400000, discountType: 'none', discountValue: 0,
+      discountAmount: 0, paidAmount: 0, currentTermId: 'term-visual-1',
+      currentTermNumber: 1, payments: [], termHistory: [], note: '',
+    }
+    const cycle = {
+      id: '27092700-0000-4000-8000-000000000002', studentId: student.id,
+      cycleNumber: 1, packageCatalogId: packageItem.id, packageName: packageItem.packageName,
+      totalSessions: 16, usedSessions: mode === 'end' ? 13 : 6,
+      remainingSessions: mode === 'end' ? 3 : 10,
+      baselineUsed: 6, contributedSessions: mode === 'end' ? 7 : 0, pendingSessions: 0,
+      lifecycleStatus: 'ACTIVE', paymentPeriodId: tuition.currentTermId,
+      paymentStatus: mode === 'payment' ? 'UNPAID' : 'PAID', paidAmount: 0,
+      price: 2400000, discountAmount: 0, materialFee: 0, amountDue: 2400000,
+      openingContext: 'LEGACY_BEFORE_ICHESS', openingPaymentState: 'PAID_BEFORE_ICHESS',
+      version: 1,
+    }
+    const cycleState = {
+      studentId: student.id, readiness: 'READY', currentCycle: cycle,
+      preparedNextCycle: null, cycles: [cycle],
+    }
+    const availability = {
+      coreStatus: 'ready', tuitionStatus: 'ready', attendanceStatus: 'ready',
+      financeStatus: 'ready', calendarNotesStatus: 'ready', financeAvailable: true,
+      attendanceAvailable: true, packageCycleReady: true, packageCycleStatus: 'ready',
+      packageCycleStudentStates: [cycleState], packageCycleContributions: [],
+      packageCycleCatalog: [packageItem], tuitionPackageCatalog: [packageItem],
+      receiptReady: true, receiptStatus: 'ready', receipts: [],
+      noticeReady: true, noticeStatus: 'ready', notices: [],
+      initialStudentSetupEnabled: true,
+    }
+    let formState = null
+    let paymentState = null
+    let detailState = null
+    let confirmationState = null
+    let tuitionRows = [tuition]
+    if (mode === 'detail' || mode === 'end') detailState = { studentId: student.id }
+    if (mode === 'setup') {
+      tuitionRows = []
+      availability.packageCycleStudentStates = []
+      formState = createEmptyTuitionFormState(student)
+      formState.values = {
+        ...formState.values, packageCatalogId: packageItem.id,
+        packageName: packageItem.packageName, totalSessions: '16', totalAmount: '2400000',
+        isLegacyStudent: true, usedSessions: '6', openingPaymentState: 'PAID_BEFORE_ICHESS',
+      }
+    }
+    if (mode === 'payment') {
+      paymentState = createPaymentFormState(student, tuition, 'collect', {
+        cycleId: cycle.id, cycleVersion: cycle.version, cycleNumber: cycle.cycleNumber,
+        packageName: cycle.packageName, periodId: cycle.paymentPeriodId, amount: cycle.amountDue,
+      })
+    }
+    if (mode === 'end') {
+      confirmationState = {
+        action: 'end-cycle', studentName: student.fullName, periodLabel: 'Kỳ 1',
+        usedSessions: 13, totalSessions: 16, expiredSessions: 3,
+        reasons: [], isSaving: false,
+      }
+    }
+    document.querySelector('.window-content').innerHTML = renderTuitionModule(
+      [student], tuitionRows, initialTuitionFilters, formState, paymentState, detailState,
+      [], [], '2026-09', null, [], null, null, [], 'qa', confirmationState, {}, availability,
+    )
+  </script>
+</body>
+</html>

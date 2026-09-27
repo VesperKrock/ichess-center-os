@@ -1,5 +1,6 @@
 import { botMilestones, sampleStudents, studentStatuses } from './student-data.js'
 import { formatOperatorDate, parseCanonicalDateParts } from './operator-date-format.js'
+import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
 import {
   V22_WEEKDAY_LABELS,
   V22_WEEKDAY_ORDER,
@@ -302,14 +303,14 @@ export function renderStudentModule(
                   <th>Trạng thái</th>
                   <th>${renderSortableHeader('Cấp độ', 'level', filters)}</th>
                   <th>Ca học</th>
-                  <th>Ghi chú</th>
+                  <th>Cần xử lý</th>
                 </tr>
               </thead>
               <tbody>
                 ${
                   filteredStudents.length
                     ? filteredStudents
-                        .map((student) => renderStudentRow(student, classSessions))
+                        .map((student) => renderStudentRow(student, classSessions, options.tuitionRows))
                         .join('')
                     : renderEmptyState()
                 }
@@ -1081,10 +1082,12 @@ function compareText(firstValue, secondValue) {
   })
 }
 
-function renderStudentRow(student, classSessions = []) {
+function renderStudentRow(student, classSessions = [], tuitionRows = []) {
   const hasCareNote = hasRealCareNote(student)
   const contactPhone = student.motherPhone || student.fatherPhone || student.parentPhone
   const classSessionLookup = createClassSessionLookup(classSessions)
+  const nextAction = getStudentNextAction(student, classSessions,
+    tuitionRows.find((row) => row.student.id === student.id))
 
   return `
     <tr class="student-row" data-student-id="${student.id}" tabindex="0">
@@ -1102,10 +1105,11 @@ function renderStudentRow(student, classSessions = []) {
       <td><span class="student-status ${getStudentStatusToneClass(student.currentStatus)}">${student.currentStatus}</span></td>
       <td>${escapeHtml(getLevelLabel(student.level))}</td>
       <td>${renderStudentClassSessionCell(student, classSessionLookup)}</td>
-      <td>
+      <td class="student-next-action-cell" data-student-next-action="${nextAction.key}">
+        ${renderStudentOverviewAction(student, nextAction, 'student-next-action-button') || `<span>${escapeHtml(nextAction.title)}</span>`}
         ${hasCareNote
           ? `<button class="student-note-badge has-note" type="button" title="${escapeAttribute(getLatestCareNoteText(student))}" data-student-note-action="open-care-notes" data-student-id="${escapeAttribute(student.id)}">Có ghi chú</button>`
-          : '<span class="student-note-badge is-empty">Không</span>'}
+          : ''}
       </td>
     </tr>
   `
@@ -1221,7 +1225,7 @@ function getStudentClassSessionItems(student, classSessionLookup = new Map()) {
           weekdayLabel,
         }
       : {
-          label: 'Ca học không tìm thấy',
+          label: 'Chưa có ca học hiện tại',
           status: 'missing',
           weekdayLabel,
         }

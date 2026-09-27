@@ -100,9 +100,6 @@ const CENTER_STAFF_ADMINISTRATIVE_DELETION_REQUESTS_KEY = createCenterScopedStor
 )
 const CENTER_DEPARTMENTS_KEY = createCenterScopedStorageKey('centerDepartments')
 const SCHEDULE_KEY = createCenterScopedStorageKey('schedule')
-const SESSION_REPORTS_KEY = createCenterScopedStorageKey('sessionReports')
-const ATTENDANCE_ADVISORY_NOTES_KEY = createCenterScopedStorageKey('attendanceAdvisoryNotes')
-const ATTENDANCE_BOARD_NOTES_KEY = createCenterScopedStorageKey('attendanceBoardNotes')
 const PARENT_CONSULTATIONS_KEY = createCenterScopedStorageKey('parentConsultations')
 const CASHFLOW_KEY = createCenterScopedStorageKey('cashflow')
 const CASHFLOW_CATEGORIES_KEY = createCenterScopedStorageKey('cashflowCategories')
@@ -147,22 +144,6 @@ const VALID_SCHEDULE_LEVELS = ['beginner', 'intermediate', 'advanced', 'mixed']
 const VALID_SCHEDULE_STATUSES = ['scheduled', 'done', 'cancelled']
 const VALID_SCHEDULE_TYPES = ['recurring', 'oneOff']
 const VALID_SCHEDULE_OCCURRENCE_REASONS = ['makeup', 'trial', 'extra', 'event', 'other']
-const VALID_ATTENDANCE_STATUSES = [
-  'present',
-  'excusedAbsent',
-  'unexcusedAbsent',
-  'makeup',
-  'trial',
-]
-const VALID_GUEST_PARTICIPATION_TYPES = ['trial', 'makeup']
-const VALID_ADVISORY_CARE_STATUSES = [
-  'auto',
-  'needReview',
-  'sentComment',
-  'contactedParent',
-  'waitingParent',
-  'completed',
-]
 const VALID_PARENT_CONTACT_TYPES = ['currentParent', 'consultingLead', 'reservedParent', 'stoppedParent']
 const VALID_PARENT_CUSTOMER_STAGES = ['lead', 'consulting', 'converted']
 const VALID_CONSULTATION_STATUSES = [
@@ -1087,70 +1068,6 @@ export function saveStoredSchedule(sessions) {
   localStorage.setItem(SCHEDULE_KEY, JSON.stringify(normalizeScheduleSessions(sessions)))
 }
 
-export function getStoredSessionReports(defaultReports = []) {
-  try {
-    const storedReports = JSON.parse(localStorage.getItem(SESSION_REPORTS_KEY))
-
-    if (Array.isArray(storedReports)) {
-      const normalizedReports = normalizeSessionReports(storedReports)
-      saveStoredSessionReports(normalizedReports)
-      return normalizedReports
-    }
-  } catch {
-    localStorage.removeItem(SESSION_REPORTS_KEY)
-  }
-
-  const normalizedDefaultReports = normalizeSessionReports(defaultReports)
-  saveStoredSessionReports(normalizedDefaultReports)
-  return normalizedDefaultReports
-}
-
-export function saveStoredSessionReports(reports) {
-  localStorage.setItem(SESSION_REPORTS_KEY, JSON.stringify(normalizeSessionReports(reports)))
-}
-
-export function getStoredAttendanceAdvisoryNotes(defaultNotes = []) {
-  try {
-    const storedNotes = JSON.parse(localStorage.getItem(ATTENDANCE_ADVISORY_NOTES_KEY))
-
-    if (Array.isArray(storedNotes)) {
-      return normalizeAttendanceAdvisoryNotes(storedNotes)
-    }
-  } catch {
-    localStorage.removeItem(ATTENDANCE_ADVISORY_NOTES_KEY)
-  }
-
-  return normalizeAttendanceAdvisoryNotes(defaultNotes)
-}
-
-export function saveStoredAttendanceAdvisoryNotes(notes) {
-  localStorage.setItem(
-    ATTENDANCE_ADVISORY_NOTES_KEY,
-    JSON.stringify(normalizeAttendanceAdvisoryNotes(notes)),
-  )
-}
-
-export function getStoredAttendanceBoardNotes(defaultNotes = []) {
-  try {
-    const storedNotes = JSON.parse(localStorage.getItem(ATTENDANCE_BOARD_NOTES_KEY))
-
-    if (Array.isArray(storedNotes)) {
-      return normalizeAttendanceBoardNotes(storedNotes)
-    }
-  } catch {
-    localStorage.removeItem(ATTENDANCE_BOARD_NOTES_KEY)
-  }
-
-  return normalizeAttendanceBoardNotes(defaultNotes)
-}
-
-export function saveStoredAttendanceBoardNotes(notes) {
-  localStorage.setItem(
-    ATTENDANCE_BOARD_NOTES_KEY,
-    JSON.stringify(normalizeAttendanceBoardNotes(notes)),
-  )
-}
-
 export function getStoredParentConsultations(defaultContacts) {
   try {
     const storedContacts = JSON.parse(localStorage.getItem(PARENT_CONSULTATIONS_KEY))
@@ -2032,195 +1949,6 @@ function normalizeScheduleDate(value) {
   return isValidDateString(dateText) ? dateText : null
 }
 
-function normalizeSessionReports(reports) {
-  return (reports ?? [])
-    .filter((report) => report && typeof report === 'object')
-    .map((report) => {
-      const sessionId = String(report.sessionId ?? '').trim()
-      const occurrenceDate = String(report.occurrenceDate ?? '').trim()
-
-      if (!sessionId || !isValidDateString(occurrenceDate)) {
-        return null
-      }
-
-      const now = new Date().toISOString()
-      const createdAt = report.createdAt ? normalizeDateTime(report.createdAt) : now
-
-      return {
-        id: String(report.id || createSessionReportId(sessionId, occurrenceDate)),
-        sessionId,
-        classSessionId: String(report.classSessionId || ''),
-        occurrenceDate,
-        attendance: normalizeSessionReportAttendance(report.attendance),
-        isDemoAttendance: Boolean(report.isDemoAttendance),
-        isImportedAttendance: Boolean(report.isImportedAttendance),
-        sourceModule: String(report.sourceModule || ''),
-        sourceTag: String(report.sourceTag || ''),
-        importBatchId: String(report.importBatchId || ''),
-        demoBatchId: String(report.demoBatchId || ''),
-        teacherName: String(report.teacherName || ''),
-        learningGroups: normalizeSessionReportLearningGroups(report.learningGroups),
-        guestParticipants: normalizeSessionReportGuestParticipants(report.guestParticipants),
-        teachingAssistantNotes: String(report.teachingAssistantNotes || ''),
-        classSituation: String(report.classSituation || ''),
-        suggestions: String(report.suggestions || ''),
-        createdAt,
-        updatedAt: report.updatedAt ? normalizeDateTime(report.updatedAt) : createdAt,
-      }
-    })
-    .filter(Boolean)
-}
-
-function normalizeSessionReportAttendance(attendance) {
-  return (Array.isArray(attendance) ? attendance : [])
-    .filter((item) => item && typeof item === 'object')
-    .map((item) => {
-      const studentId = String(item.studentId ?? '').trim()
-
-      if (!studentId) {
-        return null
-      }
-
-      return {
-        studentId,
-        attendanceStatus: VALID_ATTENDANCE_STATUSES.includes(item.attendanceStatus)
-          ? item.attendanceStatus
-          : 'present',
-        note: String(item.note || ''),
-        isDemoAttendance: Boolean(item.isDemoAttendance),
-        isImportedAttendance: Boolean(item.isImportedAttendance),
-        sourceModule: String(item.sourceModule || ''),
-        sourceTag: String(item.sourceTag || ''),
-        importBatchId: String(item.importBatchId || ''),
-        demoPaymentStatus: String(item.demoPaymentStatus || ''),
-        studentName: String(item.studentName || ''),
-        status: String(item.status || ''),
-        displayValue: String(item.displayValue || ''),
-        credits: normalizeAttendanceCredits(item.credits),
-        countsTowardTuition: item.countsTowardTuition !== false,
-      }
-    })
-    .filter(Boolean)
-}
-
-function normalizeAttendanceCredits(values) {
-  return (Array.isArray(values) ? values : [])
-    .map((value) => {
-      if (value && typeof value === 'object') {
-        const sessionNumber = Number(value.sessionNumber ?? value.value ?? value.displayValue)
-
-        if (!Number.isFinite(sessionNumber) && !value.displayValue) {
-          return null
-        }
-
-        return {
-          displayValue: String(value.displayValue || sessionNumber),
-          sessionNumber: Number.isFinite(sessionNumber) ? sessionNumber : null,
-          creditType: String(value.creditType || ''),
-        }
-      }
-
-      const sessionNumber = Number(value)
-
-      return Number.isFinite(sessionNumber)
-        ? {
-            displayValue: String(value),
-            sessionNumber,
-          }
-        : null
-    })
-    .filter(Boolean)
-}
-
-function normalizeAttendanceAdvisoryNotes(notes) {
-  const notesByIdentity = new Map()
-
-  ;(Array.isArray(notes) ? notes : []).forEach((note) => {
-    const studentId = String(note?.studentId ?? '').trim()
-    const monthKey = /^\d{4}-\d{2}$/.test(String(note?.monthKey ?? ''))
-      ? String(note.monthKey)
-      : ''
-
-    if (!studentId || !monthKey) {
-      return
-    }
-
-    const careStatus = VALID_ADVISORY_CARE_STATUSES.includes(note.careStatus)
-      ? note.careStatus
-      : 'auto'
-
-    notesByIdentity.set(`${studentId}:${monthKey}`, {
-      id: String(note.id || `advisory-note-${studentId}-${monthKey}`),
-      studentId,
-      monthKey,
-      careStatus,
-      note: String(note.note || ''),
-      updatedAt: note.updatedAt ? normalizeDateTime(note.updatedAt) : new Date().toISOString(),
-    })
-  })
-
-  return Array.from(notesByIdentity.values())
-}
-
-function normalizeAttendanceBoardNotes(notes) {
-  const notesByIdentity = new Map()
-
-  ;(Array.isArray(notes) ? notes : []).forEach((note) => {
-    const studentId = String(note?.studentId ?? '').trim()
-    const month = /^\d{4}-\d{2}$/.test(String(note?.month ?? note?.monthKey ?? ''))
-      ? String(note.month ?? note.monthKey)
-      : ''
-    const content = String(note?.note ?? note?.content ?? '').trim()
-
-    if (!studentId || !month) {
-      return
-    }
-
-    const updatedAt = note.updatedAt ? normalizeDateTime(note.updatedAt) : new Date().toISOString()
-    notesByIdentity.set(`${studentId}:${month}`, {
-      id: String(note.id || `attendance-board-note-${studentId}-${month}`),
-      studentId,
-      month,
-      note: content,
-      createdAt: note.createdAt ? normalizeDateTime(note.createdAt) : updatedAt,
-      updatedAt,
-    })
-  })
-
-  return Array.from(notesByIdentity.values())
-}
-
-function normalizeSessionReportLearningGroups(learningGroups) {
-  return (Array.isArray(learningGroups) ? learningGroups : [])
-    .filter((group) => group && typeof group === 'object')
-    .map((group, index) => ({
-      id: String(group.id || `learning-group-${String(index + 1).padStart(3, '0')}`),
-      title: String(group.title || ''),
-      studentIds: normalizeStringArray(group.studentIds),
-      contentLines: normalizeStringArray(group.contentLines),
-      note: String(group.note || ''),
-    }))
-}
-
-function normalizeSessionReportGuestParticipants(guestParticipants) {
-  return (Array.isArray(guestParticipants) ? guestParticipants : [])
-    .filter((guest) => guest && typeof guest === 'object')
-    .map((guest, index) => {
-      const participationType = VALID_GUEST_PARTICIPATION_TYPES.includes(guest.participationType)
-        ? guest.participationType
-        : 'trial'
-
-      return {
-        id: String(guest.id || `guest-${String(index + 1).padStart(3, '0')}`),
-        displayName: String(guest.displayName || ''),
-        participationType,
-        attendanceStatus: participationType,
-        note: String(guest.note || ''),
-      }
-    })
-    .filter((guest) => guest.displayName)
-}
-
 function normalizeParentConsultations(contacts) {
   return (contacts ?? [])
     .filter((contact) => contact && typeof contact === 'object')
@@ -2457,11 +2185,6 @@ function normalizeParentEnrollmentDraft(enrollmentDraft, contact = {}) {
     createdAt: draft.createdAt ? normalizeDateTime(draft.createdAt) : null,
     updatedAt: draft.updatedAt ? normalizeDateTime(draft.updatedAt) : null,
   }
-}
-
-function createSessionReportId(sessionId, occurrenceDate) {
-  const safeSessionId = String(sessionId).replace(/[^a-zA-Z0-9_-]+/g, '-')
-  return `report-${safeSessionId}-${occurrenceDate}`
 }
 
 function normalizeNullableId(value) {

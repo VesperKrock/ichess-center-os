@@ -34,25 +34,25 @@ const tuitionStates = [
     centerId,
     studentId: 'student-bcht',
     readiness: 'READY',
-    currentCycle: { id: 'cycle-bcht', bchtReminder: true, renewalReminder: false, urgentRenewal: false, lifecycleStatus: 'ACTIVE' },
+    currentCycle: { id: 'cycle-bcht', remainingSessions: 4, bchtReminder: true, renewalReminder: false, urgentRenewal: false, lifecycleStatus: 'ACTIVE' },
   },
   {
     centerId,
     studentId: 'student-renewal',
     readiness: 'READY',
-    currentCycle: { id: 'cycle-renewal', bchtReminder: false, renewalReminder: true, urgentRenewal: false, lifecycleStatus: 'ACTIVE' },
+    currentCycle: { id: 'cycle-renewal', remainingSessions: 2, bchtReminder: false, renewalReminder: true, urgentRenewal: false, lifecycleStatus: 'ACTIVE' },
   },
   {
     centerId,
     studentId: 'student-exhausted',
     readiness: 'READY',
-    currentCycle: { id: 'cycle-exhausted', bchtReminder: false, renewalReminder: true, urgentRenewal: true, lifecycleStatus: 'ACTIVE' },
+    currentCycle: { id: 'cycle-exhausted', remainingSessions: 0, bchtReminder: false, renewalReminder: true, urgentRenewal: true, lifecycleStatus: 'ACTIVE' },
   },
   {
     centerId,
     studentId: 'student-provisional',
     readiness: 'READY',
-    currentCycle: { id: 'cycle-provisional', bchtReminder: false, renewalReminder: false, urgentRenewal: false, lifecycleStatus: 'PROVISIONAL_UNPAID', paymentStatus: 'UNPAID' },
+    currentCycle: { id: 'cycle-provisional', remainingSessions: 16, bchtReminder: false, renewalReminder: false, urgentRenewal: false, lifecycleStatus: 'PROVISIONAL_UNPAID', paymentStatus: 'UNPAID' },
   },
   {
     centerId,
@@ -76,11 +76,15 @@ const tuitionStates = [
 const tuitionCandidates = buildV24TuitionNotificationCandidates(tuitionStates, tuitionStudents, { centerId, today })
 assert.deepEqual(
   tuitionCandidates.map((candidate) => candidate.meta.signal).sort(),
-  ['bcht-due', 'needs-package-selection', 'package-exhausted', 'renewal-due'],
+  ['bcht-due', 'needs-package-selection', 'tuition-due', 'tuition-due'],
 )
 assert(!tuitionCandidates.some((candidate) => candidate.entityId === 'student-provisional'),
   'V2-8A owns the authoritative provisional-cycle payment-check signal.')
 assert(tuitionCandidates.every((candidate) => candidate.sourceModule === 'hoc-phi'))
+assert.equal(tuitionCandidates.find((candidate) => candidate.entityId === 'student-bcht').severity, 'info')
+assert.equal(tuitionCandidates.find((candidate) => candidate.entityId === 'student-renewal').severity, 'info')
+assert.equal(tuitionCandidates.find((candidate) => candidate.entityId === 'student-exhausted').severity, 'danger')
+assert(!tuitionCandidates.some((candidate) => /c\u00f2n \d+ ng\u00e0y/i.test(`${candidate.title} ${candidate.message}`)))
 
 const occurrences = [
   {
@@ -163,6 +167,19 @@ const firstSync = upsertNotificationCandidates([], [
   ...missingReportCandidates,
   ...inventoryCandidates,
 ])
+const repeatedSync = upsertNotificationCandidates(firstSync, [
+  ...birthdayCandidates,
+  ...tuitionCandidates,
+  ...scheduleCandidates,
+  ...missingReportCandidates,
+  ...inventoryCandidates,
+])
+assert.equal(repeatedSync.length, firstSync.length, 'Reloading the same derived signals must not duplicate notifications.')
+assert.deepEqual(
+  repeatedSync.map((candidate) => candidate.id).sort(),
+  firstSync.map((candidate) => candidate.id).sort(),
+  'Stable derived notification IDs must survive realtime/reload reconciliation.',
+)
 const birthdayNotificationId = firstSync.find((candidate) => candidate.dedupeKey === birthdayCandidates[0].dedupeKey).id
 const readBirthday = markNotificationReadById(firstSync, birthdayNotificationId, '2026-09-12T10:00:00.000Z')
 const sameBirthdaySync = upsertNotificationCandidates(readBirthday, birthdayCandidates)
@@ -208,7 +225,8 @@ assert(!syncSource.includes('buildParentFollowupNotificationCandidates'))
 assert(!syncSource.includes('buildTuitionRows'))
 assert(!syncSource.includes('giao-vien'), 'Teacher assignment signals belong to V2-6, not V2-5A.')
 
-assert(mainSource.includes('return `${summary.label} — ${summary.count}`'))
+assert(mainSource.includes('return `${summary.label} · ${summary.count} thông báo ${stateLabel}`'))
+assert(!mainSource.includes('summary.sampleTitles'), 'The global bell must not expose module-detail alert titles.')
 assert(mainSource.includes('data-notification-id="${escapeAttribute(notification.id)}"'))
 assert(mainSource.includes("if (notificationElement.matches('button'))"))
 assert(mainSource.includes('openStudentDetailWindowFromChildInteraction(studentId)'))

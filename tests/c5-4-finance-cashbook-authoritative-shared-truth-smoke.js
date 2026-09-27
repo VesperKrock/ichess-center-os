@@ -168,7 +168,7 @@ includesAll(content.main, [
   "refreshC54FinanceSharedTruth({ reason: 'manual-refresh' })",
   "refreshC54FinanceSharedTruth({ reason: 'after-server-commit', silent: true })",
   'buildC54SaveTransactionCommand(nextTransaction',
-  "reason: 'tuition-payment-finance-commit'",
+  "reason: 'receipt-after-server-commit'",
   'attachmentIntent: getC54AttachmentRetryIntent(stagedFile)',
   'uploadedAttachmentId !== authoritativeResult.effectiveAttachmentId',
   'buildC54VoidTransactionCommand(transaction)',

@@ -7,7 +7,7 @@ import {
   mutateAuthoritativeAttendanceTuitionEntities,
 } from '../src/cloud-authoritative-attendance-tuition.js'
 import {
-  mergeC51CloudRecordsIntoLocal,
+  projectC51AuthoritativeRecords,
 } from '../src/cloud-attendance-realtime.js'
 import {
   mergeC52TuitionCloudRecordsIntoLocal,
@@ -182,7 +182,7 @@ const attendanceWriter = functionSlice(
   'async function startC51AttendanceRealtimeSubscription',
 )
 const attendanceAwaitAt = attendanceWriter.indexOf('await upsertC51AttendanceSessionReportCloudEntities')
-const attendanceProjectionAt = attendanceWriter.indexOf('saveStoredAttendanceRecords')
+const attendanceProjectionAt = attendanceWriter.indexOf('applyC51AttendanceProjection')
 assert(attendanceAwaitAt >= 0 && attendanceProjectionAt > attendanceAwaitAt, 'Attendance projection precedes server commit')
 includesAll(attendanceWriter, [
   'c52AttendanceRetryCommands',
@@ -225,18 +225,18 @@ const occurrenceAttendanceWriter = functionSlice(
   'function createC52OperationalRetryFingerprint',
 )
 const occurrenceAttendanceAwaitAt = occurrenceAttendanceWriter.indexOf('await mutateV23OccurrenceAttendance')
-const occurrenceAttendanceProjectionAt = occurrenceAttendanceWriter.indexOf('saveStoredAttendanceRecords')
+const occurrenceAttendanceProjectionAt = occurrenceAttendanceWriter.indexOf('applyC51AttendanceProjection')
 assert(
   occurrenceAttendanceAwaitAt >= 0 && occurrenceAttendanceProjectionAt > occurrenceAttendanceAwaitAt,
   'V2-3 Attendance projection precedes server commit',
 )
-assert.equal((content.main.match(/saveStoredAttendanceRecords\(/g) || []).length, 4, 'Attendance cache writes must stay in bootstrap/commit/realtime/V2-3 commit projection paths')
-assert.equal((content.main.match(/saveAttendanceBaselineState\(/g) || []).length, 4, 'Baseline cache writes must stay in bootstrap/commit/realtime/V2-3 commit projection paths')
-assert.equal((content.main.match(/saveStoredSessionReports\(/g) || []).length, 4, 'Session report cache writes must stay in bootstrap/commit/realtime/V2-3 commit projection paths')
+assert.equal((content.main.match(/applyC51AttendanceProjection\(/g) || []).length, 5, 'Attendance must use one memory-only projection helper after bootstrap/commit/realtime/V2-3 results')
+assert(!/saveStoredAttendanceRecords|saveAttendanceBaselineState|saveStoredSessionReports/.test(content.main), 'Attendance must not write a browser cache')
 assert.equal((content.main.match(/saveStoredTuition\(/g) || []).length, 3, 'Tuition cache writes must stay in bootstrap/commit/realtime projection paths')
 
 includesAll(content.tuitionModule, [
-  'buildTuitionAttendancePreviewMap',
+  'buildCycleScopedTuitionAttendancePreviewMap',
+  'packageCycleContributions',
   'const storedUsedSessions = Number(tuition?.usedSessions)',
   'const attendanceCreditCount',
   'Theo điểm danh:',
@@ -324,7 +324,7 @@ const attendanceLocal = {
   id: 'attendance-a', studentId: 'student-a', date: '2026-08-14', source: 'admin',
   attendanceStatus: 'present', status: 'present', cloudVersion: 2,
 }
-const staleAttendanceMerge = mergeC51CloudRecordsIntoLocal({
+const staleAttendanceMerge = projectC51AuthoritativeRecords({
   attendanceRecords: [attendanceLocal],
   cloudRecords: [{
     entity_type: 'attendance_record', local_id: 'attendance-record::student-a::2026-08-14::session::admin::empty',
@@ -335,7 +335,7 @@ const staleAttendanceMerge = mergeC51CloudRecordsIntoLocal({
 assert.equal(staleAttendanceMerge.changed, false, 'Stale attendance event overrode newer projection')
 assert.equal(staleAttendanceMerge.attendanceRecords[0].attendanceStatus, 'present')
 
-const emptyAttendanceSnapshot = mergeC51CloudRecordsIntoLocal({
+const emptyAttendanceSnapshot = projectC51AuthoritativeRecords({
   attendanceRecords: [attendanceLocal],
   baselineState: { status: 'locked', cloudVersion: 2 },
   sessionReports: [{ id: 'report-a', sessionId: 'session-a', learningGroups: [{}], cloudVersion: 2 }],

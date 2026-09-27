@@ -85,6 +85,9 @@ const snapshotPayload = {
     address: 'Địa chỉ QA',
     phone: '0900000000',
     note: 'Vận hành',
+    renewal_material_fee_minor: 80000,
+    receipt_prefix: 'IC',
+    default_receipt_collector_name: 'Hoàng Thị Vân',
     environment: 'production',
     status: 'active',
     version: 2,
@@ -95,6 +98,7 @@ const snapshotPayload = {
     package_name: 'Gói 12 buổi',
     total_sessions: 12,
     default_amount: 2400000,
+    max_completion_weeks: null,
     is_active: true,
     note: 'Mặc định',
     version: 1,
@@ -116,6 +120,7 @@ const readyRead = await pullV21CenterSettings({
 })
 assert.equal(readyRead.ok, true)
 assert.equal(readyRead.centerProfile.centerCode, 'center-a')
+assert.equal(readyRead.centerProfile.defaultReceiptCollectorName, 'Hoàng Thị Vân')
 assert.equal(readyRead.tuitionPackages[0].packageName, 'Gói 12 buổi')
 assert.equal(readyRead.sharedWallpaper.version, 3)
 assert.equal(readyRead.sharedWallpaperVersion, 3)
@@ -162,10 +167,15 @@ assert.equal(missingWallpaperWrite.outcome_code, 'WALLPAPER_OBJECT_MISSING')
 assert.doesNotMatch(missingWallpaperWrite.error, /v2_1|rpc|storage\.objects/i)
 
 assert.deepEqual(buildV21UpdateCenterProfileCommand({
-  displayName: 'Tên mới', address: 'A', phone: 'B', note: 'C',
+  displayName: 'Tên mới', address: 'A', phone: 'B', note: 'C', renewalMaterialFee: '80000', receiptPrefix: 'IC',
+  defaultReceiptCollectorName: 'Hoàng Thị Vân',
 }, { version: 2 }), {
   operation: 'UPDATE_CENTER_PROFILE', expected_version: 2,
   display_name: 'Tên mới', address: 'A', phone: 'B', note: 'C',
+  renewal_material_fee_minor: 80000,
+  receipt_prefix: 'IC',
+  default_receipt_collector_name: 'Hoàng Thị Vân',
+  initial_student_setup_enabled: false,
 })
 const packageCommand = buildV21UpsertTuitionPackageCommand({
   packageName: 'Gói 24 buổi', totalSessions: '24', defaultAmount: '4800000', isActive: true, note: '',
@@ -192,7 +202,9 @@ assert.deepEqual(buildV21ClearSharedWallpaperCommand(3), {
   operation: 'CLEAR_SHARED_WALLPAPER', expected_version: 3,
 })
 
-assert.deepEqual(validateSettingsCenterProfileForm({ displayName: 'Cơ sở', address: '', phone: '', note: '' }), {})
+assert.deepEqual(validateSettingsCenterProfileForm({
+  displayName: 'Cơ sở', address: '', phone: '', note: '', renewalMaterialFee: '80000', receiptPrefix: 'IC',
+}), {})
 assert(validateSettingsCenterProfileForm({ displayName: '' }).displayName)
 assert.deepEqual(validateSettingsTuitionPackageForm({
   packageName: 'Gói 12', totalSessions: '12', defaultAmount: '1200000', note: '',

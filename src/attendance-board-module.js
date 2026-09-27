@@ -13,8 +13,7 @@ import {
   buildUnifiedAttendanceRecords,
   getBaselineEditableDateRange,
   isDateInBaselineEditableRange,
-  loadAttendanceBaselineState,
-  loadStoredAttendanceRecords,
+  normalizeAttendanceBaselineState,
 } from './attendance-records.js'
 import { buildMonthlyAbsenceCareStates } from './attendance-absence-care.js'
 
@@ -65,10 +64,10 @@ export function renderAttendanceBoardModule(
   const attendanceOperationsReady = availability.attendanceOperationsReady === true
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const activeClassSessions = classSessions.filter((classSession) => classSession.status !== 'inactive')
-  const storedAttendanceRecords = Array.isArray(draftRecords) ? draftRecords : loadStoredAttendanceRecords()
+  const storedAttendanceRecords = Array.isArray(draftRecords) ? draftRecords : []
   const baselineState = baselineStateOverride && typeof baselineStateOverride === 'object'
     ? baselineStateOverride
-    : loadAttendanceBaselineState()
+    : normalizeAttendanceBaselineState()
   const filteredRows = buildAttendanceBoardRows(
     students,
     classSessions,
@@ -101,6 +100,9 @@ export function renderAttendanceBoardModule(
     },
     calendarNotesSharedTruthState,
   )
+  const baselineEntryLabel = baselineState.status === 'locked'
+    ? 'Dữ liệu ban đầu'
+    : 'Thiết lập dữ liệu điểm danh ban đầu'
 
   return `
     <section class="attendance-board-module" aria-label="Bảng điểm danh">
@@ -119,7 +121,7 @@ export function renderAttendanceBoardModule(
             data-attendance-baseline-manager-open
             ${attendanceAvailable ? '' : 'disabled'}
           >
-            Quản lý dữ liệu nền
+            ${baselineEntryLabel}
           </button>
         </div>
       </header>
@@ -286,7 +288,7 @@ function renderAttendanceReminderAction(reminder = {}) {
   const actionLabel = reminder.signal === 'REVIEW_UPDATE_DUE'
     ? 'Đánh dấu đã cập nhật'
     : reminder.signal === 'TBHP_SEND_DUE'
-      ? 'Xác nhận đã gửi'
+      ? 'In thông báo học phí'
       : 'Mở Học phí'
   return `
     <button
@@ -343,9 +345,13 @@ function renderAttendanceBaselinePanel(
   const baselineRecords = (Array.isArray(storedAttendanceRecords) ? storedAttendanceRecords : [])
     .filter((record) => record?.source === 'initialBaseline')
   const hasDraftChanges = Number(draftChangeCount) > 0
+  const startActionLabel = status === 'notStarted'
+    ? 'Bắt đầu thiết lập'
+    : 'Tiếp tục chỉnh dữ liệu ban đầu'
 
   return `
-    <section class="attendance-baseline-toolbar" aria-label="Dữ liệu nền điểm danh">
+    <section class="attendance-baseline-toolbar" aria-label="Thiết lập dữ liệu điểm danh ban đầu">
+      <p class="attendance-baseline-explanation">Chỉ dùng để khai báo hoặc chỉnh dữ liệu điểm danh trước thời điểm hệ thống bắt đầu theo dõi chính thức. Điểm danh hằng ngày được thực hiện trực tiếp trên bảng chính.</p>
       <div class="attendance-baseline-summary">
         <div>
           <strong class="attendance-baseline-state is-${escapeAttribute(status)}">
@@ -361,7 +367,7 @@ function renderAttendanceBaselinePanel(
         <span>Nhập / chỉnh sửa</span>
         <div class="attendance-baseline-actions">
           <button type="button" data-attendance-baseline-action="start" ${isLocked ? 'disabled' : ''}>
-            Bắt đầu nhập dữ liệu nền
+            ${startActionLabel}
           </button>
           <button type="button" data-attendance-baseline-action="undo" ${baselineUndoAvailable ? '' : 'disabled'}>
             Hoàn tác nhập gần nhất
@@ -381,15 +387,15 @@ function renderAttendanceBaselinePanel(
             Xóa dữ liệu nền đang nhập
           </button>
           <button type="button" data-attendance-baseline-action="lock" ${isLocked ? 'disabled' : ''}>
-            Chốt dữ liệu nền
+            Hoàn tất và khóa dữ liệu ban đầu
           </button>
           <button type="button" data-attendance-baseline-action="unlock" ${isLocked ? '' : 'disabled'}>
-            Mở khóa dữ liệu nền
+            Mở lại để chỉnh sửa
           </button>
         </div>
       </div>
       <details class="attendance-baseline-details" data-attendance-baseline-details ${isDetailsOpen ? 'open' : ''}>
-        <summary>Chi tiết dữ liệu nền</summary>
+        <summary>Hướng dẫn và lịch sử dữ liệu ban đầu</summary>
         <div>
           <p>Nhập trực tiếp vào ô ngày trong khoảng cho phép. Ví dụ: 1, 3+4, T, V, P, CP, B hoặc để trống để xóa dữ liệu nền.</p>
           ${
@@ -402,8 +408,8 @@ function renderAttendanceBaselinePanel(
               ? `<p class="attendance-baseline-meta">Mở khóa lúc ${escapeHtml(formatDateTime(normalizedState.unlockedAt))}${normalizedState.unlockReason ? ` · Lý do: ${escapeHtml(normalizedState.unlockReason)}` : ''}.</p>`
               : ''
           }
-          ${isInputMode ? '' : '<p class="attendance-baseline-warning">Bấm “Bắt đầu nhập dữ liệu nền” để chỉnh trực tiếp trên các ô ngày hợp lệ.</p>'}
-          ${isLocked ? '<p class="attendance-baseline-warning">Dữ liệu nền đã khóa, cần mở khóa trước khi chỉnh sửa.</p>' : ''}
+          ${isInputMode ? '' : '<p class="attendance-baseline-warning">Chọn “Bắt đầu thiết lập” để nhập trực tiếp trên các ô ngày hợp lệ.</p>'}
+          ${isLocked ? '<p class="attendance-baseline-warning">Dữ liệu ban đầu đã hoàn tất. Chỉ mở lại khi cần sửa lịch sử và phải ghi rõ lý do.</p>' : ''}
         </div>
       </details>
     </section>
@@ -442,9 +448,7 @@ export function buildAttendanceBoardRows(
   const normalizedFilters = normalizeAttendanceBoardFilters(filters)
   const attendanceRecords = buildUnifiedAttendanceRecords({
     sessionReports,
-    storedRecords: Array.isArray(storedAttendanceRecords)
-      ? storedAttendanceRecords
-      : loadStoredAttendanceRecords(),
+    storedRecords: Array.isArray(storedAttendanceRecords) ? storedAttendanceRecords : [],
   })
   const absenceCareByStudentId = buildMonthlyAbsenceCareStates(
     attendanceRecords,
@@ -514,6 +518,8 @@ export function buildAttendanceBoardRows(
         classSessions: studentClassSessions,
         isUnassigned: classSessionIds.length === 0,
         tuition,
+        packageCycleState: packageCycleStateByStudentId.get(String(student.id)) || null,
+        packageCycleReady,
         tuitionAvailable,
         calendarNotesAvailable,
         attendanceSummary,
@@ -754,7 +760,10 @@ function renderAttendanceBoardContent(rows, dates, classSessions, students, base
 
   return `
     <div class="attendance-board-sheet-wrap ${hideClassSessionColumn ? 'is-class-session-filtered' : ''}">
-      <table class="attendance-board-sheet ${hideClassSessionColumn ? 'is-class-session-filtered' : ''}">
+      <table
+        class="attendance-board-sheet ${hideClassSessionColumn ? 'is-class-session-filtered' : ''}"
+        style="--attendance-date-count: ${dates.length}"
+      >
         <thead>
           <tr>
             <th class="is-sticky">STT</th>
@@ -824,8 +833,9 @@ function renderAttendancePackageSessions(row) {
   }
 
   const tuition = row?.tuition
-  const usedSessions = Number(tuition?.usedSessions)
-  const totalSessions = Number(tuition?.totalSessions)
+  const currentCycle = row?.packageCycleReady ? row?.packageCycleState?.currentCycle : null
+  const usedSessions = Number(currentCycle?.usedSessions ?? tuition?.usedSessions)
+  const totalSessions = Number(currentCycle?.totalSessions ?? tuition?.totalSessions)
 
   if (!tuition) {
     return '<span class="attendance-package-sessions is-missing">Chưa gán gói</span>'
@@ -850,7 +860,10 @@ function renderAttendanceNoteCell(row) {
   }
 
   const hasNote = Boolean(String(row.attendanceBoardNote?.note || '').trim())
-  const buttonLabel = hasNote ? 'Sửa ghi chú' : 'Điền ghi chú'
+  const buttonLabel = hasNote ? 'Sửa' : 'Ghi chú'
+  const accessibleLabel = hasNote
+    ? `Sửa ghi chú điểm danh của ${row.student.fullName || 'học viên'}`
+    : `Thêm ghi chú điểm danh cho ${row.student.fullName || 'học viên'}`
 
   return `
     <div class="attendance-note-action">
@@ -859,6 +872,8 @@ function renderAttendanceNoteCell(row) {
         type="button"
         data-attendance-note-open
         data-student-id="${escapeAttribute(row.student.id)}"
+        aria-label="${escapeAttribute(accessibleLabel)}"
+        title="${escapeAttribute(accessibleLabel)}"
       >
         ${buttonLabel}
       </button>
@@ -1354,9 +1369,12 @@ function renderAttendanceBaselineManagerModal(
 ) {
   return `
     <div class="attendance-detail-backdrop" role="presentation" data-attendance-baseline-manager-close></div>
-    <section class="attendance-baseline-manager-modal" role="dialog" aria-modal="true" aria-label="Quản lý dữ liệu nền">
+    <section class="attendance-baseline-manager-modal" role="dialog" aria-modal="true" aria-label="Thiết lập dữ liệu điểm danh ban đầu">
       <header>
-        <h4>Quản lý dữ liệu nền điểm danh</h4>
+        <div>
+          <h4>Thiết lập dữ liệu điểm danh ban đầu</h4>
+          <p>Không dùng cho điểm danh hằng ngày.</p>
+        </div>
         <button type="button" aria-label="Đóng" data-attendance-baseline-manager-close>×</button>
       </header>
       ${renderAttendanceBaselinePanel(

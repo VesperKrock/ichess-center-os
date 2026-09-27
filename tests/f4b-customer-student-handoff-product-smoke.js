@@ -42,6 +42,8 @@ const contact = {
   studentBirthYear: '2016',
   consultationStatus: 'pendingEnrollment',
   customerStage: 'consulting',
+  receiptAddress: '012 Đường Nguyễn Huệ, TP.HCM',
+  cccd: '001234567890',
   source: 'walkIn',
   sourceLabel: 'Trực tiếp',
   createdAt: '2026-09-22T08:00:00.000Z',
@@ -81,7 +83,11 @@ assert.deepEqual(
   }, [{ id: 'student-existing', cloudVersion: 3 }]),
   {},
 )
-assert.equal(buildF4bStudentPayload(contact, formState.values).fullName, 'Nguyễn Minh Anh')
+const studentPayload = buildF4bStudentPayload(contact, formState.values)
+assert.equal(studentPayload.fullName, 'Nguyễn Minh Anh')
+assert.equal(Object.hasOwn(studentPayload, 'receiptAddress'), false)
+assert.equal(Object.hasOwn(studentPayload, 'receipt_address'), false)
+assert.equal(Object.hasOwn(studentPayload, 'cccd'), false)
 
 const calls = []
 const supabase = {
@@ -210,6 +216,7 @@ const settingsProjection = await pullV21CenterSettings({
           center_id: centerId,
           center_code: 'F4B',
           display_name: 'F4B Center',
+          renewal_material_fee_minor: 80000,
           environment: 'production',
           status: 'active',
           version: 1,

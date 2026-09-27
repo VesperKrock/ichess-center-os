@@ -14,11 +14,7 @@ import {
   validateAttendanceBaselineStateCloudPayload,
   validateSessionReportCloudPayload,
 } from './cloud-session-reports.js'
-import {
-  loadStoredAttendanceRecords,
-  normalizeStoredAttendanceRecords,
-} from './attendance-records.js'
-import { getStoredSessionReports } from './storage.js'
+import { normalizeStoredAttendanceRecords } from './attendance-records.js'
 import { buildOnlineAccessState, getOnlineAccessMessage } from './online-access-control.js'
 import {
   getAuthoritativeAttendanceTuitionVersion,
@@ -296,7 +292,7 @@ export function getC51RealtimeRecord(event = {}, centerId = '') {
   }
 }
 
-export function mergeC51CloudRecordsIntoLocal({
+export function projectC51AuthoritativeRecords({
   attendanceRecords = [],
   baselineState = {},
   sessionReports = [],
@@ -364,11 +360,10 @@ export function mergeC51CloudRecordsIntoLocal({
   }
 }
 
-export function createC51LocalSnapshot({
-  centerId = '',
-  attendanceRecords = loadStoredAttendanceRecords(centerId),
+export function createC51MemorySnapshot({
+  attendanceRecords = [],
   baselineState = {},
-  sessionReports = getStoredSessionReports(),
+  sessionReports = [],
 } = {}) {
   return {
     attendanceRecords,

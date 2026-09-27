@@ -477,11 +477,18 @@
 }
 
 .desktop-window.is-attendance-window .attendance-board-sheet {
-  width: max-content;
-  min-width: 100%;
+  width: calc(760px + (var(--attendance-date-count, 0) * 66px));
+  min-width: calc(760px + (var(--attendance-date-count, 0) * 66px));
+  max-width: calc(760px + (var(--attendance-date-count, 0) * 66px));
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
+}
+
+.desktop-window.is-attendance-window .attendance-board-sheet.is-class-session-filtered {
+  width: calc(570px + (var(--attendance-date-count, 0) * 66px));
+  min-width: calc(570px + (var(--attendance-date-count, 0) * 66px));
+  max-width: calc(570px + (var(--attendance-date-count, 0) * 66px));
 }
 
 .desktop-window.is-attendance-window .attendance-board-sheet th,
@@ -497,6 +504,7 @@
   text-align: center;
   vertical-align: middle;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .desktop-window.is-attendance-window .attendance-board-sheet th {
@@ -510,12 +518,14 @@
   font-weight: 600;
   line-height: 16px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .desktop-window.is-attendance-window .attendance-board-sheet .is-sticky {
   position: sticky;
   z-index: 2;
   left: 0;
+  background-clip: padding-box;
 }
 
 .desktop-window.is-attendance-window .attendance-board-sheet th.is-sticky { z-index: 4; }
@@ -531,10 +541,11 @@
 .desktop-window.is-attendance-window .attendance-board-sheet th.is-sticky:nth-child(2),
 .desktop-window.is-attendance-window .attendance-board-sheet td.is-sticky:nth-child(2) {
   left: 46px;
-  width: 228px;
-  min-width: 228px;
-  max-width: 228px;
+  width: 240px;
+  min-width: 240px;
+  max-width: 240px;
   text-align: left;
+  box-shadow: 1px 0 0 var(--attendance-line-soft);
 }
 
 .desktop-window.is-attendance-window .attendance-board-sheet th.is-sticky:nth-child(2) {
@@ -600,9 +611,9 @@
 .desktop-window.is-attendance-window .attendance-student-cell.is-danger small { color: var(--attendance-danger); }
 
 .desktop-window.is-attendance-window .attendance-class-session-column {
-  width: 164px;
-  min-width: 164px;
-  max-width: 164px;
+  width: 190px;
+  min-width: 190px;
+  max-width: 190px;
   text-align: center;
 }
 
@@ -741,9 +752,9 @@
 
 .desktop-window.is-attendance-window .attendance-package-sessions-column,
 .desktop-window.is-attendance-window .attendance-package-sessions-cell {
-  width: 92px;
-  min-width: 92px;
-  max-width: 92px;
+  width: 100px;
+  min-width: 100px;
+  max-width: 100px;
   text-align: center;
 }
 
@@ -767,16 +778,17 @@
 
 .desktop-window.is-attendance-window .attendance-note-cell,
 .desktop-window.is-attendance-window .attendance-board-sheet th:last-child {
-  width: 310px;
-  min-width: 310px;
-  max-width: 310px;
+  width: 184px;
+  min-width: 184px;
+  max-width: 184px;
 }
 
 .desktop-window.is-attendance-window .attendance-note-action {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   min-width: 0;
-  justify-items: start;
-  gap: 4px;
+  gap: 8px;
 }
 
 .desktop-window.is-attendance-window .attendance-note-action p,
@@ -793,7 +805,8 @@
 }
 
 .desktop-window.is-attendance-window .attendance-note-action button {
-  width: 118px;
+  width: auto;
+  min-width: 54px;
   height: 26px;
   min-height: 26px;
   border: 1px solid var(--attendance-line);
@@ -864,7 +877,7 @@
 
 .desktop-window.is-attendance-window .attendance-baseline-manager-modal {
   width: 760px;
-  height: 360px;
+  height: 440px;
   max-height: calc(100% - 48px);
   grid-template-rows: 60px minmax(0, 1fr);
   gap: 0;
@@ -905,6 +918,17 @@
   line-height: 24px;
 }
 
+.desktop-window.is-attendance-window .attendance-baseline-manager-modal > header > div {
+  min-width: 0;
+}
+
+.desktop-window.is-attendance-window .attendance-baseline-manager-modal > header > div > p {
+  margin-top: 2px;
+  color: var(--attendance-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .desktop-window.is-attendance-window .attendance-detail-modal header button,
 .desktop-window.is-attendance-window .attendance-note-modal header button,
 .desktop-window.is-attendance-window .attendance-cell-note-modal header button,
@@ -927,11 +951,21 @@
   min-height: 0;
   align-content: start;
   gap: 14px;
-  overflow: hidden;
+  overflow: auto;
   border: 0;
   padding: 0 23px 20px;
   color: var(--attendance-text);
   background: transparent;
+}
+
+.desktop-window.is-attendance-window .attendance-baseline-explanation {
+  margin: 0;
+  border-left: 3px solid var(--attendance-accent);
+  padding: 8px 10px;
+  color: var(--attendance-secondary);
+  background: var(--attendance-panel-soft);
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .desktop-window.is-attendance-window .attendance-baseline-summary {
@@ -1019,12 +1053,12 @@
   font-weight: 600;
 }
 
-.desktop-window.is-attendance-window .attendance-baseline-action-group:not(.is-foundation) .attendance-baseline-actions button:nth-child(1) { width: 190px; }
+.desktop-window.is-attendance-window .attendance-baseline-action-group:not(.is-foundation) .attendance-baseline-actions button:nth-child(1) { width: 240px; }
 .desktop-window.is-attendance-window .attendance-baseline-action-group:not(.is-foundation) .attendance-baseline-actions button:nth-child(2) { width: 180px; }
 .desktop-window.is-attendance-window .attendance-baseline-action-group:not(.is-foundation) .attendance-baseline-actions button:nth-child(3),
 .desktop-window.is-attendance-window .attendance-baseline-action-group:not(.is-foundation) .attendance-baseline-actions button:nth-child(4) { width: 130px; }
 .desktop-window.is-attendance-window .attendance-baseline-action-group.is-foundation .attendance-baseline-actions button:nth-child(1) { width: 220px; }
-.desktop-window.is-attendance-window .attendance-baseline-action-group.is-foundation .attendance-baseline-actions button:nth-child(2) { width: 150px; }
+.desktop-window.is-attendance-window .attendance-baseline-action-group.is-foundation .attendance-baseline-actions button:nth-child(2) { width: 230px; }
 .desktop-window.is-attendance-window .attendance-baseline-action-group.is-foundation .attendance-baseline-actions button:nth-child(3) { width: 170px; }
 
 .desktop-window.is-attendance-window .attendance-baseline-actions button:first-child {

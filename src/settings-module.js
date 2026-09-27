@@ -17,6 +17,13 @@ export function createSettingsCenterProfileFormState(profile = {}) {
       address: String(profile.address || '').trim(),
       phone: String(profile.phone || '').trim(),
       note: String(profile.note || '').trim(),
+      renewalMaterialFee: profile.renewalMaterialFee != null
+        && Number.isSafeInteger(Number(profile.renewalMaterialFee))
+        ? String(profile.renewalMaterialFee)
+        : '',
+      receiptPrefix: String(profile.receiptPrefix || '').trim(),
+      defaultReceiptCollectorName: String(profile.defaultReceiptCollectorName || '').trim(),
+      initialStudentSetupEnabled: profile.initialStudentSetupEnabled === true,
     },
     errors: {},
     requestId: '',
@@ -31,6 +38,18 @@ export function validateSettingsCenterProfileForm(values = {}) {
   if (String(values.address || '').trim().length > 300) errors.address = 'Địa chỉ tối đa 300 ký tự.'
   if (String(values.phone || '').trim().length > 40) errors.phone = 'Số điện thoại tối đa 40 ký tự.'
   if (String(values.note || '').trim().length > 500) errors.note = 'Ghi chú tối đa 500 ký tự.'
+  const renewalMaterialFee = String(values.renewalMaterialFee ?? '').trim()
+  if (!/^\d+$/.test(renewalMaterialFee)
+    || !Number.isSafeInteger(Number(renewalMaterialFee))
+    || Number(renewalMaterialFee) < 0) {
+    errors.renewalMaterialFee = 'Phí giáo trình phải là số tiền không âm.'
+  }
+  if (!/^[A-Za-z0-9]{2,6}$/.test(String(values.receiptPrefix || '').trim())) {
+    errors.receiptPrefix = 'Mã Phiếu Thu cần 2–6 ký tự A–Z hoặc 0–9.'
+  }
+  if (String(values.defaultReceiptCollectorName || '').trim().length > 120) {
+    errors.defaultReceiptCollectorName = 'Tên người thu tiền tối đa 120 ký tự.'
+  }
   return errors
 }
 
@@ -42,6 +61,7 @@ export function createEmptySettingsTuitionPackageFormState() {
       packageName: '',
       programName: '',
       totalSessions: '',
+      maxCompletionWeeks: '',
       defaultAmount: '',
       isActive: true,
       note: '',
@@ -59,6 +79,9 @@ export function createEditSettingsTuitionPackageFormState(tuitionPackage = {}) {
       packageName: tuitionPackage.packageName || '',
       programName: tuitionPackage.programName || '',
       totalSessions: String(tuitionPackage.totalSessions || ''),
+      maxCompletionWeeks: tuitionPackage.maxCompletionWeeks == null
+        ? ''
+        : String(tuitionPackage.maxCompletionWeeks),
       defaultAmount: String(tuitionPackage.defaultAmount ?? ''),
       isActive: tuitionPackage.isActive !== false,
       note: tuitionPackage.note || '',
@@ -73,6 +96,7 @@ export function validateSettingsTuitionPackageForm(values = {}) {
   const packageName = String(values.packageName || '').trim()
   const totalSessions = Number(values.totalSessions)
   const defaultAmount = Number(values.defaultAmount)
+  const maxCompletionWeeks = String(values.maxCompletionWeeks ?? '').trim()
   if (!packageName) errors.packageName = 'Nhập tên gói học phí.'
   if (packageName.length > 120) errors.packageName = 'Tên gói tối đa 120 ký tự.'
   if (String(values.programName || '').trim().length > 120) errors.programName = 'Chương trình tối đa 120 ký tự.'
@@ -81,6 +105,12 @@ export function validateSettingsTuitionPackageForm(values = {}) {
   }
   if (!Number.isSafeInteger(defaultAmount) || defaultAmount < 0) {
     errors.defaultAmount = 'Học phí mặc định cần là số nguyên không âm.'
+  }
+  if (maxCompletionWeeks
+    && (!Number.isSafeInteger(Number(maxCompletionWeeks))
+      || Number(maxCompletionWeeks) < 1
+      || Number(maxCompletionWeeks) > 5200)) {
+    errors.maxCompletionWeeks = 'Thời gian hoàn thành cần là số tuần nguyên dương.'
   }
   if (String(values.note || '').trim().length > 500) errors.note = 'Ghi chú tối đa 500 ký tự.'
   return errors
@@ -358,6 +388,16 @@ function renderCenterInfoPanel(centerInfo, cloudDbPanelState, options = {}) {
           ${renderInfoItem('Môi trường', centerInfo.environment)}
         </div>
         <p class="settings-product-note">Mã cơ sở là định danh hệ thống và không thể sửa tại đây.</p>
+        <section class="settings-tuition-receipt-group" aria-label="Học phí & Phiếu Thu">
+          <h5>Học phí & Phiếu Thu</h5>
+          <div class="settings-info-grid">
+            ${renderInfoItem('Phí giáo trình khi tái đăng ký', Number.isSafeInteger(centerInfo.renewalMaterialFee) ? formatMoney(centerInfo.renewalMaterialFee) : '—')}
+            ${renderInfoItem('Mã Phiếu Thu', centerInfo.receiptPrefix)}
+            ${renderInfoItem('Người thu tiền mặc định', centerInfo.defaultReceiptCollectorName)}
+            ${renderInfoItem('Thiết lập dữ liệu học viên ban đầu', centerInfo.initialStudentSetupEnabled ? 'Đang bật' : 'Đang tắt', { status: true })}
+          </div>
+          <p class="settings-product-note">Người thu tiền được điền sẵn khi ghi nhận thanh toán và có thể thay đổi cho từng giao dịch.</p>
+        </section>
       </section>
       ${renderCenterAppearancePanel(options.wallpaperState, state)}
       ${renderCloudDbPanel(cloudDbPanelState, centerInfo)}
@@ -430,6 +470,7 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
               <th>Chương trình</th>
               <th>Số buổi</th>
               <th>Mức mặc định</th>
+              <th>Thời gian tối đa</th>
               <th>Trạng thái</th>
               <th>Ghi chú</th>
               <th>Thao tác</th>
@@ -444,12 +485,13 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
                     <td>${escapeHtml(tuitionPackage.programName || 'Dùng chung')}</td>
                     <td>${escapeHtml(tuitionPackage.totalSessions)}</td>
                     <td>${escapeHtml(formatMoney(tuitionPackage.defaultAmount))}</td>
+                    <td>${tuitionPackage.maxCompletionWeeks ? `${escapeHtml(tuitionPackage.maxCompletionWeeks)} tuần` : '—'}</td>
                     <td><span class="settings-status-badge ${tuitionPackage.isActive ? '' : 'inactive'}">${tuitionPackage.isActive ? 'Đang dùng' : 'Đã ngưng'}</span></td>
                     <td>${escapeHtml(tuitionPackage.note || '—')}</td>
                     <td><div class="settings-class-session-actions"><button type="button" data-settings-package-action="open-edit" data-settings-package-id="${escapeAttribute(tuitionPackage.id)}" ${state.isSaving ? 'disabled' : ''}>Sửa</button><button type="button" data-settings-package-action="toggle-status" data-settings-package-id="${escapeAttribute(tuitionPackage.id)}" ${state.isSaving ? 'disabled' : ''}>${tuitionPackage.isActive ? 'Ngưng dùng' : 'Kích hoạt'}</button></div></td>
                   </tr>
                 `).join('')
-                : `<tr><td class="settings-empty" colspan="7">${ready ? 'Chưa có gói học phí nào trong danh mục.' : 'Danh mục gói học phí chưa tải.'}</td></tr>`
+                : `<tr><td class="settings-empty" colspan="8">${ready ? 'Chưa có gói học phí nào trong danh mục.' : 'Danh mục gói học phí chưa tải.'}</td></tr>`
             }
           </tbody>
         </table>
@@ -477,13 +519,24 @@ function renderCenterProfileForm(formState, centerInfo, state) {
   const errors = formState.errors || {}
   return `
     <div class="settings-form-backdrop" role="presentation">
-      <form class="settings-class-session-form" data-settings-center-form aria-label="Chỉnh sửa thông tin cơ sở">
+      <form class="settings-class-session-form settings-center-profile-form" data-settings-center-form aria-label="Chỉnh sửa thông tin cơ sở">
         <div class="settings-form-header"><h4>Chỉnh sửa thông tin cơ sở</h4><button type="button" data-settings-center-action="cancel" aria-label="Đóng">×</button></div>
         <p class="settings-immutable-code">Mã cơ sở: <strong>${escapeHtml(centerInfo.code)}</strong> — không thể thay đổi.</p>
         <div class="settings-form-grid">
           ${renderSettingsTextField('center', 'displayName', 'Tên hiển thị *', values.displayName, errors.displayName, { className: 'span-full' })}
           ${renderSettingsTextField('center', 'address', 'Địa chỉ vận hành', values.address, errors.address)}
           ${renderSettingsTextField('center', 'phone', 'Số điện thoại', values.phone, errors.phone)}
+          <fieldset class="settings-tuition-receipt-fields">
+            <legend>Học phí & Phiếu Thu</legend>
+            ${renderSettingsTextField('center', 'renewalMaterialFee', 'Phí giáo trình khi tái đăng ký', values.renewalMaterialFee, errors.renewalMaterialFee, { type: 'number', min: '0', step: '1000' })}
+            ${renderSettingsTextField('center', 'receiptPrefix', 'Mã Phiếu Thu *', values.receiptPrefix, errors.receiptPrefix, { placeholder: 'Ví dụ: DH' })}
+            ${renderSettingsTextField('center', 'defaultReceiptCollectorName', 'Người thu tiền mặc định', values.defaultReceiptCollectorName, errors.defaultReceiptCollectorName, { className: 'span-full', placeholder: 'Ví dụ: Hoàng Thị Vân' })}
+            <p class="settings-product-note">Được điền sẵn khi ghi nhận thanh toán và có thể thay đổi cho từng giao dịch.</p>
+            <label class="settings-initial-student-setup span-full">
+              <input type="checkbox" data-settings-center-field="initialStudentSetupEnabled" ${values.initialStudentSetupEnabled ? 'checked' : ''}/>
+              <span><strong>Thiết lập dữ liệu học viên ban đầu</strong><small>Dùng khi đưa các học viên đã học tại trung tâm trước khi sử dụng iChess vào hệ thống.</small></span>
+            </label>
+          </fieldset>
           ${renderSettingsTextareaField('center', 'note', 'Ghi chú', values.note, errors.note)}
         </div>
         ${errors.form ? `<p class="settings-form-error">${escapeHtml(errors.form)}</p>` : ''}
@@ -505,6 +558,7 @@ function renderTuitionPackageForm(formState, state) {
           ${renderSettingsTextField('package', 'packageName', 'Tên gói *', values.packageName, errors.packageName, { className: 'span-full' })}
           ${renderSettingsTextField('package', 'programName', 'Chương trình', values.programName, errors.programName, { placeholder: 'Để trống nếu gói dùng chung' })}
           ${renderSettingsTextField('package', 'totalSessions', 'Tổng số buổi *', values.totalSessions, errors.totalSessions, { type: 'number', min: '1', max: '1000' })}
+          ${renderSettingsTextField('package', 'maxCompletionWeeks', 'Thời gian tối đa hoàn thành khóa (tuần)', values.maxCompletionWeeks, errors.maxCompletionWeeks, { type: 'number', min: '1', max: '5200', placeholder: 'Để trống nếu chưa quy định' })}
           ${renderSettingsTextField('package', 'defaultAmount', 'Học phí mặc định (VNĐ) *', values.defaultAmount, errors.defaultAmount, { type: 'number', min: '0', step: '1000' })}
           <label><span>Trạng thái</span><select data-settings-package-field="isActive"><option value="true" ${values.isActive !== false ? 'selected' : ''}>Đang dùng</option><option value="false" ${values.isActive === false ? 'selected' : ''}>Đã ngưng</option></select></label>
           ${renderSettingsTextareaField('package', 'note', 'Ghi chú', values.note, errors.note)}
@@ -581,6 +635,13 @@ function buildCenterInfo(centerInfo = {}) {
     status: centerInfo.status || 'Đang hoạt động',
     address: centerInfo.address || '',
     phone: centerInfo.phone || '',
+    renewalMaterialFee: centerInfo.renewalMaterialFee != null
+      && Number.isSafeInteger(Number(centerInfo.renewalMaterialFee))
+      ? Number(centerInfo.renewalMaterialFee)
+      : null,
+    receiptPrefix: centerInfo.receiptPrefix || '',
+    defaultReceiptCollectorName: centerInfo.defaultReceiptCollectorName || '',
+    initialStudentSetupEnabled: centerInfo.initialStudentSetupEnabled === true,
   }
 }
 

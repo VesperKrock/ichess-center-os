@@ -247,6 +247,7 @@ export function buildC53CreateLeadCommand(contact = {}) {
       phones,
       emails,
     },
+    contact_receipt: buildC53ContactReceiptFields(contact),
     safe_state: buildC53SafeCaseState(contact),
     lead_student_name: cleanText(contact.leadStudentName),
     interest_summary: cleanText(contact.leadNeed),
@@ -265,13 +266,22 @@ export function buildC53SaveCaseCommand(contact = {}, { appointment = null } = {
     expected_case_version: requireVersion(contact.cloudCaseVersion, 1, 'Case'),
     expected_state_version: requireVersion(contact.cloudStateVersion, 0, 'CRM state'),
     expected_candidate_version: requireVersion(contact.cloudCandidateVersion, 0, 'Candidate'),
+    expected_contact_version: requireVersion(contact.cloudContactVersion, 1, 'Contact'),
     candidate_id: cleanText(contact.canonicalCandidateId) || undefined,
+    contact_receipt: buildC53ContactReceiptFields(contact),
     safe_state: buildC53SafeCaseState(contact),
     lead_student_name: cleanText(contact.leadStudentName),
     interest_summary: cleanText(contact.leadNeed),
     safe_summary: cleanText(contact.parentFeedbackAboutChild),
     appointment: appointment ? buildC53AppointmentPayload(appointment) : undefined,
   })
+}
+
+export function buildC53ContactReceiptFields(contact = {}) {
+  return {
+    receipt_address: cleanText(contact.receiptAddress),
+    cccd: cleanText(contact.cccd),
+  }
 }
 
 export function buildC53AppendCareLogCommand(contact = {}, careLog = {}) {
@@ -384,6 +394,8 @@ export function projectC53CrmRecord(record = {}) {
   if (!cleanText(record.id) || !cleanText(record.canonicalCaseId)) return null
   return {
     ...record,
+    receiptAddress: cleanText(record.receiptAddress),
+    cccd: cleanText(record.cccd),
     phone: '',
     secondaryPhone: '',
     email: '',

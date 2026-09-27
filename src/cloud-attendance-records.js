@@ -1,5 +1,4 @@
 import {
-  loadStoredAttendanceRecords,
   normalizeStoredAttendanceRecord,
   normalizeStoredAttendanceRecords,
 } from './attendance-records.js'
@@ -8,8 +7,6 @@ import { sanitizeCloudPayload } from './cloud-db-entities.js'
 export const ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE = 'attendance_record'
 export const ATTENDANCE_RECORD_CLOUD_SOURCE_VERSION = 'f19h-attendance-alpha-v1'
 export const ATTENDANCE_RECORD_CLOUD_STATUS_NEEDS_PATCH = 'NEEDS SQL/ALLOWLIST PATCH'
-export const ATTENDANCE_RECORD_STORAGE_KEY = 'ichessCenterOS.attendanceRecords.unbound'
-
 const DEFAULT_CENTER_ID = ''
 const ALLOWED_ATTENDANCE_RECORD_CLOUD_ENTITY_TYPES = new Set([
   ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE,
@@ -39,14 +36,11 @@ export function isAllowedAttendanceRecordCloudSource(source) {
 
 export function createAttendanceRecordCloudDryRun({
   centerId = DEFAULT_CENTER_ID,
-  records = null,
-  storage = getLocalStorage(),
+  records = [],
   remoteAllowlistReady = false,
 } = {}) {
   const normalizedCenterId = normalizeText(centerId) || DEFAULT_CENTER_ID
-  const sourceRecords = Array.isArray(records)
-    ? normalizeStoredAttendanceRecords(records)
-    : loadStoredAttendanceRecords(normalizedCenterId, storage)
+  const sourceRecords = normalizeStoredAttendanceRecords(records)
   const summary = createEmptyAttendanceRecordDryRunSummary(normalizedCenterId, sourceRecords.length)
 
   sourceRecords.forEach((record, index) => {
@@ -303,33 +297,6 @@ export function mergeAttendanceRecordCloudPayloads({
   }
 }
 
-export function createAttendanceRecordsPullBackup(
-  storage = getLocalStorage(),
-  centerId = DEFAULT_CENTER_ID,
-) {
-  if (!storage) {
-    return null
-  }
-
-  const createdAt = new Date().toISOString()
-  const backupKey = `ichessCenterOS.backup.beforeAttendanceRecordPull.${createdAt.replace(/[:.]/g, '-')}`
-  const attendanceKey = `ichessCenterOS.attendanceRecords.${slugifyIdPart(centerId || 'unbound')}`
-
-  storage.setItem(
-    backupKey,
-    JSON.stringify({
-      reason: 'before-attendance-record-cloud-pull-f19h2b',
-      phase: 'f19h2b-attendance-record-dry-run',
-      createdAt,
-      keys: {
-        attendanceRecords: storage.getItem(attendanceKey),
-      },
-    }),
-  )
-
-  return backupKey
-}
-
 function createEmptyAttendanceRecordDryRunSummary(centerId, total) {
   return {
     entityType: ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE,
@@ -378,14 +345,6 @@ function isValidDateKey(value) {
 
 function normalizeText(value) {
   return String(value ?? '').trim()
-}
-
-function getLocalStorage() {
-  try {
-    return globalThis.localStorage || null
-  } catch {
-    return null
-  }
 }
 
 function slugifyIdPart(value) {

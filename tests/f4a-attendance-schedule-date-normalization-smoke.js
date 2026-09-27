@@ -183,9 +183,11 @@ assert(!studentFormHtml.includes('Khung giờ 3'))
 const savedStudent = buildStudentFromForm(studentFormState.values)
 assert.equal(savedStudent.birthDate, '2019-01-05')
 const profileHtml = renderStudentDetail(savedStudent, [], classSessions, [])
-for (const weekday of V22_WEEKDAY_ORDER) {
+// Overview shows only enrolled weekdays; full seven-day editing stays above.
+for (const weekday of ['mon', 'sun']) {
   assert(profileHtml.includes(`data-student-profile-weekday="${weekday}"`))
 }
+assert.equal((profileHtml.match(/data-student-profile-weekday=/g) || []).length, 2)
 assert(profileHtml.includes('Chưa xếp giáo viên'))
 
 assert.deepEqual(parseCanonicalDateParts('2019-01-05'), {

@@ -38,10 +38,10 @@ function sourceSlice(startToken, endToken) {
 }
 
 assert.deepEqual(getModuleRefreshContract('giao-vien'), {
-  required: ['core'],
-  optional: ['attendance', 'staff'],
+  required: ['teacher-registry'],
+  optional: ['core', 'attendance', 'staff'],
   actionRequired: {},
-  all: ['core', 'attendance', 'staff'],
+  all: ['teacher-registry', 'core', 'attendance', 'staff'],
 })
 assert.deepEqual(getModuleRefreshContract('thoi-khoa-bieu'), {
   required: ['core'],
@@ -51,21 +51,24 @@ assert.deepEqual(getModuleRefreshContract('thoi-khoa-bieu'), {
 })
 assert.deepEqual(getModuleRefreshContract('bang-diem-danh'), {
   required: ['core', 'attendance'],
-  optional: ['tuition', 'calendar-notes'],
+  optional: ['tuition', 'calendar-notes', 'attendance-operations'],
   actionRequired: {},
-  all: ['core', 'attendance', 'tuition', 'calendar-notes'],
+  all: ['core', 'attendance', 'tuition', 'calendar-notes', 'attendance-operations'],
 })
 assert.deepEqual(getModuleRefreshContract('hoc-phi'), {
   required: ['core', 'tuition'],
-  optional: ['attendance', 'calendar-notes'],
+  optional: ['attendance', 'calendar-notes', 'package-cycles', 'receipts', 'tuition-notices'],
   actionRequired: {
-    payment: ['finance'],
+    payment: ['finance', 'package-cycles', 'receipts'],
     'collected-balance': ['finance'],
+    'tuition-notice': ['package-cycles', 'tuition-notices'],
+    'receipt-revise': ['receipts', 'finance'],
   },
-  all: ['core', 'tuition', 'attendance', 'calendar-notes', 'finance'],
+  all: ['core', 'tuition', 'attendance', 'calendar-notes', 'package-cycles', 'receipts', 'tuition-notices', 'finance'],
 })
 
 const teacherLimited = evaluateModuleRefreshResults('giao-vien', [
+  { upstream: 'teacher-registry', ok: true },
   { upstream: 'core', ok: true },
   { upstream: 'attendance', ok: false, outcome_code: 'SCHEMA_NOT_READY' },
   { upstream: 'staff', ok: false, outcome_code: 'SCHEMA_NOT_READY' },
@@ -90,6 +93,8 @@ const tuitionLimited = evaluateModuleRefreshResults('hoc-phi', [
   { upstream: 'tuition', ok: true },
   { upstream: 'attendance', ok: false, outcome_code: 'SCHEMA_NOT_READY' },
   { upstream: 'calendar-notes', ok: false, outcome_code: 'SCHEMA_NOT_READY' },
+  { upstream: 'package-cycles', ok: true },
+  { upstream: 'receipts', ok: true },
   { upstream: 'finance', ok: false, outcome_code: 'NETWORK_FAILURE' },
 ])
 assert.equal(tuitionLimited.ok, true)
@@ -109,10 +114,11 @@ const teacherHtml = renderTeacherModule(
     staffMembers: [{ id: 'stale-staff' }],
     attendanceAvailable: false,
     staffAvailable: false,
+    staffCapabilityStatus: 'unavailable',
   },
 )
 assert(teacherHtml.includes('Báo cáo buổi học hiện chưa tải được.'))
-assert(teacherHtml.includes('Thông tin nhân sự hiện chưa khả dụng.'))
+assert(teacherHtml.includes('Quản lý nhân sự hiện chưa khả dụng.'))
 assert(!teacherHtml.includes('stale-report'))
 assert(!teacherHtml.includes('stale-staff'))
 

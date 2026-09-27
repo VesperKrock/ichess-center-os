@@ -126,6 +126,8 @@ const baseLead = {
   interestedProgram: 'Nhập môn',
   preferredSchedule: 'Cuối tuần',
   locationArea: 'Khu vực kiểm thử',
+  receiptAddress: '012 Đường Nguyễn Huệ, Phường Sài Gòn, TP.HCM',
+  cccd: '001234567890',
   customerStage: 'lead',
   nextAction: 'Gọi lại',
   careLogs: [],
@@ -217,6 +219,8 @@ insert into public.center_members(center_id,user_id,role,status) values
   assert.equal(readB.records[0].email, '')
   assert.equal(readB.records[0].identityReadOnly, true)
   assert.equal(readB.records[0].canonicalCaseId, created.case_id)
+  assert.equal(readB.records[0].receiptAddress, baseLead.receiptAddress)
+  assert.equal(readB.records[0].cccd, baseLead.cccd)
   console.log('C5_3_QA_A_CREATE_B_SEES_MASKED_CANONICAL: PASS')
 
   const freshStorage = new MemoryStorage()
@@ -242,6 +246,8 @@ insert into public.center_members(center_id,user_id,role,status) values
     customerStage: 'consulting',
     leadNeed: 'B cập nhật nhu cầu authoritative',
     nextAction: 'A gọi lại sau khi refresh',
+    receiptAddress: '045 Đường Lê Lợi, Phường Bến Thành, TP.HCM',
+    cccd: '000987654321',
     enrollmentDraft: {
       ...staleSnapshot.enrollmentDraft,
       isReady: true,
@@ -256,6 +262,8 @@ insert into public.center_members(center_id,user_id,role,status) values
   assert.equal(afterEditA.records[0].leadNeed, edited.leadNeed)
   assert.equal(afterEditA.records[0].enrollmentDraft.isReady, true)
   assert.equal(afterEditA.records[0].enrollmentDraft.expectedTrialDate, '2026-08-20')
+  assert.equal(afterEditA.records[0].receiptAddress, edited.receiptAddress)
+  assert.equal(afterEditA.records[0].cccd, edited.cccd)
 
   const staleEdit = await mutate(clientA, buildC53SaveCaseCommand({
     ...staleSnapshot,

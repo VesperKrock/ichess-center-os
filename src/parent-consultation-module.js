@@ -204,6 +204,8 @@ const emptyParentContactValues = {
   secondaryPhone: '',
   email: '',
   locationArea: '',
+  receiptAddress: '',
+  cccd: '',
   studentId: '',
   studentName: '',
   studentSearch: '',
@@ -375,6 +377,8 @@ export function createEditParentContactFormState(contact) {
       secondaryPhone: contact.secondaryPhone || '',
       email: contact.email || '',
       locationArea: contact.locationArea || '',
+      receiptAddress: contact.receiptAddress || '',
+      cccd: contact.cccd || '',
       studentId: contact.studentId || '',
       studentName: contact.studentName || '',
       studentSearch: contact.studentName || '',
@@ -433,6 +437,18 @@ export function validateParentContactForm(values) {
 
   if (values.customerStage && !parentCustomerStages.includes(values.customerStage)) {
     errors.customerStage = 'Stage khách hàng không hợp lệ.'
+  }
+
+  const receiptAddress = String(values.receiptAddress ?? '').trim()
+  const cccd = String(values.cccd ?? '').trim()
+  const containsControlCharacter = (value) => /[\u0000-\u001f\u007f]/.test(value)
+
+  if (receiptAddress.length > 500 || containsControlCharacter(receiptAddress)) {
+    errors.receiptAddress = 'Địa chỉ xuất phiếu / thường trú tối đa 500 ký tự và không được chứa ký tự điều khiển.'
+  }
+
+  if (cccd.length > 64 || containsControlCharacter(cccd)) {
+    errors.cccd = 'CCCD tối đa 64 ký tự và không được chứa ký tự điều khiển.'
   }
 
   const birthYear = String(values.studentBirthYear ?? '').trim()
@@ -702,6 +718,8 @@ export function buildParentContactFromForm(values, existingContact = null, stude
     phone: String(values.phone || '').trim(),
     secondaryPhone: String(values.secondaryPhone ?? existingContact?.secondaryPhone ?? '').trim(),
     email: String(values.email || '').trim(),
+    receiptAddress: String(values.receiptAddress ?? existingContact?.receiptAddress ?? '').trim(),
+    cccd: String(values.cccd ?? existingContact?.cccd ?? '').trim(),
     studentName,
     studentId,
     leadStudentName: String(values.leadStudentName || '').trim(),
@@ -1326,6 +1344,7 @@ function renderParentContactDetailPanel(contact) {
             ${contact.isDerivedFromStudents
               ? `<button type="button" data-parent-link-action="open-derived" data-contact-id="${escapeAttribute(contact.id)}" data-student-id="${escapeAttribute(contact.studentId)}">Tạo/ghép hồ sơ CRM</button>`
               : `
+                <button type="button" data-parent-contact-action="print-information" data-contact-id="${escapeAttribute(contact.id)}">In/PDF thông tin</button>
                 ${contact.contactIdentityAvailable ? `<button type="button" data-parent-identity-action="open" data-contact-id="${escapeAttribute(contact.id)}">Sửa thông tin liên hệ</button>` : ''}
                 <button type="button" data-parent-contact-action="edit" data-contact-id="${escapeAttribute(contact.id)}">Sửa hồ sơ tư vấn</button>
               `}
@@ -1362,6 +1381,21 @@ function renderParentContactDetailPanel(contact) {
               </article>
             </div>
           </section>
+          ${!contact.isDerivedFromStudents ? `
+            <section class="parent-contact-detail-section is-receipt" aria-label="Thông tin xuất phiếu và thuế">
+              <h4>Thông tin xuất phiếu / thuế</h4>
+              <div class="parent-contact-receipt-detail">
+                <article>
+                  <span>Địa chỉ xuất phiếu / thường trú</span>
+                  <strong>${escapeHtml(contact.receiptAddress || 'Chưa nhập')}</strong>
+                </article>
+                <article>
+                  <span>CCCD</span>
+                  <strong>${escapeHtml(contact.cccd || 'Chưa nhập')}</strong>
+                </article>
+              </div>
+            </section>
+          ` : ''}
           ${renderF4bConversionEntry(contact, customerStage, relatedStudents)}
           <section class="parent-linked-students parent-contact-detail-section is-students" aria-label="Học viên liên quan">
             <div class="parent-detail-section-heading">
@@ -2286,6 +2320,16 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
           ${values.identityReadOnly ? '<small>Tên, số điện thoại và email được bảo vệ. Dùng nút “Sửa thông tin liên hệ” trong chi tiết hồ sơ để cập nhật.</small>' : ''}
           ${renderFormInput('Khu vực', 'locationArea', values.locationArea)}
         </div>
+        <section class="parent-contact-receipt-fields" aria-label="Thông tin xuất phiếu và thuế">
+          <div>
+            <h5>Thông tin xuất phiếu / thuế</h5>
+            <small>Không bắt buộc</small>
+          </div>
+          <div class="parent-contact-form-grid">
+            ${renderFormInput('Địa chỉ xuất phiếu / thường trú', 'receiptAddress', values.receiptAddress, errors.receiptAddress)}
+            ${renderFormInput('CCCD', 'cccd', values.cccd, errors.cccd)}
+          </div>
+        </section>
       </section>
     `
   }

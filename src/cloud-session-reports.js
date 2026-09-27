@@ -4,9 +4,6 @@ export const ATTENDANCE_BASELINE_STATE_CLOUD_ENTITY_TYPE = 'attendance_baseline_
 export const SESSION_REPORT_CLOUD_ENTITY_TYPE = 'session_report'
 export const BASELINE_SESSION_REPORT_CLOUD_STATUS_NEEDS_PATCH = 'NEEDS SQL/ALLOWLIST PATCH'
 export const BASELINE_SESSION_REPORT_CLOUD_SOURCE_VERSION = 'f19h-baseline-session-report-alpha-v1'
-export const ATTENDANCE_BASELINE_STATE_STORAGE_KEY = 'ichessCenterOS.attendanceBaselineState.unbound'
-export const SESSION_REPORTS_STORAGE_KEY = 'ichessCenterOS.sessionReports.unbound'
-
 const DEFAULT_CENTER_ID = ''
 const ALLOWED_BASELINE_SESSION_REPORT_ENTITY_TYPES = new Set([
   ATTENDANCE_BASELINE_STATE_CLOUD_ENTITY_TYPE,
@@ -20,18 +17,15 @@ export function isAllowedBaselineSessionReportCloudEntityType(entityType) {
 
 export function createBaselineSessionReportCloudDryRun({
   centerId = DEFAULT_CENTER_ID,
-  baselineState = null,
-  sessionReports = null,
-  storage = getLocalStorage(),
+  baselineState = {},
+  sessionReports = [],
   remoteAllowlistReady = false,
 } = {}) {
   const normalizedCenterId = normalizeText(centerId) || DEFAULT_CENTER_ID
-  const baselineInput = baselineState === null
-    ? parseJsonObject(storage?.getItem?.(getBaselineStateStorageKey(normalizedCenterId)))
-    : baselineState
-  const reportInputs = Array.isArray(sessionReports)
-    ? sessionReports
-    : parseJsonArray(storage?.getItem?.(SESSION_REPORTS_STORAGE_KEY))
+  const baselineInput = baselineState && typeof baselineState === 'object' && !Array.isArray(baselineState)
+    ? baselineState
+    : {}
+  const reportInputs = Array.isArray(sessionReports) ? sessionReports : []
   const baselineSummary = createEntityDryRunSummary({
     centerId: normalizedCenterId,
     entityType: ATTENDANCE_BASELINE_STATE_CLOUD_ENTITY_TYPE,
@@ -450,36 +444,6 @@ function createSessionReportId(sessionId, occurrenceDate) {
   return `report-${slugifyIdPart(normalizedSessionId)}-${normalizedDate}`
 }
 
-function getBaselineStateStorageKey(centerId = DEFAULT_CENTER_ID) {
-  return `ichessCenterOS.attendanceBaselineState.${slugifyIdPart(centerId || 'unbound')}`
-}
-
-function parseJsonArray(rawValue) {
-  if (!rawValue) {
-    return []
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function parseJsonObject(rawValue) {
-  if (!rawValue) {
-    return {}
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
 function normalizeStringArray(value) {
   return Array.isArray(value)
     ? Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)))
@@ -509,14 +473,6 @@ function isValidDateKey(value) {
 
   const date = new Date(text)
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text
-}
-
-function getLocalStorage() {
-  try {
-    return globalThis.localStorage || null
-  } catch {
-    return null
-  }
 }
 
 function slugifyIdPart(value) {

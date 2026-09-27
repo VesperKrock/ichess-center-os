@@ -44,15 +44,40 @@ export function isV24PackageCycleBackendUnavailable(result = {}) {
     || detail.includes('v2_4_list_package_cycle_state') && detail.includes('does not exist')
 }
 
-export async function pullV24PackageCycleState({ supabase, centerId } = {}) {
+export const V24_PACKAGE_CYCLE_READ_TIMEOUT_MS = 15000
+
+export async function pullV24PackageCycleState({ supabase, centerId, timeoutMs = V24_PACKAGE_CYCLE_READ_TIMEOUT_MS } = {}) {
   const normalizedCenterId = cleanText(centerId)
   if (!supabase || typeof supabase.rpc !== 'function') return failure('CLIENT_NOT_READY')
   if (!normalizedCenterId) return failure('INVALID_CENTER')
+  const controller = new AbortController()
+  let timer
   try {
-    const { data, error } = await supabase.rpc('v2_4_list_package_cycle_state', {
+    const request = supabase.rpc('v2_4_list_package_cycle_state', {
       p_center_id: normalizedCenterId,
     })
+    const read = typeof request.abortSignal === 'function' ? request.abortSignal(controller.signal) : request
+    const response = await Promise.race([
+      read,
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          resolve({ timedOut: true })
+          controller.abort()
+        }, timeoutMs)
+      }),
+    ])
+    if (response.timedOut) return failure('PACKAGE_CYCLE_READ_FAILED', '', { reason: 'timeout' })
+    const { data, error } = response
     if (error) return rpcFailure(error, 'PACKAGE_CYCLE_READ_FAILED')
+    return parseV24PackageCycleSnapshot(data, normalizedCenterId)
+  } catch (error) {
+    return rpcFailure(error, 'PACKAGE_CYCLE_READ_FAILED')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export function parseV24PackageCycleSnapshot(data, normalizedCenterId) {
     if (!data?.ok || data.status !== 'READY' || data.contract !== V24_PACKAGE_CYCLE_CONTRACT
       || cleanText(data.center_id) !== normalizedCenterId
       || !Array.isArray(data.students) || !Array.isArray(data.package_catalog)
@@ -74,9 +99,6 @@ export async function pullV24PackageCycleState({ supabase, centerId } = {}) {
       packageCatalog,
       contributions,
     }
-  } catch (error) {
-    return rpcFailure(error, 'PACKAGE_CYCLE_READ_FAILED')
-  }
 }
 
 export async function mutateV24PackageCycle({
@@ -105,6 +127,38 @@ export async function mutateV24PackageCycle({
   }
 }
 
+export async function stopTuitionContinuation({
+  supabase,
+  centerId,
+  command,
+  idempotencyKey = createV24IdempotencyKey(),
+} = {}) {
+  const normalizedCenterId = cleanText(centerId)
+  if (!supabase || typeof supabase.rpc !== 'function') return failure('CLIENT_NOT_READY', idempotencyKey)
+  if (!normalizedCenterId || !isPlainObject(command)) return failure('INVALID_COMMAND', idempotencyKey)
+  try {
+    const { data, error } = await supabase.rpc('tbc_stop_tuition_continuation', {
+      p_center_id: normalizedCenterId,
+      p_command: command,
+      p_idempotency_key: idempotencyKey,
+    })
+    if (error) return rpcFailure(error, 'PACKAGE_CYCLE_WRITE_FAILED', idempotencyKey)
+    if (!data?.ok || cleanText(data.center_id) !== normalizedCenterId
+      || cleanText(data.outcome_code) !== 'COMMITTED') {
+      return failure(cleanText(data?.outcome_code) || 'INVALID_SERVER_RESULT', idempotencyKey, data)
+    }
+    return {
+      ...data,
+      ok: true,
+      debt_sessions: Number(data.debt_sessions) || 0,
+      debt_amount_minor: data.debt_amount_minor == null ? null : Number(data.debt_amount_minor),
+      idempotencyKey,
+    }
+  } catch (error) {
+    return rpcFailure(error, 'PACKAGE_CYCLE_WRITE_FAILED', idempotencyKey)
+  }
+}
+
 export function buildV24StartCycleCommand({
   studentId,
   tuitionLocalId,
@@ -112,7 +166,17 @@ export function buildV24StartCycleCommand({
   baselineUsedSessions,
   baselineCutoffDate,
   baselineReviewNote,
+  openingContext = 'NEW_ICHESS',
+  openingPaymentState = 'UNPAID',
 } = {}) {
+  const normalizedOpeningContext = cleanText(openingContext).toUpperCase()
+  const normalizedOpeningPaymentState = cleanText(openingPaymentState).toUpperCase()
+  if (!['NEW_ICHESS', 'LEGACY_BEFORE_ICHESS'].includes(normalizedOpeningContext)) {
+    throw new Error('Loại dữ liệu ban đầu của học viên không hợp lệ.')
+  }
+  if (!['UNPAID', 'PAID_BEFORE_ICHESS'].includes(normalizedOpeningPaymentState)) {
+    throw new Error('Trạng thái học phí ban đầu không hợp lệ.')
+  }
   return {
     operation: 'START_CYCLE',
     student_id: requireText(studentId, 'Không xác định được học viên.'),
@@ -130,6 +194,8 @@ export function buildV24StartCycleCommand({
       baselineReviewNote,
       'Vui lòng ghi ngắn gọn căn cứ đối chiếu số buổi ban đầu.',
     ).slice(0, 2000),
+    opening_context: normalizedOpeningContext,
+    opening_payment_state: normalizedOpeningPaymentState,
   }
 }
 
@@ -146,6 +212,16 @@ export function buildV24UpdateBchtCommand(cycle = {}, bchtStatus = '', bchtNote 
   }
 }
 
+export function buildV24PrepareNextCycleCommand(cycle = {}, packageCatalogId = '') {
+  return {
+    operation: 'PREPARE_NEXT_CYCLE',
+    student_id: requireText(cycle.studentId, 'Không xác định được học viên.'),
+    current_cycle_id: requireUuid(cycle.id, 'Không xác định được chu kỳ học phí hiện tại.'),
+    package_catalog_id: requireUuid(packageCatalogId, 'Vui lòng chọn gói cho chu kỳ tiếp theo.'),
+    expected_version: requirePositiveInteger(cycle.version, 'Dữ liệu chu kỳ chưa đủ mới.'),
+  }
+}
+
 export function buildV24SelectProvisionalPackageCommand(cycle = {}, packageCatalogId = '') {
   return {
     operation: 'SELECT_PROVISIONAL_PACKAGE',
@@ -153,6 +229,29 @@ export function buildV24SelectProvisionalPackageCommand(cycle = {}, packageCatal
     cycle_id: requireUuid(cycle.id, 'Không xác định được chu kỳ học phí.'),
     package_catalog_id: requireUuid(packageCatalogId, 'Vui lòng chọn gói trong danh mục.'),
     expected_version: requirePositiveInteger(cycle.version, 'Dữ liệu chu kỳ chưa đủ mới.'),
+  }
+}
+
+export function buildTuitionFinalEndCycleCommand(cycle = {}) {
+  return {
+    operation: 'END_CYCLE',
+    student_id: requireText(cycle.studentId, 'Không xác định được học viên.'),
+    cycle_id: requireUuid(cycle.id, 'Không xác định được kỳ cần kết thúc.'),
+    expected_version: requirePositiveInteger(cycle.version, 'Dữ liệu kỳ học chưa đủ mới.'),
+  }
+}
+
+export function buildStopTuitionContinuationCommand(cycle = {}, reason = '') {
+  const normalizedReason = cleanText(reason)
+  if (normalizedReason.length < 3 || normalizedReason.length > 500
+    || /[\u0000-\u001f\u007f]/.test(normalizedReason)) {
+    throw new Error('Lý do Ngừng cần từ 3 đến 500 ký tự.')
+  }
+  return {
+    operation: 'STOP_CONTINUATION',
+    cycle_id: requireUuid(cycle.id, 'Không xác định được chu kỳ cần Ngừng.'),
+    expected_version: requirePositiveInteger(cycle.version, 'Dữ liệu chu kỳ chưa đủ mới.'),
+    reason: normalizedReason,
   }
 }
 
@@ -173,6 +272,9 @@ export function getV24StudentCycleState(studentStates = [], studentId = '') {
 
 export function getV24OutcomeMessage(outcomeCode = '') {
   const messages = {
+    PREPARE_NOT_DUE: 'Cần xác định kỳ học hiện tại trước khi chuẩn bị kỳ tiếp theo.',
+    PREPARED_CYCLE_EXISTS: 'Chu kỳ tiếp theo đã được chuẩn bị. Hãy tải lại dữ liệu mới nhất.',
+    TUITION_PERIOD_STALE: 'Kỳ học phí hiện tại đã thay đổi. Hãy tải lại trước khi chuẩn bị chu kỳ tiếp theo.',
     CLIENT_NOT_READY: 'Cần đăng nhập và chọn đúng cơ sở trước khi cập nhật chu kỳ học phí.',
     INVALID_CENTER: 'Chưa xác định được cơ sở đang hoạt động.',
     INVALID_COMMAND: 'Thông tin chu kỳ học phí chưa hợp lệ.',
@@ -181,7 +283,9 @@ export function getV24OutcomeMessage(outcomeCode = '') {
     STUDENT_NOT_FOUND: 'Không tìm thấy học viên trong cơ sở hiện tại.',
     TUITION_NOT_FOUND: 'Không tìm thấy hồ sơ học phí hiện tại của học viên.',
     PACKAGE_NOT_AVAILABLE: 'Gói đã chọn không còn khả dụng. Hãy tải lại danh mục.',
-    PACKAGE_CHANGE_LOCKED: 'Chu kỳ đã có thanh toán hợp lệ nên không thể đổi gói tại đây.',
+    PACKAGE_CHANGE_LOCKED: 'Kỳ đã có buổi học hoặc thanh toán nên không thể đổi gói.',
+    FULL_PAYMENT_REQUIRED: 'Trung tâm chỉ ghi nhận thanh toán đủ cho một kỳ.',
+    CYCLE_ALREADY_ENDED: 'Kỳ học này đã kết thúc.',
     INVALID_BASELINE: 'Số buổi hoặc ngày chốt ban đầu không hợp lệ.',
     CYCLE_ALREADY_STARTED: 'Học viên đã có chu kỳ học phí. Hãy tải lại dữ liệu mới nhất.',
     STALE_VERSION: 'Chu kỳ đã thay đổi ở nơi khác. Hãy tải lại trước khi lưu.',
@@ -190,6 +294,8 @@ export function getV24OutcomeMessage(outcomeCode = '') {
     PACKAGE_CYCLE_WRITE_FAILED: 'Chưa thể xác nhận đã lưu. Nội dung hiện tại vẫn được giữ nguyên.',
     INVALID_SERVER_RESULT: 'Chưa thể xác nhận dữ liệu chu kỳ mới nhất.',
     CENTER_CONTEXT_CHANGED: 'Cơ sở đã thay đổi; kết quả cũ không được sử dụng.',
+    RESOURCE_STATE_CONFLICT: 'Chu kỳ không còn ở trạng thái có thể Ngừng.',
+    TARGET_CYCLE_NOT_FOUND: 'Không tìm thấy chu kỳ cần Ngừng.',
   }
   return messages[cleanText(outcomeCode).toUpperCase()]
     || 'Chưa thể hoàn tất thao tác chu kỳ học phí lúc này.'
@@ -204,9 +310,13 @@ function projectStudentCycleState(row = {}, centerId = '') {
     ? null
     : projectCycle(row.current_cycle, centerId, studentId)
   if (row.current_cycle != null && !currentCycle) return null
+  const preparedNextCycle = row.prepared_next_cycle == null
+    ? null
+    : projectCycle(row.prepared_next_cycle, centerId, studentId)
+  if (row.prepared_next_cycle != null && !preparedNextCycle) return null
   const cycles = row.cycles.map((cycle) => projectCycleHistory(cycle, centerId, studentId))
   if (cycles.some((cycle) => !cycle)) return null
-  return { centerId, studentId, readiness, currentCycle, cycles }
+  return { centerId, studentId, readiness, initialSetupRequired: readiness === 'LEGACY_REVIEW_REQUIRED', currentCycle, preparedNextCycle, cycles }
 }
 
 function projectCycle(row = {}, centerId = '', studentId = '') {
@@ -231,6 +341,11 @@ function projectCycle(row = {}, centerId = '', studentId = '') {
     programName: cleanText(row.program_name),
     totalSessions,
     price: row.price == null ? null : Number(row.price),
+    discountAmount: Number(row.discount_amount) || 0,
+    discountType: cleanText(row.discount_type) || 'none',
+    discountValue: Number(row.discount_value) || 0,
+    materialFee: Number(row.material_fee) || 0,
+    amountDue: row.amount_due == null ? null : Number(row.amount_due),
     baselineUsed: Number(row.baseline_used) || 0,
     baselineCutoffDate: cleanText(row.baseline_cutoff_date),
     baselineReviewNote: cleanText(row.baseline_review_note),
@@ -242,12 +357,25 @@ function projectCycle(row = {}, centerId = '', studentId = '') {
     paymentPeriodId: cleanText(row.payment_period_id),
     paymentStatus: cleanText(row.payment_status),
     paidAmount: Number(row.paid_amount) || 0,
+    openingContext: cleanText(row.opening_context) || 'NEW_ICHESS',
+    openingPaymentState: cleanText(row.opening_payment_state) || 'UNPAID',
+    manuallyEndedAt: cleanText(row.manually_ended_at),
+    expiredSessions: row.expired_sessions == null ? null : Number(row.expired_sessions),
     bchtStatus: cleanText(row.bcht_status),
     bchtNote: cleanText(row.bcht_note),
     reminderState: cleanText(row.reminder_state),
     bchtReminder: row.bcht_reminder === true,
     renewalReminder: row.renewal_reminder === true,
     urgentRenewal: row.urgent_renewal === true,
+    continuationStoppedAt: cleanText(row.continuation_stopped_at),
+    continuationStopReason: cleanText(row.continuation_stop_reason),
+    settlementDebtSessions: row.settlement_debt_sessions == null
+      ? null
+      : Number(row.settlement_debt_sessions),
+    settlementDebtAmount: row.settlement_debt_amount_minor == null
+      ? null
+      : Number(row.settlement_debt_amount_minor),
+    settlementAuthorityGap: cleanText(row.settlement_authority_gap),
     version,
   }
 }
@@ -286,13 +414,32 @@ function projectCycleHistory(row = {}, centerId = '', studentId = '') {
     || !Number.isSafeInteger(cycleNumber) || cycleNumber < 1) return null
   return {
     id: row.id, centerId, studentId, cycleNumber,
+    tuitionLocalId: cleanText(row.tuition_local_id),
     packageName: cleanText(row.package_name),
     programName: cleanText(row.program_name),
     totalSessions: row.total_sessions == null ? null : Number(row.total_sessions),
     usedSessions: Number(row.used_sessions) || 0,
+    remainingSessions: row.remaining_sessions == null ? null : Number(row.remaining_sessions),
     lifecycleStatus: cleanText(row.lifecycle_status),
+    paymentPeriodId: cleanText(row.payment_period_id),
     paymentStatus: cleanText(row.payment_status),
+    paidAmount: Number(row.paid_amount) || 0,
+    openingContext: cleanText(row.opening_context) || 'NEW_ICHESS',
+    openingPaymentState: cleanText(row.opening_payment_state) || 'UNPAID',
+    manuallyEndedAt: cleanText(row.manually_ended_at),
+    expiredSessions: row.expired_sessions == null ? null : Number(row.expired_sessions),
+    packageCatalogId: cleanText(row.package_catalog_id),
+    price: row.price == null ? null : Number(row.price),
+    discountAmount: Number(row.discount_amount) || 0,
+    materialFee: Number(row.material_fee) || 0,
+    amountDue: row.amount_due == null ? null : Number(row.amount_due),
+    baselineUsed: Number(row.baseline_used) || 0,
+    contributedSessions: Number(row.contributed_sessions) || 0,
     bchtStatus: cleanText(row.bcht_status),
+    bchtNote: cleanText(row.bcht_note),
+    bchtReminder: row.bcht_reminder === true,
+    renewalReminder: row.renewal_reminder === true,
+    urgentRenewal: row.urgent_renewal === true,
     version,
   }
 }
@@ -331,6 +478,10 @@ function mapRpcError(error = {}) {
     ['v2_4_tuition_not_found', 'TUITION_NOT_FOUND'],
     ['v2_4_package_not_available', 'PACKAGE_NOT_AVAILABLE'],
     ['v2_4_provisional_package_locked_by_payment', 'PACKAGE_CHANGE_LOCKED'],
+    ['tuition_final_package_terms_locked', 'PACKAGE_CHANGE_LOCKED'],
+    ['v2_4_prepare_not_due', 'PREPARE_NOT_DUE'],
+    ['v2_4_prepared_cycle_exists', 'PREPARED_CYCLE_EXISTS'],
+    ['v2_4_tuition_period_stale', 'TUITION_PERIOD_STALE'],
     ['v2_4_invalid_baseline', 'INVALID_BASELINE'],
     ['v2_4_cycle_already_started', 'CYCLE_ALREADY_STARTED'],
     ['v2_4_stale_version', 'STALE_VERSION'],

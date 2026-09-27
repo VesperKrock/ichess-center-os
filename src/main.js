@@ -17,15 +17,12 @@ import {
   buildUnifiedAttendanceRecords,
   clearInitialBaselineAttendanceRecordsInMonth,
   isDateInBaselineEditableRange,
-  loadAttendanceBaselineState,
-  loadStoredAttendanceRecords,
   lockAttendanceBaselineState,
+  normalizeAttendanceBaselineState,
   parseInitialBaselineCellInput,
   removeInitialBaselineAttendanceRecord,
   restoreInitialBaselineEditSnapshot,
   saveAttendanceBaselineDraftState,
-  saveAttendanceBaselineState,
-  saveStoredAttendanceRecords,
   startAttendanceBaselineDraft,
   unlockAttendanceBaselineState,
   upsertInitialBaselineAttendanceRecord
@@ -39,6 +36,7 @@ import {
   createCashbookSettingsFormState,
   createDefaultCashbookSettings,
   getCashbookBalanceStats,
+  getCashbookPhysicalCashStats,
   getDefaultCashbookDate,
   renderCashbookModule,
   validateCashbookReconciliationForm,
@@ -91,7 +89,7 @@ import {
   C51_ATTENDANCE_REALTIME_ENTITY_TYPES,
   C51_TEACHER_CONSULTANT_WRITE_HOLD,
   canWriteC51AttendanceEntity,
-  mergeC51CloudRecordsIntoLocal,
+  projectC51AuthoritativeRecords,
   pullC51AttendanceSessionReportCloudEntities,
   subscribeToC51AttendanceSessionReportRealtime,
   upsertC51AttendanceSessionReportCloudEntities,
@@ -102,7 +100,6 @@ import {
 } from './cloud-audit-log.js'
 import {
   V28A_ATTENDANCE_OPERATIONS_CAPABILITY_STATUS,
-  buildV28AMarkTbhpSentCommand,
   buildV28AUpsertCellNoteCommand,
   createV28AAttendanceOperationIdempotencyKey,
   createV28AAttendanceOperationRetryFingerprint,
@@ -280,8 +277,11 @@ import {
 } from './cloud-authoritative-teacher-registry.js'
 import {
   V24_PACKAGE_CYCLE_CAPABILITY_STATUS,
+  buildV24PrepareNextCycleCommand,
   buildV24SelectProvisionalPackageCommand,
   buildV24StartCycleCommand,
+  buildTuitionFinalEndCycleCommand,
+  buildStopTuitionContinuationCommand,
   buildV24UpdateBchtCommand,
   createV24IdempotencyKey,
   createV24PackageCycleCapabilityState,
@@ -292,7 +292,33 @@ import {
   isV24PackageCycleCapabilityReady,
   mutateV24PackageCycle,
   pullV24PackageCycleState,
+  stopTuitionContinuation,
 } from './cloud-authoritative-tuition-cycles.js'
+import {
+  F5B_RECEIPT_CAPABILITY_STATUS,
+  buildF5BRecordPaymentCommand,
+  buildF5BReviseReceiptCommand,
+  createF5BReceiptCapabilityState,
+  createF5BReceiptIdempotencyKey,
+  getF5BReceiptOutcomeMessage,
+  isF5BReceiptBackendUnavailable,
+  isF5BReceiptCapabilityReady,
+  mutateF5BTuitionReceipt,
+  pullF5BTuitionReceipts,
+} from './cloud-authoritative-tuition-receipts.js'
+import { generateTuitionReceiptPdf } from './tuition-receipt-pdf.js'
+import {
+  buildCreateTuitionNoticeCommand,
+  createTuitionNoticeCapabilityState,
+  createTuitionNoticeIdempotencyKey,
+  getPrintableTuitionDocument,
+  getTuitionNoticeOutcomeMessage,
+  isTuitionNoticeBackendUnavailable,
+  isTuitionNoticeCapabilityReady,
+  mutateTuitionNotice,
+  pullTuitionNotices,
+} from './cloud-authoritative-tuition-notices.js'
+import { generateTuitionNoticePdf } from './tuition-notice-pdf.js'
 import {
   CLOUD_BOOTSTRAP_STATUS,
   canRunCloudBootstrap,
@@ -397,12 +423,11 @@ import {
   validateInventoryRequestStatusForm,
 } from './inventory-module.js'
 import './inventory-v2-8p2-theme.css'
+import { inventoryLegacyAttendanceBrowserData } from './attendance-legacy-browser-audit.js'
 import { inspectAndQuarantineC57LegacyState } from './legacy-calendar-notes-quarantine.js'
 import {
   inspectAndQuarantineC53LegacyCrm,
-  preserveC5CloseoutLegacyCoreAttendance,
 } from './legacy-closeout-preservation.js'
-import { cleanupLegacyDatasetLocalResidue } from './legacy-dataset-cleanup.js'
 import { inspectAndQuarantineC54LegacyFinance } from './legacy-finance-quarantine.js'
 import { inspectAndQuarantineC56LegacyInventory } from './legacy-inventory-quarantine.js'
 import { inspectAndQuarantineC55LegacyStaffHr } from './legacy-staff-hr-quarantine.js'
@@ -449,6 +474,12 @@ import {
   getOnlineAccessMessage,
   normalizeOnlineRole,
 } from './online-access-control.js'
+import {
+  CUSTOMER_INFORMATION_PRINT_ROOT_CLASS,
+  CUSTOMER_INFORMATION_PRINT_ROOT_SELECTOR,
+  createCustomerInformationPrintSnapshot,
+  renderCustomerInformationPrintDocument,
+} from './customer-information-print-module.js'
 import {
   addAppointmentToParentContact,
   addCareLogToParentContact,
@@ -666,7 +697,6 @@ import {
   getStoredClassSessions,
   getStoredNotifications,
   getStoredSchedule,
-  getStoredSessionReports,
   getStoredStudents,
   getStoredTeachers,
   getStoredTuition,
@@ -677,7 +707,6 @@ import {
   saveStoredClassSessions,
   saveStoredNotifications,
   saveStoredSchedule,
-  saveStoredSessionReports,
   saveStoredStudents,
   saveStoredTeachers,
   saveStoredTuition,
@@ -695,6 +724,7 @@ import {
   renderStudentDetail,
   renderStudentLearningResult,
 } from './student-detail.js'
+import { generateStudentIntakeAdminPdf } from './student-intake-admin-pdf.js'
 import {
   buildStudentFromForm,
   createEditStudentFormState,
@@ -752,26 +782,9 @@ import {
   listTransactionAttachmentsByMonth,
   listTransactionAttachmentsByTransactionCode,
 } from './transaction-attachments.js'
-import {
-  buildTuitionPaymentSummary,
-  createEditTuitionFormState,
-  createEmptyTuitionFormState,
-  createPaymentFormState,
-  createRenewTuitionFormState,
-  getCurrentTuitionPeriodId,
-  getLinkedTuitionPaymentTransactions,
-  getTuitionDebtAmount,
-  getTuitionPeriodIdentity,
-  hasUnreconciledLegacyTuitionPaidAmount,
-  initialTuitionFilters,
-  normalizePaymentFormValues,
-  normalizeTuitionFormValues,
-  renderTuitionDiscountPreviewFromValues,
-  renderTuitionModule,
-  validatePaymentForm,
-  validateRenewTuitionForm,
-  validateTuitionForm,
-} from './tuition-module.js'
+import {buildTuitionRows,initialTuitionFilters,renderTuitionModule} from './tuition-module.js'
+import {createTuitionOperatorState,createTuitionOperatorController} from './tuition-operator-controller.js'
+import {pullTuitionOperatorSnapshot} from './cloud-tuition-operator.js'
 import './tuition-theme.css'
 import { getUploaderDisplayName } from './uploader-display.js'
 import {
@@ -814,6 +827,7 @@ const preservedScrollTargets = [
   ['.tuition-table-wrap', 'tuition-table'],
   ['.tuition-advisory-table-wrap', 'tuition-advisory'],
   ['.tuition-form-panel', 'tuition-form'],
+  ['.tuition-dialog-body', 'tuition-dialog-body'],
   ['.cashflow-table-wrap', 'cashflow-table'],
   ['.cashflow-form-panel', 'cashflow-form'],
   ['.cashflow-category-panel', 'cashflow-category-panel'],
@@ -863,13 +877,13 @@ let textEditingFieldPointerUntil = 0
 let nativeSelectInteractionUntil = 0
 let nativeSelectChangeRenderUntil = 0
 let pendingWindowFocusAfterRender = null
-let legacyCloseoutPreservationState = preserveC5CloseoutLegacyCoreAttendance({
+let legacyAttendanceInventoryState = inventoryLegacyAttendanceBrowserData({
   storage: globalThis.localStorage,
   centerId: getCurrentStorageCenterId(),
 })
-cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
 let studentFilters = { ...initialStudentFilters }
 let students = getStoredStudents([])
+const studentIntakePdfExportsInFlight = new Set()
 let classSessions = getStoredClassSessions([])
 let teacherFilters = { ...initialTeacherFilters }
 let teachers = getStoredTeachers([])
@@ -1002,7 +1016,9 @@ const savingStaffAdministrativeGovernanceWindowIds = new Set()
 let teacherStaffLinkState = null
 let isTeacherStaffLinkSaving = false
 let scheduleSessions = getStoredSchedule([])
-let sessionReports = getStoredSessionReports()
+let attendanceRecords = []
+let attendanceBaselineState = normalizeAttendanceBaselineState()
+let sessionReports = []
 let centerCalendarItems = []
 let centerCalendarTags = []
 let attendanceAdvisoryNotes = []
@@ -1063,6 +1079,15 @@ let v24PackageCycleCatalog = []
 let v24PackageCycleContributions = []
 let v24PackageCycleSyncRunId = 0
 const v24PackageCycleRetryCommands = new Map()
+let f5bReceiptCapabilityState = createF5BReceiptCapabilityState()
+let f5bTuitionReceipts = []
+let f5bRenewalMaterialFee = 0
+let f5bReceiptSyncRunId = 0
+const f5bReceiptPdfExportsInFlight = new Set()
+let tuitionNoticeCapabilityState = createTuitionNoticeCapabilityState()
+let tuitionNotices = []
+let tuitionNoticeSyncRunId = 0
+const tuitionNoticePdfExportsInFlight = new Set()
 let v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState()
 let v28aAttendanceReminders = []
 let v28aAttendanceTbhpCheckpoints = []
@@ -1080,14 +1105,10 @@ let wallpaperRuntimeState = {
 }
 let personalWallpaperRuntimeRunId = 0
 let sharedWallpaperRuntimeRunId = 0
-let tuitionFilters = { ...initialTuitionFilters }
-let tuitionFormState = null
-let tuitionPeriodActionConfirmationState = null
-let tuitionPaymentFormState = null
-let tuitionDetailState = null
-let tuitionRollbackPreviewState = null
-let tuitionCareNoteState = null
-let tuitionAdvisoryWindowState = null
+const tuitionOperatorState = createTuitionOperatorState()
+let tuitionOperatorController = null
+let tuitionOperatorSnapshot = {status:'idle',centerId:'',students:[],cycleStates:[],catalog:[],receipts:[]}
+let tuitionOperatorReadRunId = 0
 // C5.4 never renders the legacy Finance keys as business authority. They are
 // inventoried/quarantined before the first exact-center authoritative pull.
 let cashflowTransactions = []
@@ -1367,7 +1388,7 @@ function getCurrentClassSessionDeletePolicyMap() {
     scheduleSessions,
     attendanceRecords: buildUnifiedAttendanceRecords({
       sessionReports,
-      storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+      storedRecords: attendanceRecords,
     }),
     sessionReports,
   })
@@ -1991,6 +2012,13 @@ function resetV23AttendanceRuntimeForAccessBoundary(centerId = '') {
   v23AttendanceWriteRunId += 1
   v23AttendanceRetryCommands.clear()
   v23AttendanceCapabilityState = createV23AttendanceCapabilityState({ centerId })
+  attendanceRecords = []
+  attendanceBaselineState = normalizeAttendanceBaselineState()
+  sessionReports = []
+  attendanceBaselineUndoSnapshot = null
+  attendanceBaselineDraftRecords = null
+  attendanceBaselineDraftBaseRecords = null
+  attendanceBaselineDraftState = null
   scheduleAdminAttendanceState = null
 }
 
@@ -2001,7 +2029,20 @@ function resetV24PackageCycleRuntimeForAccessBoundary(centerId = '') {
   v24PackageCycleCatalog = []
   v24PackageCycleContributions = []
   v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState({ centerId })
+  resetF5BReceiptRuntimeForAccessBoundary(centerId)
   resetV28AAttendanceOperationsRuntimeForAccessBoundary(centerId)
+}
+
+function resetF5BReceiptRuntimeForAccessBoundary(centerId = '') {
+  f5bReceiptSyncRunId += 1
+  f5bReceiptPdfExportsInFlight.clear()
+  f5bTuitionReceipts = []
+  f5bRenewalMaterialFee = 0
+  f5bReceiptCapabilityState = createF5BReceiptCapabilityState({ centerId })
+  tuitionNoticeSyncRunId += 1
+  tuitionNoticePdfExportsInFlight.clear()
+  tuitionNotices = []
+  tuitionNoticeCapabilityState = createTuitionNoticeCapabilityState({ centerId })
 }
 
 function resetV28AAttendanceOperationsRuntimeForAccessBoundary(centerId = '') {
@@ -2099,7 +2140,7 @@ function resetTransientStateForCenterSwitch() {
   settingsFilters = { ...initialSettingsFilters }
   settingsActiveTab = 'class-sessions'
   settingsClassSessionFormState = null
-  tuitionFilters = { ...initialTuitionFilters }
+  tuitionOperatorState.filters = { ...initialTuitionFilters }
   cashflowFilters = { ...initialCashflowFilters }
   financeWorkspaceView = FINANCE_WORKSPACE_VIEWS.TRANSACTIONS
   inventoryFilters = { ...initialInventoryFilters }
@@ -2167,14 +2208,10 @@ function resetTransientStateForCenterSwitch() {
   sessionReportLearningFormState = null
   sessionReportExtraState = null
   sessionReportGuestFormState = null
-  tuitionFormState = null
-  tuitionPeriodActionConfirmationState = null
-  revokeTuitionPaymentAttachmentDraftObjectUrl()
-  tuitionPaymentFormState = null
-  tuitionDetailState = null
-  tuitionRollbackPreviewState = null
-  tuitionCareNoteState = null
-  tuitionAdvisoryWindowState = null
+  tuitionOperatorState.panel = null
+  tuitionOperatorState.success = null
+  tuitionOperatorSnapshot = {status:'idle',centerId:'',students:[],cycleStates:[],catalog:[],receipts:[]}
+  tuitionOperatorReadRunId += 1
   revokeCashflowAttachmentDraftObjectUrl()
   cashflowFormState = null
   cashflowTransactionDetailState = null
@@ -2199,8 +2236,7 @@ function resetTransientStateForCenterSwitch() {
 }
 
 function reloadLocalDataForResolvedCenter() {
-  ensureC5CloseoutLegacyCoreAttendancePreserved()
-  cleanupLegacyDatasetLocalResidue(globalThis.localStorage, getCurrentStorageCenterId())
+  inventoryLegacyAttendanceForReview()
   students = getStoredStudents([])
   classSessions = getStoredClassSessions([])
   classSessionDeletePolicyOverrides = {}
@@ -2219,7 +2255,9 @@ function reloadLocalDataForResolvedCenter() {
   staffAdministrativeDeletionRequests = []
   staffDepartments = []
   scheduleSessions = getStoredSchedule([])
-  sessionReports = getStoredSessionReports([])
+  attendanceRecords = []
+  attendanceBaselineState = normalizeAttendanceBaselineState()
+  sessionReports = []
   centerCalendarItems = []
   centerCalendarTags = []
   attendanceAdvisoryNotes = []
@@ -2241,12 +2279,20 @@ function reloadLocalDataForResolvedCenter() {
   resetTransientStateForCenterSwitch()
 }
 
-function ensureC5CloseoutLegacyCoreAttendancePreserved() {
-  legacyCloseoutPreservationState = preserveC5CloseoutLegacyCoreAttendance({
+function inventoryLegacyAttendanceForReview() {
+  legacyAttendanceInventoryState = inventoryLegacyAttendanceBrowserData({
     storage: globalThis.localStorage,
     centerId: getCurrentStorageCenterId(),
+    canonicalRecords: attendanceRecords,
   })
-  return legacyCloseoutPreservationState
+  return legacyAttendanceInventoryState
+}
+
+function ensureC5CloseoutLegacyCoreAttendancePreserved() {
+  // Historical call sites retain this name, but the operation is now strictly
+  // read-only inventory. It never writes, merges, imports, or deletes legacy
+  // browser Attendance data.
+  return inventoryLegacyAttendanceForReview()
 }
 
 function refreshStaffDataFromStorage() {
@@ -7873,19 +7919,7 @@ function focusPendingInternalAccountCard() {
   }
 }
 
-function refreshTuitionFormPreview() {
-  if (!tuitionFormState) {
-    return
-  }
 
-  const previewElement = document.querySelector('[data-tuition-discount-preview]')
-
-  if (!previewElement) {
-    return
-  }
-
-  previewElement.outerHTML = renderTuitionDiscountPreviewFromValues(tuitionFormState.values)
-}
 
 function isTextEditingElement(element) {
   if (!element) {
@@ -7929,7 +7963,7 @@ function shouldAllowImmediateRenderForActiveElement(element) {
     return false
   }
 
-  return Boolean(element.closest?.('[data-student-filter], [data-attendance-board-filter]'))
+  return Boolean(element.closest?.('[data-student-filter], [data-attendance-board-filter], [data-tu-filter]'))
 }
 
 function shouldAllowNativeSelectChangeRender() {
@@ -8071,7 +8105,8 @@ function getStableElementSelector(element) {
     'data-parent-appointment-field',
     'data-parent-enrollment-field',
     'data-parent-form-field',
-    'data-tuition-filter',
+    'data-tu-filter',
+    'data-tu-field',
     'data-tuition-scroll-region',
     'data-cashflow-filter',
     'data-inventory-filter',
@@ -10805,7 +10840,7 @@ function hasInitialBaselineAttendanceRecord(records, studentId, date) {
   )
 }
 
-function createScheduleAdminAttendanceState(occurrence, records = loadStoredAttendanceRecords(getCurrentResolvedCenterId())) {
+function createScheduleAdminAttendanceState(occurrence, records = attendanceRecords) {
   const existingRecords = Array.isArray(records) ? records : []
   const rows = getScheduleAdminStudentIds(occurrence).map((studentId) => {
     const existingRecord = selectCurrentV23OccurrenceAttendanceRecord(
@@ -10830,7 +10865,7 @@ function createScheduleAdminAttendanceState(occurrence, records = loadStoredAtte
   }
 }
 
-function getScheduleAdminAttendanceRecords(occurrence, records = loadStoredAttendanceRecords(getCurrentResolvedCenterId())) {
+function getScheduleAdminAttendanceRecords(occurrence, records = attendanceRecords) {
   return (Array.isArray(records) ? records : [])
     .filter((record) =>
       record?.source === 'admin' &&
@@ -10839,7 +10874,7 @@ function getScheduleAdminAttendanceRecords(occurrence, records = loadStoredAtten
     )
 }
 
-function getScheduleTeacherAttendanceRecords(occurrence, records = loadStoredAttendanceRecords(getCurrentResolvedCenterId())) {
+function getScheduleTeacherAttendanceRecords(occurrence, records = attendanceRecords) {
   return (Array.isArray(records) ? records : [])
     .filter((record) =>
       record?.source === 'teacher' &&
@@ -11015,24 +11050,24 @@ function getScheduleAdminTeacherName(occurrence) {
 function getAttendanceBaselineDraftRecords() {
   return Array.isArray(attendanceBaselineDraftRecords)
     ? attendanceBaselineDraftRecords
-    : loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    : attendanceRecords
 }
 
 function getAttendanceBaselineDraftState() {
-  return attendanceBaselineDraftState || loadAttendanceBaselineState(getCurrentResolvedCenterId())
+  return attendanceBaselineDraftState || attendanceBaselineState
 }
 
 function ensureAttendanceBaselineDraft() {
   if (!Array.isArray(attendanceBaselineDraftRecords)) {
-    const storedRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    const storedRecords = attendanceRecords
     attendanceBaselineDraftRecords = storedRecords
     attendanceBaselineDraftBaseRecords = storedRecords
-    attendanceBaselineDraftState = loadAttendanceBaselineState(getCurrentResolvedCenterId())
+    attendanceBaselineDraftState = attendanceBaselineState
   }
 
   return {
     records: attendanceBaselineDraftRecords,
-    state: attendanceBaselineDraftState || loadAttendanceBaselineState(getCurrentResolvedCenterId()),
+    state: attendanceBaselineDraftState || attendanceBaselineState,
   }
 }
 
@@ -11049,7 +11084,7 @@ function getAttendanceBaselineDraftChangeCount() {
 
   const baseRecords = Array.isArray(attendanceBaselineDraftBaseRecords)
     ? attendanceBaselineDraftBaseRecords
-    : loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    : attendanceRecords
   const baseMap = new Map(baseRecords.map((record) => [record.id, JSON.stringify(record)]))
   const draftMap = new Map(attendanceBaselineDraftRecords.map((record) => [record.id, JSON.stringify(record)]))
   let changeCount = 0
@@ -12009,7 +12044,7 @@ function renderWindowBody(windowItem) {
       studentFormState,
       [],
       classSessions,
-      { enrollmentCapabilityStatus: v22StudentEnrollmentCapabilityState.status },
+      { enrollmentCapabilityStatus: v22StudentEnrollmentCapabilityState.status, ...getStudentOverviewOptions() },
     )
   }
 
@@ -12089,7 +12124,7 @@ function renderWindowBody(windowItem) {
       scheduleWeekStartDate,
       scheduleAdminAttendanceState,
       {
-        attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        attendanceRecords,
         calendarNotesAvailable,
         centerCalendarFilters: scheduleCalendarFilters,
         centerCalendarItemState: scheduleCalendarItemState,
@@ -12117,80 +12152,7 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'hoc-phi') {
-    const coreStatus = getModuleUpstreamStatus('hoc-phi', 'core')
-    const tuitionStatus = getModuleUpstreamStatus('hoc-phi', 'tuition')
-    const attendanceStatus = combineModuleUpstreamStatuses(
-      coreStatus,
-      tuitionStatus,
-      getModuleUpstreamStatus('hoc-phi', 'attendance'),
-    )
-    const calendarNotesStatus = combineModuleUpstreamStatuses(
-      coreStatus,
-      getModuleUpstreamStatus('hoc-phi', 'calendar-notes'),
-    )
-    const financeStatus = combineModuleUpstreamStatuses(
-      coreStatus,
-      tuitionStatus,
-      getModuleUpstreamStatus('hoc-phi', 'finance'),
-    )
-    const attendanceAvailable = attendanceStatus === 'ready'
-    const calendarNotesAvailable = calendarNotesStatus === 'ready'
-    const financeAvailable = financeStatus === 'ready'
-    const canVoidPayments = financeAvailable
-      && !c54FinanceSharedTruthState.isSaving
-      && canWriteC54FinanceSharedTruth(buildCurrentOnlineAccessState({ cloudReady: true })).canWrite
-    return renderTuitionModule(
-      students,
-      tuitionRecords,
-      tuitionFilters,
-      tuitionFormState,
-      tuitionPaymentFormState,
-      tuitionDetailState,
-      attendanceAvailable ? sessionReports : [],
-      calendarNotesAvailable ? attendanceAdvisoryNotes : [],
-      getCurrentMonthKey(),
-      tuitionRollbackPreviewState,
-      buildUnifiedAttendanceRecords({
-        sessionReports: attendanceAvailable ? sessionReports : [],
-        storedRecords: attendanceAvailable
-          ? loadStoredAttendanceRecords(getCurrentResolvedCenterId())
-          : [],
-      }),
-      tuitionCareNoteState,
-      tuitionAdvisoryWindowState,
-      financeAvailable ? cashflowTransactions : [],
-      getCurrentResolvedCenterId(),
-      tuitionPeriodActionConfirmationState,
-      getUnavailableOptionalState(
-        'hoc-phi',
-        'calendar-notes',
-        'Ghi chú chăm sóc theo tháng và ghi chú điểm danh',
-      ) || c57CalendarNotesSharedTruthState,
-      {
-        coreStatus,
-        tuitionStatus,
-        attendanceStatus,
-        attendanceAvailable,
-        calendarNotesStatus,
-        calendarNotesAvailable,
-        financeStatus,
-        financeAvailable,
-        canVoidPayments,
-        packageCycleStatus: v24PackageCycleCapabilityState.status,
-        packageCycleReady: isV24PackageCycleCapabilityReady(
-          v24PackageCycleCapabilityState,
-          getCurrentCanonicalCenterContext().centerId,
-        ),
-        packageCycleStudentStates: v24PackageCycleStudentStates,
-        packageCycleCatalog: v24PackageCycleCatalog,
-        tuitionPackageCatalog: isV21CenterSettingsCapabilityReady(
-          v21CenterSettingsCapabilityState,
-          getCurrentCanonicalCenterContext().centerId,
-        )
-          ? v21TuitionPackages
-          : null,
-      },
-    )
+    return renderTuitionModule(getTuitionOperatorContext(), tuitionOperatorState)
   }
 
   if (moduleItem.id === 'nhom-tai-chinh') {
@@ -12344,7 +12306,7 @@ function renderWindowBody(windowItem) {
       cashflowTransactions,
       attendanceRecords: buildUnifiedAttendanceRecords({
         sessionReports,
-        storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+        storedRecords: attendanceRecords,
       }),
       sourceTransactionsState: reportTransactionDrilldownState,
       centerInfo,
@@ -12454,6 +12416,7 @@ function renderStudentDetailWithDeleteAction(student, classSessions = []) {
     [],
     classSessions,
     tuitionRecords,
+    getStudentOverviewOptions(),
   )
 
   if (!student || student.isDeleted || student.readOnlyProjection) {
@@ -12472,6 +12435,34 @@ function renderStudentDetailWithDeleteAction(student, classSessions = []) {
   `
 
   return detailHtml.replace('<span class="student-detail-delete-slot"></span>', deleteAction)
+}
+
+function getStudentOverviewOptions() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const tuitionReady = isModuleUpstreamCurrent('hoc-phi', 'core')
+    && isModuleUpstreamCurrent('hoc-phi', 'tuition')
+  const financeAvailable = isModuleUpstreamCurrent('hoc-phi', 'finance')
+    && c54FinanceSharedTruthState.centerId === centerId
+    && Boolean(c54FinanceSharedTruthState.lastLoadedAt)
+    && !c54FinanceSharedTruthState.isLoading
+    && c54FinanceSharedTruthState.messageTone !== 'error'
+  const packageCycleReady = isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)
+  const tuitionRows = tuitionReady || packageCycleReady ? buildTuitionRows(
+    getStudentsWithCanonicalProjections(), tuitionReady ? tuitionRecords : [], [],
+    financeAvailable ? cashflowTransactions : [],
+    {
+      financeAvailable,
+      attendanceAvailable: false,
+      packageCycleReady,
+      packageCycleStudentStates: v24PackageCycleStudentStates,
+    },
+  ).map((row) => ({ ...row, tuitionAvailable: tuitionReady })) : []
+  const customerIds = isParentFirstCapabilityReady(parentFirstCapabilityState, centerId)
+    ? Object.fromEntries(parentStudentLinks
+        .filter((link) => link.linkStatus === 'ACTIVE' && link.isPrimaryContact)
+        .map((link) => [link.studentId, link.contactId]))
+    : {}
+  return { tuitionRows, customerIds }
 }
 
 function getWindowTitle(windowItem) {
@@ -12547,113 +12538,9 @@ function getLatestCareNoteContent(careNotes) {
   )[0]?.content ?? ''
 }
 
-function createTuitionCareNoteState(studentId, patch = {}) {
-  return {
-    studentId,
-    values: {
-      tag: '',
-      content: '',
-      ...(patch.values || {}),
-    },
-    editingNoteId: '',
-    error: '',
-    saveState: '',
-    isSaving: false,
-    ...patch,
-  }
-}
 
-async function saveTuitionCareNote() {
-  if (!tuitionCareNoteState?.studentId) {
-    return
-  }
 
-  if (!isModuleUpstreamCurrent('hoc-phi', 'core')) {
-    tuitionCareNoteState = createTuitionCareNoteState(tuitionCareNoteState.studentId, {
-      values: tuitionCareNoteState.values,
-      error: 'Dữ liệu học viên chưa được tải mới. Thông tin bạn nhập vẫn được giữ nguyên.',
-    })
-    render()
-    return
-  }
 
-  const studentId = tuitionCareNoteState.studentId
-  const tag = String(tuitionCareNoteState.values?.tag || '').trim()
-  const content = String(tuitionCareNoteState.values?.content || '').trim()
-
-  if (!tag && !content) {
-    tuitionCareNoteState = createTuitionCareNoteState(studentId, {
-      values: tuitionCareNoteState.values,
-      error: 'Nhập tag/chủ đề hoặc nội dung ghi chú trước khi lưu.',
-    })
-    render()
-    return
-  }
-
-  const now = new Date().toISOString()
-  const noteContent = content || tag
-  const student = getStudentById(studentId)
-  const currentCareNotes = Array.isArray(student?.careNotes) ? student.careNotes : []
-  const editingNoteId = String(tuitionCareNoteState.editingNoteId || '')
-  if (editingNoteId && !currentCareNotes.some((note) => String(note.id) === editingNoteId)) {
-    tuitionCareNoteState = createTuitionCareNoteState(studentId, {
-      values: tuitionCareNoteState.values,
-      editingNoteId,
-      error: 'Ghi chú đã thay đổi hoặc không còn tồn tại. Hãy tải lại trước khi lưu.',
-    })
-    render()
-    return
-  }
-  const nextCareNotes = editingNoteId
-    ? currentCareNotes.map((note) => String(note.id) === editingNoteId
-      ? {
-          ...note,
-          updatedAt: now,
-          content: noteContent,
-          tags: tag ? [tag] : ['Học phí'],
-          sourceModule: note.sourceModule || 'tuition',
-        }
-      : note)
-    : [
-        {
-          id: `tuition-note-${studentId}-${Date.now()}`,
-          createdAt: now,
-          updatedAt: now,
-          author: cloudStatus.user?.email || 'Người dùng hiện tại',
-          content: noteContent,
-          tags: tag ? [tag] : ['Học phí'],
-          sourceModule: 'tuition',
-        },
-        ...currentCareNotes,
-      ]
-  tuitionCareNoteState = {
-    ...tuitionCareNoteState,
-    isSaving: true,
-    error: '',
-    saveState: '',
-  }
-  render()
-  const result = await commitAuthoritativeStudentCareNotes(
-    studentId,
-    nextCareNotes,
-    'student-tuition-care-note',
-  )
-
-  if (!result.ok) {
-    tuitionCareNoteState = createTuitionCareNoteState(studentId, {
-      values: tuitionCareNoteState.values,
-      editingNoteId,
-      error: result.error || 'Ghi chú chưa được lưu.',
-    })
-    render()
-    return
-  }
-
-  tuitionCareNoteState = createTuitionCareNoteState(studentId, {
-    saveState: 'saved',
-  })
-  render()
-}
 
 function openInternalOwnerHandoffConfirm(centerId) {
   const center = getInternalCenterById(centerId)
@@ -13317,7 +13204,6 @@ function buildNotificationModuleSummaries(notificationItems = []) {
       unreadCount: 0,
       warningCount: 0,
       latestTime: '',
-      sampleMessages: [],
       severity: 'info',
       canOpen: modules.some((moduleItem) => moduleItem.id === sourceModule),
     }
@@ -13335,10 +13221,6 @@ function buildNotificationModuleSummaries(notificationItems = []) {
     if (!existingSummary.latestTime || new Date(notification.createdAt).getTime() > new Date(existingSummary.latestTime).getTime()) {
       existingSummary.latestTime = notification.createdAt
     }
-    if (notification.title && existingSummary.sampleMessages.length < 2) {
-      existingSummary.sampleMessages.push(notification.title)
-    }
-
     moduleMap.set(sourceModule, existingSummary)
   })
 
@@ -13360,7 +13242,12 @@ function buildNotificationModuleSummaries(notificationItems = []) {
 }
 
 function buildNotificationModuleSummaryTitle(summary) {
-  return `${summary.label} — ${summary.count}`
+  const stateLabel = notificationFilters.readState === 'read'
+    ? 'đã đọc'
+    : notificationFilters.readState === 'all'
+      ? 'hiện có'
+      : 'mới'
+  return `${summary.label} · ${summary.count} thông báo ${stateLabel}`
 }
 
 function buildNotificationModuleSummaryMessage(summary) {
@@ -13372,10 +13259,6 @@ function buildNotificationModuleSummaryMessage(summary) {
   const warningLabel = summary.warningCount
     ? ` Trong đó có ${summary.warningCount} cảnh báo.`
     : ''
-  if (summary.sampleMessages.length) {
-    return `${summary.count} thông báo ${stateLabel}.${warningLabel} ${summary.sampleMessages.join('; ')}. Chi tiết nằm trong chuông riêng của module.`
-  }
-
   return `${summary.count} thông báo ${stateLabel}.${warningLabel} Chi tiết nằm trong chuông riêng của module.`
 }
 
@@ -13786,7 +13669,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   if (moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
     await refreshV23AttendanceCapability({ silent: true })
   }
-  if (moduleId === 'hoc-phi' || moduleId === 'bang-diem-danh') {
+  if (moduleId === 'bang-diem-danh') {
     await refreshV24PackageCycles({ reason: `${moduleId}:${reason}`, silent: true })
   }
 
@@ -13930,11 +13813,19 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
       if (result.ok) await startC51AttendanceRealtimeSubscription(cloudUserSyncId)
       return result
     }
+    case 'tuition-operator':
+      return refreshTuitionOperatorSnapshot()
     case 'tuition': {
       const result = await bootstrapC52TuitionRecordPackageCloudData(cloudUserSyncId, { force: true })
       if (result.ok) await startC52TuitionRealtimeSubscription(cloudUserSyncId)
       return result
     }
+    case 'package-cycles':
+      return refreshV24PackageCycles({ reason, silent: true })
+    case 'receipts':
+      return refreshF5BTuitionReceipts({ reason, silent: true })
+    case 'tuition-notices':
+      return refreshTuitionNotices({ reason, silent: true })
     case 'crm':
       return refreshC53CrmSharedTruth({ reason, silent: true })
     case 'parent-links':
@@ -14372,77 +14263,12 @@ function readLatestCashflowTransactionsForCurrentCenter(centerId = getCurrentRes
     : []
 }
 
-function openTuitionPaymentForm(student, tuitionRecord) {
-  if (!student || !tuitionRecord) {
-    return
-  }
 
-  if (!areModuleActionUpstreamsCurrent('hoc-phi', 'payment')) {
-    window.alert('Chưa tải được số đã thu và dữ liệu thanh toán. Vui lòng bấm Làm mới rồi thử lại.')
-    return
-  }
 
-  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter()
-  const debtAmount = getTuitionDebtAmount(tuitionRecord, latestCashflowTransactions)
-  const mode =
-    debtAmount > 0 &&
-    !hasUnreconciledLegacyTuitionPaidAmount(tuitionRecord, latestCashflowTransactions)
-      ? 'collect'
-      : 'history'
-  const nextState = createPaymentFormState(student, tuitionRecord, mode)
 
-  tuitionPaymentFormState = {
-    ...nextState,
-    centerId: getCurrentResolvedCenterId(),
-    periodId: getCurrentTuitionPeriodId(tuitionRecord),
-    values: {
-      ...nextState.values,
-      amount: mode === 'collect' ? formatMoneyInputForRuntime(debtAmount) : '',
-      payerName: student.parentName || nextState.values.payerName,
-      collectorName: getCurrentPaymentCollectorName(),
-    },
-  }
-  tuitionFormState = null
-  tuitionDetailState = null
-  tuitionRollbackPreviewState = null
-  tuitionCareNoteState = null
-  tuitionAdvisoryWindowState = null
-  render()
-}
-
-function openTuitionPaymentSourceTransaction(transactionId) {
-  const currentCenterId = getCurrentResolvedCenterId()
-  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
-  const transaction = latestCashflowTransactions.find((item) => item.id === transactionId)
-
-  if (!transaction || !isSyncedTuitionPaymentTransaction(transaction)) {
-    setCloudUploadMessage('Không tìm thấy giao dịch Thu chi nguồn trong cơ sở hiện tại.', 'error')
-    cashflowTransactions = latestCashflowTransactions
-    render()
-    return
-  }
-
-  cashflowTransactions = latestCashflowTransactions
-  cashflowFilters = {
-    ...initialCashflowFilters,
-    query: transaction.id,
-  }
-  cashflowFormState = null
-  openModuleWindowFromChildInteraction('thu-chi')
-  setCloudUploadMessage(
-    'Đã mở giao dịch Thu chi nguồn. Giao dịch đồng bộ từ Học phí đang ở chế độ bảo vệ.',
-    'success',
-  )
-}
 
 function getCurrentPaymentCollectorName() {
-  return (
-    cloudStatus.currentMemberProfile?.displayName ||
-    cloudStatus.currentMemberProfile?.fullName ||
-    cloudStatus.user?.user_metadata?.full_name ||
-    cloudStatus.user?.email ||
-    'Admin'
-  )
+  return v21CenterProfile?.defaultReceiptCollectorName || ''
 }
 
 function formatMoneyInputForRuntime(amount) {
@@ -14641,169 +14467,19 @@ function clearCashflowAttachmentDraft() {
   }
 }
 
-function revokeTuitionPaymentAttachmentDraftObjectUrl(formState = tuitionPaymentFormState) {
-  const objectUrl = formState?.attachmentDraft?.objectUrl
 
-  if (objectUrl) {
-    URL.revokeObjectURL(objectUrl)
-  }
-}
 
-function clearTuitionPaymentFormState() {
-  revokeTuitionPaymentAttachmentDraftObjectUrl()
-  tuitionPaymentFormState = null
-}
 
-function updateTuitionPaymentAttachmentDraft(nextDraft) {
-  if (!tuitionPaymentFormState) {
-    return
-  }
 
-  tuitionPaymentFormState = {
-    ...tuitionPaymentFormState,
-    attachmentDraft: nextDraft,
-    errors: {
-      ...tuitionPaymentFormState.errors,
-      attachment: undefined,
-    },
-  }
 
-  syncTuitionPaymentEvidencePreview()
-}
 
-function stageTuitionPaymentEvidenceFile(file) {
-  if (!tuitionPaymentFormState) {
-    return
-  }
 
-  const validation = validateTransactionImageFile(file)
 
-  if (!validation.ok) {
-    updateTuitionPaymentAttachmentDraft({
-      ...(tuitionPaymentFormState.attachmentDraft || {}),
-      error: validation.error,
-    })
-    return
-  }
 
-  revokeTuitionPaymentAttachmentDraftObjectUrl()
-  updateTuitionPaymentAttachmentDraft({
-    mode: 'staged-new',
-    file,
-    fileName: validation.data.name,
-    mimeType: validation.data.mimeType,
-    sizeBytes: validation.data.sizeBytes,
-    objectUrl: URL.createObjectURL(file),
-    error: '',
-    isUploading: false,
-  })
-}
 
-function removeTuitionPaymentEvidenceDraft() {
-  if (!tuitionPaymentFormState) {
-    return
-  }
 
-  revokeTuitionPaymentAttachmentDraftObjectUrl()
-  updateTuitionPaymentAttachmentDraft({
-    mode: 'none',
-    fileName: '',
-    mimeType: '',
-    sizeBytes: 0,
-    objectUrl: '',
-    error: '',
-    isUploading: false,
-  })
-}
 
-function syncTuitionPaymentEvidencePreview() {
-  const field = document.querySelector('[data-tuition-payment-evidence-field]')
 
-  if (!field || !tuitionPaymentFormState) {
-    return
-  }
-
-  const draft = tuitionPaymentFormState.attachmentDraft || {}
-  const hasStaged = draft.mode === 'staged-new' && draft.objectUrl
-  const error = tuitionPaymentFormState.errors.attachment || draft.error || ''
-
-  field.classList.toggle('has-error', Boolean(error))
-  field.innerHTML = `
-    <span>Chứng từ</span>
-    <input
-      type="file"
-      accept="${escapeAttributeForRuntime(CASHFLOW_EVIDENCE_ACCEPT)}"
-      data-tuition-payment-evidence-input
-      tabindex="-1"
-      ${tuitionPaymentFormState.isSaving ? 'disabled' : ''}
-    />
-    ${
-      hasStaged
-        ? `
-          <div class="cashflow-evidence-preview" data-tuition-payment-evidence-preview>
-            <img src="${escapeAttributeForRuntime(draft.objectUrl)}" alt="${escapeAttributeForRuntime(draft.fileName || 'Ảnh chứng từ')}" />
-            <div>
-              <strong title="${escapeAttributeForRuntime(draft.fileName)}">${escapeHtmlForRuntime(draft.fileName || 'Ảnh chứng từ')}</strong>
-              <small>${escapeHtmlForRuntime(draft.mimeType || 'image/*')} · ${formatFileSize(draft.sizeBytes)}</small>
-              <small>Ảnh mới, sẽ tải lên khi lưu</small>
-            </div>
-            <div class="cashflow-evidence-actions">
-              <button type="button" data-tuition-payment-evidence-action="preview">Xem trước</button>
-              <button type="button" data-tuition-payment-evidence-action="replace">Thay ảnh</button>
-              <button type="button" data-tuition-payment-evidence-action="remove">Gỡ</button>
-            </div>
-          </div>
-        `
-        : `
-          <div class="cashflow-evidence-empty" data-tuition-payment-evidence-preview>
-            <button type="button" data-tuition-payment-evidence-action="insert" ${tuitionPaymentFormState.isSaving ? 'disabled' : ''}>Chèn ảnh</button>
-            <small>Không có chứng từ</small>
-          </div>
-        `
-    }
-    ${error ? `<small>${escapeHtmlForRuntime(error)}</small>` : ''}
-  `
-
-  bindTuitionPaymentEvidenceControls(field)
-}
-
-function bindTuitionPaymentEvidenceControls(root = document) {
-  const input = root.querySelector('[data-tuition-payment-evidence-input]')
-
-  root.querySelectorAll('[data-tuition-payment-evidence-action="insert"], [data-tuition-payment-evidence-action="replace"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      input?.click()
-    })
-  })
-
-  root.querySelector('[data-tuition-payment-evidence-action="remove"]')?.addEventListener('click', (event) => {
-    event.stopPropagation()
-    removeTuitionPaymentEvidenceDraft()
-  })
-
-  root.querySelector('[data-tuition-payment-evidence-action="preview"]')?.addEventListener('click', (event) => {
-    event.stopPropagation()
-    const objectUrl = tuitionPaymentFormState?.attachmentDraft?.objectUrl
-
-    if (objectUrl && isSafeImagePreviewUrl(objectUrl)) {
-      window.open(objectUrl, '_blank', 'noopener,noreferrer')
-    }
-  })
-
-  input?.addEventListener('click', (event) => {
-    event.stopPropagation()
-  })
-
-  input?.addEventListener('change', (event) => {
-    event.stopPropagation()
-    const file = event.target.files?.[0]
-
-    if (file) {
-      stageTuitionPaymentEvidenceFile(file)
-    }
-  })
-}
 
 function updateCashflowAttachmentDraft(nextDraft) {
   if (!cashflowFormState) {
@@ -15120,23 +14796,9 @@ function syncInventoryMovementToCashflow(movement, item) {
   return { ok: false, deferred: true, movementId: movement?.id || '', itemId: item?.id || '' }
 }
 
-function getCashflowMethodFromTuitionPayment(method) {
-  const methodLabels = {
-    cash: 'Tiền mặt',
-    transfer: 'Chuyển khoản',
-    other: 'Khác',
-  }
 
-  return methodLabels[method] ?? 'Khác'
-}
 
-function buildTuitionPaymentTransactionNote(note, student, tuitionRecord) {
-  const baseNote = String(note || '').trim()
-  const periodLabel = `Kỳ ${tuitionRecord.currentTermNumber || 1}`
-  const defaultNote = `Đồng bộ từ Học phí: ${student.fullName} · ${periodLabel}`
 
-  return baseNote ? `${defaultNote} · ${baseNote}` : defaultNote
-}
 
 function focusWindow(windowId) {
   bringWindowToFront(windowId)
@@ -15509,6 +15171,14 @@ function getActiveCashbookDate() {
 
 function getActiveCashbookSystemClosingBalance() {
   return getCashbookBalanceStats(
+    cashflowTransactions,
+    getActiveCashbookDate(),
+    cashbookSettings,
+  ).closingBalance
+}
+
+function getActiveCashbookPhysicalCashBalance() {
+  return getCashbookPhysicalCashStats(
     cashflowTransactions,
     getActiveCashbookDate(),
     cashbookSettings,
@@ -16936,6 +16606,71 @@ function getMergedParentConsultations() {
   )
 }
 
+function printCustomerInformation(contactId) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const normalizedContactId = String(contactId || '').trim()
+  const contact = getMergedParentConsultations().find((item) => (
+    item.id === normalizedContactId
+    && !item.isDerivedFromStudents
+    && item.canonicalContactId
+  ))
+  const hasCurrentExactCenterTruth = centerContext.ok
+    && c53CrmSharedTruthState.centerId === centerContext.centerId
+    && isParentFirstCapabilityReady(parentFirstCapabilityState, centerContext.centerId)
+
+  if (!hasCurrentExactCenterTruth || !contact) {
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      message: 'Không thể tạo tài liệu: hồ sơ hoặc cơ sở hiện tại không còn hợp lệ.',
+      messageTone: 'error',
+    }
+    render()
+    return false
+  }
+
+  const snapshot = createCustomerInformationPrintSnapshot({
+    centerId: centerContext.centerId,
+    centerName: centerContext.centerName,
+    contact,
+    exportedAt: new Date().toISOString(),
+  })
+
+  if (!snapshot) {
+    c53CrmSharedTruthState = {
+      ...c53CrmSharedTruthState,
+      message: 'Không thể tạo tài liệu thông tin khách hàng từ dữ liệu hiện tại.',
+      messageTone: 'error',
+    }
+    render()
+    return false
+  }
+
+  document.querySelector(CUSTOMER_INFORMATION_PRINT_ROOT_SELECTOR)?.remove()
+
+  const previousTitle = document.title
+  const printRoot = document.createElement('div')
+  let didCleanup = false
+
+  printRoot.className = CUSTOMER_INFORMATION_PRINT_ROOT_CLASS
+  printRoot.dataset.customerInformationPrintRuntimeRoot = 'true'
+  printRoot.innerHTML = renderCustomerInformationPrintDocument(snapshot)
+  document.body.appendChild(printRoot)
+  document.title = `Thông tin khách hàng - ${contact.parentName || 'Khách hàng'}`
+
+  const cleanup = () => {
+    if (didCleanup) return
+    didCleanup = true
+    document.title = previousTitle
+    printRoot.remove()
+    window.removeEventListener('afterprint', cleanup)
+  }
+
+  window.addEventListener('afterprint', cleanup, { once: true })
+  window.print()
+  window.setTimeout(cleanup, 8000)
+  return true
+}
+
 function createParentLinkDraft(overrides = {}) {
   return {
     mode: 'create',
@@ -17810,115 +17545,7 @@ async function writeC54FinanceCommand(command, {
   return { ...result, ok: true, projection, reason, ...commandContext }
 }
 
-async function writeC54TuitionPaymentVoid(transaction, reason) {
-  const centerId = getCurrentResolvedCenterId()
-  const access = canWriteC54FinanceSharedTruth(buildCurrentOnlineAccessState({ cloudReady: true }))
-  if (!access.canWrite) {
-    return { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.error }
-  }
 
-  let requestedCommand
-  try {
-    requestedCommand = buildC54VoidTuitionPaymentCommand(transaction, reason)
-  } catch (error) {
-    return { ok: false, outcome_code: 'INVALID_PAYLOAD', error: String(error?.message || error) }
-  }
-
-  const retryScope = `${centerId}|${requestedCommand.transaction_id}`
-  const existingPending = c54TuitionPaymentVoidRetryCommands.get(retryScope)
-  const pending = existingPending || {
-    centerId,
-    command: requestedCommand,
-    idempotencyKey: createC54FinanceIdempotencyKey(),
-  }
-  c54TuitionPaymentVoidRetryCommands.set(retryScope, pending)
-
-  const runId = ++c54FinanceSyncRunId
-  c54FinanceSharedTruthState = {
-    ...c54FinanceSharedTruthState,
-    centerId,
-    isSaving: true,
-    message: 'Đang hủy khoản thu...',
-    messageTone: '',
-  }
-  render()
-
-  const readiness = await getCloudDbContext(centerId)
-  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()
-    || !readiness.ok || readiness.centerId !== centerId) {
-    const result = readiness.ok
-      ? { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
-      : readiness
-    if (runId === c54FinanceSyncRunId) {
-      c54FinanceSharedTruthState = {
-        ...c54FinanceSharedTruthState,
-        isSaving: false,
-        message: result.error || 'Không thể hủy khoản thu lúc này.',
-        messageTone: 'error',
-      }
-      render()
-    }
-    return { ...result, reusedPendingIntent: Boolean(existingPending) }
-  }
-
-  const result = await mutateC54TuitionPaymentVoid({
-    supabase: readiness.supabase,
-    centerId,
-    command: pending.command,
-    idempotencyKey: pending.idempotencyKey,
-  })
-  if (runId !== c54FinanceSyncRunId || centerId !== getCurrentResolvedCenterId()) {
-    return {
-      ...result,
-      ok: false,
-      committed: Boolean(result.ok),
-      outcome_code: 'CENTER_CONTEXT_CHANGED',
-      error: result.ok
-        ? 'Khoản thu đã được hủy ở cơ sở trước. Màn hình hiện tại không hiển thị dữ liệu của cơ sở đó.'
-        : getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED'),
-      reusedPendingIntent: Boolean(existingPending),
-    }
-  }
-  if (!result.ok && !isC54RetryableFinanceFailure(result)) {
-    c54TuitionPaymentVoidRetryCommands.delete(retryScope)
-  }
-  if (!result.ok) {
-    c54FinanceSharedTruthState = {
-      ...c54FinanceSharedTruthState,
-      isSaving: false,
-      message: result.error || getC54FinanceOutcomeMessage(result.outcome_code),
-      messageTone: 'error',
-    }
-    render()
-    return { ...result, reusedPendingIntent: Boolean(existingPending) }
-  }
-
-  c54FinanceSharedTruthState = { ...c54FinanceSharedTruthState, isSaving: false }
-  const projection = await refreshC54FinanceSharedTruth({ reason: 'after-server-commit', silent: true })
-  if (!projection.ok) {
-    const failure = {
-      ...result,
-      ok: false,
-      committed: true,
-      outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED',
-      error: getC54FinanceOutcomeMessage('COMMITTED_PROJECTION_REFRESH_FAILED'),
-      reusedPendingIntent: Boolean(existingPending),
-    }
-    c54FinanceSharedTruthState = {
-      ...c54FinanceSharedTruthState,
-      isSaving: false,
-      message: failure.error,
-      messageTone: 'error',
-    }
-    render()
-    return failure
-  }
-  if (isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)) {
-    await refreshV28AAttendanceOperations({ reason: 'finance-reconciled', silent: true })
-  }
-  c54TuitionPaymentVoidRetryCommands.delete(retryScope)
-  return { ...result, ok: true, projection, reusedPendingIntent: Boolean(existingPending) }
-}
 
 function isC54RetryableFinanceFailure(result = {}) {
   return !result?.outcome_code || [
@@ -18735,7 +18362,7 @@ async function refreshV24PackageCycles({ reason = 'manual-refresh', silent = tru
       message: unavailable ? '' : result.error || getV24OutcomeMessage(result.outcome_code),
       messageTone: unavailable ? '' : 'error',
     })
-    if (!silent) render()
+    render()
     return result
   }
   v24PackageCycleStudentStates = result.students
@@ -18751,6 +18378,198 @@ async function refreshV24PackageCycles({ reason = 'manual-refresh', silent = tru
   render()
   return result
 }
+
+async function refreshF5BTuitionReceipts({ reason = 'manual-refresh', silent = true } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++f5bReceiptSyncRunId
+  if (!centerContext.ok) {
+    resetF5BReceiptRuntimeForAccessBoundary('')
+    return { ok: false, outcome_code: 'INVALID_CENTER' }
+  }
+  f5bReceiptCapabilityState = createF5BReceiptCapabilityState({
+    centerId,
+    status: F5B_RECEIPT_CAPABILITY_STATUS.LOADING,
+    isLoading: true,
+    message: silent ? '' : 'Đang tải Phiếu Thu…',
+  })
+  if (!silent) render()
+  const result = await pullF5BTuitionReceipts({ supabase: getSupabaseClient(), centerId })
+  if (runId !== f5bReceiptSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED' }
+  }
+  if (!result.ok) {
+    const unavailable = result.unavailable || isF5BReceiptBackendUnavailable(result)
+    f5bTuitionReceipts = []
+    f5bRenewalMaterialFee = 0
+    f5bReceiptCapabilityState = createF5BReceiptCapabilityState({
+      centerId,
+      status: unavailable
+        ? F5B_RECEIPT_CAPABILITY_STATUS.UNAVAILABLE
+        : F5B_RECEIPT_CAPABILITY_STATUS.FAILED,
+      message: unavailable ? '' : result.error || getF5BReceiptOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? '' : 'error',
+    })
+    if (!silent) render()
+    return result
+  }
+  f5bTuitionReceipts = result.receipts
+  f5bRenewalMaterialFee = result.renewalMaterialFee
+  f5bReceiptCapabilityState = createF5BReceiptCapabilityState({
+    centerId,
+    status: F5B_RECEIPT_CAPABILITY_STATUS.READY,
+    canWrite: result.canWrite,
+    message: reason === 'after-server-commit' ? 'Phiếu Thu đã được cập nhật.' : '',
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  })
+
+  if (!silent) render()
+  return result
+}
+
+async function refreshTuitionNotices({ reason = 'manual-refresh', silent = true } = {}) {
+  const centerContext = getCurrentCanonicalCenterContext()
+  const centerId = centerContext.centerId
+  const runId = ++tuitionNoticeSyncRunId
+  if (!centerContext.ok) {
+    tuitionNotices = []
+    tuitionNoticeCapabilityState = createTuitionNoticeCapabilityState()
+    return { ok: false, outcome_code: 'INVALID_CENTER' }
+  }
+  tuitionNoticeCapabilityState = createTuitionNoticeCapabilityState({
+    centerId,
+    status: 'loading',
+    isLoading: true,
+    message: silent ? '' : 'Đang tải Thông báo học phí…',
+  })
+  if (!silent) render()
+  const result = await pullTuitionNotices({ supabase: getSupabaseClient(), centerId })
+  if (runId !== tuitionNoticeSyncRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) {
+    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED' }
+  }
+  if (!result.ok) {
+    const unavailable = result.unavailable || isTuitionNoticeBackendUnavailable(result)
+    tuitionNotices = []
+    tuitionNoticeCapabilityState = createTuitionNoticeCapabilityState({
+      centerId,
+      status: unavailable ? 'unavailable' : 'failed',
+      message: unavailable ? '' : result.error || getTuitionNoticeOutcomeMessage(result.outcome_code),
+      messageTone: unavailable ? '' : 'error',
+    })
+    if (!silent) render()
+    return result
+  }
+  tuitionNotices = result.notices
+  tuitionNoticeCapabilityState = createTuitionNoticeCapabilityState({
+    centerId,
+    status: 'ready',
+    canWrite: result.canWrite,
+    message: reason === 'after-server-commit' ? 'Thông báo học phí đã được lưu.' : '',
+    messageTone: 'success',
+    lastLoadedAt: new Date().toISOString(),
+  })
+  if (!silent) render()
+  return result
+}
+
+
+
+async function exportTuitionReceiptById(receiptId, button = null) {
+  if (!receiptId || f5bReceiptPdfExportsInFlight.has(receiptId)) return false
+  const pdfViewer = window.open('', '_blank')
+  if (!pdfViewer) {
+    window.alert('Trình duyệt đang chặn cửa sổ PDF. Hãy cho phép mở cửa sổ mới và thử lại.')
+    return false
+  }
+  const previousLabel = button?.textContent
+  f5bReceiptPdfExportsInFlight.add(receiptId)
+  if (button) {
+    button.disabled = true
+    button.setAttribute('aria-busy', 'true')
+    button.textContent = 'Đang tạo PDF…'
+  }
+  try {
+    pdfViewer.opener = null
+    pdfViewer.document.title = 'Đang tạo Phiếu Thu'
+    pdfViewer.document.body.textContent = 'Đang tạo Phiếu Thu…'
+    let receipt = tuitionOperatorSnapshot.receipts.find((item) => item.id === receiptId)
+    if (!receipt) {
+      await refreshTuitionOperatorSnapshot()
+      receipt = tuitionOperatorSnapshot.receipts.find((item) => item.id === receiptId)
+    }
+    if (!receipt) throw new Error('Chưa tải được Phiếu Thu. Vui lòng làm mới và in lại.')
+    const result = await generateTuitionReceiptPdf(receipt)
+    const objectUrl = URL.createObjectURL(result.blob)
+    pdfViewer.location.replace(objectUrl)
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000)
+    return true
+  } catch (error) {
+    try { pdfViewer.close() } catch { /* visible alert below */ }
+    window.alert(error?.name === 'TuitionReceiptPdfValidationError'
+      ? error.message
+      : 'Không thể mở Phiếu Thu. Vui lòng làm mới và thử lại.')
+    return false
+  } finally {
+    f5bReceiptPdfExportsInFlight.delete(receiptId)
+    if (button?.isConnected) {
+      button.disabled = false
+      button.removeAttribute('aria-busy')
+      button.textContent = previousLabel
+    }
+  }
+}
+
+
+
+async function exportCurrentTuitionDocument(cycleId, button = null) {
+  if (!cycleId || tuitionNoticePdfExportsInFlight.has(cycleId)) return false
+  const pdfViewer = window.open('', '_blank')
+  if (!pdfViewer) {
+    window.alert('Trình duyệt đang chặn cửa sổ PDF. Hãy cho phép mở cửa sổ mới và thử lại.')
+    return false
+  }
+  const previousLabel = button?.textContent
+  tuitionNoticePdfExportsInFlight.add(cycleId)
+  if (button) {
+    button.disabled = true
+    button.setAttribute('aria-busy', 'true')
+    button.textContent = 'Đang tạo TBHP…'
+  }
+  try {
+    pdfViewer.opener = null
+    pdfViewer.document.title = 'Đang tạo TBHP'
+    pdfViewer.document.body.textContent = 'Đang đọc các buổi đã học từ dữ liệu chính thức…'
+    const result = await getPrintableTuitionDocument({
+      supabase: getSupabaseClient(),
+      centerId: getCurrentResolvedCenterId(),
+      cycleId,
+    })
+    if (!result.ok) throw new Error(result.error || getTuitionNoticeOutcomeMessage(result.outcome_code))
+    const pdf = await generateTuitionNoticePdf(result.document)
+    const objectUrl = URL.createObjectURL(pdf.blob)
+    pdfViewer.location.replace(objectUrl)
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000)
+    return true
+  } catch (error) {
+    try { pdfViewer.close() } catch { /* visible alert below */ }
+    window.alert(error?.name === 'TuitionNoticePdfValidationError'
+      ? error.message
+      : 'Không thể mở TBHP. Vui lòng làm mới và thử lại.')
+    return false
+  } finally {
+    tuitionNoticePdfExportsInFlight.delete(cycleId)
+    if (button?.isConnected) {
+      button.disabled = false
+      button.removeAttribute('aria-busy')
+      button.textContent = previousLabel
+    }
+  }
+}
+
+
 
 async function refreshV28AAttendanceOperations({ reason = 'manual-refresh', silent = true } = {}) {
   const centerContext = getCurrentCanonicalCenterContext()
@@ -19770,6 +19589,17 @@ function isC55RetryableStaffHrFailure(result = {}) {
   ].includes(result.outcome_code)
 }
 
+function applyC51AttendanceProjection(projection = {}) {
+  attendanceRecords = Array.isArray(projection.attendanceRecords)
+    ? projection.attendanceRecords
+    : []
+  attendanceBaselineState = normalizeAttendanceBaselineState(projection.baselineState)
+  sessionReports = Array.isArray(projection.sessionReports)
+    ? projection.sessionReports
+    : []
+  inventoryLegacyAttendanceForReview()
+}
+
 async function bootstrapC51AttendanceSessionReportCloudData(
   syncId = cloudUserSyncId,
   { force = false } = {},
@@ -19811,18 +19641,15 @@ async function bootstrapC51AttendanceSessionReportCloudData(
     return result
   }
 
-  const mergeResult = mergeC51CloudRecordsIntoLocal({
-    attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
-    baselineState: loadAttendanceBaselineState(getCurrentResolvedCenterId()),
+  const mergeResult = projectC51AuthoritativeRecords({
+    attendanceRecords,
+    baselineState: attendanceBaselineState,
     sessionReports,
     cloudRecords: result.records,
     authoritativeSnapshot: true,
   })
 
-  saveStoredAttendanceRecords(getCurrentResolvedCenterId(), mergeResult.attendanceRecords)
-  saveAttendanceBaselineState(getCurrentResolvedCenterId(), mergeResult.baselineState)
-  sessionReports = mergeResult.sessionReports
-  saveStoredSessionReports(sessionReports)
+  applyC51AttendanceProjection(mergeResult)
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: 'ready',
@@ -19981,16 +19808,13 @@ async function writeC52AttendanceSessionReportThroughCloud({
 
   let projection = null
   if (result.ok && Array.isArray(result.records) && result.records.length) {
-    const mergeResult = mergeC51CloudRecordsIntoLocal({
-      attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
-      baselineState: loadAttendanceBaselineState(getCurrentResolvedCenterId()),
+    const mergeResult = projectC51AuthoritativeRecords({
+      attendanceRecords,
+      baselineState: attendanceBaselineState,
       sessionReports,
       cloudRecords: result.records,
     })
-    saveStoredAttendanceRecords(getCurrentResolvedCenterId(), mergeResult.attendanceRecords)
-    saveAttendanceBaselineState(getCurrentResolvedCenterId(), mergeResult.baselineState)
-    sessionReports = mergeResult.sessionReports
-    saveStoredSessionReports(sessionReports)
+    applyC51AttendanceProjection(mergeResult)
     projection = mergeResult
   }
 
@@ -20057,7 +19881,7 @@ async function writeV23OccurrenceAttendanceThroughCloud({
     occurrence: cloneC52OperationalCommandValue(occurrence),
     attendanceInputs: cloneC52OperationalCommandValue(attendanceInputs),
     currentRecords: cloneC52OperationalCommandValue(
-      loadStoredAttendanceRecords(centerId),
+      attendanceRecords,
     ),
     sessionReport: cloneC52OperationalCommandValue(sessionReport),
     idempotencyKey: createOperationalCommandIdempotencyKey(),
@@ -20104,16 +19928,13 @@ async function writeV23OccurrenceAttendanceThroughCloud({
     return result
   }
 
-  const mergeResult = mergeC51CloudRecordsIntoLocal({
-    attendanceRecords: loadStoredAttendanceRecords(centerId),
-    baselineState: loadAttendanceBaselineState(centerId),
+  const mergeResult = projectC51AuthoritativeRecords({
+    attendanceRecords,
+    baselineState: attendanceBaselineState,
     sessionReports,
     cloudRecords: result.records,
   })
-  saveStoredAttendanceRecords(centerId, mergeResult.attendanceRecords)
-  saveAttendanceBaselineState(centerId, mergeResult.baselineState)
-  sessionReports = mergeResult.sessionReports
-  saveStoredSessionReports(sessionReports)
+  applyC51AttendanceProjection(mergeResult)
   v23AttendanceRetryCommands.delete(retryScope)
   cloudDbState = {
     ...cloudDbState,
@@ -20248,9 +20069,9 @@ function handleC51AttendanceRealtimeRecord(record) {
     return
   }
 
-  const mergeResult = mergeC51CloudRecordsIntoLocal({
-    attendanceRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
-    baselineState: loadAttendanceBaselineState(getCurrentResolvedCenterId()),
+  const mergeResult = projectC51AuthoritativeRecords({
+    attendanceRecords,
+    baselineState: attendanceBaselineState,
     sessionReports,
     cloudRecords: [record],
   })
@@ -20259,10 +20080,7 @@ function handleC51AttendanceRealtimeRecord(record) {
     return
   }
 
-  saveStoredAttendanceRecords(getCurrentResolvedCenterId(), mergeResult.attendanceRecords)
-  saveAttendanceBaselineState(getCurrentResolvedCenterId(), mergeResult.baselineState)
-  sessionReports = mergeResult.sessionReports
-  saveStoredSessionReports(sessionReports)
+  applyC51AttendanceProjection(mergeResult)
   render()
 }
 
@@ -20327,284 +20145,13 @@ async function bootstrapC52TuitionRecordPackageCloudData(
   return { ...result, ok: true, projection: mergeResult }
 }
 
-async function writeC52TuitionRecordPackageThroughCloud(
-  tuitionRecord,
-  reason = 'tuition-local-save',
-  auditContext = {},
-  idempotencyKey,
-) {
-  const unavailableUpstreams = ['core', 'tuition']
-    .filter((upstream) => !isModuleUpstreamCurrent('hoc-phi', upstream))
-  if (unavailableUpstreams.length) {
-    return {
-      ok: false,
-      skipped: true,
-      outcome_code: 'REQUIRED_REFRESH_UNAVAILABLE',
-      error: 'Dữ liệu học phí chưa được tải mới. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng bấm Làm mới rồi thử lại.',
-    }
-  }
 
-  const writeCenterId = getCurrentResolvedCenterId()
-  const accessState = buildCurrentOnlineAccessState({
-    cloudReady: cloudDbState.readinessStatus === 'ready',
-  })
-  const access = canWriteC52TuitionRecordPackageEntity(accessState)
 
-  if (!access.canWrite) {
-    if (cloudStatus.authStatus === 'signed-in') {
-      cloudDbState = {
-        ...cloudDbState,
-        message: access.teacherConsultantHold || C52_TEACHER_CONSULTANT_WRITE_HOLD,
-        messageTone: 'error',
-        lastUpdatedAt: new Date().toISOString(),
-      }
-    }
-    return { ok: false, skipped: true, error: access.teacherConsultantHold || access.message }
-  }
 
-  const runId = ++c52TuitionCloudWriteRunId
-  const readiness = await checkCloudDbReadiness(writeCenterId)
 
-  if (!readiness.ok) {
-    if (runId === c52TuitionCloudWriteRunId) {
-      cloudDbState = {
-        ...cloudDbState,
-        readinessStatus: 'error',
-        message: readiness.error,
-        messageTone: 'error',
-        lastUpdatedAt: new Date().toISOString(),
-      }
-      render()
-    }
-    return readiness
-  }
 
-  const preservation = ensureC5CloseoutLegacyCoreAttendancePreserved()
-  if (!preservation.ok) {
-    cloudDbState = {
-      ...cloudDbState,
-      message: preservation.error,
-      messageTone: 'error',
-      lastUpdatedAt: new Date().toISOString(),
-    }
-    render()
-    return preservation
-  }
 
-  if (
-    runId !== c52TuitionCloudWriteRunId
-    || readiness.centerId !== writeCenterId
-    || getCurrentResolvedCenterId() !== writeCenterId
-  ) {
-    return {
-      ok: false,
-      outcome_code: 'CENTER_CONTEXT_CHANGED',
-      error: 'Cơ sở đã thay đổi; yêu cầu lưu học phí chưa được gửi. Thông tin bạn nhập vẫn được giữ nguyên.',
-    }
-  }
 
-  const writeAccessState = buildOnlineAccessState({
-    isSupabaseConfigured: true,
-    isSignedIn: Boolean(readiness.user),
-    user: readiness.user,
-    centerId: readiness.centerId,
-    membership: readiness.membership,
-    role: readiness.membership?.role,
-    cloudReady: readiness.ready !== false,
-  })
-  const result = await upsertC52TuitionRecordPackageCloudEntities({
-    supabase: readiness.supabase,
-    centerId: readiness.centerId,
-    tuitionRecords: tuitionRecord ? [tuitionRecord] : [],
-    userId: readiness.user?.id,
-    accessState: writeAccessState,
-    idempotencyKey,
-  })
-
-  if (
-    runId !== c52TuitionCloudWriteRunId
-    || getCurrentResolvedCenterId() !== writeCenterId
-  ) {
-    return {
-      ...result,
-      ok: false,
-      committed: Boolean(result.ok),
-      outcome_code: 'CENTER_CONTEXT_CHANGED',
-      error: result.ok
-        ? 'Học phí đã được lưu tại cơ sở trước đó nhưng màn hình hiện tại chưa được cập nhật.'
-        : result.error || 'Cơ sở đã thay đổi; màn hình học phí hiện tại chưa được cập nhật.',
-    }
-  }
-
-  let projectionRecord = null
-  if (result.ok && tuitionRecord) {
-    const mergeResult = mergeC52TuitionCloudRecordsIntoLocal({
-      tuitionRecords,
-      cloudRecords: result.records,
-    })
-    tuitionRecords = mergeResult.tuitionRecords
-    saveStoredTuition(tuitionRecords)
-    notifications = syncTuitionNotifications(notifications)
-    projectionRecord = tuitionRecords.find((record) => record.id === tuitionRecord.id) || null
-    result.projectionRecord = projectionRecord
-
-    void writeC53TuitionAuditLogEntry({
-      supabase: readiness.supabase,
-      centerId: readiness.centerId,
-      userId: readiness.user?.id,
-      accessState: writeAccessState,
-      tuitionRecord: projectionRecord || tuitionRecord,
-      beforePayload: auditContext.beforePayload || null,
-      reason,
-    })
-  }
-
-  cloudDbState = {
-    ...cloudDbState,
-    readinessStatus: result.ok ? 'ready' : cloudDbState.readinessStatus,
-    message: result.ok
-      ? `Đã lưu học phí (${result.count || 0} mục).`
-      : result.error || 'Chưa lưu được học phí. Thông tin bạn nhập vẫn được giữ nguyên.',
-    messageTone: result.ok ? 'success' : 'error',
-    lastUpdatedAt: new Date().toISOString(),
-  }
-  render()
-  return result
-}
-
-async function writeC53TuitionAuditLogEntry({
-  supabase,
-  centerId,
-  userId,
-  accessState,
-  tuitionRecord,
-  beforePayload = null,
-  reason = 'tuition-local-save',
-} = {}) {
-  if (!tuitionRecord) {
-    return { ok: false, skipped: true, error: 'Missing tuition record.' }
-  }
-
-  const entityLocalId = createTuitionRecordPackageLocalId(tuitionRecord)
-  const afterPayload = tuitionRecord && typeof tuitionRecord === 'object' ? { ...tuitionRecord } : null
-  const changedFields = getChangedFields(beforePayload, afterPayload)
-  const action = getC53TuitionAuditAction(reason, beforePayload)
-
-  const result = await writeC53AuditLogEntry({
-    supabase,
-    centerId,
-    userId,
-    accessState,
-    entry: {
-      entityType: 'tuition_record_package',
-      entityLocalId,
-      action,
-      beforePayload,
-      afterPayload,
-      changedFields,
-      reason,
-    },
-  })
-
-  if (!result.ok && !result.skipped) {
-    console.warn('C5.3C audit_log_entry write failed; tuition save remains local/cloud safe.', result.error || result)
-  }
-
-  return result
-}
-
-function getC53TuitionAuditAction(reason, beforePayload) {
-  if (reason === 'tuition-payment-save') {
-    return 'payment_update'
-  }
-
-  if (!beforePayload) {
-    return 'create'
-  }
-
-  if (reason === 'tuition-package-save') {
-    return 'update'
-  }
-
-  return 'unknown_update'
-}
-
-async function openTuitionRollbackPreview(tuitionRecord) {
-  const entityLocalId = createTuitionRecordPackageLocalId(tuitionRecord)
-
-  tuitionRollbackPreviewState = {
-    status: 'loading',
-    tuitionId: tuitionRecord.id,
-    entityLocalId,
-    entries: [],
-    previews: [],
-    message: 'Đang tải lịch sử thay đổi...',
-  }
-  tuitionFormState = null
-  clearTuitionPaymentFormState()
-  tuitionDetailState = null
-  tuitionCareNoteState = null
-  tuitionAdvisoryWindowState = null
-  render()
-
-  const readiness = await checkCloudDbReadiness(getCurrentResolvedCenterId())
-
-  if (!readiness.ok) {
-    tuitionRollbackPreviewState = {
-      status: 'error',
-      tuitionId: tuitionRecord.id,
-      entityLocalId,
-      entries: [],
-      previews: [],
-      message: readiness.error || 'Không đọc được audit log để xem trước.',
-    }
-    render()
-    return
-  }
-
-  const accessState = buildOnlineAccessState({
-    isSupabaseConfigured: true,
-    isSignedIn: Boolean(readiness.user),
-    user: readiness.user,
-    centerId: readiness.centerId,
-    membership: readiness.membership,
-    role: readiness.membership?.role,
-    cloudReady: readiness.ready !== false,
-  })
-  const result = await loadAuditEntriesForEntity({
-    supabase: readiness.supabase,
-    centerId: readiness.centerId,
-    entityType: 'tuition_record_package',
-    entityLocalId,
-    accessState,
-  })
-
-  if (!result.ok) {
-    tuitionRollbackPreviewState = {
-      status: 'error',
-      tuitionId: tuitionRecord.id,
-      entityLocalId,
-      entries: [],
-      previews: [],
-      message: result.error || 'Không có quyền xem bản xem trước khôi phục.',
-    }
-    render()
-    return
-  }
-
-  const previews = result.entries.map((entry) => buildRollbackPreviewFromAuditEntry(entry))
-  tuitionRollbackPreviewState = {
-    status: result.empty ? 'empty' : 'ready',
-    tuitionId: tuitionRecord.id,
-    entityLocalId,
-    entries: result.entries,
-    previews,
-    message: result.empty
-      ? 'Không có bản ghi audit để xem trước.'
-      : `Đã tải ${previews.length} bản ghi lịch sử thay đổi.`,
-  }
-  render()
-}
 
 async function startC52TuitionRealtimeSubscription(syncId = cloudUserSyncId) {
   if (!canUseCoreCloudDb() || c52TuitionRealtimeCenterId === getCurrentResolvedCenterId()) {
@@ -23215,7 +22762,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-window-id]').forEach((windowElement) => {
     windowElement.addEventListener('pointerdown', (event) => {
-      if (event.target.closest('[data-student-detail-action]')) {
+      if (event.target.closest('[data-student-detail-action], [data-student-overview-action]')) {
         return
       }
 
@@ -23339,63 +22886,12 @@ function bindEvents() {
     render()
   })
 
-  document.querySelectorAll('[data-tuition-filter]').forEach((control) => {
-    control.addEventListener('input', (event) => {
-      const filterName = control.dataset.tuitionFilter
-      const selectionStart = 'selectionStart' in control ? control.selectionStart : null
-      const selectionEnd = 'selectionEnd' in control ? control.selectionEnd : null
-
-      withTuitionViewportLock(() => {
-        tuitionFilters = {
-          ...tuitionFilters,
-          [filterName]: control.value,
-        }
-        render()
-
-        const nextControl = document.querySelector(`[data-tuition-filter="${filterName}"]`)
-        focusElementWithoutScrolling(nextControl)
-
-        if (selectionStart !== null && selectionEnd !== null && 'setSelectionRange' in nextControl) {
-          nextControl.setSelectionRange(selectionStart, selectionEnd)
-        }
-      }, event)
-    })
-  })
-
   document.querySelectorAll('[data-module-authoritative-refresh]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation()
       void refreshModuleAuthoritativeUpstreams(button.dataset.moduleAuthoritativeRefresh, {
         reason: 'manual-refresh',
       })
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-advisory-action="save"]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      await withTuitionViewportLock(async () => {
-        const studentId = button.dataset.studentId
-        const monthKey = button.dataset.monthKey
-        const careStatus =
-          document.querySelector(`[data-tuition-advisory-care-status="${studentId}"]`)?.value ||
-          'auto'
-        const note =
-          document.querySelector(`[data-tuition-advisory-note="${studentId}"]`)?.value || ''
-        const identity = `${studentId}:${monthKey}`
-        const existingNote = attendanceAdvisoryNotes.find(
-          (item) => `${item.studentId}:${item.monthKey}` === identity,
-        )
-        const nextNote = {
-          ...existingNote,
-          studentId,
-          monthKey,
-          careStatus,
-          note: note.trim(),
-        }
-        await writeC57CalendarNotesCommand(buildC57UpsertAdvisoryNoteCommand(nextNote), {
-          reason: 'attendance-advisory-note-save',
-        })
-      }, event)
     })
   })
 
@@ -24029,9 +23525,9 @@ function bindEvents() {
   })
 
   document.querySelector('[data-report-action="print"]')?.addEventListener('click', () => {
-    const attendanceRecords = buildUnifiedAttendanceRecords({
+    const unifiedAttendanceRecords = buildUnifiedAttendanceRecords({
       sessionReports,
-      storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+      storedRecords: attendanceRecords,
     })
     const printWindow = window.open('', 'ichess-report-print', 'width=960,height=720')
 
@@ -24046,7 +23542,7 @@ function bindEvents() {
         draft: reportState.draft,
         students,
         cashflowTransactions,
-        attendanceRecords,
+        attendanceRecords: unifiedAttendanceRecords,
         centerInfo: getCurrentCanonicalCenterContext(),
       }),
     )
@@ -24072,16 +23568,16 @@ function bindEvents() {
   })
 
   document.querySelector('[data-report-action="download"]')?.addEventListener('click', () => {
-    const attendanceRecords = buildUnifiedAttendanceRecords({
+    const unifiedAttendanceRecords = buildUnifiedAttendanceRecords({
       sessionReports,
-      storedRecords: loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+      storedRecords: attendanceRecords,
     })
     const content = buildReportDownloadText({
       filters: reportState.filters,
       draft: reportState.draft,
       students,
       cashflowTransactions,
-      attendanceRecords,
+      attendanceRecords: unifiedAttendanceRecords,
       centerInfo: getCurrentCanonicalCenterContext(),
     })
     const blob = new Blob([`\uFEFF${content}`], {
@@ -24832,7 +24328,7 @@ function bindEvents() {
       cashbookReconciliationFormState = createCashbookReconciliationFormState(
         currentReconciliation,
         activeDate,
-        getActiveCashbookSystemClosingBalance(),
+        getActiveCashbookPhysicalCashBalance(),
       )
       render()
     },
@@ -24927,7 +24423,7 @@ function bindEvents() {
       const nextReconciliation = buildCashbookReconciliationFromForm(
         {
           ...cashbookReconciliationFormState.values,
-          systemClosingBalance: getActiveCashbookSystemClosingBalance(),
+          systemClosingBalance: getActiveCashbookPhysicalCashBalance(),
         },
         existingReconciliation,
       )
@@ -25681,1115 +25177,7 @@ function bindEvents() {
     },
   )
 
-  document.querySelectorAll('[data-v24-action]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const centerId = getCurrentCanonicalCenterContext().centerId
-      if (!isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)) {
-        window.alert('Tiến độ chu kỳ học phí chưa sẵn sàng. Hãy bấm Làm mới rồi thử lại.')
-        return
-      }
-      const action = button.dataset.v24Action
-      const studentId = String(button.dataset.v24StudentId || '').trim()
-      const state = getV24StudentCycleState(v24PackageCycleStudentStates, studentId)
-      let command
-      try {
-        if (action === 'start-cycle') {
-          const panel = button.closest('.tuition-cycle-panel')
-          command = buildV24StartCycleCommand({
-            studentId,
-            tuitionLocalId: button.dataset.v24TuitionLocalId,
-            packageCatalogId: panel?.querySelector('[data-v24-start-field="package"]')?.value,
-            baselineUsedSessions: panel?.querySelector('[data-v24-start-field="baseline"]')?.value,
-            baselineCutoffDate: panel?.querySelector('[data-v24-start-field="cutoff"]')?.value,
-            baselineReviewNote: panel?.querySelector('[data-v24-start-field="review-note"]')?.value,
-          })
-        } else if (action === 'select-package') {
-          const cycle = state?.currentCycle
-          if (!cycle || cycle.id !== button.dataset.v24CycleId) throw new Error('Chu kỳ đã thay đổi. Hãy tải lại.')
-          command = buildV24SelectProvisionalPackageCommand(
-            cycle,
-            button.closest('.tuition-cycle-panel')?.querySelector('[data-v24-select-package]')?.value,
-          )
-        } else if (action === 'bcht-progress' || action === 'bcht-complete') {
-          const cycle = state?.currentCycle
-          if (!cycle || cycle.id !== button.dataset.v24CycleId) throw new Error('Chu kỳ đã thay đổi. Hãy tải lại.')
-          command = buildV24UpdateBchtCommand(
-            cycle,
-            action === 'bcht-complete' ? 'COMPLETED' : 'IN_PROGRESS',
-            button.closest('.tuition-cycle-panel')?.querySelector('[data-v24-bcht-note]')?.value || '',
-          )
-        } else {
-          return
-        }
-      } catch (error) {
-        window.alert(String(error?.message || error))
-        return
-      }
-      button.disabled = true
-      const result = await writeV24PackageCycleCommand(command, action)
-      if (!result.ok) {
-        button.disabled = false
-        window.alert(result.error || 'Chưa thể lưu tiến độ chu kỳ học phí.')
-      }
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-form"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const student = students.find((item) => item.id === button.dataset.tuitionStudentId)
-
-      if (!student) {
-        return
-      }
-
-      const tuitionRecord = tuitionRecords.find((record) => record.studentId === student.id)
-      tuitionFormState = tuitionRecord
-        ? createEditTuitionFormState(student, tuitionRecord)
-        : createEmptyTuitionFormState(student)
-      tuitionPeriodActionConfirmationState = null
-      clearTuitionPaymentFormState()
-      tuitionDetailState = null
-      tuitionRollbackPreviewState = null
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-row-student-id]').forEach((row) => {
-    row.addEventListener('click', (event) => {
-      if (
-        event.target.closest('[data-tuition-action="open-debt"]') ||
-        event.target.closest('[data-tuition-action="open-detail"]') ||
-        event.target.closest('[data-tuition-action="open-rollback-preview"]') ||
-        event.target.closest('[data-tuition-action="open-care-notes"]')
-      ) {
-        return
-      }
-
-      openTuitionPackageForm(row.dataset.tuitionRowStudentId)
-    })
-
-    row.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') {
-        return
-      }
-
-      if (
-        event.target.closest('[data-tuition-action="open-debt"]') ||
-        event.target.closest('[data-tuition-action="open-detail"]') ||
-        event.target.closest('[data-tuition-action="open-rollback-preview"]') ||
-        event.target.closest('[data-tuition-action="open-care-notes"]')
-      ) {
-        return
-      }
-
-      event.preventDefault()
-      openTuitionPackageForm(row.dataset.tuitionRowStudentId)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-payment"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const student = students.find((item) => item.id === button.dataset.tuitionStudentId)
-      const tuitionRecord = tuitionRecords.find((record) => record.studentId === button.dataset.tuitionStudentId)
-
-      if (!student || !tuitionRecord) {
-        return
-      }
-
-      tuitionPeriodActionConfirmationState = null
-      openTuitionPaymentForm(student, tuitionRecord)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-debt"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      const student = students.find((item) => item.id === button.dataset.tuitionStudentId)
-      const tuitionRecord = tuitionRecords.find((record) => record.studentId === button.dataset.tuitionStudentId)
-
-      if (!student || !tuitionRecord) {
-        return
-      }
-
-      openTuitionPaymentForm(student, tuitionRecord)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-detail"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      tuitionDetailState = {
-        studentId: button.dataset.tuitionStudentId,
-      }
-      tuitionFormState = null
-      tuitionPeriodActionConfirmationState = null
-      clearTuitionPaymentFormState()
-      tuitionRollbackPreviewState = null
-      tuitionCareNoteState = null
-      tuitionAdvisoryWindowState = null
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-payment-open-transaction]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      openTuitionPaymentSourceTransaction(button.dataset.tuitionPaymentOpenTransaction)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-payment-void]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-
-      if (!areModuleActionUpstreamsCurrent('hoc-phi', 'payment')) {
-        window.alert('Dữ liệu Học phí hoặc Thu chi chưa tải xong. Vui lòng bấm Làm mới rồi thử lại.')
-        return
-      }
-      const transactionId = String(button.dataset.tuitionPaymentVoid || '').trim()
-      const transaction = cashflowTransactions.find((item) => item.id === transactionId)
-      if (!transaction) {
-        window.alert('Không tìm thấy khoản thu trong dữ liệu vừa tải. Vui lòng bấm Làm mới.')
-        return
-      }
-      if (!window.confirm(
-        'Khoản thu sẽ được đánh dấu đã hủy và vẫn được giữ trong lịch sử. Bạn có muốn tiếp tục?',
-      )) return
-
-      const retryScope = `${getCurrentResolvedCenterId()}|${transactionId}`
-      const previousReason = c54TuitionPaymentVoidRetryCommands.get(retryScope)?.command?.reason || ''
-      const reason = window.prompt('Nhập lý do hủy khoản thu (ít nhất 3 ký tự):', previousReason)
-      if (reason === null) return
-
-      const result = await writeC54TuitionPaymentVoid(transaction, reason)
-      if (!result.ok) {
-        window.alert(result.error || 'Không thể hủy khoản thu lúc này.')
-        return
-      }
-      window.alert('Khoản thu đã được hủy. Lịch sử giao dịch vẫn được giữ lại.')
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-rollback-preview"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      const tuitionRecord = tuitionRecords.find((record) => record.id === button.dataset.tuitionId)
-
-      if (!tuitionRecord) {
-        return
-      }
-
-      void openTuitionRollbackPreview(tuitionRecord)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-care-notes"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      withTuitionViewportLock(() => {
-        const studentId = button.dataset.tuitionStudentId
-
-        if (!students.some((student) => String(student.id) === String(studentId))) {
-          return
-        }
-
-        tuitionCareNoteState = createTuitionCareNoteState(studentId)
-        tuitionFormState = null
-        clearTuitionPaymentFormState()
-        tuitionDetailState = null
-        tuitionRollbackPreviewState = null
-        tuitionAdvisoryWindowState = null
-        render()
-      }, event)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-advisory-window"]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      await withTuitionViewportLock(async () => {
-        const refresh = await refreshModuleAuthoritativeUpstreams('hoc-phi', {
-          reason: 'attendance-advisory-surface-open',
-        })
-        if (!refresh.ok) return
-        tuitionAdvisoryWindowState = { isOpen: true }
-        tuitionFormState = null
-        clearTuitionPaymentFormState()
-        tuitionDetailState = null
-        tuitionRollbackPreviewState = null
-        tuitionCareNoteState = null
-        render()
-      }, event)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-action="cancel-form"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      tuitionFormState = null
-      tuitionPeriodActionConfirmationState = null
-      tuitionRollbackPreviewState = null
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-payment-action="cancel-payment"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      tuitionPeriodActionConfirmationState = null
-      clearTuitionPaymentFormState()
-      tuitionRollbackPreviewState = null
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-detail-action="close-detail"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      tuitionDetailState = null
-      tuitionPeriodActionConfirmationState = null
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-rollback-preview-action="close"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      tuitionRollbackPreviewState = null
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-care-note-field]').forEach((control) => {
-    control.addEventListener('input', () => {
-      if (!tuitionCareNoteState) {
-        return
-      }
-
-      tuitionCareNoteState = {
-        ...tuitionCareNoteState,
-        values: {
-          ...tuitionCareNoteState.values,
-          [control.dataset.tuitionCareNoteField]: control.value,
-        },
-        error: '',
-        saveState: '',
-      }
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-care-note-suggestion]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      withTuitionViewportLock(() => {
-      if (!tuitionCareNoteState) {
-        return
-      }
-
-      const suggestion = button.dataset.tuitionCareNoteSuggestion || ''
-      const currentContent = String(tuitionCareNoteState.values.content || '').trim()
-
-      tuitionCareNoteState = {
-        ...tuitionCareNoteState,
-        values: {
-          ...tuitionCareNoteState.values,
-          tag: tuitionCareNoteState.values.tag || 'Học phí',
-          content: currentContent ? `${currentContent}\n${suggestion}` : suggestion,
-        },
-        error: '',
-        saveState: '',
-      }
-      render()
-      }, event)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-care-note-action]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      withTuitionViewportLock(() => {
-      const action = button.dataset.tuitionCareNoteAction
-
-      if (action === 'close') {
-        tuitionCareNoteState = null
-        render()
-        return
-      }
-
-      if (action === 'clear') {
-        tuitionCareNoteState = tuitionCareNoteState
-          ? createTuitionCareNoteState(tuitionCareNoteState.studentId)
-          : null
-        render()
-        return
-      }
-
-      if (action === 'edit') {
-        const studentId = tuitionCareNoteState?.studentId
-        const noteId = String(button.dataset.tuitionCareNoteId || '')
-        const note = getStudentById(studentId)?.careNotes?.find(
-          (item) => String(item.id) === noteId,
-        )
-        if (!studentId || !note) {
-          tuitionCareNoteState = createTuitionCareNoteState(studentId, {
-            error: 'Không tìm thấy ghi chú trong dữ liệu vừa tải. Hãy làm mới rồi thử lại.',
-          })
-          render()
-          return
-        }
-        tuitionCareNoteState = createTuitionCareNoteState(studentId, {
-          editingNoteId: noteId,
-          values: {
-            tag: Array.isArray(note.tags) ? String(note.tags[0] || '') : '',
-            content: String(note.content || ''),
-          },
-        })
-        render()
-        return
-      }
-
-      if (action === 'save') {
-        if (tuitionCareNoteState?.isSaving) return
-        saveTuitionCareNote()
-      }
-      }, event)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-advisory-window-action]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      withTuitionViewportLock(() => {
-        tuitionAdvisoryWindowState = null
-        render()
-      }, event)
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-package-option-id]').forEach((button) => {
-    button.addEventListener('click', () => {
-      if (!tuitionFormState) {
-        return
-      }
-
-      const packageId = String(button.dataset.tuitionPackageOptionId || '')
-      const centerId = getCurrentCanonicalCenterContext().centerId
-      const authoritativeCatalog = isV21CenterSettingsCapabilityReady(
-        v21CenterSettingsCapabilityState,
-        centerId,
-      )
-        ? v21TuitionPackages
-        : v24PackageCycleCatalog
-      const tuitionPackage = authoritativeCatalog
-        .find((item) => item?.id === packageId && item?.isActive === true)
-      if (!tuitionPackage) {
-        tuitionFormState = {
-          ...tuitionFormState,
-          errors: {
-            ...tuitionFormState.errors,
-            form: 'Gói vừa chọn không còn hoạt động. Hãy tải lại danh mục gói.',
-          },
-        }
-        render()
-        return
-      }
-      tuitionFormState = {
-        ...tuitionFormState,
-        commandIdempotencyKey: null,
-        pendingAuthoritativeRecord: null,
-        values: {
-          ...tuitionFormState.values,
-          packageCatalogId: tuitionPackage.id,
-          packageName: tuitionPackage.packageName,
-          totalSessions: String(tuitionPackage.totalSessions),
-          totalAmount: formatMoneyInputForRuntime(tuitionPackage.defaultAmount),
-        },
-        errors: {
-          ...tuitionFormState.errors,
-          form: undefined,
-          packageName: undefined,
-          totalSessions: undefined,
-          totalAmount: undefined,
-        },
-      }
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-detail-action="edit"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      openTuitionPackageForm(button.dataset.tuitionStudentId)
-    })
-  })
-
-  document.querySelector('[data-tuition-package-custom]')?.addEventListener('click', () => {
-    if (!tuitionFormState) return
-    tuitionFormState = {
-      ...tuitionFormState,
-      commandIdempotencyKey: null,
-      pendingAuthoritativeRecord: null,
-      values: {
-        ...tuitionFormState.values,
-        packageCatalogId: '',
-      },
-      errors: {
-        ...tuitionFormState.errors,
-        form: undefined,
-      },
-    }
-    render()
-  })
-
-  document.querySelector('[data-tuition-action="open-renew"]')?.addEventListener('click', (event) => {
-    const tuitionRecord = tuitionRecords.find((record) => record.id === event.currentTarget.dataset.tuitionId)
-    const student = tuitionRecord
-      ? students.find((item) => item.id === tuitionRecord.studentId)
-      : null
-
-    if (!student || !tuitionRecord) {
-      return
-    }
-
-    tuitionFormState = createRenewTuitionFormState(student, tuitionRecord)
-    tuitionPeriodActionConfirmationState = null
-    clearTuitionPaymentFormState()
-    tuitionDetailState = null
-    render()
-  })
-
-  document.querySelectorAll('[data-tuition-action="open-undo-empty-period"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-
-      if (!areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')) {
-        window.alert('Chưa tải được số đã thu hiện tại. Vui lòng bấm Làm mới rồi thử lại.')
-        return
-      }
-
-      if (!isModuleUpstreamCurrent('hoc-phi', 'attendance')) {
-        window.alert('Chưa tải được dữ liệu điểm danh để kiểm tra kỳ học. Vui lòng bấm Làm mới rồi thử lại.')
-        return
-      }
-
-      const tuitionRecord = getLatestTuitionRecordForCurrentCenter(button.dataset.tuitionId)
-      const student = tuitionRecord
-        ? students.find((item) => item.id === tuitionRecord.studentId)
-        : null
-      const centerId = getCurrentResolvedCenterId()
-      const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
-      const eligibility = getTuitionEmptyPeriodUndoEligibility({
-        tuitionRecord,
-        expectedPeriodId: tuitionRecord ? getCurrentTuitionPeriodId(tuitionRecord) : '',
-        cashflowLedger: latestCashflowTransactions,
-        attendanceRecords: getCurrentUnifiedAttendanceRecordsForTuitionGuard(centerId),
-        centerId,
-        fromCurrentCenterCollection: true,
-      })
-
-      cashflowTransactions = latestCashflowTransactions
-      tuitionPeriodActionConfirmationState = tuitionRecord && student
-        ? createTuitionPeriodConfirmationState('undo-empty-period', tuitionRecord, student, {
-            reasons: eligibility.reasons,
-          })
-        : {
-            action: 'undo-empty-period',
-            tuitionId: button.dataset.tuitionId || '',
-            studentName: '',
-            periodLabel: 'Kỳ hiện tại',
-            centerId,
-            periodId: '',
-            reasons: eligibility.reasons,
-            isSaving: false,
-          }
-      render()
-    })
-  })
-
-  const handleTuitionFormSave = async (event, options = {}) => {
-    event?.preventDefault?.()
-    event?.stopPropagation?.()
-
-    if (!tuitionFormState || tuitionFormState.isSaving) {
-      return
-    }
-
-    if (
-      tuitionFormState.mode === 'renew' &&
-      !areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')
-    ) {
-      tuitionFormState = {
-        ...tuitionFormState,
-        errors: {
-          ...tuitionFormState.errors,
-          form: 'Chưa tải được số đã thu hiện tại. Thông tin bạn nhập vẫn được giữ nguyên.',
-        },
-      }
-      render()
-      return
-    }
-
-    const errors = tuitionFormState.mode === 'renew'
-      ? validateRenewTuitionForm(tuitionFormState.values)
-      : validateTuitionForm(tuitionFormState.values)
-
-    if (Object.keys(errors).length) {
-      tuitionFormState = {
-        ...tuitionFormState,
-        errors,
-      }
-      render()
-      return
-    }
-
-    if (options.confirmedRenew) {
-      tuitionRecords = getStoredTuition([])
-      cashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(getCurrentResolvedCenterId())
-    }
-
-    const currentRecord = tuitionRecords.find((record) => record.id === tuitionFormState.tuitionId)
-    const student = currentRecord
-      ? students.find((item) => item.id === currentRecord.studentId)
-      : students.find((item) => item.id === tuitionFormState.studentId)
-
-    if (
-      options.confirmedRenew &&
-      tuitionPeriodActionConfirmationState?.periodId &&
-      currentRecord &&
-      getCurrentTuitionPeriodId(currentRecord) !== tuitionPeriodActionConfirmationState.periodId
-    ) {
-      tuitionPeriodActionConfirmationState = {
-        ...tuitionPeriodActionConfirmationState,
-        isSaving: false,
-        reasons: ['Dữ liệu kỳ học đã thay đổi, vui lòng mở lại hồ sơ.'],
-      }
-      render()
-      return
-    }
-
-    if (tuitionFormState.mode === 'renew' && !options.confirmedRenew) {
-      if (!currentRecord || !student) {
-        return
-      }
-
-      tuitionPeriodActionConfirmationState = createTuitionPeriodConfirmationState(
-        'renew-create',
-        currentRecord,
-        student,
-      )
-      render()
-      return
-    }
-
-    const commandIdempotencyKey = tuitionFormState.commandIdempotencyKey
-      || createOperationalCommandIdempotencyKey()
-    const normalizedValues = normalizeTuitionFormValues(tuitionFormState.values)
-    const savedAt = new Date().toISOString()
-    const nextRecord = tuitionFormState.pendingAuthoritativeRecord
-      || (tuitionFormState.mode === 'renew' && currentRecord
-      ? {
-          ...createRenewedTuitionRecord(
-            currentRecord,
-            normalizedValues,
-            readLatestCashflowTransactionsForCurrentCenter(getCurrentResolvedCenterId()),
-            getCurrentResolvedCenterId(),
-          ),
-          updatedAt: savedAt,
-        }
-      : {
-          id: tuitionFormState.tuitionId || `tuition-${tuitionFormState.studentId}-${commandIdempotencyKey}`,
-          studentId: tuitionFormState.studentId,
-          ...normalizedValues,
-          paidAmount: currentRecord?.paidAmount ?? 0,
-          payments: currentRecord?.payments ?? [],
-          currentTermNumber: currentRecord?.currentTermNumber ?? 1,
-          currentTermId:
-            currentRecord?.currentTermId ??
-            `term-${tuitionFormState.tuitionId || tuitionFormState.studentId}-${commandIdempotencyKey}`,
-          startedAt: currentRecord?.startedAt ?? savedAt,
-          termHistory: currentRecord?.termHistory ?? [],
-          createdAt: currentRecord?.createdAt ?? savedAt,
-          updatedAt: savedAt,
-        })
-
-    tuitionFormState = {
-      ...tuitionFormState,
-      isSaving: true,
-      commandIdempotencyKey,
-      pendingAuthoritativeRecord: nextRecord,
-      errors: {},
-    }
-    render()
-    const result = await writeC52TuitionRecordPackageThroughCloud(nextRecord, 'tuition-package-save', {
-      beforePayload: currentRecord ? { ...currentRecord } : null,
-    }, commandIdempotencyKey)
-    if (!result.ok) {
-      tuitionFormState = {
-        ...tuitionFormState,
-        isSaving: false,
-        errors: {
-          ...tuitionFormState?.errors,
-          form: result.error || 'Chưa lưu được học phí. Thông tin bạn nhập vẫn được giữ nguyên.',
-        },
-      }
-      if (tuitionPeriodActionConfirmationState) {
-        tuitionPeriodActionConfirmationState = {
-          ...tuitionPeriodActionConfirmationState,
-          isSaving: false,
-          reasons: [result.error || 'Chưa lưu được học phí. Thông tin bạn nhập vẫn được giữ nguyên.'],
-        }
-      }
-      render()
-      return
-    }
-    tuitionFormState = null
-    tuitionPeriodActionConfirmationState = null
-    render()
-  }
-
-  document.querySelectorAll('[data-tuition-form-field]').forEach((control) => {
-    const handleTuitionFormFieldInput = () => {
-      if (!tuitionFormState) {
-        return
-      }
-
-      const fieldName = control.dataset.tuitionFormField
-      const clearsCatalogSelection = ['packageName', 'totalSessions', 'totalAmount'].includes(fieldName)
-
-      tuitionFormState = {
-        ...tuitionFormState,
-        commandIdempotencyKey: null,
-        pendingAuthoritativeRecord: null,
-        values: {
-          ...tuitionFormState.values,
-          ...(clearsCatalogSelection ? { packageCatalogId: '' } : {}),
-          [fieldName]: control.value,
-        },
-        errors: {
-          ...tuitionFormState.errors,
-          [fieldName]: undefined,
-          discountAmount: undefined,
-        },
-      }
-
-      if (clearsCatalogSelection) {
-        document.querySelectorAll('[data-tuition-package-option-id]').forEach((button) => {
-          button.classList.remove('active')
-          button.setAttribute('aria-pressed', 'false')
-        })
-        const customButton = document.querySelector('[data-tuition-package-custom]')
-        customButton?.classList.add('active')
-        customButton?.setAttribute('aria-pressed', 'true')
-      }
-
-      if (fieldName === 'discountPreset') {
-        markNativeSelectChangeRender()
-        render()
-        return
-      }
-
-      if (['discountCustomValue', 'totalAmount', 'paidAmount'].includes(fieldName)) {
-        refreshTuitionFormPreview()
-      }
-    }
-
-    if (control.matches('select')) {
-      control.addEventListener('change', handleTuitionFormFieldInput)
-    } else {
-      control.addEventListener('input', handleTuitionFormFieldInput)
-    }
-  })
-
-  document.querySelector('[data-tuition-form]')?.addEventListener('submit', handleTuitionFormSave)
-  document.querySelector('[data-tuition-action="save-form"]')?.addEventListener('click', handleTuitionFormSave)
-
-  document.querySelectorAll('[data-tuition-period-confirm-action]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-
-      if (!tuitionPeriodActionConfirmationState) {
-        return
-      }
-
-      const action = button.dataset.tuitionPeriodConfirmAction
-      if (action === 'cancel') {
-        tuitionPeriodActionConfirmationState = null
-        render()
-        return
-      }
-
-      if (action !== 'confirm' || tuitionPeriodActionConfirmationState.isSaving) {
-        return
-      }
-
-      if (tuitionPeriodActionConfirmationState.reasons?.length) {
-        render()
-        return
-      }
-
-      tuitionPeriodActionConfirmationState = {
-        ...tuitionPeriodActionConfirmationState,
-        isSaving: true,
-      }
-      render()
-
-      if (tuitionPeriodActionConfirmationState?.action === 'renew-create') {
-        await handleTuitionFormSave(null, { confirmedRenew: true })
-        return
-      }
-
-      if (tuitionPeriodActionConfirmationState?.action === 'undo-empty-period') {
-        await undoEmptyTuitionPeriodFromConfirmation()
-      }
-    })
-  })
-
-  document.querySelectorAll('[data-tuition-payment-field]').forEach((control) => {
-    control.addEventListener('input', () => {
-      if (!tuitionPaymentFormState) {
-        return
-      }
-
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        values: {
-          ...tuitionPaymentFormState.values,
-          [control.dataset.tuitionPaymentField]: control.value,
-        },
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          [control.dataset.tuitionPaymentField]: undefined,
-        },
-      }
-
-      if (control.dataset.tuitionPaymentField === 'amount') {
-        render()
-        const nextControl = document.querySelector('[data-tuition-payment-field="amount"]')
-        focusElementWithoutScrolling(nextControl)
-      }
-    })
-  })
-
-  bindTuitionPaymentEvidenceControls(document)
-
-  document.querySelector('[data-tuition-payment-form]')?.addEventListener('submit', async (event) => {
-    event.preventDefault()
-
-    if (!tuitionPaymentFormState || tuitionPaymentFormState.isSaving) {
-      return
-    }
-
-    if (!areModuleActionUpstreamsCurrent('hoc-phi', 'payment')) {
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          form: 'Chưa tải được số đã thu và dữ liệu thanh toán. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng bấm Làm mới rồi thử lại.',
-        },
-      }
-      render()
-      return
-    }
-
-    const errors = validatePaymentForm(tuitionPaymentFormState.values)
-    const attachmentDraft = tuitionPaymentFormState.attachmentDraft || {}
-    const stagedFile = attachmentDraft.mode === 'staged-new' ? attachmentDraft.file : null
-
-    if (stagedFile) {
-      const fileValidation = validateTransactionImageFile(stagedFile)
-      if (!fileValidation.ok) {
-        errors.attachment = fileValidation.error
-      }
-    }
-
-    if (Object.keys(errors).length) {
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors,
-      }
-      render()
-      return
-    }
-
-    const normalizedPayment = normalizePaymentFormValues(tuitionPaymentFormState.values)
-    const currentCenterId = getCurrentResolvedCenterId()
-
-    if (String(tuitionPaymentFormState.centerId || currentCenterId) !== currentCenterId) {
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          form: 'Cơ sở đã thay đổi. Vui lòng mở lại form thanh toán.',
-        },
-      }
-      render()
-      return
-    }
-
-    const latestTuitionRecords = getStoredTuition([])
-    const latestTuitionRecord = latestTuitionRecords.find(
-      (record) => record.id === tuitionPaymentFormState.tuitionId,
-    )
-    const student = students.find((item) => item.id === tuitionPaymentFormState.studentId)
-
-    if (!latestTuitionRecord || !student) {
-      tuitionRecords = latestTuitionRecords
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          form: 'Không tìm thấy hồ sơ học phí hiện tại.',
-        },
-      }
-      render()
-      return
-    }
-
-    const periodId = getCurrentTuitionPeriodId(latestTuitionRecord)
-
-    if (periodId !== tuitionPaymentFormState.periodId) {
-      tuitionRecords = latestTuitionRecords
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          form: 'Kỳ học phí đã thay đổi. Vui lòng mở lại form thanh toán.',
-        },
-      }
-      render()
-      return
-    }
-
-    const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(currentCenterId)
-    const outstandingAmount = getTuitionDebtAmount(latestTuitionRecord, latestCashflowTransactions)
-
-    if (hasUnreconciledLegacyTuitionPaidAmount(latestTuitionRecord, latestCashflowTransactions)) {
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          form: 'Kỳ này có số tiền đã thanh toán cũ chưa được đối soát với Thu chi.',
-        },
-      }
-      render()
-      return
-    }
-
-    if (normalizedPayment.amount > outstandingAmount) {
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          amount: 'Số tiền thanh toán không được vượt quá số còn nợ.',
-        },
-      }
-      render()
-      return
-    }
-
-    if (outstandingAmount <= 0) {
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          amount: 'Kỳ này đã thanh toán đủ.',
-        },
-      }
-      render()
-      return
-    }
-
-    const sourcePaymentId = tuitionPaymentFormState.sourcePaymentId
-    const existingPaymentTransaction = latestCashflowTransactions.find(
-      (transaction) =>
-        transaction.sourceModule === 'hoc-phi' &&
-        transaction.sourceType === 'tuition-payment' &&
-        transaction.sourcePaymentId === sourcePaymentId,
-    )
-
-    if (
-      stagedFile &&
-      (
-        cloudStatus.configStatus !== 'configured' ||
-        cloudStatus.authStatus !== 'signed-in' ||
-        cloudStatus.membershipStatus !== 'loaded' ||
-        !isTransactionAttachmentRoleAllowed(cloudStatus.role)
-      )
-    ) {
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          attachment: 'Chưa thể tải ảnh chứng từ. Vui lòng kiểm tra đăng nhập và quyền thao tác.',
-        },
-      }
-      render()
-      return
-    }
-
-    const savedAt = new Date().toISOString()
-    const nextTransaction = {
-      id: `cashflow-from-tuition-${sourcePaymentId}`,
-      type: 'income',
-      category: 'Học phí',
-      amount: normalizedPayment.amount,
-      transactionDate: normalizedPayment.paidAt,
-      method: getCashflowMethodFromTuitionPayment(normalizedPayment.method),
-      personName: normalizedPayment.payerName,
-      recordedBy: normalizedPayment.collectorName,
-      note: buildTuitionPaymentTransactionNote(normalizedPayment.note, student, latestTuitionRecord),
-      sourceModule: 'hoc-phi',
-      sourceType: 'tuition-payment',
-      sourcePaymentId,
-      sourceTuitionId: createTuitionRecordPackageLocalId(latestTuitionRecord),
-      sourceStudentId: student.id,
-      sourceParentId: student.parentId || '',
-      sourceTermId: periodId,
-      sourcePeriodId: periodId,
-      createdAt: savedAt,
-      updatedAt: savedAt,
-    }
-    if (existingPaymentTransaction) {
-      const replayMatches = [
-        ['type', nextTransaction.type],
-        ['category', nextTransaction.category],
-        ['amount', nextTransaction.amount],
-        ['transactionDate', nextTransaction.transactionDate],
-        ['method', nextTransaction.method],
-        ['personName', nextTransaction.personName],
-        ['recordedBy', nextTransaction.recordedBy],
-        ['note', nextTransaction.note],
-        ['sourceTuitionId', nextTransaction.sourceTuitionId],
-        ['sourceStudentId', nextTransaction.sourceStudentId],
-        ['sourceParentId', nextTransaction.sourceParentId],
-        ['sourcePeriodId', nextTransaction.sourcePeriodId],
-      ].every(([key, value]) => String(existingPaymentTransaction[key] ?? '') === String(value ?? ''))
-      if (!replayMatches) {
-        tuitionPaymentFormState = {
-          ...tuitionPaymentFormState,
-          errors: {
-            ...tuitionPaymentFormState.errors,
-            form: 'Payment/source này đã commit với nội dung khác; hãy mở lại form thanh toán.',
-          },
-        }
-        render()
-        return
-      }
-      cashflowTransactions = latestCashflowTransactions
-      tuitionRecords = latestTuitionRecords
-      clearTuitionPaymentFormState()
-      render()
-      return
-    }
-    const projectedTransactions = [nextTransaction, ...latestCashflowTransactions]
-    const transactionCode = getCashflowTransactionCodesForTransactions(projectedTransactions)[nextTransaction.id]
-    let uploadedAttachment = null
-
-    tuitionPaymentFormState = {
-      ...tuitionPaymentFormState,
-      isSaving: true,
-      attachmentDraft: {
-        ...attachmentDraft,
-        error: '',
-        isUploading: Boolean(stagedFile),
-      },
-      errors: {},
-    }
-    render()
-
-    if (stagedFile) {
-      const uploadResult = await uploadStagedCashflowEvidence({
-        transaction: nextTransaction,
-        transactionCode,
-        file: stagedFile,
-        centerId: currentCenterId,
-      })
-
-      if (!uploadResult.ok) {
-        tuitionPaymentFormState = {
-          ...tuitionPaymentFormState,
-          isSaving: false,
-          attachmentDraft: {
-            ...attachmentDraft,
-            isUploading: false,
-            error: uploadResult.error,
-          },
-          errors: {
-            ...tuitionPaymentFormState.errors,
-            attachment: uploadResult.error,
-          },
-        }
-        render()
-        return
-      }
-
-      uploadedAttachment = uploadResult.attachment
-      nextTransaction.attachment = uploadedAttachment
-    }
-
-    const tuitionCategory = cashflowCategories.find(
-      (category) => category.name === nextTransaction.category
-        && !category.isArchived
-        && ['income', 'both'].includes(category.type),
-    )
-    if (!tuitionCategory) {
-      if (uploadedAttachment) await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        isSaving: false,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          form: 'Chưa tải được danh mục thu học phí. Vui lòng bấm Làm mới rồi thử lại.',
-        },
-      }
-      render()
-      return
-    }
-
-    let financeResult
-    try {
-      financeResult = await writeC54FinanceCommand(
-        buildC54SaveTransactionCommand(nextTransaction, {
-          category: tuitionCategory,
-          attachmentAction: uploadedAttachment ? 'BIND' : 'KEEP',
-          attachmentId: uploadedAttachment?.metadataId || uploadedAttachment?.id || '',
-        }),
-        {
-          reason: 'tuition-payment-finance-commit',
-          attachmentIntent: getC54AttachmentRetryIntent(stagedFile),
-        },
-      )
-    } catch (error) {
-      financeResult = { ok: false, error: String(error?.message || error) }
-    }
-    const uploadedAttachmentId = String(
-      uploadedAttachment?.metadataId || uploadedAttachment?.id || '',
-    )
-    const supersededRetryUpload = Boolean(
-      uploadedAttachmentId
-      && financeResult.effectiveAttachmentId
-      && uploadedAttachmentId !== financeResult.effectiveAttachmentId,
-    )
-    if (supersededRetryUpload) {
-      await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
-    }
-    if (!financeResult.ok) {
-      if (uploadedAttachment && !financeResult.committed && !supersededRetryUpload) {
-        await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
-      }
-      tuitionPaymentFormState = {
-        ...tuitionPaymentFormState,
-        isSaving: false,
-        errors: {
-          ...tuitionPaymentFormState.errors,
-          form: financeResult.error || 'Chưa ghi nhận được khoản thanh toán. Thông tin bạn nhập vẫn được giữ nguyên.',
-        },
-      }
-      render()
-      return
-    }
-
-    tuitionRecords = latestTuitionRecords
-    if (uploadedAttachment) await loadCurrentMonthCloudAttachments()
-    notifications = syncTuitionNotifications(notifications)
-    clearTuitionPaymentFormState()
-    render()
-    return
-  })
+  getTuitionOperatorController().bind(document.querySelector('.tuition-module'))
 
   document.querySelectorAll('[data-student-filter]').forEach((control) => {
     const updateStudentFilter = () => {
@@ -26942,10 +25330,9 @@ function bindEvents() {
         return
       }
       if (signal === 'TBHP_SEND_DUE') {
-        await writeV28AAttendanceOperation(
-          buildV28AMarkTbhpSentCommand(reminder),
-          'attendance-tbhp-sent',
-        )
+        tuitionOperatorState.panel = {kind: 'detail',studentId: reminder.studentId,cycleId:''}
+        isAttendanceReminderPanelOpen = false
+        openModuleWindowFromChildInteraction('hoc-phi')
         return
       }
       if (signal === 'REVIEW_UPDATE_DUE') {
@@ -27150,7 +25537,7 @@ function bindEvents() {
   })
 
   document.querySelector('[data-attendance-baseline-action="start"]')?.addEventListener('click', async () => {
-    const nextState = startAttendanceBaselineDraft(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
+    const nextState = startAttendanceBaselineDraft(attendanceBaselineState, {
       byRole: 'admin',
       byName: 'Admin cơ sở',
       note: 'Bắt đầu nhập dữ liệu nền điểm danh.',
@@ -27241,7 +25628,7 @@ function bindEvents() {
       byName: 'Admin cơ sở',
       note: 'Lưu thay đổi dữ liệu nền điểm danh.',
     })
-    const previousAttendanceRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    const previousAttendanceRecords = attendanceRecords
     const result = await writeC52AttendanceSessionReportThroughCloud({
       attendanceRecords: draftRecords.filter((record) => record.source === 'initialBaseline'),
       baselineState: nextState,
@@ -27272,7 +25659,7 @@ function bindEvents() {
   })
 
   document.querySelector('[data-attendance-baseline-action="clear"]')?.addEventListener('click', async () => {
-    const currentState = loadAttendanceBaselineState(getCurrentResolvedCenterId())
+    const currentState = attendanceBaselineState
 
     if (currentState.status === 'locked') {
       window.alert('Dữ liệu nền đã khóa, cần mở khóa trước khi xóa dữ liệu nền đang nhập.')
@@ -27298,8 +25685,8 @@ function bindEvents() {
       return
     }
 
-    const storedRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
-    const storedState = loadAttendanceBaselineState(getCurrentResolvedCenterId())
+    const storedRecords = attendanceRecords
+    const storedState = attendanceBaselineState
     const clearResult = clearInitialBaselineAttendanceRecordsInMonth({
       records: storedRecords,
       state: storedState,
@@ -27346,7 +25733,7 @@ function bindEvents() {
       restoreAttendanceBaselineDraftUndoSnapshot(attendanceBaselineUndoSnapshot)
     } else if (attendanceBaselineUndoSnapshot.type === 'clear') {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      const currentRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+      const currentRecords = attendanceRecords
       const result = await writeC52AttendanceSessionReportThroughCloud({
         attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
         baselineState: restored.state,
@@ -27364,7 +25751,7 @@ function bindEvents() {
       attendanceBaselineDraftState = attendanceBaselineUndoSnapshot.draftState || null
     } else {
       const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      const currentRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+      const currentRecords = attendanceRecords
       const result = await writeC52AttendanceSessionReportThroughCloud({
         attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
         baselineState: restored.state,
@@ -27386,7 +25773,7 @@ function bindEvents() {
       return
     }
 
-    const baselineRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    const baselineRecords = attendanceRecords
       .filter((record) => record.source === 'initialBaseline')
     const confirmMessage = baselineRecords.length
       ? 'Bạn chắc chắn muốn chốt dữ liệu nền điểm danh? Sau khi khóa, dữ liệu nền sẽ không được sửa tự do.'
@@ -27396,7 +25783,7 @@ function bindEvents() {
       return
     }
 
-    const nextState = lockAttendanceBaselineState(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
+    const nextState = lockAttendanceBaselineState(attendanceBaselineState, {
       byRole: 'admin',
       byName: 'Admin cơ sở',
       note: baselineRecords.length
@@ -27423,7 +25810,7 @@ function bindEvents() {
 
     const reason = window.prompt('Lý do mở khóa', '') || ''
     const unlockReason = reason.trim() || 'Mở khóa để chỉnh sửa dữ liệu nền.'
-    const nextState = unlockAttendanceBaselineState(loadAttendanceBaselineState(getCurrentResolvedCenterId()), {
+    const nextState = unlockAttendanceBaselineState(attendanceBaselineState, {
       byRole: 'admin',
       byName: 'Admin cơ sở',
       reason: unlockReason,
@@ -27472,7 +25859,10 @@ function bindEvents() {
         ...settingsCenterProfileFormState,
         requestId: '',
         pendingCommand: null,
-        values: { ...settingsCenterProfileFormState.values, [field]: control.value },
+        values: {
+          ...settingsCenterProfileFormState.values,
+          [field]: control.type === 'checkbox' ? control.checked : control.value,
+        },
         errors: { ...settingsCenterProfileFormState.errors, [field]: '' },
       }
     })
@@ -28037,6 +26427,12 @@ function bindEvents() {
     button.addEventListener('click', () => {
       parentContactDetailId = null
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-parent-contact-action="print-information"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      printCustomerInformation(button.dataset.contactId)
     })
   })
 
@@ -30053,7 +28449,7 @@ function bindEvents() {
         sessionReportAttendanceState = null
         scheduleAdminAttendanceState = createScheduleAdminAttendanceState(
           occurrence,
-          loadStoredAttendanceRecords(getCurrentResolvedCenterId()),
+          attendanceRecords,
         )
         sessionReportLearningState = null
         sessionReportExtraState = null
@@ -30740,7 +29136,7 @@ function bindEvents() {
           return
         }
         const committedRecords = result.projection?.attendanceRecords
-          || loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+          || attendanceRecords
         scheduleAdminAttendanceState = {
           ...createScheduleAdminAttendanceState(occurrence, committedRecords),
           saveState: 'saved',
@@ -30779,7 +29175,7 @@ function bindEvents() {
     }
 
     const occurrence = getScheduleAdminAttendanceOccurrence()
-    const storedAttendanceRecords = loadStoredAttendanceRecords(getCurrentResolvedCenterId())
+    const storedAttendanceRecords = attendanceRecords
     const adminAttendanceRecords = occurrence
       ? getScheduleAdminAttendanceRecords(occurrence, storedAttendanceRecords)
       : []
@@ -31735,6 +30131,28 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-student-overview-action]').forEach((button) => {
+    button.addEventListener('pointerdown', (event) => event.stopPropagation())
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const { studentOverviewAction, studentId, customerId } = button.dataset
+      if (studentOverviewAction === 'edit') {
+        openStudentEditForm(studentId)
+      } else if (studentOverviewAction === 'tuition') {
+        const student = getStudentById(studentId)
+        if (!student) return
+        tuitionOperatorState.filters = { ...initialTuitionFilters, query: student.fullName }
+        openModuleWindowFromChildInteraction('hoc-phi')
+      } else if (studentOverviewAction === 'schedule') {
+        openModuleWindowFromChildInteraction('thoi-khoa-bieu')
+      } else if (studentOverviewAction === 'customer' && customerId) {
+        parentContactDetailId = customerId
+        openModuleWindowFromChildInteraction('khach-hang-tu-van')
+      }
+    })
+  })
+
   document.querySelectorAll('[data-student-detail-action]').forEach((button) => {
     button.addEventListener('pointerdown', (event) => {
       event.stopPropagation()
@@ -31758,6 +30176,56 @@ function bindEvents() {
 
       if (studentDetailAction === 'soft-delete') {
         softDeleteStudent(studentId)
+        return
+      }
+
+      if (studentDetailAction === 'export-intake-pdf') {
+        if (studentIntakePdfExportsInFlight.has(studentId)) {
+          window.alert('Phiếu thông tin học viên đang được tạo. Vui lòng chờ trong giây lát.')
+          return
+        }
+
+        const student = getStudentById(studentId)
+        if (!student) {
+          window.alert('Không tìm thấy hồ sơ học viên đã lưu để xuất PDF.')
+          return
+        }
+
+        const pdfViewer = window.open('', '_blank')
+        if (!pdfViewer) {
+          window.alert('Trình duyệt đang chặn cửa sổ PDF. Hãy cho phép mở cửa sổ mới và thử lại.')
+          return
+        }
+
+        studentIntakePdfExportsInFlight.add(studentId)
+        const previousLabel = button.textContent
+        button.disabled = true
+        button.setAttribute('aria-busy', 'true')
+        button.textContent = 'Đang tạo PDF…'
+
+        try {
+          pdfViewer.opener = null
+          pdfViewer.document.title = 'Đang tạo PDF'
+          pdfViewer.document.body.textContent = 'Đang tạo Phiếu thông tin học viên…'
+          const result = await generateStudentIntakeAdminPdf(student)
+          const objectUrl = URL.createObjectURL(result.blob)
+          pdfViewer.location.replace(objectUrl)
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000)
+        } catch (error) {
+          try {
+            pdfViewer.close()
+          } catch {
+            // The visible alert below remains the operator-facing failure path.
+          }
+          window.alert(error?.message || 'Không thể xuất PDF hồ sơ học viên.')
+        } finally {
+          studentIntakePdfExportsInFlight.delete(studentId)
+          if (button.isConnected) {
+            button.disabled = false
+            button.removeAttribute('aria-busy')
+            button.textContent = previousLabel
+          }
+        }
         return
       }
 
@@ -32198,6 +30666,7 @@ function bindEvents() {
     })
 
     row.addEventListener('keydown', (event) => {
+      if (event.target.closest('[data-student-overview-action], [data-student-note-action]')) return
       if (event.key !== 'Enter' && event.key !== ' ') {
         return
       }
@@ -32215,24 +30684,50 @@ function bindEvents() {
   bindShortcutDragging()
 }
 
-function openTuitionPackageForm(studentId) {
-  const student = students.find((item) => item.id === studentId)
 
-  if (!student) {
-    return
-  }
-
-  const tuitionRecord = tuitionRecords.find((record) => record.studentId === student.id)
-  tuitionFormState = tuitionRecord
-    ? createEditTuitionFormState(student, tuitionRecord)
-    : createEmptyTuitionFormState(student)
-  tuitionPeriodActionConfirmationState = null
-  clearTuitionPaymentFormState()
-  tuitionDetailState = null
-  tuitionRollbackPreviewState = null
-  tuitionCareNoteState = null
-  tuitionAdvisoryWindowState = null
+function getTuitionOperatorContext() {
+  const centerId=getCurrentCanonicalCenterContext().centerId
+  const snapshot=tuitionOperatorSnapshot.centerId===centerId?tuitionOperatorSnapshot
+    :{status:'idle',students:[],cycleStates:[],catalog:[],receipts:[]}
+  return {...snapshot,centerId,readStatus:snapshot.status,receiptStatus:snapshot.status}
+}
+async function refreshTuitionOperatorSnapshot() {
+  const centerId=getCurrentCanonicalCenterContext().centerId,runId=++tuitionOperatorReadRunId
+  if(!centerId)return {ok:false,outcome_code:'INVALID_CENTER'}
+  tuitionOperatorSnapshot={status:'loading',centerId,students:[],cycleStates:[],catalog:[],receipts:[]}
   render()
+  const result=await pullTuitionOperatorSnapshot({supabase:getSupabaseClient(),centerId})
+  if(runId!==tuitionOperatorReadRunId||centerId!==getCurrentCanonicalCenterContext().centerId)return {ok:false,outcome_code:'CENTER_CONTEXT_CHANGED'}
+  tuitionOperatorSnapshot=result.ok?{...result,status:'ready'}:{status:'failed',centerId,students:[],cycleStates:[],catalog:[],receipts:[]}
+  render()
+  return result
+}
+function getTuitionOperatorController() {
+  if(tuitionOperatorController)return tuitionOperatorController
+  tuitionOperatorController=createTuitionOperatorController({state:tuitionOperatorState,getContext:getTuitionOperatorContext,render,
+    refresh:()=>refreshModuleAuthoritativeUpstreams('hoc-phi',{reason:'tuition-operator'}),
+    writeCycle:(command,idempotencyKey)=>mutateV24PackageCycle({supabase:getSupabaseClient(),centerId:getCurrentResolvedCenterId(),command,idempotencyKey}),
+    preparePayment:(student,cycle,panel)=>{
+      const category=getTuitionOperatorContext().paymentCategory
+      if(!category)throw new Error('Missing category')
+      return buildF5BRecordPaymentCommand(cycle,buildC54SaveTransactionCommand({
+        id:panel.sourcePaymentId,localSourceId:panel.sourcePaymentId,
+        type:'income',category:'Học phí',amount:panel.presentation.outstandingAmount,
+        transactionDate:panel.values.paidAt,method:({cash:'Tiền mặt',transfer:'Chuyển khoản',other:'Khác'})[panel.values.method],
+        personName:panel.values.payerName,recordedBy:panel.values.collectorName,note:panel.values.note,
+        sourceModule:'hoc-phi',sourceType:'tuition-payment',sourcePaymentId:panel.sourcePaymentId,
+        sourceTuitionId:cycle.tuitionLocalId,sourceStudentId:student.id,sourceParentId:student.parentId||'',
+        sourcePeriodId:cycle.paymentPeriodId},{category}))
+    },
+    writePayment:(command,idempotencyKey)=>mutateF5BTuitionReceipt({supabase:getSupabaseClient(),centerId:getCurrentResolvedCenterId(),command,idempotencyKey}),
+    printTbhp:exportCurrentTuitionDocument,printReceipt:exportTuitionReceiptById})
+  return tuitionOperatorController
+}
+
+function openTuitionPackageForm(studentId) {
+  openModuleWindowFromChildInteraction('hoc-phi')
+  const cycle=v24PackageCycleStudentStates.find(s=>s.studentId===studentId)?.currentCycle
+  void getTuitionOperatorController().open(cycle?'detail':'assign',studentId)
 }
 
 async function saveParentEnrollmentDraft(markReady = false) {
@@ -32441,127 +30936,13 @@ function syncParentContactWizardStep4Draft(formState) {
   }
 }
 
-function createRenewedTuitionRecord(currentRecord, normalizedValues, cashflowLedger = [], centerId = '') {
-  const renewedAt = new Date().toISOString()
-  const currentTermNumber = currentRecord.currentTermNumber || 1
-  const nextTermNumber = currentTermNumber + 1
-  const currentDebtAmount = getTuitionDebtAmount(currentRecord, cashflowLedger, centerId)
-  const archivedStatus =
-    currentRecord.usedSessions >= currentRecord.totalSessions && currentDebtAmount === 0
-      ? 'completed'
-      : 'archived'
-  const currentTermSnapshot = {
-    id: currentRecord.currentTermId || `term-${currentRecord.id}-${currentTermNumber}`,
-    termNumber: currentTermNumber,
-    packageCatalogId: currentRecord.packageCatalogId || '',
-    packageName: currentRecord.packageName,
-    totalSessions: currentRecord.totalSessions,
-    usedSessions: currentRecord.usedSessions,
-    totalAmount: currentRecord.totalAmount,
-    discountType:
-      currentRecord.discountType === 'fixed'
-        ? 'amount'
-        : currentRecord.discountType || (currentRecord.discountAmount > 0 ? 'amount' : 'none'),
-    discountValue: currentRecord.discountValue ?? currentRecord.discountAmount ?? 0,
-    discountAmount: currentRecord.discountAmount || 0,
-    paidAmount: currentRecord.paidAmount,
-    dueDate: currentRecord.dueDate,
-    note: currentRecord.note,
-    status: archivedStatus,
-    startedAt: currentRecord.startedAt || '',
-    endedAt: renewedAt,
-    payments: currentRecord.payments ?? [],
-  }
-  const nextTermId = `term-${currentRecord.id}-${nextTermNumber}-${Date.now()}`
-  return {
-    ...currentRecord,
-    ...normalizedValues,
-    paidAmount: 0,
-    currentTermNumber: nextTermNumber,
-    currentTermId: nextTermId,
-    startedAt: renewedAt,
-    payments: [],
-    termHistory: [...(currentRecord.termHistory ?? []), currentTermSnapshot],
-  }
-}
 
-function createTuitionPeriodConfirmationState(action, tuitionRecord, student, overrides = {}) {
-  const periodId = getCurrentTuitionPeriodId(tuitionRecord)
-  return {
-    action,
-    tuitionId: tuitionRecord.id,
-    studentId: tuitionRecord.studentId,
-    studentName: student?.fullName || '',
-    periodId,
-    periodLabel: `Kỳ ${tuitionRecord.currentTermNumber || 1}`,
-    centerId: getCurrentResolvedCenterId(),
-    isSaving: false,
-    reasons: [],
-    ...overrides,
-  }
-}
 
-function getLatestTuitionRecordForCurrentCenter(tuitionId) {
-  const latestTuitionRecords = getStoredTuition([])
-  const tuitionRecord = latestTuitionRecords.find((record) => record.id === tuitionId)
 
-  tuitionRecords = latestTuitionRecords
-  return tuitionRecord || null
-}
 
-function getTuitionRecordCenterOwnership(tuitionRecord, centerId = getCurrentResolvedCenterId(), options = {}) {
-  const normalizedCurrentCenterId = normalizeRuntimeCenterId(centerId)
-  const normalizedStorageCenterId = normalizeRuntimeCenterId(getCurrentStorageCenterId())
-  const fromCurrentCenterCollection = Boolean(options.fromCurrentCenterCollection)
-  const recordCenterIds = [
-    tuitionRecord?.centerId,
-    tuitionRecord?.sourceCenterId,
-    tuitionRecord?.storageCenterId,
-  ]
-    .map((value) => normalizeRuntimeCenterId(value))
-    .filter(Boolean)
-  const hasMatchingCenterId = recordCenterIds.some(
-    (recordCenterId) =>
-      recordCenterId === normalizedCurrentCenterId ||
-      recordCenterId === normalizedStorageCenterId,
-  )
 
-  if (!tuitionRecord) {
-    return {
-      ok: false,
-      reason: 'Không tìm thấy hồ sơ học phí mới nhất trong cơ sở hiện tại.',
-      provenance: 'missing-record',
-    }
-  }
 
-  if (!recordCenterIds.length) {
-    return fromCurrentCenterCollection
-      ? { ok: true, reason: '', provenance: 'current-center-collection-missing-center-id' }
-      : {
-          ok: false,
-          reason: 'Hồ sơ học phí thiếu thông tin cơ sở và chưa có provenance center-scoped.',
-          provenance: 'missing-center-without-provenance',
-        }
-  }
 
-  if (hasMatchingCenterId) {
-    return { ok: true, reason: '', provenance: 'matching-center-id' }
-  }
-
-  if (fromCurrentCenterCollection) {
-    return {
-      ok: true,
-      reason: '',
-      provenance: 'current-center-collection-legacy-center-id',
-    }
-  }
-
-  return {
-    ok: false,
-    reason: 'Hồ sơ học phí không thuộc cơ sở hiện tại.',
-    provenance: 'mismatched-center-id',
-  }
-}
 
 function normalizeRuntimeCenterId(value) {
   return String(value ?? '')
@@ -32571,300 +30952,17 @@ function normalizeRuntimeCenterId(value) {
     .replace(/^_+|_+$/g, '')
 }
 
-function getCurrentUnifiedAttendanceRecordsForTuitionGuard(centerId = getCurrentResolvedCenterId()) {
-  return buildUnifiedAttendanceRecords({
-    sessionReports,
-    storedRecords: loadStoredAttendanceRecords(centerId),
-  })
-}
 
-function getTuitionEmptyPeriodUndoEligibility({
-  tuitionRecord,
-  expectedPeriodId = '',
-  cashflowLedger = cashflowTransactions,
-  attendanceRecords = [],
-  centerId = getCurrentResolvedCenterId(),
-  fromCurrentCenterCollection = false,
-} = {}) {
-  const reasons = []
-  const periodId = tuitionRecord ? getCurrentTuitionPeriodId(tuitionRecord) : ''
-  const history = Array.isArray(tuitionRecord?.termHistory) ? tuitionRecord.termHistory : []
-  const previousTerm = history.length ? history[history.length - 1] : null
-  const previousPeriodId = previousTerm ? getTuitionPeriodIdentity(previousTerm, tuitionRecord) : ''
 
-  const centerOwnership = getTuitionRecordCenterOwnership(tuitionRecord, centerId, {
-    fromCurrentCenterCollection,
-  })
-  if (!centerOwnership.ok) {
-    reasons.push(centerOwnership.reason)
-  }
 
-  if (!periodId) {
-    reasons.push('Kỳ hiện tại thiếu mã kỳ ổn định.')
-  }
 
-  if (expectedPeriodId && periodId && String(expectedPeriodId) !== String(periodId)) {
-    reasons.push('Dữ liệu kỳ học đã thay đổi, vui lòng mở lại hồ sơ.')
-  }
 
-  if (!previousTerm || !previousPeriodId) {
-    reasons.push('Không tìm thấy kỳ trước hợp lệ để phục hồi.')
-  }
 
-  if (previousPeriodId && previousPeriodId === periodId) {
-    reasons.push('Kỳ hiện tại và kỳ trước bị trùng mã kỳ, cần review dữ liệu.')
-  }
 
-  if (previousTerm && !Number.isFinite(Number(previousTerm.termNumber))) {
-    reasons.push('Kỳ trước thiếu số kỳ hợp lệ để phục hồi.')
-  }
 
-  if (tuitionRecord && Number(tuitionRecord.usedSessions || 0) !== 0) {
-    reasons.push('Kỳ hiện tại đã có buổi học được sử dụng.')
-  }
 
-  const linkedPayments = tuitionRecord
-    ? getLinkedTuitionPaymentTransactions(cashflowLedger, tuitionRecord.id, periodId, centerId)
-    : []
-  if (linkedPayments.length) {
-    reasons.push('Kỳ hiện tại đã có giao dịch thanh toán.')
-  }
 
-  const paymentSummary = tuitionRecord
-    ? buildTuitionPaymentSummary({
-        tuitionRecord,
-        cashflowTransactions: cashflowLedger,
-        centerId,
-      })
-    : { paidAmount: 0, legacyPaidAmount: 0, paymentCount: 0 }
-  if (paymentSummary.paidAmount > 0) {
-    reasons.push('Kỳ hiện tại đã có số tiền thanh toán từ ledger.')
-  }
 
-  if (Number(tuitionRecord?.paidAmount || 0) > 0 || (Array.isArray(tuitionRecord?.payments) && tuitionRecord.payments.length)) {
-    reasons.push('Kỳ hiện tại có số tiền cũ chưa được đối soát.')
-  }
-
-  const dependentTransactions = getTuitionPeriodDependencyTransactions(
-    cashflowLedger,
-    tuitionRecord?.id,
-    periodId,
-    centerId,
-  )
-  if (dependentTransactions.length) {
-    reasons.push('Kỳ hiện tại có refund/void/reversal/correction dependency.')
-  }
-
-  const attendanceMatches = getTuitionCurrentPeriodAttendanceMatches({
-    tuitionRecord,
-    periodId,
-    attendanceRecords,
-  })
-  if (attendanceMatches.length) {
-    reasons.push('Kỳ hiện tại đã có dữ liệu điểm danh.')
-  }
-
-  if (previousTerm && tuitionRecord?.startedAt && previousTerm.startedAt) {
-    const currentStarted = new Date(tuitionRecord.startedAt).getTime()
-    const previousStarted = new Date(previousTerm.startedAt).getTime()
-    if (Number.isFinite(currentStarted) && Number.isFinite(previousStarted) && currentStarted < previousStarted) {
-      reasons.push('Kỳ hiện tại không được tạo sau kỳ trước, cần review dữ liệu.')
-    }
-  }
-
-  return {
-    ok: reasons.length === 0,
-    reasons,
-    periodId,
-    previousTerm,
-    previousPeriodId,
-  }
-}
-
-function getTuitionPeriodDependencyTransactions(cashflowLedger, tuitionId, periodId, centerId) {
-  return (Array.isArray(cashflowLedger) ? cashflowLedger : []).filter((transaction) => {
-    if (centerId && transaction.centerId && String(transaction.centerId) !== String(centerId)) {
-      return false
-    }
-
-    if (String(transaction.sourceTuitionId || '') !== String(tuitionId || '')) {
-      return false
-    }
-
-    const transactionPeriodId = String(transaction.sourcePeriodId || transaction.sourceTermId || '')
-    if (transactionPeriodId !== String(periodId || '')) {
-      return false
-    }
-
-    const dependencyText = [
-      transaction.status,
-      transaction.sourceType,
-      transaction.type,
-      transaction.note,
-    ].join(' ').toLowerCase()
-
-    return /(refund|refunded|void|voided|reversal|reversed|correction|corrected)/.test(dependencyText)
-  })
-}
-
-function getTuitionCurrentPeriodAttendanceMatches({ tuitionRecord, periodId, attendanceRecords }) {
-  if (!tuitionRecord || !periodId) {
-    return []
-  }
-
-  const currentStartedDate = String(tuitionRecord.startedAt || '').slice(0, 10)
-
-  return (Array.isArray(attendanceRecords) ? attendanceRecords : []).filter((record) => {
-    if (String(record?.studentId || '') !== String(tuitionRecord.studentId || '')) {
-      return false
-    }
-
-    const creditValue = Number(record?.creditValue ?? 0)
-    const counted =
-      record?.counted ||
-      (record?.countsTowardTuition !== false && Number.isFinite(creditValue) && creditValue > 0)
-    if (!counted) {
-      return false
-    }
-
-    const recordPeriodId = String(record?.tuitionTermId || record?.termId || record?.packageId || '').trim()
-    if (recordPeriodId) {
-      return recordPeriodId === String(periodId)
-    }
-
-    const recordDate = String(record?.date || record?.occurrenceDate || '').slice(0, 10)
-    return Boolean(currentStartedDate && recordDate && recordDate >= currentStartedDate)
-  })
-}
-
-function restorePreviousTuitionPeriod(currentRecord, previousTerm, restoredAt = new Date().toISOString()) {
-  const previousPeriodId = getTuitionPeriodIdentity(previousTerm, currentRecord)
-  const remainingHistory = (currentRecord.termHistory || []).filter(
-    (term) => getTuitionPeriodIdentity(term, currentRecord) !== previousPeriodId,
-  )
-
-  return {
-    ...currentRecord,
-    packageName: previousTerm.packageName,
-    totalSessions: previousTerm.totalSessions,
-    usedSessions: previousTerm.usedSessions,
-    hasTotalSessionsData: previousTerm.hasTotalSessionsData ?? currentRecord.hasTotalSessionsData,
-    hasUsedSessionsData: previousTerm.hasUsedSessionsData ?? currentRecord.hasUsedSessionsData,
-    totalAmount: previousTerm.totalAmount,
-    discountType: previousTerm.discountType,
-    discountValue: previousTerm.discountValue,
-    discountAmount: previousTerm.discountAmount,
-    paidAmount: previousTerm.paidAmount ?? 0,
-    dueDate: previousTerm.dueDate || '',
-    note: previousTerm.note || '',
-    payments: previousTerm.payments ?? [],
-    currentTermNumber: previousTerm.termNumber || currentRecord.currentTermNumber,
-    currentTermId: previousPeriodId,
-    startedAt: previousTerm.startedAt || currentRecord.startedAt || '',
-    termHistory: remainingHistory,
-    updatedAt: restoredAt,
-  }
-}
-
-async function undoEmptyTuitionPeriodFromConfirmation() {
-  const confirmation = tuitionPeriodActionConfirmationState
-  if (!confirmation || confirmation.action !== 'undo-empty-period') {
-    return
-  }
-
-  if (!areModuleActionUpstreamsCurrent('hoc-phi', 'collected-balance')) {
-    tuitionPeriodActionConfirmationState = {
-      ...confirmation,
-      isSaving: false,
-      reasons: ['Chưa tải được số đã thu hiện tại. Vui lòng bấm Làm mới rồi thử lại.'],
-    }
-    render()
-    return
-  }
-
-  if (!isModuleUpstreamCurrent('hoc-phi', 'attendance')) {
-    tuitionPeriodActionConfirmationState = {
-      ...confirmation,
-      isSaving: false,
-      reasons: ['Chưa tải được dữ liệu điểm danh để kiểm tra kỳ học. Vui lòng bấm Làm mới rồi thử lại.'],
-    }
-    render()
-    return
-  }
-
-  const centerId = getCurrentResolvedCenterId()
-  if (confirmation.centerId && confirmation.centerId !== centerId) {
-    tuitionPeriodActionConfirmationState = {
-      ...confirmation,
-      isSaving: false,
-      reasons: ['Cơ sở hiện tại đã thay đổi, vui lòng mở lại hồ sơ.'],
-    }
-    render()
-    return
-  }
-
-  const latestTuitionRecords = getStoredTuition([])
-  const currentRecord = latestTuitionRecords.find((record) => record.id === confirmation.tuitionId)
-  const latestCashflowTransactions = readLatestCashflowTransactionsForCurrentCenter(centerId)
-  const eligibility = getTuitionEmptyPeriodUndoEligibility({
-    tuitionRecord: currentRecord,
-    expectedPeriodId: confirmation.periodId,
-    cashflowLedger: latestCashflowTransactions,
-    attendanceRecords: getCurrentUnifiedAttendanceRecordsForTuitionGuard(centerId),
-    centerId,
-    fromCurrentCenterCollection: true,
-  })
-
-  tuitionRecords = latestTuitionRecords
-  cashflowTransactions = latestCashflowTransactions
-
-  if (!eligibility.ok) {
-    tuitionPeriodActionConfirmationState = {
-      ...confirmation,
-      isSaving: false,
-      reasons: eligibility.reasons,
-    }
-    render()
-    return
-  }
-
-  const commandIdempotencyKey = confirmation.commandIdempotencyKey
-    || createOperationalCommandIdempotencyKey()
-  const restoredRecord = confirmation.pendingAuthoritativeRecord
-    || restorePreviousTuitionPeriod(
-      currentRecord,
-      eligibility.previousTerm,
-      new Date().toISOString(),
-    )
-  tuitionPeriodActionConfirmationState = {
-    ...confirmation,
-    isSaving: true,
-    commandIdempotencyKey,
-    pendingAuthoritativeRecord: restoredRecord,
-    reasons: [],
-  }
-  render()
-
-  const result = await writeC52TuitionRecordPackageThroughCloud(restoredRecord, 'tuition-package-save', {
-    beforePayload: currentRecord ? { ...currentRecord } : null,
-  }, commandIdempotencyKey)
-  if (!result.ok) {
-    tuitionPeriodActionConfirmationState = {
-      ...confirmation,
-      isSaving: false,
-      reasons: [result.error || 'Không thể hoàn tác kỳ học phí trên server.'],
-    }
-    render()
-    return
-  }
-  tuitionFormState = null
-  clearTuitionPaymentFormState()
-  tuitionPeriodActionConfirmationState = null
-  tuitionDetailState = restoredRecord.studentId
-    ? { studentId: restoredRecord.studentId }
-    : tuitionDetailState
-  render()
-}
 
 function bindNotificationOutsidePointer() {
   if (notificationOutsidePointerBound) {
@@ -33086,8 +31184,8 @@ function openNotificationSourceModule(notificationId) {
     }
   }
   if (notification.sourceModule === 'hoc-phi' && notification.entityLabel) {
-    tuitionFilters = {
-      ...tuitionFilters,
+    tuitionOperatorState.filters = {
+      ...tuitionOperatorState.filters,
       query: notification.entityLabel,
     }
   }

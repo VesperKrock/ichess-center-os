@@ -5,28 +5,38 @@ export const STUDENT_INTAKE_ADMIN_TEMPLATE_PATH =
 export const STUDENT_INTAKE_ADMIN_TEMPLATE_SHA256 =
   '42df7f6fc5587b21153b7175a8b4795a24f91301cb2a874788b521e9d91c6855'
 
-const templatePage = Object.freeze({ width: 595.56, height: 842.04 })
+export const STUDENT_INTAKE_ADMIN_MAPPING_VERSION = 'student-intake-template-v1-field-boxes-v1'
+export const STUDENT_INTAKE_ADMIN_TEMPLATE_GEOMETRY = Object.freeze({
+  pageCount: 1,
+  width: 595.56, height: 842.04,
+  mediaBox: Object.freeze({ x: 0, y: 0, width: 595.56, height: 842.04 }),
+  cropBox: Object.freeze({ x: 0, y: 0, width: 595.56, height: 842.04 }),
+})
 const overlayScale = 4
 const dataFontSize = 14
 const dataFontFamily = '"Times New Roman", Times, serif'
-const dataFontCss = `${dataFontSize}pt ${dataFontFamily}`
+const dataFontCss = `${dataFontSize}px ${dataFontFamily}`
 
-const fixedFields = Object.freeze([
+const fixedFields = [
   { key: 'fullName', label: 'Họ và tên học viên', x: 129, baseline: 166.34, maxWidth: 174 },
   { key: 'birthDate', label: 'Ngày sinh', x: 437, baseline: 166.34, maxWidth: 101 },
   { key: 'schoolName', label: 'Tên trường', x: 129, baseline: 194.78, maxWidth: 174 },
   { key: 'schoolGrade', label: 'Đang học lớp', x: 398, baseline: 194.78, maxWidth: 140 },
   { key: 'homeName', label: 'Tên ở nhà', x: 124, baseline: 223.22, maxWidth: 176 },
-  { key: 'registrationDate', label: 'Ngày đăng ký', x: 128, baseline: 251.66, maxWidth: 410 },
+  { key: 'registrationDate', label: 'Ngày đăng ký', x: 142, baseline: 251.66, maxWidth: 396 },
   { key: 'hobbies', label: 'Sở thích', x: 106, baseline: 280.13, maxWidth: 432 },
   { key: 'fatherName', label: 'Họ và tên ba', x: 132, baseline: 597.43, maxWidth: 190 },
   { key: 'fatherPhone', label: 'SĐT ba', x: 361, baseline: 597.43, maxWidth: 177 },
   { key: 'motherName', label: 'Họ và tên mẹ', x: 136, baseline: 625.9, maxWidth: 186 },
   { key: 'motherPhone', label: 'SĐT mẹ', x: 361, baseline: 625.9, maxWidth: 177 },
   { key: 'parentArea', label: 'Nơi ở hiện tại', x: 140, baseline: 654.34, maxWidth: 397 },
-])
+].map((field) => Object.freeze({
+  ...field, y: field.baseline - 14, width: field.maxWidth, height: 18,
+  font: dataFontFamily, maxFontSize: dataFontSize, minFontSize: 10,
+  alignment: 'left', maxLines: 1, overflowPolicy: 'fit-or-error',
+}))
 
-const multilineFields = Object.freeze([
+const multilineFields = [
   {
     key: 'personality',
     label: 'Nhận xét của phụ huynh về tính cách của bé',
@@ -41,16 +51,27 @@ const multilineFields = Object.freeze([
     baselines: [467.95, 486.55, 505.15, 523.75],
     maxWidth: 484,
   },
-])
+].map((field) => Object.freeze({
+  ...field, baselines: Object.freeze(field.baselines), y: field.baselines[0] - 14,
+  width: field.maxWidth, height: field.baselines.at(-1) - field.baselines[0] + 18,
+  font: dataFontFamily, maxFontSize: dataFontSize, minFontSize: 11,
+  alignment: 'top-left', maxLines: field.baselines.length, overflowPolicy: 'fit-wrap-or-error',
+}))
+
+// All positions use PDF points, with y measured downward from the page top.
+// The approved template, not the user's values, determines these regions.
+export const STUDENT_INTAKE_ADMIN_FIELD_BOXES = Object.freeze(Object.fromEntries(
+  [...fixedFields, ...multilineFields].map((field) => [field.key, field]),
+))
 
 const checkboxMarks = Object.freeze({
   gender: Object.freeze({
-    male: Object.freeze({ x: 404.4, baseline: 226.22 }),
-    female: Object.freeze({ x: 503.5, baseline: 226.22 }),
+    male: Object.freeze({ x: 404.4, y: 217.7, width: 6.8, height: 7.2 }),
+    female: Object.freeze({ x: 504.3, y: 217.7, width: 6.8, height: 7.2 }),
   }),
   priorChessKnowledge: Object.freeze({
-    known: Object.freeze({ x: 307.2, baseline: 311.57 }),
-    not_known: Object.freeze({ x: 451.1, baseline: 311.57 }),
+    known: Object.freeze({ x: 307.2, y: 303.1, width: 6.8, height: 7.2 }),
+    not_known: Object.freeze({ x: 451.1, y: 303.1, width: 6.8, height: 7.2 }),
   }),
 })
 
@@ -88,20 +109,6 @@ export function createStudentIntakeAdminPdfProjection(student) {
     priorChessKnowledge: normalizePriorChessKnowledge(student.priorChessKnowledge),
   }
 
-  const requiredValues = [
-    ['fullName', 'Họ và tên học viên'],
-    ['birthDate', 'Ngày sinh'],
-    ['schoolName', 'Tên trường'],
-  ]
-  requiredValues.forEach(([key, label]) => {
-    if (!projection[key]) {
-      throw new StudentIntakePdfValidationError(
-        `Chưa thể xuất PDF: trường “${label}” đang trống hoặc không hợp lệ.`,
-        key,
-      )
-    }
-  })
-
   return Object.freeze(projection)
 }
 
@@ -112,34 +119,25 @@ export function createStudentIntakeAdminOverlayPlan(projection, measureText) {
 
   const commands = []
 
-  fixedFields.forEach((field) => {
-    const value = normalizeSingleLine(projection[field.key])
+  Object.values(STUDENT_INTAKE_ADMIN_FIELD_BOXES).forEach((field) => {
+    const value = field.maxLines === 1 ? normalizeSingleLine(projection[field.key])
+      : normalizeMultiline(projection[field.key])
     if (!value) return
-
-    assertTextFits(value, field, measureText)
-    commands.push({ type: 'text', value, x: field.x, baseline: field.baseline })
-  })
-
-  multilineFields.forEach((field) => {
-    const value = normalizeMultiline(projection[field.key])
-    if (!value) return
-
-    const lines = wrapText(value, field, measureText)
+    const { lines, fontSize } = fitFieldText(value, field, measureText)
     lines.forEach((line, index) => {
       commands.push({
-        type: 'text',
-        value: line,
-        x: field.x,
-        baseline: field.baselines[index],
+        type: 'text', field: field.key, value: line, x: field.x,
+        baseline: field.baselines?.[index] ?? field.baseline, fontSize,
+        box: field,
       })
     })
   })
 
   const genderMark = checkboxMarks.gender[projection.gender]
-  if (genderMark) commands.push({ type: 'mark', value: 'X', ...genderMark })
+  if (genderMark) commands.push({ type: 'mark', field: 'gender', ...genderMark })
 
   const knowledgeMark = checkboxMarks.priorChessKnowledge[projection.priorChessKnowledge]
-  if (knowledgeMark) commands.push({ type: 'mark', value: 'X', ...knowledgeMark })
+  if (knowledgeMark) commands.push({ type: 'mark', field: 'priorChessKnowledge', ...knowledgeMark })
 
   return Object.freeze(commands.map((command) => Object.freeze(command)))
 }
@@ -167,7 +165,7 @@ export async function generateStudentIntakeAdminPdf(student, options = {}) {
     throw new Error('Mẫu PDF học viên không khớp bản đã duyệt. Không xuất tệp.')
   }
 
-  const { PDFDocument } = await import('pdf-lib')
+  const { PDFDocument, rgb } = await import('pdf-lib')
   const pdfDocument = await PDFDocument.load(templateBytes, { updateMetadata: false })
   if (pdfDocument.getPageCount() !== 1) {
     throw new Error('Mẫu PDF học viên phải có đúng một trang.')
@@ -175,7 +173,7 @@ export async function generateStudentIntakeAdminPdf(student, options = {}) {
 
   const page = pdfDocument.getPage(0)
   const { width, height } = page.getSize()
-  assertTemplateGeometry(width, height)
+  assertStudentIntakeTemplateGeometry(page)
 
   const canvas = documentRef.createElement('canvas')
   canvas.width = Math.round(width * overlayScale)
@@ -188,13 +186,23 @@ export async function generateStudentIntakeAdminPdf(student, options = {}) {
   configureDataFont(context)
   const plan = createStudentIntakeAdminOverlayPlan(
     projection,
-    (value) => context.measureText(value).width,
+    (value, fontSize) => {
+      context.font = `normal ${fontSize}px ${dataFontFamily}`
+      return context.measureText(value)
+    },
   )
   drawOverlayPlan(context, plan)
 
   const overlayBytes = new Uint8Array(await canvasToPngArrayBuffer(canvas))
   const overlayImage = await pdfDocument.embedPng(overlayBytes)
   page.drawImage(overlayImage, { x: 0, y: 0, width, height })
+  plan.filter((command) => command.type === 'mark').forEach((mark) => {
+    const line = { thickness: 0.9, color: rgb(0.07, 0.07, 0.07) }
+    page.drawLine({ ...line, start: { x: mark.x, y: height - mark.y },
+      end: { x: mark.x + mark.width, y: height - mark.y - mark.height } })
+    page.drawLine({ ...line, start: { x: mark.x, y: height - mark.y - mark.height },
+      end: { x: mark.x + mark.width, y: height - mark.y } })
+  })
 
   const outputBytes = await pdfDocument.save()
   return {
@@ -203,6 +211,7 @@ export async function generateStudentIntakeAdminPdf(student, options = {}) {
     pageCount: 1,
     pageSize: Object.freeze({ width, height }),
     templateHash,
+    mappingVersion: STUDENT_INTAKE_ADMIN_MAPPING_VERSION,
     projection,
     commandCount: plan.length,
   }
@@ -238,25 +247,10 @@ function configureDataFont(context) {
 
 function drawOverlayPlan(context, plan) {
   plan.forEach((command) => {
-    if (command.type === 'mark') {
-      context.save()
-      context.font = `normal 12px ${dataFontFamily}`
-      context.fillText(command.value, command.x, command.baseline)
-      context.restore()
-      return
-    }
-
+    if (command.type === 'mark') return // Vector lines are drawn into the PDF itself.
+    context.font = `normal ${command.fontSize}px ${dataFontFamily}`
     context.fillText(command.value, command.x, command.baseline)
   })
-}
-
-function assertTextFits(value, field, measureText) {
-  if (measureText(value) <= field.maxWidth) return
-
-  throw new StudentIntakePdfValidationError(
-    `Nội dung trường “${field.label}” quá dài so với mẫu PDF. Hãy rút gọn trước khi xuất.`,
-    field.key,
-  )
 }
 
 function wrapText(value, field, measureText) {
@@ -290,22 +284,47 @@ function wrapText(value, field, measureText) {
     if (currentLine) lines.push(currentLine)
   })
 
-  if (lines.length > field.baselines.length) {
-    throw new StudentIntakePdfValidationError(
-      `Nội dung trường “${field.label}” quá dài so với ${field.baselines.length} dòng của mẫu PDF. Hãy rút gọn trước khi xuất.`,
-      field.key,
-    )
-  }
-
   return lines
 }
 
-function assertTemplateGeometry(width, height) {
+function fitFieldText(value, field, measureText) {
+  for (let fontSize = field.maxFontSize; fontSize >= field.minFontSize; fontSize -= 0.5) {
+    const measure = (text) => {
+      const metrics = measureText(text, fontSize)
+      return typeof metrics === 'number' ? { width: metrics } : metrics
+    }
+    let lines
+    try {
+      lines = field.maxLines === 1 ? [value] : wrapText(value, field, (text) => measure(text).width)
+    } catch (error) {
+      if (!(error instanceof StudentIntakePdfValidationError)) throw error
+      continue
+    }
+    if (lines.length > field.maxLines) continue
+    const fits = lines.every((text, index) => {
+      const metrics = measure(text)
+      const baseline = field.baselines?.[index] ?? field.baseline
+      const ascent = metrics.actualBoundingBoxAscent ?? fontSize
+      const descent = metrics.actualBoundingBoxDescent ?? fontSize * 0.25
+      return Number.isFinite(metrics.width) && metrics.width <= field.width
+        && baseline - ascent >= field.y && baseline + descent <= field.y + field.height
+    })
+    if (fits) return { lines, fontSize }
+  }
+  throw new StudentIntakePdfValidationError(
+    `Không thể điền đầy đủ trường “${field.label}” trong vùng của mẫu PDF ở cỡ chữ đọc được. Hãy kiểm tra nội dung trước khi xuất. Không có dữ liệu nào bị cắt hoặc đổi.`,
+    field.key,
+  )
+}
+
+export function assertStudentIntakeTemplateGeometry(page) {
   const tolerance = 0.02
-  if (
-    Math.abs(width - templatePage.width) > tolerance
-    || Math.abs(height - templatePage.height) > tolerance
-  ) {
+  const expected = STUDENT_INTAKE_ADMIN_TEMPLATE_GEOMETRY
+  const size = page.getSize()
+  const same = (actual, wanted) => Object.entries(wanted)
+    .every(([key, value]) => Number.isFinite(actual[key]) && Math.abs(actual[key] - value) <= tolerance)
+  if (!same(size, { width: expected.width, height: expected.height })
+    || !same(page.getMediaBox(), expected.mediaBox) || !same(page.getCropBox(), expected.cropBox)) {
     throw new Error('Kích thước mẫu PDF học viên không khớp bản đã duyệt.')
   }
 }

@@ -138,19 +138,19 @@ export function buildV24TuitionNotificationCandidates(studentStates, students, o
       createdAt: timestamp,
       updatedAt: timestamp,
     }
-    const addCandidate = (signal, severity, title, message) => {
+    const addCandidate = (targetCycle, signal, severity, title, message) => {
       candidates.push({
         ...common,
-        dedupeKey: `v2-4:${cycle.id}:${signal}`,
+        dedupeKey: `v2-4:${targetCycle.id}:${signal}`,
         severity,
         title,
         message,
         meta: {
           studentId,
-          cycleId: String(cycle.id),
+          cycleId: String(targetCycle.id),
           signal,
-          remainingSessions: cycle.remainingSessions,
-          cycleNumber: cycle.cycleNumber,
+          remainingSessions: targetCycle.remainingSessions,
+          cycleNumber: targetCycle.cycleNumber,
         },
       })
     }
@@ -159,6 +159,7 @@ export function buildV24TuitionNotificationCandidates(studentStates, students, o
       || cycle.reminderState === 'PACKAGE_SELECTION_REQUIRED'
     if (needsPackageSelection) {
       addCandidate(
+        cycle,
         'needs-package-selection',
         'danger',
         `${studentLabel} cần chọn gói học`,
@@ -166,26 +167,44 @@ export function buildV24TuitionNotificationCandidates(studentStates, students, o
       )
     }
 
-    if (cycle.renewalReminder) {
-      const exhausted = Boolean(cycle.urgentRenewal)
+    const preparedPaid = studentState?.preparedNextCycle?.paymentStatus === 'PAID'
+    if (cycle.renewalReminder && !preparedPaid) {
+      const remainingValue = Number(cycle.remainingSessions)
+      const remaining = Number.isFinite(remainingValue)
+        ? remainingValue
+        : cycle.urgentRenewal ? 0 : 2
+      const severity = remaining <= 0 ? 'danger' : remaining <= 1 ? 'warning' : 'info'
+      const title = remaining <= 0
+        ? `Đến hạn · Chưa thanh toán học phí: ${studentLabel}`
+        : remaining === 1
+          ? `Còn 1 buổi · Học phí sắp đến hạn: ${studentLabel}`
+          : `Còn 2 buổi · Chuẩn bị thu học phí: ${studentLabel}`
       addCandidate(
-        exhausted ? 'package-exhausted' : 'renewal-due',
-        exhausted ? 'danger' : 'warning',
-        exhausted
-          ? `${studentLabel} đã hết buổi trong gói`
-          : `${studentLabel} sắp hết gói học`,
-        exhausted
-          ? 'Cần xác nhận thanh toán hoặc gói học tiếp theo.'
-          : 'Cần chuẩn bị gia hạn, thanh toán hoặc gói học tiếp theo.',
+        cycle,
+        'tuition-due',
+        severity,
+        title,
+        'In Thông báo học phí (TBHP) cho Tái đăng ký; Phiếu Thu chỉ có sau khi đã nhận tiền.',
       )
     }
 
-    if (cycle.bchtReminder) {
+    const bchtCycle = [cycle, ...(studentState.cycles || [])]
+      .filter((item, index, items) => item?.id
+        && item.bchtReminder
+        && item.bchtStatus !== 'COMPLETED'
+        && items.findIndex((candidate) => candidate?.id === item.id) === index)
+      .sort((first, second) => Number(second.cycleNumber) - Number(first.cycleNumber))[0]
+    if (bchtCycle) {
+      const remainingValue = Number(bchtCycle.remainingSessions)
+      const remaining = Number.isFinite(remainingValue) ? remainingValue : 4
+      const severity = remaining <= 0 ? 'danger' : remaining <= 2 ? 'warning' : 'info'
+      const sessionLabel = remaining <= 0 ? 'Đến hạn' : `Còn ${remaining} buổi`
       addCandidate(
+        bchtCycle,
         'bcht-due',
-        cycle.urgentRenewal ? 'danger' : 'warning',
-        `Cần hoàn thành BCHT: ${studentLabel}`,
-        'Báo cáo hết chuỗi của chu kỳ hiện tại chưa hoàn thành.',
+        severity,
+        `${sessionLabel} · Cần hoàn tất BCHT: ${studentLabel}`,
+        'Nhắc giáo viên hoàn tất Báo Cáo Học Tập cho chu kỳ này.',
       )
     }
 

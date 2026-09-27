@@ -176,7 +176,7 @@ for (const token of [
   "refreshC54FinanceSharedTruth({ reason: 'after-server-commit', silent: true })",
   "outcome_code: 'COMMITTED_PROJECTION_REFRESH_FAILED'",
   'Khoản thu đã được hủy. Lịch sử giao dịch vẫn được giữ lại.',
-  'sourceTuitionId: createTuitionRecordPackageLocalId(latestTuitionRecord)',
+  'sourceTuitionId: targetCycle.tuitionLocalId',
 ]) assert(main.includes(token), `Runtime is missing: ${token}`)
 assert(adapter.includes("supabase.rpc('c5_4_void_tuition_payment'"))
 assert(!adapter.includes('localStorage'))

@@ -12,10 +12,14 @@ import {
 import { renderStudentDetail } from '../src/student-detail.js'
 import {
   STUDENT_INTAKE_ADMIN_TEMPLATE_SHA256,
+  STUDENT_INTAKE_ADMIN_FIELD_BOXES,
+  STUDENT_INTAKE_ADMIN_MAPPING_VERSION,
+  assertStudentIntakeTemplateGeometry,
   StudentIntakePdfValidationError,
   createStudentIntakeAdminOverlayPlan,
   createStudentIntakeAdminPdfProjection,
 } from '../src/student-intake-admin-pdf.js'
+import { PDFDocument } from 'pdf-lib'
 
 const fixture = {
   id: 'student-intake-fixture',
@@ -56,6 +60,20 @@ const templateBytes = await readFile(
   new URL('../public/forms/student-intake/student-information-admin-template.pdf', import.meta.url),
 )
 assert.equal(createHash('sha256').update(templateBytes).digest('hex'), STUDENT_INTAKE_ADMIN_TEMPLATE_SHA256)
+const approvedPdf = await PDFDocument.load(templateBytes)
+assert.equal(approvedPdf.getPageCount(), 1)
+assertStudentIntakeTemplateGeometry(approvedPdf.getPage(0))
+assert.equal(STUDENT_INTAKE_ADMIN_MAPPING_VERSION, 'student-intake-template-v1-field-boxes-v1')
+for (const box of Object.values(STUDENT_INTAKE_ADMIN_FIELD_BOXES)) {
+  for (const key of ['x', 'y', 'width', 'height', 'maxFontSize', 'minFontSize', 'maxLines']) {
+    assert(Number.isFinite(box[key]), `Missing field-box value ${box.key}/${key}`)
+  }
+  for (const key of ['font', 'alignment', 'overflowPolicy']) assert(box[key])
+  assert(box.x + box.width <= 595.56 && box.y + box.height <= 842.04)
+}
+const mismatchedPdf = await PDFDocument.load(templateBytes)
+mismatchedPdf.getPage(0).setCropBox(10, 10, 500, 800)
+assert.throws(() => assertStudentIntakeTemplateGeometry(mismatchedPdf.getPage(0)), /không khớp/)
 
 const emptyState = createEmptyStudentFormState()
 const stepOneMarkup = renderStudentModule([], initialStudentFilters, emptyState, [], [])
@@ -188,10 +206,11 @@ assert.equal(projection.birthDate, '12/03/2018')
 assert.equal(projection.registrationDate, '23/09/2026')
 assert.equal(projection.gender, 'male')
 assert.equal(projection.priorChessKnowledge, 'known')
-const approximateTimesMeasure = (value) => Array.from(String(value)).length * 6.2
+const approximateTimesMeasure = (value, size = 14) => Array.from(String(value)).length * 6.2 * size / 14
 const plan = createStudentIntakeAdminOverlayPlan(projection, approximateTimesMeasure)
 assert.ok(plan.some((command) => command.type === 'mark' && command.x < 410))
-assert.ok(plan.some((command) => command.type === 'mark' && command.x > 300 && command.baseline > 300))
+assert.ok(plan.some((command) => command.type === 'mark' && command.field === 'priorChessKnowledge' && command.y > 300))
+assert.ok(plan.filter((command) => command.type === 'mark').every((mark) => !('value' in mark) && mark.width > 0 && mark.height > 0))
 assert.ok(plan.some((command) => command.value.includes('Nguyễn Gia Bảo')))
 assert.ok(plan.every((command) => !['Trống', 'N/A', 'Không có'].includes(command.value)))
 
@@ -204,6 +223,10 @@ const blankOptionalProjection = createStudentIntakeAdminPdfProjection({
 const blankPlan = createStudentIntakeAdminOverlayPlan(blankOptionalProjection, approximateTimesMeasure)
 assert.ok(blankPlan.every((command) => !['mark'].includes(command.type)))
 assert.equal(blankPlan.length, 3)
+assert.equal(createStudentIntakeAdminPdfProjection({ id: 'blank-paper-form' }).birthDate, '')
+assert.equal(createStudentIntakeAdminOverlayPlan({ fullName: 'Nguyễn Trần Hoàng Minh Anh Phương' }, approximateTimesMeasure)[0].fontSize < 14, true)
+assert.equal(createStudentIntakeAdminPdfProjection({ ...fixture, schoolGrade: '', schoolLevel: 'Cấp 1' }).schoolGrade, '')
+assert.equal(createStudentIntakeAdminPdfProjection({ ...fixture, parentGoal: '', parentNotes: 'Ghi chú chăm sóc' }).parentGoal, '')
 
 assert.throws(
   () => createStudentIntakeAdminOverlayPlan(
@@ -230,5 +253,25 @@ assert.throws(
 const detailMarkup = renderStudentDetail(fixture, [], [], [])
 assert.match(detailMarkup, /data-student-detail-action="export-intake-pdf"/)
 assert.match(detailMarkup, />\s*In \/ Xuất PDF\s*</)
+
+const mainSource = await readFile(new URL('../src/main.js', import.meta.url), 'utf8')
+const studentThemeSource = await readFile(new URL('../src/student-theme.css', import.meta.url), 'utf8')
+for (const marker of [
+  "studentDetailAction === 'export-intake-pdf'",
+  'getStudentById(studentId)',
+  'studentIntakePdfExportsInFlight.has(studentId)',
+  'studentIntakePdfExportsInFlight.add(studentId)',
+  'await generateStudentIntakeAdminPdf(student)',
+  'URL.createObjectURL(result.blob)',
+  "pdfViewer.location.replace(objectUrl)",
+  "button.setAttribute('aria-busy', 'true')",
+  "window.alert(error?.message || 'Không thể xuất PDF hồ sơ học viên.')",
+]) assert(mainSource.includes(marker), `Missing Student PDF runtime marker: ${marker}`)
+
+for (const marker of [
+  '.student-detail-pdf-action:not(:disabled):hover',
+  '.student-detail-pdf-action:not(:disabled):focus-visible',
+  ".student-detail-pdf-action[aria-busy='true']",
+]) assert(studentThemeSource.includes(marker), `Missing Student PDF interaction marker: ${marker}`)
 
 console.log('Student Intake Admin form/PDF smoke: PASS')

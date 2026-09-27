@@ -207,13 +207,18 @@ export function buildC54SaveTransactionCommand(transaction = {}, {
     throw new Error('Thao tác chứng từ không hợp lệ.')
   }
 
+  const localSourceId = cleanText(transaction.localSourceId || transaction.id)
+  if (localSourceId.length > 200 || /[\u0000-\u001f\u007f]/.test(localSourceId)) {
+    throw new Error('Mã nguồn giao dịch vượt giới hạn an toàn của Thu chi.')
+  }
+
   const command = {
     operation: version > 0 ? 'UPDATE_TRANSACTION' : 'CREATE_TRANSACTION',
     transaction_id: version > 0
       ? requireUuid(transaction.id, 'Thiếu transaction_id authoritative.')
       : createC54FinanceIdempotencyKey(),
     expected_version: version,
-    local_source_id: cleanText(transaction.localSourceId || transaction.id),
+    local_source_id: localSourceId,
     cashflow_type: type.toUpperCase(),
     category_id: requireUuid(category?.id || transaction.categoryId, 'Danh mục authoritative không hợp lệ.'),
     amount_minor: requireMoneyMinor(transaction.amount),
@@ -360,10 +365,16 @@ export function projectC54FinanceCategory(row = {}) {
 export function projectC54FinanceTransaction(row = {}) {
   const version = Number(row.version)
   const amount = Number(row.amount_minor)
+  const tuitionAllocation = row.tuition_allocation_minor == null
+    ? null
+    : Number(row.tuition_allocation_minor)
   const type = cleanText(row.cashflow_type).toLowerCase()
   const status = cleanText(row.status).toLowerCase()
   if (!isUuid(row.id) || !Number.isSafeInteger(version) || version < 1
     || !Number.isSafeInteger(amount) || amount < 1
+    || (tuitionAllocation !== null && (
+      !Number.isSafeInteger(tuitionAllocation) || tuitionAllocation < 0 || tuitionAllocation > amount
+    ))
     || !CASHFLOW_TYPES.has(type) || !['posted', 'voided'].includes(status)
     || !isUuid(row.category_id) || !/^\d{4}-\d{2}-\d{2}$/.test(cleanText(row.transaction_date))
     || !Array.isArray(row.attachments)) return null
@@ -377,6 +388,7 @@ export function projectC54FinanceTransaction(row = {}) {
     categoryId: cleanText(row.category_id),
     category: cleanText(row.category_name),
     amount,
+    tuitionAllocation,
     transactionDate: cleanText(row.transaction_date),
     method: cleanText(row.method),
     personName: cleanText(row.person_name),

@@ -2,10 +2,6 @@ const DEMO_ATTENDANCE_SOURCE_MODULE = 'bang-diem-danh-demo'
 const DEMO_ATTENDANCE_BATCH_ID = 'attendance-board-demo-foundation'
 
 const COUNTED_ATTENDANCE_STATUSES = new Set(['present', 'makeup'])
-const DEFAULT_ATTENDANCE_CENTER_ID = 'unbound'
-const ATTENDANCE_RECORDS_STORAGE_KEY_PREFIX = 'ichessCenterOS.attendanceRecords'
-const ATTENDANCE_BASELINE_STATE_STORAGE_KEY_PREFIX = 'ichessCenterOS.attendanceBaselineState'
-
 const KNOWN_ATTENDANCE_SOURCES = new Set([
   'teacher',
   'admin',
@@ -176,28 +172,6 @@ export function createAttendanceRecordId(report, attendanceItem, index = 0, cred
   ]
 
   return parts.map(slugifyIdPart).join('-')
-}
-
-export function getAttendanceRecordsStorageKey(centerId = DEFAULT_ATTENDANCE_CENTER_ID) {
-  return `${ATTENDANCE_RECORDS_STORAGE_KEY_PREFIX}.${normalizeStorageCenterId(centerId)}`
-}
-
-export function loadStoredAttendanceRecords(centerId = DEFAULT_ATTENDANCE_CENTER_ID, storage = getLocalStorage()) {
-  const rawValue = safeStorageGetItem(storage, getAttendanceRecordsStorageKey(centerId))
-  const parsedRecords = parseJsonArray(rawValue)
-
-  return normalizeStoredAttendanceRecords(parsedRecords)
-}
-
-export function saveStoredAttendanceRecords(
-  centerId = DEFAULT_ATTENDANCE_CENTER_ID,
-  records = [],
-  storage = getLocalStorage(),
-) {
-  const normalizedRecords = normalizeStoredAttendanceRecords(records)
-  safeStorageSetItem(storage, getAttendanceRecordsStorageKey(centerId), JSON.stringify(normalizedRecords))
-
-  return normalizedRecords
 }
 
 export function normalizeStoredAttendanceRecords(records = []) {
@@ -834,26 +808,6 @@ export function restoreInitialBaselineEditSnapshot(snapshot = {}) {
   }
 }
 
-export function getAttendanceBaselineStateStorageKey(centerId = DEFAULT_ATTENDANCE_CENTER_ID) {
-  return `${ATTENDANCE_BASELINE_STATE_STORAGE_KEY_PREFIX}.${normalizeStorageCenterId(centerId)}`
-}
-
-export function loadAttendanceBaselineState(centerId = DEFAULT_ATTENDANCE_CENTER_ID, storage = getLocalStorage()) {
-  const rawValue = safeStorageGetItem(storage, getAttendanceBaselineStateStorageKey(centerId))
-  return normalizeAttendanceBaselineState(parseJsonObject(rawValue))
-}
-
-export function saveAttendanceBaselineState(
-  centerId = DEFAULT_ATTENDANCE_CENTER_ID,
-  state = {},
-  storage = getLocalStorage(),
-) {
-  const normalizedState = normalizeAttendanceBaselineState(state)
-  safeStorageSetItem(storage, getAttendanceBaselineStateStorageKey(centerId), JSON.stringify(normalizedState))
-
-  return normalizedState
-}
-
 export function normalizeAttendanceBaselineState(state = {}) {
   const sourceState = state && typeof state === 'object' ? state : {}
   const status = BASELINE_STATE_STATUSES.has(sourceState.status) ? sourceState.status : 'notStarted'
@@ -1135,60 +1089,6 @@ function cloneJsonSafe(value) {
   }
 
   return JSON.parse(JSON.stringify(value))
-}
-
-function normalizeStorageCenterId(centerId) {
-  return slugifyIdPart(centerId || DEFAULT_ATTENDANCE_CENTER_ID)
-}
-
-function getLocalStorage() {
-  try {
-    return globalThis.localStorage || null
-  } catch {
-    return null
-  }
-}
-
-function safeStorageGetItem(storage, key) {
-  try {
-    return storage?.getItem?.(key) ?? null
-  } catch {
-    return null
-  }
-}
-
-function safeStorageSetItem(storage, key, value) {
-  try {
-    storage?.setItem?.(key, value)
-  } catch {
-    // Storage can be unavailable in tests or restricted browser modes.
-  }
-}
-
-function parseJsonArray(rawValue) {
-  if (!rawValue) {
-    return []
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function parseJsonObject(rawValue) {
-  if (!rawValue) {
-    return {}
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-  } catch {
-    return {}
-  }
 }
 
 function normalizeAttendanceBaselineAuditEntry(entry) {

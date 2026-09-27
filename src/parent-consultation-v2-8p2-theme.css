@@ -598,6 +598,44 @@
 
 .desktop-window.is-parent-consultation-window .parent-contact-detail-section.is-status > h4 { margin-top: 12px; margin-bottom: 6px; }
 
+.desktop-window.is-parent-consultation-window .parent-contact-detail-section.is-receipt {
+  margin-top: 16px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-detail-section.is-receipt > h4 {
+  margin-bottom: 6px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-receipt-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+  gap: 14px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 12px 15px;
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-receipt-detail article {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-receipt-detail span {
+  color: var(--parent-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-receipt-detail strong {
+  overflow-wrap: anywhere;
+  color: var(--parent-text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
 .desktop-window.is-parent-consultation-window .parent-contact-detail-body {
   position: relative;
   display: grid;
@@ -1149,6 +1187,39 @@
   column-gap: 40px;
   row-gap: 6px;
   margin-top: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-receipt-fields {
+  margin-top: 18px;
+  border: 1px solid var(--parent-line-soft);
+  border-radius: 8px;
+  padding: 12px 14px 14px;
+  background: var(--parent-subtle);
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-receipt-fields > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-receipt-fields h5 {
+  margin: 0;
+  color: var(--parent-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  text-transform: uppercase;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-receipt-fields > div:first-child small {
+  color: var(--parent-muted);
+  font-size: 12px;
+}
+
+.desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-receipt-fields .parent-contact-form-grid {
+  margin-top: 10px;
 }
 
 .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-form-grid label,

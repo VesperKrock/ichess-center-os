@@ -151,6 +151,7 @@ export function renderCashbookModule(
   }
   const dailyTransactions = getDailyCashbookTransactions(transactions, activeDate)
   const stats = getCashbookBalanceStats(transactions, activeDate, activeSettings)
+  const physicalCashStats = getCashbookPhysicalCashStats(transactions, activeDate, activeSettings)
   const reconciliation = getCashbookReconciliationForDate(reconciliations, activeDate)
   const closingTone = stats.closingBalance > 0 ? 'income' : stats.closingBalance < 0 ? 'expense' : 'neutral'
   const balanceLabelSuffix = activeSettings.isConfigured ? '' : ' (tạm tính)'
@@ -178,7 +179,7 @@ export function renderCashbookModule(
         </div>
       </div>
 
-      <p class="cashbook-helper">Theo dõi số dư, đối soát quỹ và trạng thái chốt sổ theo ngày của cơ sở ${escapeHtml(centerName || 'hiện tại')}.</p>
+      <p class="cashbook-helper">Số dư hệ thống được tự động tính từ giao dịch canonical. Kiểm quỹ tiền mặt là bước xác minh thực tế tùy chọn tại cơ sở ${escapeHtml(centerName || 'hiện tại')}.</p>
 
       ${renderFinanceSharedTruthNotice(financeSharedTruthState)}
 
@@ -193,7 +194,13 @@ export function renderCashbookModule(
       </div>
 
       <div class="cashbook-workspace">
-        ${renderCashbookReconciliationCard(reconciliation, activeDate, stats.closingBalance)}
+        ${renderCashbookReconciliationCard(
+          reconciliation,
+          activeDate,
+          stats,
+          physicalCashStats,
+          activeSettings.isConfigured,
+        )}
         <div class="cashbook-side-stack">
           ${renderCashbookReconciliationHistory(reconciliations, transactions, activeSettings, activeDate)}
           <section class="cashbook-transactions" aria-label="Giao dịch trong ngày">
@@ -277,6 +284,12 @@ export function getCashbookBalanceStats(transactions, selectedDate, settings) {
   }
 }
 
+export function getCashbookPhysicalCashStats(transactions, selectedDate, settings) {
+  const cashTransactions = getValidCashflowTransactions(transactions)
+    .filter((transaction) => isPhysicalCashMethod(transaction.method))
+  return getCashbookBalanceStats(cashTransactions, selectedDate, settings)
+}
+
 function getCashbookReconciliationForDate(reconciliations, selectedDate) {
   return (reconciliations ?? []).find((reconciliation) => reconciliation.date === selectedDate) ?? null
 }
@@ -296,8 +309,13 @@ function getValidCashflowTransactions(transactions) {
     (transaction) =>
       transaction &&
       ['income', 'expense'].includes(transaction.type) &&
-      isValidDate(transaction.transactionDate),
+      isValidDate(transaction.transactionDate) &&
+      String(transaction.status || 'posted').toLowerCase() !== 'voided',
   )
+}
+
+function isPhysicalCashMethod(method) {
+  return String(method || '').trim().toLocaleLowerCase('vi-VN') === 'tiền mặt'
 }
 
 function getTransactionNet(transaction) {
@@ -355,27 +373,34 @@ function renderCashbookSettingsPanel(formState) {
   `
 }
 
-function renderCashbookReconciliationCard(reconciliation, selectedDate, systemClosingBalance) {
-  const status = reconciliation ? reconciliation.status : 'pending'
-  const difference =
-    reconciliation ? reconciliation.actualCash - systemClosingBalance : 0
-  const systemChanged =
-    reconciliation && reconciliation.systemClosingBalance !== systemClosingBalance
-  const actionLabel = reconciliation ? 'Cập nhật đối soát' : 'Đối soát quỹ'
+function renderCashbookReconciliationCard(
+  reconciliation,
+  selectedDate,
+  systemStats,
+  physicalCashStats,
+  isOpeningBalanceConfigured,
+) {
+  const status = reconciliation ? reconciliation.status : 'unverified'
+  const difference = reconciliation
+    ? reconciliation.actualCash - physicalCashStats.closingBalance
+    : null
+  const systemChanged = reconciliation
+    && reconciliation.systemClosingBalance !== physicalCashStats.closingBalance
+  const actionLabel = reconciliation ? 'Cập nhật kiểm quỹ' : 'Kiểm quỹ thực tế'
   const closedMeta =
     reconciliation?.isClosed && reconciliation.closedAt
       ? `${formatDateTime(reconciliation.closedAt)} · ${escapeHtml(reconciliation.closedBy || 'Admin')}`
       : ''
 
   return `
-    <section class="cashbook-reconciliation-card is-${status}" aria-label="Đối soát quỹ">
+    <section class="cashbook-reconciliation-card is-${status}" aria-label="Đối soát hệ thống và kiểm quỹ thực tế">
       <div class="cashbook-reconciliation-header">
         <div>
-          <h4>Đối soát quỹ</h4>
+          <h4>Đối soát hệ thống</h4>
           <p>${formatDate(selectedDate)}</p>
         </div>
-        <span class="cashbook-reconciliation-status is-${status}">
-          ${getReconciliationStatusLabel(status)}
+        <span class="cashbook-reconciliation-status ${isOpeningBalanceConfigured ? 'is-matched' : 'is-pending'}">
+          ${isOpeningBalanceConfigured ? 'Khớp theo sổ hệ thống' : 'Cần thiết lập số dư đầu kỳ'}
         </span>
         ${
           reconciliation?.isClosed
@@ -383,39 +408,49 @@ function renderCashbookReconciliationCard(reconciliation, selectedDate, systemCl
             : ''
         }
       </div>
-      <div class="cashbook-reconciliation-grid">
+      <div class="cashbook-reconciliation-grid is-system">
         <div>
-          <span>Số dư hệ thống</span>
-          <strong>${formatMoney(systemClosingBalance)}</strong>
+          <span>Số dư đầu ngày</span>
+          <strong>${formatMoney(systemStats.openingBalanceOfDay)}</strong>
         </div>
         <div>
-          <span>Tiền thực tế</span>
-          <strong>${reconciliation ? formatMoney(reconciliation.actualCash) : '—'}</strong>
+          <span>Thu / Chi trong ngày</span>
+          <strong>${formatSignedMoney(systemStats.dailyNet)}</strong>
         </div>
         <div>
-          <span>Chênh lệch</span>
-          <strong class="${getDifferenceTone(difference)}">
-            ${reconciliation ? formatSignedMoney(difference) : '—'}
-          </strong>
-        </div>
-        <div>
-          <span>Người đối soát</span>
-          <strong>${reconciliation ? escapeHtml(reconciliation.checkedBy) : '—'}</strong>
+          <span>Số dư cuối ngày hệ thống</span>
+          <strong>${formatMoney(systemStats.closingBalance)}</strong>
         </div>
       </div>
-      <p class="cashbook-reconciliation-meta">
+      <div class="cashbook-physical-check">
+        <div class="cashbook-physical-check-heading">
+          <div>
+            <strong>Kiểm quỹ thực tế</strong>
+            <span>Chỉ tính giao dịch Tiền mặt; chuyển khoản không vào ngăn kéo tiền.</span>
+          </div>
+          <span class="cashbook-reconciliation-status is-${status}">
+            ${reconciliation ? getReconciliationStatusLabel(status) : 'Chưa thực hiện'}
+          </span>
+        </div>
+        <div class="cashbook-reconciliation-grid is-physical">
+          <div><span>Tiền mặt dự kiến</span><strong>${formatMoney(physicalCashStats.closingBalance)}</strong></div>
+          <div><span>Tiền thực tế</span><strong>${reconciliation ? formatMoney(reconciliation.actualCash) : 'Chưa kiểm quỹ thực tế'}</strong></div>
+          <div><span>Kết quả kiểm quỹ</span><strong class="${difference === null ? '' : getDifferenceTone(difference)}">${difference === null ? 'Chưa thực hiện' : difference === 0 ? 'Khớp' : `Lệch ${formatSignedMoney(difference)}`}</strong></div>
+        </div>
+      </div>
+      ${reconciliation ? `<p class="cashbook-reconciliation-meta">
         <span>Thời gian ${reconciliation ? formatDateTime(reconciliation.updatedAt || reconciliation.checkedAt) : '—'}</span>
         <span aria-hidden="true">·</span>
         <span title="${escapeAttribute(reconciliation?.note)}">Ghi chú ${reconciliation?.note ? escapeHtml(reconciliation.note) : '—'}</span>
         <span aria-hidden="true">·</span>
         <span>Chốt sổ ${closedMeta || (reconciliation ? 'Chưa chốt' : '—')}</span>
-      </p>
+      </p>` : ''}
       ${
         systemChanged
           ? `<p class="cashbook-reconciliation-warning">${
               reconciliation?.isClosed
-                ? 'Ngày này đã chốt sổ nhưng số dư hệ thống đã thay đổi. Cần kiểm tra lại trước khi dùng số liệu.'
-                : 'Số dư hệ thống hiện tại đã khác với lúc đối soát. Cần kiểm tra lại giao dịch Thu chi.'
+                ? 'Ngày này đã chốt nhưng tiền mặt dự kiến đã thay đổi. Cần kiểm tra lại trước khi dùng số liệu.'
+                : 'Tiền mặt dự kiến hiện tại đã khác với lúc kiểm quỹ. Cần kiểm tra lại giao dịch Tiền mặt.'
             }</p>`
           : ''
       }
@@ -439,11 +474,11 @@ function renderCashbookReconciliationHistory(reconciliations, transactions, sett
   )
 
   return `
-    <section class="cashbook-history" aria-label="Lịch sử đối soát">
+    <section class="cashbook-history" aria-label="Lịch sử kiểm quỹ thực tế">
       <div class="cashbook-history-header">
         <div>
-          <h4>Lịch sử đối soát</h4>
-          <p>${sortedReconciliations.length} ngày đã đối soát</p>
+          <h4>Lịch sử kiểm quỹ thực tế</h4>
+          <p>${sortedReconciliations.length} ngày đã kiểm quỹ</p>
         </div>
       </div>
       ${
@@ -454,7 +489,7 @@ function renderCashbookReconciliationHistory(reconciliations, transactions, sett
                 .map((reconciliation) =>
                   renderCashbookHistoryItem(
                     reconciliation,
-                    getCashbookBalanceStats(transactions, reconciliation.date, settings).closingBalance,
+                    getCashbookPhysicalCashStats(transactions, reconciliation.date, settings).closingBalance,
                     reconciliation.date === selectedDate,
                   ),
                 )
@@ -491,7 +526,7 @@ function renderCashbookHistoryItem(reconciliation, currentSystemClosingBalance, 
         </span>
       </span>
       <span class="cashbook-history-values">
-        <span><small>Hệ thống</small><strong>${formatMoney(reconciliation.systemClosingBalance)}</strong></span>
+        <span><small>Tiền mặt dự kiến</small><strong>${formatMoney(reconciliation.systemClosingBalance)}</strong></span>
         <span><small>Thực tế</small><strong>${formatMoney(reconciliation.actualCash)}</strong></span>
         <span><small>Chênh lệch</small><strong class="${getDifferenceTone(reconciliation.difference)}">${formatSignedMoney(reconciliation.difference)}</strong></span>
       </span>
@@ -506,8 +541,8 @@ function renderCashbookHistoryItem(reconciliation, currentSystemClosingBalance, 
         systemChanged
           ? `<span class="cashbook-history-warning">${
               reconciliation.isClosed
-                ? 'Đã chốt, số hệ thống đã đổi'
-                : 'Số hệ thống đã đổi'
+                ? 'Đã chốt, tiền mặt dự kiến đã đổi'
+                : 'Tiền mặt dự kiến đã đổi'
             }</span>`
           : '<span></span>'
       }
@@ -516,22 +551,24 @@ function renderCashbookHistoryItem(reconciliation, currentSystemClosingBalance, 
 }
 
 function renderCashbookReconciliationPanel(formState) {
-  const currentDifference =
-    parseMoneyInput(formState.values.actualCash) - Number(formState.values.systemClosingBalance || 0)
+  const actualCashText = String(formState.values.actualCash ?? '').trim()
+  const currentDifference = actualCashText
+    ? parseMoneyInput(formState.values.actualCash) - Number(formState.values.systemClosingBalance || 0)
+    : null
 
   return `
     <div class="cashbook-reconciliation-backdrop" role="presentation">
       <form class="cashbook-reconciliation-panel" data-cashbook-reconciliation-form>
         <div class="cashbook-reconciliation-form-header">
           <div>
-            <h4>Đối soát quỹ cuối ngày</h4>
-            <p>Nhập số tiền thực tế trong quỹ để so với số dư hệ thống.</p>
+            <h4>Kiểm quỹ thực tế</h4>
+            <p>Không bắt buộc cho đối soát hệ thống. Chỉ nhập sau khi đã đếm tiền mặt thực tế.</p>
           </div>
           <button type="button" data-cashbook-action="cancel-reconciliation" aria-label="Đóng form">×</button>
         </div>
         <div class="cashbook-reconciliation-form-grid">
           ${renderReadonlyReconciliationField('Ngày', formatDate(formState.values.date))}
-          ${renderReadonlyReconciliationField('Số dư cuối ngày hệ thống', formatMoney(formState.values.systemClosingBalance))}
+          ${renderReadonlyReconciliationField('Tiền mặt dự kiến theo hệ thống', formatMoney(formState.values.systemClosingBalance))}
           ${renderReconciliationInputField('Tiền thực tế trong quỹ', 'actualCash', formState, 'text', 'Ví dụ: 3.570.000')}
           ${renderReconciliationInputField('Người đối soát', 'checkedBy', formState)}
           <label class="cashbook-reconciliation-field span-full">
@@ -540,13 +577,13 @@ function renderCashbookReconciliationPanel(formState) {
           </label>
         </div>
         <div class="cashbook-reconciliation-preview">
-          <span>Chênh lệch tạm tính</span>
-          <strong class="${getDifferenceTone(currentDifference)}">${formatSignedMoney(currentDifference)}</strong>
+          <span>Kết quả kiểm quỹ</span>
+          <strong class="${currentDifference === null ? '' : getDifferenceTone(currentDifference)}">${currentDifference === null ? 'Chưa kiểm quỹ thực tế' : currentDifference === 0 ? 'Khớp' : `Lệch ${formatSignedMoney(currentDifference)}`}</strong>
         </div>
         ${renderFormErrors(formState.errors)}
         <div class="cashbook-reconciliation-actions">
           <button type="button" data-cashbook-action="cancel-reconciliation">Hủy</button>
-          <button type="submit">Lưu đối soát</button>
+          <button type="submit">Lưu kiểm quỹ</button>
         </div>
       </form>
     </div>

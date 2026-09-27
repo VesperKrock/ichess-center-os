@@ -71,7 +71,7 @@ for (const expected of [
   'attendance-board-heading-copy',
   'attendance-board-heading-actions',
   'Điểm danh theo tháng, theo dõi số buổi và ghi chú học viên.',
-  'Quản lý dữ liệu nền',
+  'Dữ liệu ban đầu',
   'Cần xử lý · 1 học viên',
   'Xem nhắc việc',
   'T3–T5 · 17:00–18:30',
@@ -119,7 +119,7 @@ assert(!contextHtml.includes('<small>T3–T5 · 17:00–18:30</small>'))
 
 const baselineHtml = renderBoard({ isBaselineManagerOpen: true }, { status: 'unlocked' })
 for (const expected of [
-  'Quản lý dữ liệu nền điểm danh',
+  'Thiết lập dữ liệu điểm danh ban đầu',
   'data-attendance-baseline-action="start"',
   'data-attendance-baseline-action="undo"',
   'data-attendance-baseline-action="save"',
@@ -140,7 +140,7 @@ for (const expected of [
   'height: 72px;',
   'width: 500px;',
   'width: 760px;',
-  'height: 360px;',
+  'height: 440px;',
   'width: 330px;',
   'min-height: 126px;',
   '--attendance-bg: #0f1115;',

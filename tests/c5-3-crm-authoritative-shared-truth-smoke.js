@@ -262,6 +262,7 @@ const versioned = {
   cloudCaseVersion: 3,
   cloudStateVersion: 2,
   cloudCandidateVersion: 1,
+  cloudContactVersion: 1,
   cloudAssignmentVersion: 1,
   ...lead,
 }

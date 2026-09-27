@@ -117,12 +117,14 @@ const start = buildV24StartCycleCommand({
   studentId: 'student-a', tuitionLocalId: 'tuition_record_package::tuition-a',
   packageCatalogId: packageId, baselineUsedSessions: 5, baselineCutoffDate: '2026-09-01',
   baselineReviewNote: 'Đã đối chiếu lịch sử kỳ hiện tại',
+  openingContext: 'LEGACY_BEFORE_ICHESS', openingPaymentState: 'UNPAID',
 })
 assert.deepEqual(start, {
   operation: 'START_CYCLE', student_id: 'student-a',
   tuition_local_id: 'tuition_record_package::tuition-a', package_catalog_id: packageId,
   baseline_used_sessions: 5, baseline_cutoff_date: '2026-09-01',
   baseline_review_note: 'Đã đối chiếu lịch sử kỳ hiện tại',
+  opening_context: 'LEGACY_BEFORE_ICHESS', opening_payment_state: 'UNPAID',
 })
 assert.deepEqual(buildV24UpdateBchtCommand(ready.students[0].currentCycle, 'COMPLETED', 'Đã xong'), {
   operation: 'UPDATE_BCHT', student_id: 'student-a', cycle_id: cycleId,

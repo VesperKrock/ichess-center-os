@@ -165,6 +165,14 @@ export function buildV21UpdateCenterProfileCommand(values = {}, current = {}) {
     address: cleanText(values.address),
     phone: cleanText(values.phone),
     note: cleanText(values.note),
+    renewal_material_fee_minor: requireNonNegativeInteger(
+      values.renewalMaterialFee,
+      'Phí giáo trình khi tái đăng ký không hợp lệ.',
+    ),
+    receipt_prefix: requireReceiptPrefix(values.receiptPrefix || current.receiptPrefix),
+    default_receipt_collector_name: cleanText(values.defaultReceiptCollectorName),
+    initial_student_setup_enabled: values.initialStudentSetupEnabled === true
+      || values.initialStudentSetupEnabled === 'true',
   }
 }
 
@@ -179,6 +187,10 @@ export function buildV21UpsertTuitionPackageCommand(values = {}, current = null)
     package_name: requireText(values.packageName, 'Tên gói học phí không được trống.'),
     program_name: cleanText(values.programName),
     total_sessions: requirePositiveInteger(values.totalSessions, 'Số buổi phải lớn hơn 0.'),
+    max_completion_weeks: requireOptionalPositiveInteger(
+      values.maxCompletionWeeks,
+      'Thời gian tối đa hoàn thành khóa phải là số tuần nguyên dương.',
+    ),
     default_amount: requireNonNegativeInteger(values.defaultAmount, 'Học phí mặc định không hợp lệ.'),
     is_active: values.isActive !== false && values.isActive !== 'false',
     note: cleanText(values.note),
@@ -280,9 +292,12 @@ export function getV21CenterSettingsOutcomeMessage(outcomeCode = '') {
 
 function projectCenterProfile(row = {}, expectedCenterId = '') {
   const version = Number(row.version)
+  const renewalMaterialFee = Number(row.renewal_material_fee_minor)
   if (cleanText(row.center_id) !== expectedCenterId
     || !Number.isSafeInteger(version) || version < 0
-    || !cleanText(row.center_code) || !cleanText(row.display_name)) return null
+    || !Number.isSafeInteger(renewalMaterialFee) || renewalMaterialFee < 0
+    || !cleanText(row.center_code) || !cleanText(row.display_name)
+    || !/^[A-Z0-9]{2,6}$/.test(cleanText(row.receipt_prefix))) return null
   return {
     centerId: expectedCenterId,
     centerCode: cleanText(row.center_code),
@@ -290,6 +305,10 @@ function projectCenterProfile(row = {}, expectedCenterId = '') {
     address: cleanText(row.address),
     phone: cleanText(row.phone),
     note: cleanText(row.note),
+    renewalMaterialFee,
+    receiptPrefix: cleanText(row.receipt_prefix),
+    defaultReceiptCollectorName: cleanText(row.default_receipt_collector_name),
+    initialStudentSetupEnabled: row.initial_student_setup_enabled === true,
     environment: cleanText(row.environment),
     status: cleanText(row.status),
     version,
@@ -300,10 +319,15 @@ function projectTuitionPackage(row = {}, expectedCenterId = '') {
   const version = Number(row.version)
   const totalSessions = Number(row.total_sessions)
   const defaultAmount = Number(row.default_amount)
+  const maxCompletionWeeks = row.max_completion_weeks == null
+    ? null
+    : Number(row.max_completion_weeks)
   if (cleanText(row.center_id) !== expectedCenterId || !isUuid(row.id)
     || !Number.isSafeInteger(version) || version < 1
     || !Number.isSafeInteger(totalSessions) || totalSessions < 1
     || !Number.isSafeInteger(defaultAmount) || defaultAmount < 0
+    || (maxCompletionWeeks !== null
+      && (!Number.isSafeInteger(maxCompletionWeeks) || maxCompletionWeeks < 1))
     || !cleanText(row.package_name)) return null
   return {
     id: row.id,
@@ -311,6 +335,7 @@ function projectTuitionPackage(row = {}, expectedCenterId = '') {
     packageName: cleanText(row.package_name),
     programName: cleanText(row.program_name),
     totalSessions,
+    maxCompletionWeeks,
     defaultAmount,
     isActive: row.is_active === true,
     note: cleanText(row.note),
@@ -390,6 +415,24 @@ function requirePositiveInteger(value, error) {
 function requireNonNegativeInteger(value, error) {
   const normalized = Number(value)
   if (!Number.isSafeInteger(normalized) || normalized < 0) throw new Error(error)
+  return normalized
+}
+
+function requireOptionalPositiveInteger(value, error) {
+  const text = cleanText(value)
+  if (!text) return null
+  const normalized = Number(text)
+  if (!Number.isSafeInteger(normalized) || normalized < 1 || normalized > 5200) {
+    throw new Error(error)
+  }
+  return normalized
+}
+
+function requireReceiptPrefix(value) {
+  const normalized = cleanText(value).toUpperCase()
+  if (!/^[A-Z0-9]{2,6}$/.test(normalized)) {
+    throw new Error('Mã Phiếu Thu cần 2–6 ký tự A–Z hoặc 0–9.')
+  }
   return normalized
 }
 
