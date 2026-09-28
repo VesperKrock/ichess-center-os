@@ -1,9 +1,13 @@
 ﻿export const initialAttendanceBoardFilters = {
   month: getCurrentMonthValue(),
+  ...getAttendanceLedgerMonthRange(),
   classSessionId: 'all',
+  teacherId: 'all',
   query: '',
 }
 
+import { getAttendanceLedgerMonthRange } from './attendance-ledger.js'
+export { renderCanonicalAttendanceLedgerModule as renderAttendanceBoardModule } from './attendance-ledger-module.js'
 import { computeAttendanceCycleState, getPaidCycleCountFromTuition } from './attendance-board-cycle.js'
 import {
   getV28AAttendanceReminderPresentation,
@@ -39,7 +43,9 @@ const baselineStateLabels = {
   unlocked: 'Đã mở khóa để chỉnh sửa',
 }
 
-export function renderAttendanceBoardModule(
+// Retired A6 surface: retained only with the historical compatibility helpers.
+// No application import, export or normal runtime can open this editor.
+function renderLegacyAttendanceBoardModule(
   students = [],
   classSessions = [],
   tuitionRecords = [],
@@ -427,6 +433,8 @@ export function buildAttendanceBoardRows(
   storedAttendanceRecords = null,
   availability = {},
 ) {
+  // Historical compatibility/audit only. The A6 runtime renderer exclusively
+  // consumes buildCanonicalAttendanceLedger; this merged view is retired.
   const tuitionAvailable = availability.tuitionAvailable !== false
   const calendarNotesAvailable = availability.calendarNotesAvailable !== false
   const packageCycleReady = availability.packageCycleReady === true

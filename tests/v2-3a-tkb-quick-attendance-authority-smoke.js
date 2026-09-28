@@ -149,19 +149,19 @@ assert.equal((await pullV23AttendanceCapability({
 const baseRenderArgs = [
   [{ ...occurrence, scheduleType: 'oneOff', date: occurrence.occurrenceDate, startTime: '19:00', endTime: '20:30', status: 'scheduled' }],
   null,
-  { sessionId: occurrence.id, occurrenceDate: occurrence.occurrenceDate, mode: 'roleGateway' },
+  { sessionId: occurrence.id, occurrenceDate: occurrence.occurrenceDate, mode: 'adminPlaceholder' },
   [], null, null, null, null, false, null, [], [{ id: 'student-a', fullName: 'A' }],
-  '2026-09-07', null,
+  '2026-09-07', { rows: [] },
 ]
 const unavailableHtml = renderScheduleModule(...baseRenderArgs, {
   attendanceAvailable: true, occurrenceAttendanceReady: false, occurrenceAttendanceStatus: 'unavailable',
 })
-assert.match(unavailableHtml, /Điểm danh tại thời khóa biểu hiện chưa khả dụng/)
-assert.match(unavailableHtml, /data-schedule-report-role="admin" disabled/)
+assert.match(unavailableHtml, /data-admin-attendance-action="save" disabled/)
 const readyHtml = renderScheduleModule(...baseRenderArgs, {
   attendanceAvailable: true, occurrenceAttendanceReady: true, occurrenceAttendanceStatus: 'ready',
+  a3TeacherReady: true,
 })
-assert.doesNotMatch(readyHtml, /data-schedule-report-role="admin" disabled/)
+assert.match(readyHtml, /data-admin-attendance-action="save"\s*>/)
 
 const multiDayClassSession = {
   id: 'class-wed-fri',

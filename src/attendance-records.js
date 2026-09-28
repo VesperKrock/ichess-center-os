@@ -222,6 +222,7 @@ export function normalizeStoredAttendanceRecord(record) {
 
     status,
     attendanceStatus,
+    makeupForAttendanceLocalId: normalizeNullableText(record.makeupForAttendanceLocalId),
     counted,
 
     creditNumber: normalizeCreditNumber(record.creditNumber ?? record.sessionNumber),

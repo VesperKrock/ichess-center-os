@@ -931,9 +931,7 @@ function renderSettingsClassSessionForm(formState) {
           ${renderClassSessionAutoNamePreview(autoName)}
           ${renderDaysOfWeekField(values.daysOfWeek, errors.daysOfWeek)}
           ${renderClassSessionTimeFields(values, errors)}
-          ${renderField('instructorName', 'Giáo viên mặc định (không bắt buộc)', values.instructorName, errors.instructorName, {
-            placeholder: 'Chưa xếp giáo viên',
-          })}
+          <p class="settings-class-session-teacher-note span-full">Đổi giáo viên tại Thời khóa biểu và chọn ngày áp dụng.</p>
           ${renderStatusField(values.status)}
           ${renderField('note', 'Ghi chú', values.note, errors.note)}
         </div>

@@ -54,10 +54,10 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
   ),
   entry(
     'bang-diem-danh',
-    ['V2.8A Attendance operations'],
-    ['C5.1 Student/Class/Schedule', 'C5.2 Attendance/Baseline/Session Report/Tuition', 'C5.7 manual notes'],
-    ['core', 'attendance'],
-    ['tuition', 'calendar-notes', 'attendance-operations'],
+    ['A2 canonical occurrences', 'V2.3 canonical attendance', 'A3 actual teachers', 'A4 makeup links'],
+    ['Canonical Student/Class/Schedule identity', 'Frozen Tuition presentation'],
+    ['core', 'attendance', 'attendance-ledger'],
+    ['package-cycles'],
   ),
   Object.freeze({
     moduleId: 'dang-cap-nhat',

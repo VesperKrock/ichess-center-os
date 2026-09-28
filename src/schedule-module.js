@@ -7,6 +7,7 @@ import {
 } from './schedule-data.js'
 import { buildScheduleDeadlineAlerts } from './schedule-deadline.js'
 import { deriveV22ScheduleRosters } from './student-recurring-enrollment.js'
+import { projectA3ScheduleSessions } from './cloud-authoritative-teacher-history.js'
 import {
   CENTER_CALENDAR_ITEM_TYPES,
   CENTER_CALENDAR_ITEM_TYPE_LABELS,
@@ -84,9 +85,7 @@ const VALID_GUEST_PARTICIPATION_TYPE_IDS = guestParticipationTypes.map(([type]) 
 const adminAttendanceStatuses = [
   ['present', 'Có mặt'],
   ['absent', 'Vắng'],
-  ['excused', 'Có phép'],
   ['makeup', 'Học bù'],
-  ['trial', 'Học thử'],
 ]
 
 export const emptyScheduleFormValues = {
@@ -191,6 +190,7 @@ export function renderScheduleModule(
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
   const attendanceAvailable = deadlineOptions.attendanceAvailable !== false
   const occurrenceAttendanceReady = deadlineOptions.occurrenceAttendanceReady === true
+  const attendanceActionReady = occurrenceAttendanceReady && deadlineOptions.a3TeacherReady === true
   const occurrenceAttendanceStatus = deadlineOptions.occurrenceAttendanceStatus || 'unavailable'
   const calendarNotesAvailable = deadlineOptions.calendarNotesAvailable !== false
   const centerCalendarItemState = calendarNotesAvailable
@@ -216,12 +216,12 @@ export function renderScheduleModule(
     unavailable: 'Chưa khả dụng',
     failed: 'Chưa tải được',
   }[calendarNotesAvailabilityStatus] || ''
-  const visibleSessions = deriveV22ScheduleRosters({
+  const visibleSessions = projectA3ScheduleSessions(deriveV22ScheduleRosters({
     sessions: getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions),
     students,
     enrollmentSets: deadlineOptions.recurringEnrollmentSets,
     capabilityReady: deadlineOptions.recurringRosterManaged === true,
-  })
+  }), deadlineOptions.a3TeacherContext, { scheduleSessions: sessions, classSessions })
   const weekRangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
   const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
   const weekCenterCalendarItems = calendarNotesAvailable
@@ -247,7 +247,7 @@ export function renderScheduleModule(
     : []
 
   return `
-    <section class="schedule-module ${formState || reportState || centerCalendarItemState || centerCalendarTagState ? 'form-open' : ''}" aria-label="Thời khóa biểu">
+    <section class="schedule-module ${formState || reportState || centerCalendarItemState || centerCalendarTagState || deadlineOptions.a3TeacherDialog ? 'form-open' : ''}" aria-label="Thời khóa biểu">
       <div class="schedule-compact-header">
         <div class="schedule-page-header">
           <h3>Thời khóa biểu</h3>
@@ -285,6 +285,11 @@ export function renderScheduleModule(
         </div>
       </div>
       ${renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState)}
+      ${deadlineOptions.a3TeacherStatus === 'failed'
+        ? '<p class="schedule-form-warning" role="status">Chưa tải được lịch sử giáo viên. Hãy làm mới trước khi đổi giáo viên.</p>'
+        : deadlineOptions.a3TeacherStatus === 'loading'
+          ? '<p class="schedule-form-warning" role="status">Đang tải lịch sử giáo viên…</p>'
+          : ''}
       ${attendanceAvailable
         ? ''
         : '<p class="schedule-form-warning" role="status">Điểm danh và báo cáo buổi học hiện chưa tải được. Lịch học vẫn có thể xem và cập nhật.</p>'}
@@ -308,6 +313,9 @@ export function renderScheduleModule(
                 conflictMap,
                 getCenterCalendarItemsByDate(visibleCenterCalendarItems, day.date),
                 centerCalendarTags,
+                deadlineOptions.a3TeacherReady && deadlineOptions.a3TeacherChoices?.length > 0,
+                deadlineOptions.attendanceRecords || [],
+                attendanceActionReady && attendanceAvailable,
               ),
             )
             .join('')}
@@ -324,6 +332,11 @@ export function renderScheduleModule(
       ) : ''}
       ${calendarNotesAvailable && centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags) : ''}
       ${calendarNotesAvailable && centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
+      ${deadlineOptions.a3TeacherDialog ? renderA3TeacherDialog(
+        deadlineOptions.a3TeacherDialog,
+        deadlineOptions.a3TeacherChoices || [],
+        deadlineOptions.a3TeacherContext?.assignments || [],
+      ) : ''}
       ${
         reportState && attendanceAvailable
           ? renderScheduleReportPanel(
@@ -339,7 +352,7 @@ export function renderScheduleModule(
               isReportExtraExpanded,
               guestParticipantFormState,
               adminAttendanceState,
-              occurrenceAttendanceReady,
+              attendanceActionReady,
               occurrenceAttendanceStatus,
             )
           : reportState
@@ -1424,7 +1437,7 @@ function createCenterCalendarRuntimeTagId(label) {
   return `center-calendar-tag-${asciiSlug || 'tag'}-${Date.now()}-${suffix}`
 }
 
-function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = [], centerCalendarTags = []) {
+function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = [], centerCalendarTags = [], teacherActionsReady = false, attendanceRecords = [], attendanceReady = false) {
   const calendarCountLabel = centerCalendarItems.length
     ? ` · ${centerCalendarItems.length} hoạt động`
     : ''
@@ -1439,7 +1452,7 @@ function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMa
         ${
           sessions.length || centerCalendarItems.length
             ? [
-                ...sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap)),
+                ...sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady, attendanceRecords, attendanceReady)),
                 ...centerCalendarItems.map((item) => renderCenterCalendarItemCard(item, centerCalendarTags)),
               ].join('')
             : '<div class="schedule-empty-day">Chưa có lịch</div>'
@@ -1800,7 +1813,63 @@ function formatCenterCalendarItemTime(item) {
   return [startTime, endTime].filter(Boolean).join('-') || 'Chưa có giờ'
 }
 
-function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
+function renderA3TeacherDialog(state, choices, assignments) {
+  const isClass = state.kind === 'class'
+  const history = isClass
+    ? assignments.filter((item) => item.class_session_local_id === state.classId)
+    : []
+  return `
+    <div class="schedule-form-backdrop" role="presentation"></div>
+    <section class="a3-teacher-dialog" role="dialog" aria-modal="true" aria-label="${isClass ? 'Đổi giáo viên' : 'Đổi giáo viên buổi này'}">
+      <header>
+        <h4>${isClass ? 'Đổi giáo viên' : 'Giáo viên thực tế buổi này'}</h4>
+        <button type="button" data-a3-teacher-dialog="cancel" aria-label="Đóng">×</button>
+      </header>
+      <p>${isClass ? 'Chọn giáo viên và ngày bắt đầu dạy lớp.' : `Chỉ thay giáo viên cho ngày ${escapeHtml(formatDisplayDate(state.occurrenceDate))}.`}</p>
+      <label>Giáo viên mới
+        <select data-a3-teacher-field="teacherId" ${state.isSaving ? 'disabled' : ''}>
+          <option value="">Chọn giáo viên</option>
+          ${choices.map((teacher) => `<option value="${escapeAttribute(teacher.id)}" ${state.teacherId === teacher.id ? 'selected' : ''}>${escapeHtml(teacher.displayName || teacher.fullName || '')}</option>`).join('')}
+        </select>
+      </label>
+      ${isClass ? `<label>Áp dụng từ ngày
+        <input type="date" data-a3-teacher-field="effectiveFrom" value="${escapeAttribute(state.effectiveFrom || '')}" ${state.isSaving ? 'disabled' : ''}>
+      </label>` : ''}
+      ${history.length ? `<details><summary>Lịch sử phụ trách lớp</summary>
+        <ul>${history.map((item) => `<li>${escapeHtml(item.teacher_name || 'Chưa xếp giáo viên')} · từ ${escapeHtml(formatDisplayDate(item.effective_from))}${item.effective_to ? ` đến ${escapeHtml(formatDisplayDate(item.effective_to))}` : ''}</li>`).join('')}</ul>
+      </details>` : ''}
+      ${state.error ? `<p class="a3-teacher-error" role="alert">${escapeHtml(state.error)}</p>` : ''}
+      <footer>
+        <button type="button" data-a3-teacher-dialog="cancel" ${state.isSaving ? 'disabled' : ''}>Hủy</button>
+        ${!isClass && state.hasOverride ? `<button type="button" data-a3-teacher-dialog="clear" ${state.isSaving ? 'disabled' : ''}>Dùng giáo viên của lớp</button>` : ''}
+        <button type="button" data-a3-teacher-dialog="save" ${state.isSaving ? 'disabled' : ''}>Lưu</button>
+      </footer>
+    </section>
+  `
+}
+
+export function getA5ScheduleAttendanceCardState(session = {}, records = [], now = new Date()) {
+  if (session.isEmptyClassSessionSlot) return { kind: 'empty', label: '' }
+  if (session.a2LifecycleState === 'CANCELLED' || session.status === 'cancelled') {
+    return { kind: 'cancelled', label: 'Đã hủy' }
+  }
+  if (session.a2LifecycleState !== 'HELD' && !isPastScheduleOccurrence(session, now)) {
+    return { kind: 'future', label: 'Chưa đến giờ học' }
+  }
+  const expected = new Set(normalizeIdArray(session.studentIds))
+  const marked = (Array.isArray(records) ? records : []).filter((record) =>
+    record?.attendanceAuthority === 'v2.3-occurrence-v1'
+    && record?.scheduleSessionId === session.id
+    && record?.date === session.occurrenceDate
+    && expected.has(record?.studentId))
+  if (!marked.length) return { kind: 'unmarked', label: 'Chưa điểm danh', marked: 0 }
+  if (marked.length < expected.size) {
+    return { kind: 'partial', label: 'Đã điểm danh một phần', marked: marked.length }
+  }
+  return { kind: 'complete', label: 'Đã điểm danh', marked: marked.length }
+}
+
+function renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady = false, attendanceRecords = [], attendanceReady = false) {
   const teacherLabel = getSessionTeacherLabel(session)
   const studentSummary = getStudentSummary(session.studentIds, studentLookup)
   const conflicts = conflictMap.get(session.id)
@@ -1811,6 +1880,7 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
     : String(session.title || session.groupName || classSessionLabel || 'Chưa gán thông tin')
   const title = repairScheduleDisplayText(rawTitle)
   const meta = `${teacherLabel.name} · ${session.room || 'Chưa có phòng'}`
+  const attendanceState = getA5ScheduleAttendanceCardState(session, attendanceRecords)
 
   return `
     <article
@@ -1826,7 +1896,18 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap) {
         ${escapeHtml(meta)}
       </p>
       <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
+      ${!isEmptySlot ? `<div class="a5-card-attendance">
+        <span class="is-${escapeAttribute(attendanceState.kind)}">${escapeHtml(attendanceState.label)}</span>
+        ${attendanceReady && !['future', 'cancelled'].includes(attendanceState.kind)
+          ? `<button type="button" data-a5-attendance-action="open" data-schedule-id="${escapeAttribute(session.id)}" data-occurrence-date="${escapeAttribute(session.occurrenceDate || '')}">${attendanceState.marked ? 'Xem / Sửa điểm danh' : 'Điểm danh'}</button>` : ''}
+      </div>` : ''}
       ${renderScheduleRosterSource(session)}
+      ${teacherActionsReady && (session.classSessionId || !isEmptySlot) ? `<div class="schedule-teacher-actions">
+        ${session.scheduleType === 'recurring' && session.classSessionId
+          ? `<button type="button" data-a3-teacher-action="class" data-class-id="${escapeAttribute(session.classSessionId)}" data-occurrence-date="${escapeAttribute(session.occurrenceDate || '')}">Đổi giáo viên</button>`
+          : ''}
+        ${!isEmptySlot ? `<button type="button" data-a3-teacher-action="occurrence" data-schedule-id="${escapeAttribute(session.id)}" data-occurrence-date="${escapeAttribute(session.occurrenceDate || '')}">Đổi giáo viên buổi này</button>` : ''}
+      </div>` : ''}
       ${isEmptySlot ? '<span class="schedule-empty-slot-action">+ Thêm thông tin</span>' : ''}
     </article>
   `
@@ -2719,85 +2800,68 @@ function renderScheduleAdminAttendanceForm(
     },
   }))
   const summary = getAdminAttendanceSummary(studentRows)
-  const teacherReportStatus = teacherReport
-    ? {
-        label: 'Giáo viên đã báo cáo',
-        detail: getTeacherReportReceivedLabel(teacherReport),
-        tone: 'available',
-      }
-    : {
-        label: 'Chưa có báo cáo giáo viên',
-        detail: 'Admin chỉ đang điểm danh nhanh; chưa ghi nhận báo cáo giáo viên.',
-        tone: 'missing',
-      }
+  const isSaving = adminAttendanceState?.saveState === 'saving'
   const statusMessage = adminAttendanceState?.error
     ? `<p class="session-report-save-state error">${escapeHtml(adminAttendanceState.error)}</p>`
     : adminAttendanceState?.saveState === 'saved'
-      ? '<p class="session-report-save-state">Đã lưu điểm danh Admin cơ sở.</p>'
+      ? '<p class="session-report-save-state" role="status">Đã lưu điểm danh.</p>'
       : ''
 
   return `
     <div class="schedule-form-backdrop" aria-hidden="true"></div>
-    <section class="schedule-report-panel schedule-admin-attendance-panel schedule-admin-attendance-compact" aria-label="Điểm danh Admin cơ sở">
+    <section class="schedule-report-panel schedule-admin-attendance-panel schedule-admin-attendance-compact" aria-label="Điểm danh">
       <div class="schedule-report-header">
         <div class="schedule-report-compact-title">
-          <strong>Điểm danh Admin cơ sở</strong>
+          <strong>Điểm danh</strong>
           <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))} · ${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
-          <span>Giáo viên: ${escapeHtml(teacherLabel.name)} · Học viên trong ca: ${studentRows.length}</span>
+          <span>Giáo viên: ${escapeHtml(teacherLabel.name)} · ${escapeHtml(session.room || 'Chưa rõ phòng')}</span>
         </div>
         <div class="schedule-report-header-actions">
-          <button type="button" data-schedule-action="close-report">Đóng</button>
+          <button type="button" data-schedule-action="close-report" ${isSaving ? 'disabled' : ''}>Đóng</button>
         </div>
       </div>
 
       <div class="schedule-admin-attendance-body">
-        <section class="schedule-admin-attendance-compact-top">
-          <div class="schedule-admin-teacher-report-status is-${escapeAttribute(teacherReportStatus.tone)}" role="status">
-            <strong>${escapeHtml(teacherReportStatus.label)}</strong>
-            <span>${escapeHtml(teacherReportStatus.detail)}</span>
-          </div>
-          <div class="schedule-admin-attendance-quick-action">
-            <button type="button" class="is-secondary" data-admin-attendance-action="mark-all-present">Đánh dấu tất cả có mặt</button>
-          </div>
-        </section>
         ${statusMessage}
-        <div class="schedule-admin-attendance-summary" aria-label="Tổng quan điểm danh Admin">
-          <span>Học viên trong ca: ${studentRows.length}</span>
+        <div class="schedule-admin-attendance-summary" aria-label="Tổng quan điểm danh">
+          <span>Đã chọn: ${studentRows.length - summary.empty}/${studentRows.length}</span>
           <span>Có mặt: ${summary.present}</span>
           <span>Vắng: ${summary.absent}</span>
-          <span>Có phép: ${summary.excused}</span>
           <span>Học bù: ${summary.makeup}</span>
-          <span>Học thử: ${summary.trial}</span>
           <span>Chưa chọn: ${summary.empty}</span>
         </div>
         ${
           studentRows.length
             ? `<div class="schedule-admin-attendance-rows">${studentRows
-                .map(({ studentId, student, row }) => renderAdminAttendanceStudentRow(studentId, student, row))
+                .map(({ studentId, student, row }) => renderAdminAttendanceStudentRow(studentId, student, row, isSaving))
                 .join('')}</div>`
             : '<p class="schedule-report-empty">Ca học này chưa có học viên.</p>'
         }
       </div>
       <footer class="schedule-admin-attendance-footer">
         <div class="schedule-admin-attendance-actions">
-          <button type="button" class="is-danger-ghost" data-admin-attendance-action="clear">Xóa nhập liệu</button>
-          <button type="button" class="is-primary" data-admin-attendance-action="save" ${occurrenceAttendanceReady ? '' : 'disabled aria-disabled="true"'}>Lưu điểm danh</button>
+          ${adminAttendanceState?.needsReload ? '<button type="button" class="is-secondary" data-admin-attendance-action="reload">Tải lại</button>' : ''}
+          <button type="button" class="is-primary" data-admin-attendance-action="save" ${occurrenceAttendanceReady && adminAttendanceState?.saveState !== 'saving' && !adminAttendanceState?.needsReload ? '' : 'disabled aria-disabled="true"'}>Lưu điểm danh</button>
         </div>
       </footer>
     </section>
   `
 }
 
-function renderAdminAttendanceStudentRow(studentId, student, row = {}) {
+function renderAdminAttendanceStudentRow(studentId, student, row = {}, isSaving = false) {
   const studentName = student?.fullName || student?.name || 'Học viên'
   const studentMeta = [student?.level, student?.parentName].filter(Boolean).join(' · ')
   const status = String(row.attendanceStatus || '')
+  const currentTarget = row.currentMakeupTarget || null
+  const candidates = Array.isArray(row.makeupCandidates) ? row.makeupCandidates : []
+  const choices = currentTarget && !candidates.some((item) => item.attendance_local_id === currentTarget.attendance_local_id)
+    ? [currentTarget, ...candidates] : candidates
 
   return `
     <div class="schedule-admin-attendance-row" data-admin-attendance-row="${escapeAttribute(studentId)}">
       <div class="session-report-student-name">
         <strong>${escapeHtml(studentName)}</strong>
-        <span>${escapeHtml(studentMeta || 'Trong ca học')}</span>
+        <span>${escapeHtml(getAttendanceStatusLabel(status) || 'Chưa chọn')}${studentMeta ? ` · ${escapeHtml(studentMeta)}` : ''}</span>
       </div>
       <div class="schedule-admin-attendance-choice-group" role="group" aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}">
         ${adminAttendanceStatuses
@@ -2809,13 +2873,31 @@ function renderAdminAttendanceStudentRow(studentId, student, row = {}) {
               data-admin-attendance-status
               data-admin-attendance-student-id="${escapeAttribute(studentId)}"
               aria-pressed="${status === value ? 'true' : 'false'}"
+              ${isSaving ? 'disabled' : ''}
             >${escapeHtml(label)}</button>
           `)
           .join('')}
       </div>
-      <input class="schedule-admin-attendance-note" type="text" maxlength="160" data-admin-attendance-note data-admin-attendance-student-id="${escapeAttribute(studentId)}" value="${escapeAttribute(row.note || '')}" placeholder="Ghi chú (không bắt buộc)" aria-label="Ghi chú điểm danh của ${escapeAttribute(studentName)}">
+      ${status === 'makeup' ? `<div class="a5-makeup-choice">
+        <label for="a5-makeup-${escapeAttribute(studentId)}">Học bù cho buổi nào?</label>
+        ${row.candidateState === 'loading' ? '<span>Đang tìm buổi vắng…</span>' : ''}
+        ${row.candidateState === 'failed' ? '<span role="alert">Chưa tải được buổi vắng. Bấm Tải lại.</span>' : ''}
+        ${row.candidateState === 'ready' && !choices.length ? '<span>Không có buổi vắng đủ điều kiện để học bù.</span>' : ''}
+        <select id="a5-makeup-${escapeAttribute(studentId)}" data-admin-makeup-target data-admin-attendance-student-id="${escapeAttribute(studentId)}" ${row.candidateState === 'loading' || isSaving ? 'disabled' : ''}>
+          <option value="">Chọn buổi vắng</option>
+          ${choices.map((item) => `<option value="${escapeAttribute(item.attendance_local_id)}" ${row.makeupForAttendanceLocalId === item.attendance_local_id ? 'selected' : ''}>${escapeHtml(formatA5MakeupCandidate(item))}</option>`).join('')}
+        </select>
+        ${row.candidateState === 'failed' ? `<button type="button" data-admin-attendance-action="reload-candidates" data-admin-attendance-student-id="${escapeAttribute(studentId)}">Tải lại</button>` : ''}
+      </div>` : ''}
     </div>
   `
+}
+
+function formatA5MakeupCandidate(item = {}) {
+  const parts = [item.occurrence_date ? formatReportDate(item.occurrence_date) : 'Buổi vắng đã chọn']
+  if (item.start_time) parts.push(String(item.start_time).slice(0, 5))
+  if (item.teacher_name) parts.push(item.teacher_name)
+  return parts.join(' · ')
 }
 
 function getTeacherReportReceivedLabel(report) {

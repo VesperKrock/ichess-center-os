@@ -11659,7 +11659,7 @@ h3 {
 
 .schedule-admin-attendance-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(230px, max-content) minmax(160px, 0.75fr);
+  grid-template-columns: minmax(160px, 1fr) minmax(260px, max-content);
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -12753,6 +12753,76 @@ h3 {
   resize: vertical;
 }
 
+.schedule-admin-attendance-choice-group button:focus-visible,
+.a5-card-attendance button:focus-visible,
+.a5-makeup-choice select:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.a5-makeup-choice {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.a5-makeup-choice label,
+.a5-makeup-choice span {
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.a5-makeup-choice select {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(160, 184, 214, 0.4);
+  border-radius: 7px;
+  padding: 4px 8px;
+  color: #f4f7fb;
+  background: #172334;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.a5-makeup-choice button,
+.a5-card-attendance button {
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 7px;
+  padding: 5px 9px;
+  color: #e8f1ff;
+  background: rgba(37, 99, 235, 0.18);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.a5-card-attendance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.a5-card-attendance span.is-cancelled,
+.a5-card-attendance span.is-unmarked,
+.a5-card-attendance span.is-future {
+  color: #aebdd0;
+}
+
+.a5-card-attendance span.is-complete,
+.a5-card-attendance span.is-partial {
+  color: #bfdbfe;
+}
+
 .schedule-calendar-checkbox input {
   width: auto;
   min-height: auto;
@@ -13239,6 +13309,84 @@ h3 {
 
 .schedule-session-card.is-empty-slot h4 {
   color: #c8d4e3;
+}
+
+.schedule-teacher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.schedule-teacher-actions button {
+  min-width: 0;
+  border: 1px solid rgba(159, 197, 255, 0.35);
+  border-radius: 6px;
+  padding: 3px 5px;
+  color: #cde1ff;
+  background: rgba(31, 93, 153, 0.22);
+  font: inherit;
+  font-size: 0.67rem;
+  cursor: pointer;
+}
+
+.a3-teacher-dialog {
+  position: fixed;
+  z-index: 182;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  gap: 12px;
+  width: min(430px, calc(100vw - 28px));
+  max-height: min(560px, calc(100vh - 28px));
+  overflow: auto;
+  border: 1px solid rgba(160, 184, 214, 0.3);
+  border-radius: 10px;
+  padding: 16px;
+  color: #e3ecf7;
+  background: #101923;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.46);
+  transform: translate(-50%, -50%);
+}
+
+.a3-teacher-dialog header,
+.a3-teacher-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.a3-teacher-dialog h4,
+.a3-teacher-dialog p { margin: 0; }
+.a3-teacher-dialog label { display: grid; gap: 5px; }
+.a3-teacher-dialog select,
+.a3-teacher-dialog input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(160, 184, 214, 0.4);
+  border-radius: 6px;
+  padding: 8px;
+  color: inherit;
+  background: #172633;
+  color-scheme: dark;
+}
+.a3-teacher-dialog button {
+  border: 1px solid rgba(160, 184, 214, 0.35);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: inherit;
+  background: rgba(31, 93, 153, 0.22);
+  cursor: pointer;
+}
+.a3-teacher-dialog footer { justify-content: flex-end; flex-wrap: wrap; }
+.a3-teacher-dialog details ul { padding-left: 20px; }
+.a3-teacher-error { color: #ffb8b8; }
+
+@media (prefers-color-scheme: light) {
+  .a3-teacher-dialog { color: #172633; background: #f8fbff; }
+  .a3-teacher-dialog select,
+  .a3-teacher-dialog input { background: #fff; color-scheme: light; }
 }
 
 .schedule-empty-slot-action {

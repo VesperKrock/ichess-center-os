@@ -17,6 +17,7 @@ import {
   groupV28AAttendanceRemindersByStudent,
 } from '../src/attendance-operational-reminders.js'
 import { renderAttendanceBoardModule } from '../src/attendance-board-module.js'
+import { ledgerFixture } from './a6-attendance-ledger-fixtures.js'
 import {
   markNotificationReadById,
   upsertNotificationCandidates,
@@ -262,28 +263,28 @@ const availability = {
   isReminderPanelOpen: true,
   isBaselineManagerOpen: true,
 }
-const boardHtml = renderAttendanceBoardModule(...renderArgs, availability)
+const fixture = ledgerFixture()
+const boardArgs = {
+  students: fixture.students, classSessions: fixture.classSessions, filters: fixture.filters,
+  availability: { ...fixture, ...availability, ledgerContext: { status: 'ready', occurrences: fixture.occurrences } },
+}
+const boardHtml = renderAttendanceBoardModule(boardArgs)
 for (const expected of [
-  'Cần xử lý · 1 học viên',
-  '2 nhắc việc',
-  'T3 · 17:00–18:30',
-  'T7 · 09:00–10:30',
-  'CN · 15:00–16:30',
-  'data-attendance-student-schedule-edit',
-  '>Bù<',
-  '>Vắng<',
-  'attendance-cell-note-indicator',
-  'attendance-baseline-manager-modal',
+  'data-attendance-read-only',
+  'data-attendance-ledger-state="present"',
+  'data-attendance-ledger-state="absent"',
+  'data-attendance-ledger-state="makeup"',
+  'data-attendance-ledger-state="unmarked"',
 ]) {
   assert(boardHtml.includes(expected), `Attendance render is missing ${expected}`)
 }
 const baselineModalIndex = boardHtml.indexOf('attendance-baseline-manager-modal')
 const baselineClearIndex = boardHtml.indexOf('data-attendance-baseline-action="clear"')
-assert(baselineModalIndex >= 0 && baselineClearIndex > baselineModalIndex,
-  'Baseline controls must remain isolated inside the background-data modal.')
+assert(baselineModalIndex === -1 && baselineClearIndex === -1,
+  'A6 must retire the normal Board baseline editor while preserving its records.')
 assert(!/RPC|PGRST|schema|migration|SQL/.test(boardHtml))
 
-const contextHtml = renderAttendanceBoardModule(...renderArgs, {
+const contextHtml = renderAttendanceBoardModule({ ...boardArgs, availability: {
   ...availability,
   isBaselineManagerOpen: false,
   attendanceCellNoteContextState: {
@@ -297,12 +298,12 @@ const contextHtml = renderAttendanceBoardModule(...renderArgs, {
       classSessionId: 'class-tue',
     }],
   },
-})
-assert(contextHtml.includes('attendance-cell-note-context'))
-assert(contextHtml.includes('Ghi chú ô điểm danh'))
-assert(contextHtml.includes('Xem / sửa ghi chú'))
+} })
+assert(!contextHtml.includes('attendance-cell-note-context'))
+assert(!contextHtml.includes('Ghi chú ô điểm danh'))
+assert(!contextHtml.includes('Xem / sửa ghi chú'))
 assert(!contextHtml.includes('>occurrence-absent<'))
-const modalHtml = renderAttendanceBoardModule(...renderArgs, {
+const modalHtml = renderAttendanceBoardModule({ ...boardArgs, availability: {
   ...availability,
   isBaselineManagerOpen: false,
   attendanceCellNoteFormState: {
@@ -314,9 +315,9 @@ const modalHtml = renderAttendanceBoardModule(...renderArgs, {
     classSessionId: 'class-tue',
     note: 'Phụ huynh đã báo vắng',
   },
-})
-assert(modalHtml.includes('attendance-cell-note-modal'))
-assert(modalHtml.includes('Phụ huynh đã báo vắng'))
+} })
+assert(!modalHtml.includes('attendance-cell-note-modal'))
+assert(!modalHtml.includes('Phụ huynh đã báo vắng'))
 
 const migrationSource = readFileSync(new URL('../supabase/migrations/202609140001_v2_8a_attendance_operational_hardening.sql', import.meta.url), 'utf8')
 for (const invariant of [
@@ -339,7 +340,7 @@ const migrationFiles = readdirSync(new URL('../supabase/migrations/', import.met
   .filter((name) => name.startsWith('20260914') && name.endsWith('.sql'))
 assert.deepEqual(migrationFiles, ['202609140001_v2_8a_attendance_operational_hardening.sql'])
 const trackedMigrationDrift = execFileSync('git', [
-  'diff', '--name-only', '64b49aff7c2733431b9a97ee042e44623049acaa', '--', 'supabase/migrations',
+  'diff', '--name-only', '--diff-filter=M', '64b49aff7c2733431b9a97ee042e44623049acaa', '--', 'supabase/migrations',
 ], { encoding: 'utf8' }).trim()
 assert.equal(trackedMigrationDrift, '', 'Historical tracked migration drift must remain zero.')
 
@@ -358,7 +359,7 @@ for (const expected of [
 ]) {
   assert(mainSource.includes(expected), `Main wiring is missing ${expected}`)
 }
-assert(registrySource.includes("['tuition', 'calendar-notes', 'attendance-operations']"))
+assert(registrySource.includes("['core', 'attendance', 'attendance-ledger']"))
 assert(notificationSource.includes("'attendance-operation'"))
 assert(!notificationSource.includes("'provisional-unpaid',\n        'danger'"))
 assert(themeSource.includes('.desktop-window.is-attendance-window'))

@@ -12,6 +12,8 @@ import {
   initialAttendanceBoardFilters,
   renderAttendanceBoardModule,
 } from './attendance-board-module.js'
+import { pullCanonicalAttendanceLedgerContext } from './cloud-attendance-ledger.js'
+import { getCanonicalLedgerAttendance, normalizeAttendanceLedgerFilters } from './attendance-ledger.js'
 import { buildV28AAttendanceNotificationCandidates } from './attendance-operational-reminders.js'
 import {
   buildUnifiedAttendanceRecords,
@@ -29,6 +31,7 @@ import {
 } from './attendance-records.js'
 import './attendance-theme.css'
 import './attendance-v2-8p2-theme.css'
+import './attendance-ledger-theme.css'
 import {
   buildCashbookReconciliationFromForm,
   buildCashbookSettingsFromForm,
@@ -213,12 +216,14 @@ import {
 } from './cloud-authoritative-inventory.js'
 import {
   V23_ATTENDANCE_CAPABILITY_STATUS,
+  V23_ATTENDANCE_CONTRACT,
   createV23AttendanceCapabilityState,
   getV23AttendanceOutcomeMessage,
   isV23AttendanceBackendUnavailable,
   isV23AttendanceCapabilityReady,
   mutateV23OccurrenceAttendance,
   pullV23AttendanceCapability,
+  pullA4EligibleMissedOccurrences,
   selectCurrentV23OccurrenceAttendanceRecord,
 } from './cloud-authoritative-occurrence-attendance.js'
 import {
@@ -275,6 +280,13 @@ import {
   mutateV26TeacherRegistry,
   pullV26TeacherRegistry,
 } from './cloud-authoritative-teacher-registry.js'
+import {
+  changeA3ClassTeacher,
+  projectA3ScheduleSessions,
+  pullA3TeacherContext,
+  resolveA3TeacherForDate,
+  setA3OccurrenceTeacher,
+} from './cloud-authoritative-teacher-history.js'
 import {
   V24_PACKAGE_CYCLE_CAPABILITY_STATUS,
   buildV24PrepareNextCycleCommand,
@@ -1041,12 +1053,18 @@ let sessionReportExtraState = null
 let isSessionReportExtraExpanded = false
 let sessionReportGuestFormState = null
 let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
+let a3TeacherContext = { status: 'idle', centerId: '', fromDate: '', assignments: [], occurrences: [] }
+let a3TeacherDialogState = null
 let tuitionRecords = getStoredTuition([])
 let notifications = getStoredNotifications([])
 let deletedNotificationIds = getDeletedNotificationIds()
 let notificationFilters = { sourceModule: 'all', readState: 'unread' }
 let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
 let attendanceBoardDetailState = null
+let attendanceBoardPdfSnapshot = null
+let attendancePdfExportInFlight = false
+let attendanceLedgerContext = { status: 'idle', centerId: '', occurrences: [], assignments: [] }
+let attendanceLedgerReadRunId = 0
 let attendanceBoardNoteFormState = null
 let isAttendanceBaselineDetailsOpen = false
 let isAttendanceBaselineManagerOpen = false
@@ -1404,7 +1422,7 @@ function getVisibleScheduleSessionsWithCurrentEnrollmentRosters(
   weekStartDate = scheduleWeekStartDate,
 ) {
   const centerId = getCurrentCanonicalCenterContext().centerId
-  return deriveV22ScheduleRosters({
+  return projectA3ScheduleSessions(deriveV22ScheduleRosters({
     sessions: getVisibleScheduleSessions(scheduleSessions, weekStartDate, classSessions),
     students: getStudentsWithCanonicalProjections(),
     enrollmentSets: v22StudentEnrollmentSets,
@@ -1412,7 +1430,129 @@ function getVisibleScheduleSessionsWithCurrentEnrollmentRosters(
       v22StudentEnrollmentCapabilityState,
       centerId,
     ),
+  }), getCurrentA3TeacherContext(weekStartDate), {
+    scheduleSessions, classSessions,
   })
+}
+
+function getCurrentA3TeacherContext(weekStartDate = scheduleWeekStartDate) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  return a3TeacherContext.status === 'ready'
+    && a3TeacherContext.centerId === centerId
+    && a3TeacherContext.fromDate === weekStartDate
+    ? a3TeacherContext
+    : { assignments: [], occurrences: [] }
+}
+
+async function refreshA3TeacherContext() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const fromDate = scheduleWeekStartDate
+  const end = new Date(`${fromDate}T12:00:00Z`)
+  end.setUTCDate(end.getUTCDate() + 6)
+  const toDate = end.toISOString().slice(0, 10)
+  a3TeacherContext = { status: 'loading', centerId, fromDate, assignments: [], occurrences: [] }
+  render()
+  const result = await pullA3TeacherContext({
+    supabase: getSupabaseClient(), centerId, fromDate, toDate,
+  })
+  if (centerId !== getCurrentCanonicalCenterContext().centerId
+      || fromDate !== scheduleWeekStartDate) return result
+  a3TeacherContext = result.ok
+    ? { ...result, status: 'ready' }
+    : { status: 'failed', centerId, fromDate, assignments: [], occurrences: [], error: result.error }
+  render()
+  return result
+}
+
+function getCurrentAttendanceLedgerContext() {
+  const range = normalizeAttendanceLedgerFilters(attendanceBoardFilters)
+  return attendanceLedgerContext.centerId === getCurrentCanonicalCenterContext().centerId
+    && attendanceLedgerContext.fromDate === range.fromDate
+    && attendanceLedgerContext.toDate === range.toDate
+    ? attendanceLedgerContext : { status: 'idle', occurrences: [], assignments: [] }
+}
+
+async function refreshAttendanceLedgerContext() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const range = normalizeAttendanceLedgerFilters(attendanceBoardFilters)
+  const runId = ++attendanceLedgerReadRunId
+  attendanceLedgerContext = { status: 'loading', centerId, ...range, occurrences: [], assignments: [] }
+  render()
+  const result = await pullCanonicalAttendanceLedgerContext({
+    supabase: getSupabaseClient(), centerId, filters: range, attendanceRecords,
+  })
+  const currentRange = normalizeAttendanceLedgerFilters(attendanceBoardFilters)
+  if (runId !== attendanceLedgerReadRunId || centerId !== getCurrentCanonicalCenterContext().centerId
+    || currentRange.fromDate !== range.fromDate || currentRange.toDate !== range.toDate) return result
+  attendanceLedgerContext = result.ok ? { ...result, status: 'ready' }
+    : { status: 'failed', centerId, ...range, occurrences: [], assignments: [], error: result.error }
+  render()
+  return result
+}
+
+function getAttendanceLedgerPlannedOccurrences(context) {
+  const range = normalizeAttendanceLedgerFilters(attendanceBoardFilters)
+  if (range.error || context.status !== 'ready') return []
+  const projectedStudents = getStudentsWithCanonicalProjections()
+  const canonicalIds = new Set(scheduleSessions.filter(item => Number(item.cloudVersion) > 0).map(item => item.id))
+  const occurrences = []
+  const start = getCurrentScheduleWeekStartDate(new Date(`${range.fromDate}T12:00:00`))
+  for (let week = start; week <= range.toDate; week = getNextScheduleWeekStartDate(week)) {
+    occurrences.push(...projectA3ScheduleSessions(deriveV22ScheduleRosters({
+      sessions: getVisibleScheduleSessions(scheduleSessions, week, classSessions)
+        .filter(item => canonicalIds.has(item.id) && !item.isEmptyClassSessionSlot && !item.isOrphanScheduleRecord),
+      students: projectedStudents, enrollmentSets: v22StudentEnrollmentSets,
+      capabilityReady: isV22StudentEnrollmentCapabilityReady(v22StudentEnrollmentCapabilityState, context.centerId),
+    }), { assignments: context.assignments, occurrences: [] })
+      .filter(item => item.occurrenceDate >= range.fromDate && item.occurrenceDate <= range.toDate))
+  }
+  return occurrences
+}
+
+async function exportAttendanceBoardPdf(button) {
+  if (attendancePdfExportInFlight) return false
+  const context = getCurrentCanonicalCenterContext()
+  const snapshot = attendanceBoardPdfSnapshot
+  if (!context.ok || !snapshot || snapshot.centerId !== context.centerId) {
+    window.alert('Chưa tải được bảng điểm danh của cơ sở hiện tại. Vui lòng làm mới.')
+    return false
+  }
+  const model = structuredClone(snapshot.model)
+  const pdfViewer = window.open('', '_blank')
+  if (!pdfViewer) {
+    window.alert('Trình duyệt đang chặn cửa sổ PDF. Hãy cho phép mở cửa sổ mới và thử lại.')
+    return false
+  }
+  attendancePdfExportInFlight = true
+  const previousLabel = button.textContent
+  button.disabled = true
+  button.setAttribute('aria-busy', 'true')
+  button.textContent = 'Đang tạo PDF…'
+  try {
+    pdfViewer.opener = null
+    pdfViewer.document.title = 'Bảng điểm danh'
+    pdfViewer.document.body.textContent = 'Đang tạo PDF điểm danh…'
+    const { generateAttendancePdf } = await import('./attendance-pdf.js')
+    const result = await generateAttendancePdf(model, { centerName: context.centerName })
+    if (getCurrentCanonicalCenterContext().centerId !== context.centerId) {
+      throw new Error('Cơ sở đã thay đổi. Vui lòng xuất lại từ bảng của cơ sở hiện tại.')
+    }
+    const objectUrl = URL.createObjectURL(result.blob)
+    pdfViewer.location.replace(objectUrl)
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000)
+    return true
+  } catch (error) {
+    try { pdfViewer.close() } catch { /* visible alert below */ }
+    window.alert(error?.message || 'Không tạo được PDF điểm danh. Vui lòng thử lại.')
+    return false
+  } finally {
+    attendancePdfExportInFlight = false
+    if (button.isConnected) {
+      button.disabled = false
+      button.removeAttribute('aria-busy')
+      button.textContent = previousLabel
+    }
+  }
 }
 
 function getCloudAttachmentAccessContext() {
@@ -2020,6 +2160,10 @@ function resetV23AttendanceRuntimeForAccessBoundary(centerId = '') {
   attendanceBaselineDraftBaseRecords = null
   attendanceBaselineDraftState = null
   scheduleAdminAttendanceState = null
+  attendanceLedgerReadRunId += 1
+  attendanceLedgerContext = { status: 'idle', centerId, occurrences: [], assignments: [] }
+  attendanceBoardDetailState = null
+  attendanceBoardPdfSnapshot = null
 }
 
 function resetV24PackageCycleRuntimeForAccessBoundary(centerId = '') {
@@ -10843,26 +10987,74 @@ function hasInitialBaselineAttendanceRecord(records, studentId, date) {
 function createScheduleAdminAttendanceState(occurrence, records = attendanceRecords) {
   const existingRecords = Array.isArray(records) ? records : []
   const rows = getScheduleAdminStudentIds(occurrence).map((studentId) => {
-    const existingRecord = selectCurrentV23OccurrenceAttendanceRecord(
+    const selectedRecord = selectCurrentV23OccurrenceAttendanceRecord(
       existingRecords,
       occurrence,
       studentId,
     )
+    const existingRecord = selectedRecord?.attendanceAuthority === V23_ATTENDANCE_CONTRACT
+      ? selectedRecord : null
+    const missedRecord = existingRecord?.makeupForAttendanceLocalId
+      ? existingRecords.find((record) =>
+        record?.attendanceAuthority === V23_ATTENDANCE_CONTRACT
+        && (record.authorityLocalId || record.id) === existingRecord.makeupForAttendanceLocalId)
+      : null
 
     return {
       studentId,
       attendanceStatus: existingRecord?.attendanceStatus || '',
+      originalStatus: existingRecord?.attendanceStatus || '',
+      makeupForAttendanceLocalId: existingRecord?.makeupForAttendanceLocalId || '',
+      originalMakeupForAttendanceLocalId: existingRecord?.makeupForAttendanceLocalId || '',
+      currentMakeupTarget: existingRecord?.makeupForAttendanceLocalId ? {
+        attendance_local_id: existingRecord.makeupForAttendanceLocalId,
+        occurrence_date: missedRecord?.date || '',
+        teacher_name: missedRecord?.teacherName || '',
+      } : null,
+      makeupCandidates: [],
+      candidateState: 'idle',
+      dirty: false,
       note: existingRecord?.note || '',
     }
   })
 
   return {
+    draftId: crypto.randomUUID(),
     sessionId: occurrence?.id || null,
     occurrenceDate: occurrence?.occurrenceDate || occurrence?.date || '',
+    baseRecords: cloneC52OperationalCommandValue(existingRecords),
     rows,
     error: '',
     saveState: '',
+    needsReload: false,
   }
+}
+
+async function loadScheduleMakeupCandidates(studentId) {
+  const state = scheduleAdminAttendanceState
+  if (!state || !state.rows.some((row) => row.studentId === studentId && row.attendanceStatus === 'makeup')) return
+  updateScheduleAdminAttendanceRow(studentId, { candidateState: 'loading' }, true)
+  render()
+  const result = await pullA4EligibleMissedOccurrences({
+    supabase: getSupabaseClient(),
+    centerId: getCurrentCanonicalCenterContext().centerId,
+    studentId,
+    makeupDate: state.occurrenceDate,
+  })
+  if (scheduleAdminAttendanceState?.draftId !== state.draftId
+      || scheduleAdminAttendanceState?.sessionId !== state.sessionId
+      || scheduleAdminAttendanceState?.occurrenceDate !== state.occurrenceDate
+      || !scheduleAdminAttendanceState.rows.some((row) => row.studentId === studentId && row.attendanceStatus === 'makeup')) return
+  const currentRow = scheduleAdminAttendanceState.rows.find((row) => row.studentId === studentId)
+  const selected = currentRow?.makeupForAttendanceLocalId || ''
+  const selectedStillValid = selected === currentRow?.originalMakeupForAttendanceLocalId
+    || result.candidates?.some((item) => item.attendance_local_id === selected)
+  updateScheduleAdminAttendanceRow(studentId, {
+    candidateState: result.ok ? 'ready' : 'failed',
+    makeupCandidates: result.ok ? result.candidates : [],
+    makeupForAttendanceLocalId: result.ok && selected && !selectedStillValid ? '' : selected,
+  }, true)
+  render()
 }
 
 function getScheduleAdminAttendanceRecords(occurrence, records = attendanceRecords) {
@@ -10898,7 +11090,7 @@ function getScheduleAdminAttendanceSessionKey(record = {}) {
   ).trim()
 }
 
-function updateScheduleAdminAttendanceRow(studentId, patch = {}) {
+function updateScheduleAdminAttendanceRow(studentId, patch = {}, preserveFeedback = false) {
   if (!scheduleAdminAttendanceState) {
     return
   }
@@ -10908,8 +11100,8 @@ function updateScheduleAdminAttendanceRow(studentId, patch = {}) {
     rows: scheduleAdminAttendanceState.rows.map((row) =>
       row.studentId === studentId ? { ...row, ...patch } : row,
     ),
-    error: '',
-    saveState: '',
+    error: preserveFeedback ? scheduleAdminAttendanceState.error : '',
+    saveState: preserveFeedback ? scheduleAdminAttendanceState.saveState : '',
   }
 }
 
@@ -10925,9 +11117,31 @@ function getScheduleAdminAttendanceOccurrence() {
   ) || null
 }
 
+async function openCanonicalScheduleOccurrence(scheduleId, date, centerId) {
+  const findCard = () => [...document.querySelectorAll('[data-schedule-action="open-edit"]')].find(item =>
+    item.dataset.scheduleSessionId === scheduleId && item.dataset.scheduleOccurrenceDate === date)
+  let card = findCard()
+  // This runs after entering Schedule. Old V2.3 rows can predate A2's stored
+  // snapshots; Schedule owns their canonical RESOLVE path, including removed
+  // assignments. Board's read never materializes or edits these facts.
+  if (!card && getCanonicalLedgerAttendance(attendanceRecords).some(record =>
+    record.scheduleSessionId === scheduleId && record.date === date)) {
+    const result = await getSupabaseClient().rpc('a2_manage_occurrence', {
+      p_center_id: centerId, p_schedule_session_id: scheduleId,
+      p_occurrence_date: date, p_action: 'RESOLVE',
+    })
+    if (result.error || result.data?.ok !== true) return
+    await refreshA3TeacherContext()
+    if (centerId !== getCurrentCanonicalCenterContext().centerId) return
+    card = findCard()
+  }
+  card?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  card?.click()
+}
+
 function buildScheduleAdminAttendanceInputs(occurrence, rows = []) {
   return rows
-    .filter((row) => row.attendanceStatus)
+    .filter((row) => row.dirty && row.attendanceStatus)
     .map((row) => {
       return {
         studentId: row.studentId,
@@ -10939,6 +11153,8 @@ function buildScheduleAdminAttendanceInputs(occurrence, rows = []) {
         teacherName: getScheduleAdminTeacherName(occurrence),
         status: row.attendanceStatus,
         attendanceStatus: row.attendanceStatus,
+        makeupForAttendanceLocalId: row.attendanceStatus === 'makeup'
+          ? row.makeupForAttendanceLocalId || '' : '',
         counted: false,
         countsTowardTuition: false,
         creditNumber: null,
@@ -12147,6 +12363,12 @@ function renderWindowBody(windowItem) {
           getCurrentCanonicalCenterContext().centerId,
         ),
         occurrenceAttendanceStatus: v23AttendanceCapabilityState.status,
+        a3TeacherContext: getCurrentA3TeacherContext(),
+        a3TeacherReady: getCurrentA3TeacherContext() === a3TeacherContext,
+        a3TeacherStatus: a3TeacherContext.status,
+        a3TeacherDialog: a3TeacherDialogState,
+        a3TeacherChoices: v26TeacherRegistryCapabilityState.assignedTeachers
+          ?.filter((teacher) => teacher.status === 'active') || [],
       },
     )
   }
@@ -12315,8 +12537,15 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'cai-dat-co-so') {
     const centerInfo = getCurrentCanonicalCenterContext()
+    const teacherAssignments = a3TeacherContext.status === 'ready'
+      && a3TeacherContext.centerId === centerInfo.centerId
+      ? a3TeacherContext.assignments : []
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
     return renderSettingsModule(
-      classSessions,
+      classSessions.map((item) => ({
+        ...item,
+        instructorName: resolveA3TeacherForDate(teacherAssignments, item.id, today)?.teacher_name || '',
+      })),
       getStudentsWithCanonicalProjections(),
       settingsFilters,
       settingsClassSessionFormState,
@@ -12345,54 +12574,34 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'bang-diem-danh') {
-    const attendanceAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'attendance')
-    const tuitionAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'tuition')
-    const calendarNotesAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'calendar-notes')
-    const attendanceOperationsReady = isModuleUpstreamCurrent('bang-diem-danh', 'attendance-operations')
-      && isV28AAttendanceOperationsCapabilityReady(
-        v28aAttendanceOperationsCapabilityState,
-        getCurrentCanonicalCenterContext().centerId,
-      )
-    return renderAttendanceBoardModule(
-      getStudentsWithCanonicalProjections(),
+    const attendanceAvailable = ['core', 'attendance'].every(upstream =>
+      isModuleUpstreamCurrent('bang-diem-danh', upstream))
+    const tuitionAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'package-cycles')
+    const ledgerContext = getCurrentAttendanceLedgerContext()
+    return renderAttendanceBoardModule({
+      students: getStudentsWithCanonicalProjections(),
       classSessions,
-      tuitionAvailable ? tuitionRecords : [],
-      attendanceAvailable ? sessionReports : [],
-      calendarNotesAvailable ? attendanceAdvisoryNotes : [],
-      attendanceBoardFilters,
-      attendanceBoardDetailState,
-      calendarNotesAvailable ? attendanceBoardNotes : [],
-      attendanceBoardNoteFormState,
-      Boolean(attendanceBaselineUndoSnapshot),
-      getAttendanceBaselineDraftRecords(),
-      getAttendanceBaselineDraftChangeCount(),
-      getAttendanceBaselineDraftState(),
-      isAttendanceBaselineDetailsOpen,
-      getUnavailableOptionalState(
-        'bang-diem-danh',
-        'calendar-notes',
-        'Ghi chú chăm sóc theo tháng và ghi chú điểm danh',
-      ) || c57CalendarNotesSharedTruthState,
-      {
+      filters: attendanceBoardFilters,
+      detailState: attendanceBoardDetailState,
+      onModel: (model, ready) => {
+        attendanceBoardPdfSnapshot = ready ? { model, centerId: ledgerContext.centerId } : null
+      },
+      availability: {
         attendanceAvailable,
         tuitionAvailable,
-        calendarNotesAvailable,
+        attendanceRecords: attendanceAvailable ? getCanonicalLedgerAttendance(attendanceRecords) : [],
+        historicalBaselineRecords: attendanceAvailable ? attendanceRecords.filter(record =>
+          record.source === 'initialBaseline' && Number(record.cloudVersion) > 0 && !record.cloudDeletedAt) : [],
+        ledgerContext,
+        scheduleSessions,
+        plannedOccurrences: attendanceAvailable ? getAttendanceLedgerPlannedOccurrences(ledgerContext) : [],
         packageCycleReady: isV24PackageCycleCapabilityReady(
           v24PackageCycleCapabilityState,
           getCurrentCanonicalCenterContext().centerId,
         ),
         packageCycleStudentStates: v24PackageCycleStudentStates,
-        packageCycleContributions: v24PackageCycleContributions,
-        attendanceOperationsReady,
-        attendanceReminders: attendanceOperationsReady ? v28aAttendanceReminders : [],
-        attendanceCellNotes: attendanceOperationsReady ? v28aAttendanceCellNotes : [],
-        attendanceOperationsState: v28aAttendanceOperationsCapabilityState,
-        isReminderPanelOpen: isAttendanceReminderPanelOpen,
-        attendanceCellNoteContextState,
-        attendanceCellNoteFormState,
-        isBaselineManagerOpen: isAttendanceBaselineManagerOpen,
       },
-    )
+    })
   }
 
   return `
@@ -13530,7 +13739,7 @@ function selectFinanceWorkspaceViewForModule(moduleId) {
   }
 }
 
-function openModuleWindow(moduleId) {
+function openModuleWindow(moduleId, { refresh = true } = {}) {
   selectFinanceWorkspaceViewForModule(moduleId)
   moduleId = getCanonicalFinanceModuleId(moduleId)
 
@@ -13547,7 +13756,7 @@ function openModuleWindow(moduleId) {
     isNotificationCenterOpen = false
     resetModuleRefreshStateForOpen(moduleId)
     render()
-    void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-reopen' })
+    if (refresh) void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-reopen' })
     return true
   }
 
@@ -13582,7 +13791,7 @@ function openModuleWindow(moduleId) {
   isNotificationCenterOpen = false
   resetModuleRefreshStateForOpen(moduleId)
   render()
-  void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-open' })
+  if (refresh) void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-open' })
   return true
 }
 
@@ -13647,7 +13856,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   }))
   render()
 
-  const results = await Promise.all(upstreams.map(async (upstream) => {
+  const results = await Promise.all(upstreams.filter(upstream => upstream !== 'attendance-ledger').map(async (upstream) => {
     let settledResult
     try {
       const result = await refreshAuthoritativeUpstream(upstream, `${moduleId}:${reason}`)
@@ -13669,8 +13878,19 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   if (moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
     await refreshV23AttendanceCapability({ silent: true })
   }
+  if (moduleId === 'thoi-khoa-bieu' || moduleId === 'cai-dat-co-so') {
+    await Promise.all([
+      refreshA3TeacherContext(),
+      ...(moduleId === 'thoi-khoa-bieu'
+        ? [refreshV26TeacherRegistry({ reason: 'schedule-teacher-context', silent: true })]
+        : []),
+    ])
+  }
   if (moduleId === 'bang-diem-danh') {
-    await refreshV24PackageCycles({ reason: `${moduleId}:${reason}`, silent: true })
+    const ledgerResult = await refreshAttendanceLedgerContext()
+    const result = { upstream: 'attendance-ledger', ...ledgerResult }
+    results.push(result)
+    recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, result)
   }
 
   const latestContext = getCurrentCanonicalCenterContext()
@@ -13912,10 +14132,10 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
   return { ok: failures.length === 0, results, failures }
 }
 
-function openModuleWindowFromChildInteraction(moduleId) {
+function openModuleWindowFromChildInteraction(moduleId, options = {}) {
   const targetModuleId = getCanonicalFinanceModuleId(moduleId)
   const beforeWindow = openWindows.find((windowItem) => windowItem.moduleId === targetModuleId)
-  if (!openModuleWindow(moduleId)) {
+  if (!openModuleWindow(moduleId, options)) {
     return
   }
   const targetWindow = beforeWindow || openWindows.find((windowItem) => windowItem.moduleId === targetModuleId)
@@ -19672,6 +19892,9 @@ async function writeC52AttendanceSessionReportThroughCloud({
 } = {}) {
   const isAttendanceBoardAction = String(reason).startsWith('baseline-')
     || String(reason).startsWith('attendance-board-')
+  if (isAttendanceBoardAction) {
+    return { ok: false, outcome_code: 'READ_ONLY_LEDGER', error: 'Chỉnh điểm danh tại Thời khóa biểu.' }
+  }
   const moduleId = isAttendanceBoardAction ? 'bang-diem-danh' : 'thoi-khoa-bieu'
   const unavailableUpstreams = ['core', 'attendance']
     .filter((upstream) => !isModuleUpstreamCurrent(moduleId, upstream))
@@ -19836,6 +20059,7 @@ async function writeC52AttendanceSessionReportThroughCloud({
 async function writeV23OccurrenceAttendanceThroughCloud({
   occurrence,
   attendanceInputs = [],
+  currentRecords = attendanceRecords,
   sessionReport = null,
   reason = 'v2-3-occurrence-attendance',
 } = {}) {
@@ -19881,7 +20105,7 @@ async function writeV23OccurrenceAttendanceThroughCloud({
     occurrence: cloneC52OperationalCommandValue(occurrence),
     attendanceInputs: cloneC52OperationalCommandValue(attendanceInputs),
     currentRecords: cloneC52OperationalCommandValue(
-      attendanceRecords,
+      currentRecords,
     ),
     sessionReport: cloneC52OperationalCommandValue(sessionReport),
     idempotencyKey: createOperationalCommandIdempotencyKey(),
@@ -19949,6 +20173,7 @@ async function writeV23OccurrenceAttendanceThroughCloud({
   if (isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)) {
     await refreshV28AAttendanceOperations({ reason: 'attendance-reconciled', silent: true })
   }
+  if (openWindows.some(item => item.moduleId === 'bang-diem-danh')) await refreshAttendanceLedgerContext()
   return { ...result, projection: mergeResult }
 }
 
@@ -20081,6 +20306,8 @@ function handleC51AttendanceRealtimeRecord(record) {
   }
 
   applyC51AttendanceProjection(mergeResult)
+  if (record.entity_type === 'attendance_record'
+    && openWindows.some(item => item.moduleId === 'bang-diem-danh')) void refreshAttendanceLedgerContext()
   render()
 }
 
@@ -25257,8 +25484,12 @@ function bindEvents() {
     pullCloudDbSnapshotToLocal()
   })
 
+  document.querySelectorAll('[data-attendance-export-pdf]').forEach((button) => {
+    button.addEventListener('click', () => { void exportAttendanceBoardPdf(button) })
+  })
+
   document.querySelectorAll('[data-attendance-board-filter]').forEach((control) => {
-    const eventNames = control.type === 'month'
+    const eventNames = ['month', 'date'].includes(control.type)
       ? ['input', 'change']
       : [control.matches('select') ? 'change' : 'input']
 
@@ -25276,6 +25507,8 @@ function bindEvents() {
       }
       attendanceBoardDetailState = null
       render()
+
+      if (['fromDate', 'toDate'].includes(filterName)) void refreshAttendanceLedgerContext()
 
       const nextControl = document.querySelector(`[data-attendance-board-filter="${filterName}"]`)
       focusElementWithoutScrolling(nextControl)
@@ -25453,15 +25686,63 @@ function bindEvents() {
       attendanceBoardDetailState = {
         studentId: button.dataset.studentId || '',
         dateKey: button.dataset.dateKey || '',
+        scheduleSessionId: button.dataset.scheduleSessionId || '',
       }
       render()
+      focusElementWithoutScrolling(document.querySelector('.attendance-ledger-detail'))
     })
   })
 
   document.querySelectorAll('[data-attendance-detail-close]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      if (event.target.closest('.attendance-ledger-detail') && !event.target.closest('button[data-attendance-detail-close]')) return
       attendanceBoardDetailState = null
       render()
+    })
+  })
+
+  document.querySelectorAll('[data-attendance-occurrence-detail]').forEach(button => {
+    button.addEventListener('click', () => {
+      attendanceBoardDetailState = { studentId: '', scheduleSessionId: button.dataset.scheduleSessionId,
+        dateKey: button.dataset.occurrenceDate }
+      render()
+      focusElementWithoutScrolling(document.querySelector('.attendance-ledger-detail'))
+    })
+  })
+
+  document.querySelector('.attendance-ledger-detail')?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      attendanceBoardDetailState = null
+      render()
+    }
+    if (event.key === 'Tab') {
+      const controls = [...event.currentTarget.querySelectorAll('button')]
+      const first = controls[0], last = controls.at(-1)
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+        event.preventDefault(); last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first?.focus()
+      }
+    }
+  })
+
+  document.querySelectorAll('.attendance-ledger-detail button').forEach(button => {
+    button.addEventListener('pointerdown', event => event.stopPropagation())
+  })
+
+  document.querySelectorAll('[data-attendance-open-occurrence]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      const scheduleId = button.dataset.scheduleSessionId
+      const date = button.dataset.occurrenceDate
+      attendanceBoardDetailState = null
+      scheduleFormState = null
+      resetScheduleReportPanels()
+      scheduleWeekStartDate = getCurrentScheduleWeekStartDate(new Date(`${date}T12:00:00`))
+      openModuleWindowFromChildInteraction('thoi-khoa-bieu', { refresh: false })
+      await refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'attendance-ledger-route' })
+      if (centerId !== getCurrentCanonicalCenterContext().centerId) return
+      await openCanonicalScheduleOccurrence(scheduleId, date, centerId)
     })
   })
 
@@ -28324,6 +28605,7 @@ function bindEvents() {
       closeScheduleActivityPanels()
       resetScheduleReportPanels()
       render()
+      void refreshA3TeacherContext()
     })
   })
 
@@ -28409,7 +28691,7 @@ function bindEvents() {
         ? scheduleSessions.find((item) => item.id === occurrence.assignmentId)
         : scheduleSessions.find((item) => item.id === card.dataset.scheduleSessionId)
 
-      if (!session && !occurrence?.isEmptyClassSessionSlot) {
+      if (!session && !occurrence?.isEmptyClassSessionSlot && !occurrence?.a3OccurrenceMaterialized) {
         return
       }
 
@@ -28439,7 +28721,10 @@ function bindEvents() {
             allowOpenRange: 'true',
           },
         }
-      } else if (occurrence && isPastScheduleOccurrence(occurrence)) {
+      } else if (occurrence
+          && occurrence.a2LifecycleState !== 'CANCELLED'
+          && occurrence.status !== 'cancelled'
+          && (occurrence.a2LifecycleState === 'HELD' || isPastScheduleOccurrence(occurrence))) {
         scheduleFormState = null
         scheduleReportState = {
           sessionId: session?.id || occurrence.id,
@@ -28469,14 +28754,125 @@ function bindEvents() {
       }
 
       render()
+      if (scheduleReportState?.mode === 'adminPlaceholder') {
+        scheduleAdminAttendanceState?.rows.filter((row) => row.attendanceStatus === 'makeup')
+          .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
+      }
     }
 
     card.addEventListener('click', openScheduleSession)
     card.addEventListener('keydown', (event) => {
+      if (event.target !== card) return
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         openScheduleSession()
       }
+    })
+  })
+
+  document.querySelectorAll('[data-a5-attendance-action="open"]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      button.closest('[data-schedule-action="open-edit"]')?.click()
+    })
+  })
+
+  document.querySelectorAll('[data-a3-teacher-action]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const kind = button.dataset.a3TeacherAction
+      const scheduleId = button.dataset.scheduleId || ''
+      const occurrenceDate = button.dataset.occurrenceDate || ''
+      const fact = getCurrentA3TeacherContext().occurrences?.find((item) =>
+        item.schedule_session_local_id === scheduleId && item.occurrence_date === occurrenceDate)
+      a3TeacherDialogState = {
+        kind,
+        classId: button.dataset.classId || '',
+        scheduleId,
+        occurrenceDate,
+        effectiveFrom: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()),
+        teacherId: fact?.actual_teacher_override ? fact.actual_teacher_id || '' : '',
+        hasOverride: fact?.actual_teacher_override === true,
+        idempotencyKey: crypto.randomUUID(),
+        isSaving: false,
+        error: '',
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-a3-teacher-field]').forEach((control) => {
+    control.addEventListener('change', () => {
+      if (!a3TeacherDialogState) return
+      a3TeacherDialogState = {
+        ...a3TeacherDialogState,
+        [control.dataset.a3TeacherField]: control.value,
+        idempotencyKey: crypto.randomUUID(),
+        error: '',
+      }
+      render()
+    })
+  })
+
+  document.querySelectorAll('[data-a3-teacher-dialog]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!a3TeacherDialogState || a3TeacherDialogState.isSaving) return
+      const action = button.dataset.a3TeacherDialog
+      if (action === 'cancel') {
+        a3TeacherDialogState = null
+        render()
+        return
+      }
+      const state = { ...a3TeacherDialogState }
+      if (action === 'save' && (!state.teacherId || (state.kind === 'class' && !state.effectiveFrom))) {
+        a3TeacherDialogState = { ...state, error: 'Chọn giáo viên và ngày áp dụng.' }
+        render()
+        return
+      }
+      a3TeacherDialogState = { ...state, isSaving: true, error: '' }
+      render()
+      const centerId = getCurrentCanonicalCenterContext().centerId
+      const supabase = getSupabaseClient()
+      let result
+      if (state.kind === 'class') {
+        result = await changeA3ClassTeacher({
+          supabase, centerId, classId: state.classId,
+          teacherId: state.teacherId, effectiveFrom: state.effectiveFrom,
+          idempotencyKey: state.idempotencyKey,
+        })
+      } else {
+        const existingFact = getCurrentA3TeacherContext().occurrences?.some((item) =>
+          item.schedule_session_local_id === state.scheduleId
+          && item.occurrence_date === state.occurrenceDate)
+        if (!existingFact) {
+          const resolved = await supabase.rpc('a2_manage_occurrence', {
+            p_center_id: centerId,
+            p_schedule_session_id: state.scheduleId,
+            p_occurrence_date: state.occurrenceDate,
+            p_action: 'RESOLVE',
+          })
+          if (resolved.error || resolved.data?.ok !== true) {
+            result = { ok: false, error: resolved.error?.message || 'Chưa mở được buổi học.' }
+          }
+        }
+        if (!result) {
+          result = await setA3OccurrenceTeacher({
+            supabase, centerId, scheduleId: state.scheduleId,
+            occurrenceDate: state.occurrenceDate,
+            teacherId: action === 'clear' ? null : state.teacherId,
+            action: action === 'clear' ? 'CLEAR' : 'SET',
+            idempotencyKey: action === 'clear' ? crypto.randomUUID() : state.idempotencyKey,
+          })
+        }
+      }
+      if (!result.ok) {
+        a3TeacherDialogState = { ...state, isSaving: false, error: result.error }
+        render()
+        return
+      }
+      a3TeacherDialogState = null
+      await refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'teacher-change' })
+      render()
     })
   })
 
@@ -29039,20 +29435,31 @@ function bindEvents() {
 
   document.querySelectorAll('[data-admin-attendance-status]').forEach((control) => {
     const updateAdminAttendanceStatus = () => {
-      updateScheduleAdminAttendanceRow(control.dataset.adminAttendanceStudentId, {
+      const studentId = control.dataset.adminAttendanceStudentId
+      const row = scheduleAdminAttendanceState?.rows.find((item) => item.studentId === studentId)
+      if (!row) return
+      updateScheduleAdminAttendanceRow(studentId, {
         attendanceStatus: control.value,
+        makeupForAttendanceLocalId: control.value === 'makeup'
+          ? row.makeupForAttendanceLocalId || row.originalMakeupForAttendanceLocalId || '' : '',
+        dirty: true,
       })
       render()
+      if (control.value === 'makeup' && row.candidateState !== 'ready') {
+        void loadScheduleMakeupCandidates(studentId)
+      }
     }
 
     control.addEventListener(control.tagName === 'BUTTON' ? 'click' : 'change', updateAdminAttendanceStatus)
   })
 
-  document.querySelectorAll('[data-admin-attendance-note]').forEach((control) => {
-    control.addEventListener('input', () => {
+  document.querySelectorAll('[data-admin-makeup-target]').forEach((control) => {
+    control.addEventListener('change', () => {
       updateScheduleAdminAttendanceRow(control.dataset.adminAttendanceStudentId, {
-        note: control.value,
+        makeupForAttendanceLocalId: control.value,
+        dirty: true,
       })
+      render()
     })
   })
 
@@ -29064,36 +29471,51 @@ function bindEvents() {
 
       const action = button.dataset.adminAttendanceAction
 
-      if (action === 'mark-all-present') {
-        scheduleAdminAttendanceState = {
-          ...scheduleAdminAttendanceState,
-          rows: scheduleAdminAttendanceState.rows.map((row) => ({
-            ...row,
-            attendanceStatus: 'present',
-          })),
-          error: '',
-          saveState: '',
-        }
-        render()
+      if (action === 'reload-candidates') {
+        void loadScheduleMakeupCandidates(button.dataset.adminAttendanceStudentId)
         return
       }
-
-      if (action === 'clear') {
-        scheduleAdminAttendanceState = {
-          ...scheduleAdminAttendanceState,
-          rows: scheduleAdminAttendanceState.rows.map((row) => ({
-            ...row,
-            attendanceStatus: '',
-            note: '',
-          })),
-          error: '',
-          saveState: '',
+      if (action === 'reload') {
+        const refreshed = await refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'attendance-conflict' })
+        if (!refreshed.ok) {
+          scheduleAdminAttendanceState = {
+            ...scheduleAdminAttendanceState,
+            error: 'Chưa tải được điểm danh mới nhất. Vui lòng thử lại.',
+          }
+          render()
+          return
         }
+        const occurrence = getScheduleAdminAttendanceOccurrence()
+        if (!occurrence) {
+          scheduleAdminAttendanceState = null
+          scheduleReportState = null
+          render()
+          return
+        }
+        for (const [scope, command] of v23AttendanceRetryCommands) {
+          if (command.centerId === getCurrentResolvedCenterId()
+              && command.occurrence?.id === occurrence.id
+              && command.occurrence?.occurrenceDate === occurrence.occurrenceDate) {
+            v23AttendanceRetryCommands.delete(scope)
+          }
+        }
+        scheduleAdminAttendanceState = createScheduleAdminAttendanceState(occurrence, attendanceRecords)
         render()
+        scheduleAdminAttendanceState.rows.filter((row) => row.attendanceStatus === 'makeup')
+          .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
         return
       }
 
       if (action === 'save') {
+        if (scheduleAdminAttendanceState.saveState === 'saving' || scheduleAdminAttendanceState.needsReload) return
+        if (getCurrentA3TeacherContext() !== a3TeacherContext) {
+          scheduleAdminAttendanceState = {
+            ...scheduleAdminAttendanceState,
+            error: 'Chưa tải được giáo viên của buổi học. Vui lòng làm mới lịch.',
+          }
+          render()
+          return
+        }
         const occurrence = getScheduleAdminAttendanceOccurrence()
 
         if (!occurrence) {
@@ -29101,6 +29523,33 @@ function bindEvents() {
             ...scheduleAdminAttendanceState,
             error: 'Không tìm thấy ca học để lưu điểm danh.',
             saveState: '',
+          }
+          render()
+          return
+        }
+
+        if (occurrence.a2LifecycleState === 'CANCELLED' || occurrence.status === 'cancelled'
+            || (occurrence.a2LifecycleState !== 'HELD' && !isPastScheduleOccurrence(occurrence))) {
+          scheduleAdminAttendanceState = {
+            ...scheduleAdminAttendanceState,
+            error: 'Buổi học này chưa thể điểm danh. Vui lòng tải lại lịch.',
+          }
+          render()
+          return
+        }
+
+        const invalidMakeup = scheduleAdminAttendanceState.rows.find((row) => {
+          if (!row.dirty || row.attendanceStatus !== 'makeup') return false
+          if (!row.makeupForAttendanceLocalId || row.candidateState !== 'ready') return true
+          return row.makeupForAttendanceLocalId !== row.originalMakeupForAttendanceLocalId
+            && !row.makeupCandidates.some((item) => item.attendance_local_id === row.makeupForAttendanceLocalId)
+        })
+        if (invalidMakeup) {
+          scheduleAdminAttendanceState = {
+            ...scheduleAdminAttendanceState,
+            error: invalidMakeup.candidateState === 'ready'
+              ? 'Chọn một buổi vắng đủ điều kiện để học bù.'
+              : 'Chưa tải được buổi vắng đủ điều kiện. Vui lòng tải lại.',
           }
           render()
           return
@@ -29121,27 +29570,46 @@ function bindEvents() {
           return
         }
 
+        const draft = scheduleAdminAttendanceState
+        scheduleAdminAttendanceState = { ...draft, saveState: 'saving', error: '' }
+        render()
+
         const result = await writeV23OccurrenceAttendanceThroughCloud({
           occurrence,
           attendanceInputs: inputs,
+          currentRecords: draft.baseRecords,
           reason: 'admin-attendance-save-v2-3',
         })
+        if (scheduleAdminAttendanceState?.draftId !== draft.draftId) return
         if (!result.ok) {
+          const isAttendanceConflict = ['VERSION_CONFLICT', 'ATTENDANCE_VERSION_CONFLICT', 'CONCURRENT_CONFLICT', 'IDEMPOTENCY_CONFLICT'].includes(result.outcome_code)
           scheduleAdminAttendanceState = {
             ...scheduleAdminAttendanceState,
-            error: result.error || 'Chưa lưu được điểm danh. Thông tin bạn nhập vẫn được giữ nguyên.',
+            error: isAttendanceConflict
+              ? 'Dữ liệu vừa được thay đổi. Tải lại để xem bản mới nhất.'
+              : result.error || 'Chưa lưu được điểm danh. Thông tin bạn nhập vẫn được giữ nguyên.',
             saveState: '',
+            needsReload: isAttendanceConflict,
           }
           render()
+          if (String(result.outcome_code || '').startsWith('MAKEUP_')) {
+            scheduleAdminAttendanceState.rows.filter((row) => row.dirty && row.attendanceStatus === 'makeup')
+              .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
+          }
           return
         }
         const committedRecords = result.projection?.attendanceRecords
           || attendanceRecords
+        await refreshA3TeacherContext()
+        if (scheduleAdminAttendanceState?.draftId !== draft.draftId) return
+        const committedOccurrence = getScheduleAdminAttendanceOccurrence() || occurrence
         scheduleAdminAttendanceState = {
-          ...createScheduleAdminAttendanceState(occurrence, committedRecords),
+          ...createScheduleAdminAttendanceState(committedOccurrence, committedRecords),
           saveState: 'saved',
         }
         render()
+        scheduleAdminAttendanceState.rows.filter((row) => row.attendanceStatus === 'makeup')
+          .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
       }
     })
   })

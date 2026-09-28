@@ -1,0 +1,1665 @@
+{
+  "projection": {
+    "source": "A6_CANONICAL_ATTENDANCE_LEDGER",
+    "centerName": "KIỂM THỬ · Dữ liệu giả lập",
+    "capturedAt": "2026-09-28T05:00:00.000Z",
+    "filters": {
+      "fromDate": "2026-09-01",
+      "toDate": "2026-09-30",
+      "classSessionId": "synthetic-a-class",
+      "teacherId": "all",
+      "query": "",
+      "error": ""
+    },
+    "columns": [
+      {
+        "key": "synthetic-a-occurrence-1|2026-09-02",
+        "scheduleSessionId": "synthetic-a-occurrence-1",
+        "date": "2026-09-02",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      },
+      {
+        "key": "synthetic-a-occurrence-2|2026-09-05",
+        "scheduleSessionId": "synthetic-a-occurrence-2",
+        "date": "2026-09-05",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      },
+      {
+        "key": "synthetic-a-occurrence-3|2026-09-09",
+        "scheduleSessionId": "synthetic-a-occurrence-3",
+        "date": "2026-09-09",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      },
+      {
+        "key": "synthetic-a-occurrence-4|2026-09-12",
+        "scheduleSessionId": "synthetic-a-occurrence-4",
+        "date": "2026-09-12",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      },
+      {
+        "key": "synthetic-a-occurrence-5|2026-09-16",
+        "scheduleSessionId": "synthetic-a-occurrence-5",
+        "date": "2026-09-16",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      },
+      {
+        "key": "synthetic-a-occurrence-6|2026-09-19",
+        "scheduleSessionId": "synthetic-a-occurrence-6",
+        "date": "2026-09-19",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      },
+      {
+        "key": "synthetic-a-occurrence-7|2026-09-23",
+        "scheduleSessionId": "synthetic-a-occurrence-7",
+        "date": "2026-09-23",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      },
+      {
+        "key": "synthetic-a-occurrence-8|2026-09-26",
+        "scheduleSessionId": "synthetic-a-occurrence-8",
+        "date": "2026-09-26",
+        "classSessionId": "synthetic-a-class",
+        "classLabel": "Turtle 2",
+        "startTime": "17:30",
+        "endTime": "18:30",
+        "room": "",
+        "studentIds": [
+          "synthetic-a-student-1",
+          "synthetic-a-student-2",
+          "synthetic-a-student-3",
+          "synthetic-a-student-4",
+          "synthetic-a-student-5",
+          "synthetic-a-student-6",
+          "synthetic-a-student-7",
+          "synthetic-a-student-8",
+          "synthetic-a-student-9",
+          "synthetic-a-student-10",
+          "synthetic-a-student-11",
+          "synthetic-a-student-12"
+        ],
+        "lifecycleState": "HELD",
+        "teacherId": "synthetic-tuan",
+        "teacherName": "Thầy Tuấn",
+        "isSubstitute": false,
+        "partialHistoricalRoster": false,
+        "materialized": true,
+        "teacherCode": "GV1",
+        "slotCode": "C1",
+        "cancelled": false,
+        "future": false
+      }
+    ],
+    "rows": [
+      {
+        "studentId": "synthetic-a-student-8",
+        "name": "Bùi Gia Huy",
+        "level": "Turtle 2",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "absent",
+            "mark": "V",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-5",
+        "name": "Đặng Khánh Chi",
+        "level": "Dolphin 3",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-7",
+        "name": "Đỗ Bảo Hân",
+        "level": "Eagle",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "absent",
+            "mark": "V",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-9",
+        "name": "Hoàng Nhật Minh",
+        "level": "Turtle 2",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-3",
+        "name": "Lê Hoàng Bình",
+        "level": "Dolphin 3",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-11",
+        "name": "Ngô Tuấn Phong",
+        "level": "Eagle",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-1",
+        "name": "Nguyễn Minh Anh",
+        "level": "Turtle 2",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "absent",
+            "mark": "V",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "makeup",
+            "mark": "B",
+            "originalDate": "2026-09-05",
+            "originalOccurrence": {
+              "date": "2026-09-05",
+              "teacherName": "Thầy Tuấn"
+            }
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-4",
+        "name": "Phạm Ngọc Châu",
+        "level": "Dolphin 3",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "absent",
+            "mark": "V",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "makeup",
+            "mark": "B",
+            "originalDate": "2026-09-12",
+            "originalOccurrence": {
+              "date": "2026-09-12",
+              "teacherName": "Thầy Tuấn"
+            }
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-10",
+        "name": "Phan Quỳnh Nhi",
+        "level": "Eagle",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-2",
+        "name": "Trần Gia Bảo",
+        "level": "Turtle 2",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "absent",
+            "mark": "V",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-6",
+        "name": "Võ Đức Duy",
+        "level": "Dolphin 3",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      },
+      {
+        "studentId": "synthetic-a-student-12",
+        "name": "Vũ Hải Yến",
+        "level": "Eagle",
+        "cells": [
+          {
+            "key": "synthetic-a-occurrence-1|2026-09-02",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-2|2026-09-05",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-3|2026-09-09",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-4|2026-09-12",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-5|2026-09-16",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-6|2026-09-19",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-7|2026-09-23",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          },
+          {
+            "key": "synthetic-a-occurrence-8|2026-09-26",
+            "state": "present",
+            "mark": "✓",
+            "originalDate": "",
+            "originalOccurrence": null
+          }
+        ]
+      }
+    ],
+    "teachers": [
+      {
+        "code": "GV1",
+        "name": "Thầy Tuấn"
+      }
+    ],
+    "slots": [
+      {
+        "code": "C1",
+        "days": {},
+        "time": "17:30–18:30",
+        "room": "",
+        "label": "T4–T7 · 17:30–18:30"
+      }
+    ],
+    "showLevel": true,
+    "showTeacherCodes": false,
+    "showSlotCodes": false
+  },
+  "textRegions": [
+    {
+      "page": 1,
+      "value": "BẢNG ĐIỂM DANH",
+      "x": 104,
+      "baseline": 30,
+      "size": 17,
+      "width": 153.9462890625
+    },
+    {
+      "page": 1,
+      "value": "iChess · Cơ sở KIỂM THỬ · Dữ liệu giả lập",
+      "x": 621.829985546875,
+      "baseline": 24,
+      "size": 10.5,
+      "width": 196.059814453125
+    },
+    {
+      "page": 1,
+      "value": "Thời gian: 01/09/2026 – 30/09/2026",
+      "x": 679.87075703125,
+      "baseline": 51,
+      "size": 9.5,
+      "width": 138.01904296875
+    },
+    {
+      "page": 1,
+      "value": "Ca học: T4–T7 · 17:30–18:30",
+      "x": 24,
+      "baseline": 62,
+      "size": 10.5,
+      "width": 130.0810546875
+    },
+    {
+      "page": 1,
+      "value": "12 học viên · 8 buổi",
+      "x": 741.63931171875,
+      "baseline": 62,
+      "size": 9.5,
+      "width": 76.25048828125
+    },
+    {
+      "page": 1,
+      "value": "Giáo viên: Thầy Tuấn",
+      "x": 24,
+      "baseline": 74,
+      "size": 9.5,
+      "width": 83.6259765625
+    },
+    {
+      "page": 1,
+      "value": "02/09",
+      "x": 315.9234103515625,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 317.0623263671875,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "05/09",
+      "x": 381.4096353515625,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 382.5485513671875,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "09/09",
+      "x": 446.8958603515625,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 448.0347763671875,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "12/09",
+      "x": 512.3820853515625,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 513.5210013671875,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "16/09",
+      "x": 577.8683103515625,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 579.0072263671875,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "19/09",
+      "x": 643.3545353515626,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 644.4934513671876,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "23/09",
+      "x": 708.8407603515626,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 709.9796763671876,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "26/09",
+      "x": 774.3269853515626,
+      "baseline": 105,
+      "size": 9.5,
+      "width": 21.639404296875
+    },
+    {
+      "page": 1,
+      "value": "17:30",
+      "x": 775.4659013671876,
+      "baseline": 117.5,
+      "size": 8.5,
+      "width": 19.361572265625
+    },
+    {
+      "page": 1,
+      "value": "STT",
+      "x": 27.494384765625,
+      "baseline": 109,
+      "size": 9,
+      "width": 17.01123046875
+    },
+    {
+      "page": 1,
+      "value": "Học viên",
+      "x": 54,
+      "baseline": 109,
+      "size": 10.5,
+      "width": 39.369873046875
+    },
+    {
+      "page": 1,
+      "value": "Cấp độ",
+      "x": 251.3487548828125,
+      "baseline": 109,
+      "size": 9.5,
+      "width": 29.302490234375
+    },
+    {
+      "page": 1,
+      "value": "1",
+      "x": 33.625,
+      "baseline": 138,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Bùi Gia Huy",
+      "x": 54,
+      "baseline": 138,
+      "size": 10.5,
+      "width": 53.663818359375
+    },
+    {
+      "page": 1,
+      "value": "Turtle 2",
+      "x": 242,
+      "baseline": 138,
+      "size": 9.5,
+      "width": 30.3369140625
+    },
+    {
+      "page": 1,
+      "value": "V",
+      "x": 453.92418066406253,
+      "baseline": 138,
+      "size": 10.5,
+      "width": 7.582763671875001
+    },
+    {
+      "page": 1,
+      "value": "2",
+      "x": 33.625,
+      "baseline": 164,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Đặng Khánh Chi",
+      "x": 54,
+      "baseline": 164,
+      "size": 10.5,
+      "width": 71.156982421875
+    },
+    {
+      "page": 1,
+      "value": "Dolphin 3",
+      "x": 242,
+      "baseline": 164,
+      "size": 9.5,
+      "width": 38.264404296875
+    },
+    {
+      "page": 1,
+      "value": "3",
+      "x": 33.625,
+      "baseline": 190,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Đỗ Bảo Hân",
+      "x": 54,
+      "baseline": 190,
+      "size": 10.5,
+      "width": 52.48974609375
+    },
+    {
+      "page": 1,
+      "value": "Eagle",
+      "x": 242,
+      "baseline": 190,
+      "size": 9.5,
+      "width": 21.62548828125
+    },
+    {
+      "page": 1,
+      "value": "V",
+      "x": 650.3828556640625,
+      "baseline": 190,
+      "size": 10.5,
+      "width": 7.582763671875001
+    },
+    {
+      "page": 1,
+      "value": "4",
+      "x": 33.625,
+      "baseline": 216,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Hoàng Nhật Minh",
+      "x": 54,
+      "baseline": 216,
+      "size": 10.5,
+      "width": 76.406982421875
+    },
+    {
+      "page": 1,
+      "value": "Turtle 2",
+      "x": 242,
+      "baseline": 216,
+      "size": 9.5,
+      "width": 30.3369140625
+    },
+    {
+      "page": 1,
+      "value": "5",
+      "x": 33.625,
+      "baseline": 242,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Lê Hoàng Bình",
+      "x": 54,
+      "baseline": 242,
+      "size": 10.5,
+      "width": 64.738037109375
+    },
+    {
+      "page": 1,
+      "value": "Dolphin 3",
+      "x": 242,
+      "baseline": 242,
+      "size": 9.5,
+      "width": 38.264404296875
+    },
+    {
+      "page": 1,
+      "value": "6",
+      "x": 33.625,
+      "baseline": 268,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Ngô Tuấn Phong",
+      "x": 54,
+      "baseline": 268,
+      "size": 10.5,
+      "width": 71.74658203125
+    },
+    {
+      "page": 1,
+      "value": "Eagle",
+      "x": 242,
+      "baseline": 268,
+      "size": 9.5,
+      "width": 21.62548828125
+    },
+    {
+      "page": 1,
+      "value": "7",
+      "x": 33.625,
+      "baseline": 294,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Nguyễn Minh Anh",
+      "x": 54,
+      "baseline": 294,
+      "size": 10.5,
+      "width": 79.329345703125
+    },
+    {
+      "page": 1,
+      "value": "Turtle 2",
+      "x": 242,
+      "baseline": 294,
+      "size": 9.5,
+      "width": 30.3369140625
+    },
+    {
+      "page": 1,
+      "value": "V",
+      "x": 388.43795566406254,
+      "baseline": 294,
+      "size": 10.5,
+      "width": 7.582763671875001
+    },
+    {
+      "page": 1,
+      "value": "B",
+      "x": 585.186303515625,
+      "baseline": 294,
+      "size": 10.5,
+      "width": 7.00341796875
+    },
+    {
+      "page": 1,
+      "value": "8",
+      "x": 33.625,
+      "baseline": 320,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Phạm Ngọc Châu",
+      "x": 54,
+      "baseline": 320,
+      "size": 10.5,
+      "width": 74.07421875
+    },
+    {
+      "page": 1,
+      "value": "Dolphin 3",
+      "x": 242,
+      "baseline": 320,
+      "size": 9.5,
+      "width": 38.264404296875
+    },
+    {
+      "page": 1,
+      "value": "V",
+      "x": 519.4104056640625,
+      "baseline": 320,
+      "size": 10.5,
+      "width": 7.582763671875001
+    },
+    {
+      "page": 1,
+      "value": "B",
+      "x": 716.158753515625,
+      "baseline": 320,
+      "size": 10.5,
+      "width": 7.00341796875
+    },
+    {
+      "page": 1,
+      "value": "9",
+      "x": 33.625,
+      "baseline": 346,
+      "size": 9.5,
+      "width": 4.75
+    },
+    {
+      "page": 1,
+      "value": "Phan Quỳnh Nhi",
+      "x": 54,
+      "baseline": 346,
+      "size": 10.5,
+      "width": 70.582763671875
+    },
+    {
+      "page": 1,
+      "value": "Eagle",
+      "x": 242,
+      "baseline": 346,
+      "size": 9.5,
+      "width": 21.62548828125
+    },
+    {
+      "page": 1,
+      "value": "10",
+      "x": 31.25,
+      "baseline": 372,
+      "size": 9.5,
+      "width": 9.5
+    },
+    {
+      "page": 1,
+      "value": "Trần Gia Bảo",
+      "x": 54,
+      "baseline": 372,
+      "size": 10.5,
+      "width": 57.14501953125
+    },
+    {
+      "page": 1,
+      "value": "Turtle 2",
+      "x": 242,
+      "baseline": 372,
+      "size": 9.5,
+      "width": 30.3369140625
+    },
+    {
+      "page": 1,
+      "value": "V",
+      "x": 388.43795566406254,
+      "baseline": 372,
+      "size": 10.5,
+      "width": 7.582763671875001
+    },
+    {
+      "page": 1,
+      "value": "11",
+      "x": 31.25,
+      "baseline": 398,
+      "size": 9.5,
+      "width": 9.5
+    },
+    {
+      "page": 1,
+      "value": "Võ Đức Duy",
+      "x": 54,
+      "baseline": 398,
+      "size": 10.5,
+      "width": 54.099609375
+    },
+    {
+      "page": 1,
+      "value": "Dolphin 3",
+      "x": 242,
+      "baseline": 398,
+      "size": 9.5,
+      "width": 38.264404296875
+    },
+    {
+      "page": 1,
+      "value": "12",
+      "x": 31.25,
+      "baseline": 424,
+      "size": 9.5,
+      "width": 9.5
+    },
+    {
+      "page": 1,
+      "value": "Vũ Hải Yến",
+      "x": 54,
+      "baseline": 424,
+      "size": 10.5,
+      "width": 50.736328125
+    },
+    {
+      "page": 1,
+      "value": "Eagle",
+      "x": 242,
+      "baseline": 424,
+      "size": 9.5,
+      "width": 21.62548828125
+    },
+    {
+      "page": 1,
+      "value": "Có mặt · V Vắng · B Học bù · ? Chưa điểm danh · · Chưa diễn ra",
+      "x": 36,
+      "baseline": 449,
+      "size": 9,
+      "width": 236.19726562499997
+    },
+    {
+      "page": 1,
+      "value": "Học bù: Nguyễn Minh Anh · 16/09/2026 17:30 bù cho buổi vắng 05/09/2026 (Thầy Tuấn).",
+      "x": 24,
+      "baseline": 469,
+      "size": 9,
+      "width": 327.708984375
+    },
+    {
+      "page": 1,
+      "value": "Học bù: Phạm Ngọc Châu · 23/09/2026 17:30 bù cho buổi vắng 12/09/2026 (Thầy Tuấn).",
+      "x": 24,
+      "baseline": 480,
+      "size": 9,
+      "width": 323.20458984375
+    },
+    {
+      "page": 1,
+      "value": "Ghi chú:",
+      "x": 24,
+      "baseline": 508,
+      "size": 9.5,
+      "width": 33.505126953125
+    },
+    {
+      "page": 1,
+      "value": "Xuất từ Bảng điểm danh · 12:00 28/9/26",
+      "x": 24,
+      "baseline": 577.2756,
+      "size": 8,
+      "width": 129.875
+    },
+    {
+      "page": 1,
+      "value": "Trang 1/1",
+      "x": 786.56558125,
+      "baseline": 577.2756,
+      "size": 8,
+      "width": 31.32421875
+    }
+  ]
+}

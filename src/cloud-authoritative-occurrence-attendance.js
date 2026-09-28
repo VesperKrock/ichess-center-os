@@ -113,9 +113,15 @@ export function buildV23OccurrenceAttendanceCommand({
     const studentId = normalizeText(input?.studentId)
     const source = normalizeText(input?.source)
     const attendanceStatus = normalizeText(input?.attendanceStatus || input?.status)
+    const makeupForAttendanceLocalId = attendanceStatus === 'makeup'
+      ? normalizeText(input?.makeupForAttendanceLocalId)
+      : ''
     if (!studentId || seenStudents.has(studentId) || !OPERATIONAL_SOURCES.has(source)
       || !OPERATIONAL_STATUSES.has(attendanceStatus)) {
       throw new Error('Thông tin điểm danh không hợp lệ hoặc bị trùng học viên.')
+    }
+    if (attendanceStatus === 'makeup' && !makeupForAttendanceLocalId) {
+      throw new Error('Chọn buổi Vắng gốc cần học bù.')
     }
     seenStudents.add(studentId)
     const expectedRecords = getV23OccurrenceAttendanceRecords(currentRecords, occurrence, studentId)
@@ -132,6 +138,7 @@ export function buildV23OccurrenceAttendanceCommand({
       student_id: studentId,
       source,
       attendance_status: attendanceStatus,
+      makeup_for_attendance_local_id: makeupForAttendanceLocalId || null,
       expected_records: expectedRecords,
       payload: stripCloudFields({
         ...input,
@@ -142,6 +149,7 @@ export function buildV23OccurrenceAttendanceCommand({
         classSessionId: normalizeText(occurrence?.classSessionId || input?.classSessionId),
         attendanceStatus,
         status: attendanceStatus,
+        makeupForAttendanceLocalId: makeupForAttendanceLocalId || null,
         source,
         tuitionPolicyDefined: false,
         tuitionAutoUpdateEnabled: false,
@@ -218,6 +226,27 @@ export async function mutateV23OccurrenceAttendance({ supabase, ...options } = {
   return { ...data, ok: true, records: data.results, idempotencyKey: command.idempotencyKey }
 }
 
+export async function pullA4EligibleMissedOccurrences({ supabase, centerId, studentId, makeupDate } = {}) {
+  if (!supabase?.rpc || !normalizeText(centerId) || !normalizeText(studentId)
+    || !isDateKey(normalizeText(makeupDate))) {
+    return { ok: false, error: 'Chưa thể tìm buổi Vắng gốc.' }
+  }
+  try {
+    const { data, error } = await supabase.rpc('a4_list_eligible_missed_occurrences', {
+      p_center_id: normalizeText(centerId),
+      p_student_id: normalizeText(studentId),
+      p_makeup_date: normalizeText(makeupDate),
+    })
+    if (error || data?.ok !== true || data.center_id !== normalizeText(centerId)
+      || data.student_id !== normalizeText(studentId) || !Array.isArray(data.candidates)) {
+      return { ok: false, error: 'Chưa thể tải các buổi Vắng có thể học bù.' }
+    }
+    return { ok: true, candidates: data.candidates }
+  } catch {
+    return { ok: false, error: 'Chưa thể tải các buổi Vắng có thể học bù.' }
+  }
+}
+
 export function getV23AttendanceOutcomeMessage(outcomeCode) {
   const messages = {
     CLIENT_NOT_READY: 'Chưa thể kết nối để lưu điểm danh. Thông tin bạn nhập vẫn được giữ nguyên.',
@@ -228,6 +257,19 @@ export function getV23AttendanceOutcomeMessage(outcomeCode) {
     ATTENDANCE_VERSION_CONFLICT: 'Điểm danh đã thay đổi. Vui lòng làm mới trước khi lưu.',
     IDEMPOTENCY_CONFLICT: 'Yêu cầu lưu lại không còn khớp với thông tin hiện tại.',
     CENTER_ACCESS_DENIED: 'Tài khoản không còn quyền tại cơ sở này.',
+    MAKEUP_TARGET_REQUIRED: 'Chọn buổi Vắng gốc cần học bù.',
+    MAKEUP_ALREADY_COMPENSATED: 'Buổi vắng này đã được học bù.',
+    MAKEUP_WRONG_STUDENT: 'Buổi vắng được chọn không thuộc học viên này.',
+    MAKEUP_TARGET_NOT_FOUND: 'Không tìm thấy buổi Vắng gốc tại cơ sở này.',
+    MAKEUP_TARGET_NOT_ABSENT: 'Buổi được chọn không còn là buổi vắng.',
+    MAKEUP_TARGET_FUTURE: 'Không thể học bù cho một buổi trong tương lai.',
+    MAKEUP_TARGET_CANCELLED: 'Buổi được chọn đã bị hủy.',
+    MAKEUP_OCCURRENCE_NOT_HELD: 'Buổi học bù chưa diễn ra.',
+    OCCURRENCE_NOT_HELD: 'Buổi học chưa diễn ra.',
+    OCCURRENCE_CANCELLED: 'Buổi này đã bị hủy.',
+    MAKEUP_TARGET_NOT_HELD: 'Buổi vắng gốc chưa diễn ra.',
+    COMPENSATED_ABSENCE_LOCKED: 'Hãy bỏ hoặc đổi liên kết Học bù trước khi sửa buổi Vắng gốc.',
+    MAKEUP_INVALID_LINK: 'Buổi Học bù cần một buổi Vắng gốc khác, diễn ra trước đó.',
     SERVER_COMMAND_FAILED: 'Chưa thể xác nhận đã lưu. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng làm mới trước khi thử lại.',
   }
   return messages[normalizeText(outcomeCode)] || 'Chưa lưu được điểm danh. Thông tin bạn nhập vẫn được giữ nguyên.'
@@ -235,6 +277,28 @@ export function getV23AttendanceOutcomeMessage(outcomeCode) {
 
 function mapRpcErrorCode(error = {}) {
   const message = normalizeText(error?.message).toLowerCase()
+  const makeupErrors = {
+    a4_makeup_target_required: 'MAKEUP_TARGET_REQUIRED',
+    a4_makeup_already_compensated: 'MAKEUP_ALREADY_COMPENSATED',
+    a4_makeup_wrong_student: 'MAKEUP_WRONG_STUDENT',
+    a4_makeup_target_not_found: 'MAKEUP_TARGET_NOT_FOUND',
+    a4_makeup_target_not_absent: 'MAKEUP_TARGET_NOT_ABSENT',
+    a4_makeup_target_future: 'MAKEUP_TARGET_FUTURE',
+    a4_makeup_target_cancelled: 'MAKEUP_TARGET_CANCELLED',
+    a4_makeup_occurrence_not_held: 'MAKEUP_OCCURRENCE_NOT_HELD',
+    a2_occurrence_not_held: 'OCCURRENCE_NOT_HELD',
+    a2_occurrence_cancelled: 'OCCURRENCE_CANCELLED',
+    a4_makeup_target_not_held: 'MAKEUP_TARGET_NOT_HELD',
+    a4_compensated_absence_locked: 'COMPENSATED_ABSENCE_LOCKED',
+    a4_makeup_same_occurrence: 'MAKEUP_INVALID_LINK',
+    a4_target_only_for_makeup: 'MAKEUP_INVALID_LINK',
+  }
+  for (const [key, code] of Object.entries(makeupErrors)) {
+    if (message.includes(key)) return code
+  }
+  if (error?.code === '23505' && message.includes('center_cloud_entities_a4_makeup_target_unique')) {
+    return 'MAKEUP_ALREADY_COMPENSATED'
+  }
   if (message.includes('v2_3_attendance_version_conflict')) return 'ATTENDANCE_VERSION_CONFLICT'
   if (message.includes('v2_3_idempotency_conflict')) return 'IDEMPOTENCY_CONFLICT'
   if (message.includes('v2_3_center_access_denied')) return 'CENTER_ACCESS_DENIED'

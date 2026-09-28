@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { renderAttendanceBoardModule } from '../src/attendance-board-module.js'
+import { ledgerFixture } from './a6-attendance-ledger-fixtures.js'
 
 const students = [{
   id: 'student-a',
@@ -38,44 +39,22 @@ const records = [{
   source: 'admin',
 }]
 
-const renderBoard = (availability = {}, baselineState = { status: 'locked' }) => renderAttendanceBoardModule(
-  students,
-  classSessions,
-  [{ id: 'tuition-a', studentId: 'student-a', usedSessions: 2, totalSessions: 8 }],
-  [],
-  [],
-  { month: '2026-09', classSessionId: 'all', query: '' },
-  null,
-  [],
-  null,
-  false,
-  records,
-  0,
-  baselineState,
-  false,
-  {},
-  {
-    attendanceAvailable: true,
-    tuitionAvailable: true,
-    calendarNotesAvailable: true,
-    attendanceOperationsReady: true,
-    packageCycleReady: false,
-    attendanceReminders: reminders,
-    ...availability,
-  },
-)
+const fixture = ledgerFixture()
+const renderBoard = (availability = {}) => renderAttendanceBoardModule({
+  students: fixture.students, classSessions: fixture.classSessions, filters: fixture.filters,
+  availability: { ...fixture, attendanceAvailable: true, tuitionAvailable: true,
+    ledgerContext: { status: 'ready', occurrences: fixture.occurrences }, ...availability },
+})
 
 const defaultHtml = renderBoard()
 for (const expected of [
   'attendance-board-heading-intro',
   'attendance-board-heading-copy',
-  'attendance-board-heading-actions',
-  'Điểm danh theo tháng, theo dõi số buổi và ghi chú học viên.',
-  'Dữ liệu ban đầu',
-  'Cần xử lý · 1 học viên',
-  'Xem nhắc việc',
-  'T3–T5 · 17:00–18:30',
-  '>Bù<',
+  'Theo dõi buổi học · Chỉ xem',
+  'data-attendance-read-only',
+  'attendance-ledger-scroll',
+  'data-attendance-ledger-state="makeup"',
+  'Nguyễn Hoàng Minh Anh',
 ]) {
   assert(defaultHtml.includes(expected), `Final Attendance paint is missing ${expected}`)
 }
@@ -89,14 +68,12 @@ const degradedHtml = renderBoard({
   calendarNotesAvailable: false,
   attendanceOperationsReady: false,
 })
-assert(degradedHtml.includes('attendance-board-heading-status'))
-assert(degradedHtml.includes('Dữ liệu điểm danh chưa tải được.'))
+assert(degradedHtml.includes('Chưa tải được dữ liệu điểm danh.'))
 assert(!degradedHtml.includes('attendance-board-operations-notice'))
 
 const reminderHtml = renderBoard({ isReminderPanelOpen: true })
-assert(reminderHtml.includes('attendance-reminder-panel'))
-assert(reminderHtml.includes('data-attendance-reminder-action="complete-review"'))
-assert(reminderHtml.includes('class="attendance-reminder-item is-warning"'))
+assert(!reminderHtml.includes('attendance-reminder-panel'))
+assert(!reminderHtml.includes('data-attendance-reminder-action="complete-review"'))
 
 const contextHtml = renderBoard({
   attendanceCellNoteContextState: {
@@ -112,9 +89,8 @@ const contextHtml = renderBoard({
     }],
   },
 })
-assert(contextHtml.includes('Ghi chú ô điểm danh'))
-assert(contextHtml.includes('Đinh Phúc Nguyên · T5 03'))
-assert(contextHtml.includes('Xem / sửa ghi chú'))
+assert(!contextHtml.includes('Ghi chú ô điểm danh'))
+assert(!contextHtml.includes('Xem / sửa ghi chú'))
 assert(!contextHtml.includes('<small>T3–T5 · 17:00–18:30</small>'))
 
 const baselineHtml = renderBoard({ isBaselineManagerOpen: true }, { status: 'unlocked' })
@@ -128,7 +104,7 @@ for (const expected of [
   'data-attendance-baseline-action="lock"',
   'data-attendance-baseline-action="unlock"',
 ]) {
-  assert(baselineHtml.includes(expected), `Background-data state is missing ${expected}`)
+  assert(!baselineHtml.includes(expected), `A6 retired background-data editor remains reachable: ${expected}`)
 }
 
 const themeSource = readFileSync(new URL('../src/attendance-v2-8p2-theme.css', import.meta.url), 'utf8')
