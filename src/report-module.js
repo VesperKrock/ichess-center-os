@@ -45,10 +45,12 @@ export function renderReportModule({
   draft = initialReportDraft,
   students = [],
   cashflowTransactions = [],
-  attendanceRecords = [],
+  attendanceLedger = null,
   selectedBarDetail = null,
   sourceTransactionsState = null,
   centerInfo = null,
+  exportReady = true,
+  onData = null,
 } = {}) {
   const activeFilters = normalizeReportFilters(filters)
   const activeDraft = { ...initialReportDraft, ...draft }
@@ -56,10 +58,11 @@ export function renderReportModule({
     filters: activeFilters,
     students,
     cashflowTransactions,
-    attendanceRecords,
+    attendanceLedger,
   })
   const activeCenter = normalizeReportCenterInfo(centerInfo)
   const activeViewMode = viewMode === 'week' ? 'week' : 'day'
+  onData?.(reportData)
 
   return `
     <section class="report-module" data-report-view="${activeViewMode}" aria-label="Báo cáo vận hành cơ sở ${escapeAttribute(activeCenter.displayName)}">
@@ -73,8 +76,8 @@ export function renderReportModule({
         </div>
         ${renderReportPeriodControl(activeViewMode, activeFilters, reportData)}
         <div class="report-actions">
-          <button type="button" data-report-action="print">In báo cáo</button>
-          <button type="button" data-report-action="download">Tải báo cáo</button>
+          <button type="button" data-report-action="print" ${exportReady ? '' : 'disabled'}>In báo cáo</button>
+          <button type="button" data-report-action="download" ${exportReady ? '' : 'disabled'}>Tải báo cáo</button>
         </div>
       </header>
 
@@ -113,7 +116,7 @@ export function buildReportData({
   filters = initialReportFilters,
   students = [],
   cashflowTransactions = [],
-  attendanceRecords = [],
+  attendanceLedger = null,
 } = {}) {
   const activeFilters = normalizeReportFilters(filters)
   const weekDays = buildWeekDays(activeFilters.weekStartDate)
@@ -127,8 +130,7 @@ export function buildReportData({
   })
   const activeStudents = normalizeActiveStudents(students)
   const attendanceSummary = buildAttendanceSummary({
-    students: activeStudents,
-    attendanceRecords,
+    attendanceLedger,
     weekStartDate: weekDays[0],
     weekEndDate: weekDays[weekDays.length - 1],
   })
@@ -147,6 +149,8 @@ export function buildReportData({
     weeklyTransactions: weekTransactions,
     dailyIncome,
     dailyExpense,
+    dailyBalance: dailyIncome - dailyExpense,
+    dailySourceTotal: sumSourceTransactions(dailyTransactions),
     weeklyIncome,
     weeklyExpense,
     weeklyBalance: weeklyIncome - weeklyExpense,
@@ -198,7 +202,7 @@ export function buildReportDownloadText({
   draft = initialReportDraft,
   students = [],
   cashflowTransactions = [],
-  attendanceRecords = [],
+  attendanceLedger = null,
   centerInfo = null,
 } = {}) {
   const activeDraft = { ...initialReportDraft, ...draft }
@@ -206,7 +210,7 @@ export function buildReportDownloadText({
     filters,
     students,
     cashflowTransactions,
-    attendanceRecords,
+    attendanceLedger,
   })
   const activeCenter = normalizeReportCenterInfo(centerInfo)
 
@@ -237,8 +241,10 @@ export function buildReportDownloadText({
     `Tổng chi phí: ${formatMoney(data.weeklyExpense)}`,
     `Còn lại: ${formatMoney(data.weeklyBalance)}`,
     `Tổng học viên: ${data.studentCount}`,
-    `Học viên đi học trong tuần: ${data.attendanceSummary.presentCount}`,
-    `Học viên vắng/nghỉ trong tuần: ${data.attendanceSummary.absentCount}`,
+    `Có mặt: ${data.attendanceSummary.presentCount}`,
+    `Vắng: ${data.attendanceSummary.absentCount}`,
+    `Học bù: ${data.attendanceSummary.makeupCount}`,
+    `Chưa điểm danh: ${data.attendanceSummary.unmarkedCount}`,
     '',
     'Bảng thu/chi theo tuần',
     ...data.weeklyBars.weeks.flatMap((week) => [
@@ -250,8 +256,8 @@ export function buildReportDownloadText({
     'Nguồn dữ liệu',
     data.dataSourceNote,
     data.attendanceSummary.hasAttendanceData
-      ? 'Điểm danh tuần được tổng hợp từ attendance authoritative projection.'
-      : 'Chưa có đủ dữ liệu điểm danh trong tuần này để tính chính xác học/vắng/nghỉ.',
+      ? 'Điểm danh tuần được tổng hợp từ sổ điểm danh canonical A6.'
+      : 'Chưa có lượt điểm danh trong tuần đang chọn.',
   ].join('\n')
 }
 
@@ -260,7 +266,7 @@ export function buildReportPrintHtml({
   draft = initialReportDraft,
   students = [],
   cashflowTransactions = [],
-  attendanceRecords = [],
+  attendanceLedger = null,
   centerInfo = null,
 } = {}) {
   const activeDraft = { ...initialReportDraft, ...draft }
@@ -268,7 +274,7 @@ export function buildReportPrintHtml({
     filters,
     students,
     cashflowTransactions,
-    attendanceRecords,
+    attendanceLedger,
   })
   const activeCenter = normalizeReportCenterInfo(centerInfo)
 
@@ -322,11 +328,13 @@ export function buildReportPrintHtml({
               .join('')}
           </tbody>
         </table>
-        <h2>Học/vắng/nghỉ</h2>
-        <p>Đi học: ${data.attendanceSummary.presentCount.toLocaleString('vi-VN')}</p>
-        <p>Vắng/nghỉ: ${data.attendanceSummary.absentCount.toLocaleString('vi-VN')}</p>
+        <h2>Có mặt / Vắng / Học bù</h2>
+        <p>Có mặt: ${data.attendanceSummary.presentCount.toLocaleString('vi-VN')}</p>
+        <p>Vắng: ${data.attendanceSummary.absentCount.toLocaleString('vi-VN')}</p>
+        <p>Học bù: ${data.attendanceSummary.makeupCount.toLocaleString('vi-VN')}</p>
+        <p>Chưa điểm danh: ${data.attendanceSummary.unmarkedCount.toLocaleString('vi-VN')}</p>
         <p>Tổng: ${data.attendanceSummary.totalCount.toLocaleString('vi-VN')}</p>
-        <p class="muted">${escapeHtml(data.attendanceSummary.hasAttendanceData ? 'Nguồn: attendance authoritative projection của active center.' : 'Chưa có đủ dữ liệu điểm danh trong tuần này.')}</p>
+        <p class="muted">${escapeHtml(data.attendanceSummary.available ? 'Nguồn: sổ điểm danh canonical A6 của cơ sở hiện tại.' : 'Chưa tải được sổ điểm danh. Vui lòng làm mới.')}</p>
       </body>
     </html>`
 }
@@ -343,8 +351,8 @@ function renderDailyReport(data, draft) {
       <div class="report-stat-row">
         ${renderReportStat('Doanh thu trong ngày', formatMoney(data.dailyIncome), 'income')}
         ${renderReportStat('Chi phí trong ngày', formatMoney(data.dailyExpense), 'expense')}
-        ${renderReportStat('Còn lại', formatMoney(data.dailyIncome - data.dailyExpense), 'balance')}
-        ${renderReportSourceStat(data.dailyTransactions)}
+        ${renderReportStat('Còn lại', formatMoney(data.dailyBalance), 'balance')}
+        ${renderReportSourceStat(data.dailyTransactions, data.dailySourceTotal)}
       </div>
       <div class="report-daily-workspace">
         <section class="report-daily-card report-daily-notes-card" aria-labelledby="report-daily-notes-title">
@@ -375,7 +383,14 @@ function renderDailyReport(data, draft) {
 
 function renderWeeklyReport(data, selectedBarDetail = null) {
   const attendance = data.attendanceSummary
-  const presentPercent = attendance.totalCount ? (attendance.presentCount / attendance.totalCount) * 100 : 0
+  const segments = getReportAttendanceSegments(attendance)
+  let end = 0
+  const stops = segments.map(segment => {
+    const start = end
+    end += attendance.totalCount ? segment.count / attendance.totalCount * 100 : 0
+    return `var(--report-${segment.key}) ${start.toFixed(4)}% ${end.toFixed(4)}%`
+  })
+  const gradient = attendance.totalCount ? `conic-gradient(${stops.join(', ')})` : 'var(--report-border)'
 
   return `
     <section class="report-panel report-weekly-panel" aria-labelledby="weekly-report-title">
@@ -395,28 +410,29 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
           ${renderCashflowBarChart(data.weeklyBars)}
           ${renderReportBarDetail(selectedBarDetail)}
         </section>
-        <section class="report-chart-card" aria-label="Biểu đồ tròn học vắng nghỉ tổng thể cơ sở">
+        <section class="report-chart-card" aria-label="Biểu đồ điểm danh canonical trong tuần">
           <div class="report-chart-heading">
-            <h5>Học / Vắng / Nghỉ</h5>
-            <span>Tổng hợp từ dữ liệu điểm danh trong tuần</span>
+            <h5>Có mặt / Vắng / Học bù</h5>
+            <span>Lượt học viên theo từng buổi trong tuần</span>
           </div>
           <div class="report-attendance-chart">
             <div
               class="report-pie"
-              style="--present-percent: ${presentPercent.toFixed(2)}%;"
+              style="--attendance-gradient: ${gradient};"
               role="img"
-              aria-label="Học ${attendance.presentCount}, vắng nghỉ ${attendance.absentCount}"
+              aria-label="${escapeAttribute(segments.map(segment => `${segment.label} ${segment.count}`).join(', '))}"
+              data-report-attendance-summary="${escapeAttribute(JSON.stringify(attendance))}"
             ></div>
             <div class="report-pie-legend">
-              <span><i class="is-present"></i> Đi học: ${attendance.presentCount.toLocaleString('vi-VN')}</span>
-              <span><i class="is-absent"></i> Vắng/nghỉ: ${attendance.absentCount.toLocaleString('vi-VN')}</span>
-              <span><i class="is-total"></i> Tổng: ${attendance.totalCount.toLocaleString('vi-VN')}</span>
+              ${segments.map(segment => `<span><i class="is-${segment.key}"></i> ${segment.label}: ${segment.count.toLocaleString('vi-VN')}</span>`).join('')}
+              <span><i class="is-total"></i> Tổng lượt: ${attendance.totalCount.toLocaleString('vi-VN')}</span>
+              ${attendance.futureCount || attendance.cancelledCount ? `<small>Chưa đến giờ: ${attendance.futureCount} · Đã hủy: ${attendance.cancelledCount}</small>` : ''}
             </div>
           </div>
           ${
-            attendance.hasAttendanceData
+            attendance.available && attendance.totalCount
               ? ''
-              : '<p class="report-empty">Chưa có đủ dữ liệu điểm danh trong tuần này để tính chính xác học/vắng/nghỉ.</p>'
+              : `<p class="report-empty">${attendance.available ? 'Chưa có lượt điểm danh trong tuần đang chọn.' : 'Chưa tải được sổ điểm danh. Vui lòng làm mới.'}</p>`
           }
         </section>
       </div>
@@ -454,12 +470,14 @@ function renderPendingTaskBox(draft) {
   `
 }
 
-function renderReportSourceStat(transactions) {
-  const total = transactions.reduce((sum, transaction) => {
+function sumSourceTransactions(transactions) {
+  return transactions.reduce((sum, transaction) => {
     const amount = Number(transaction.amount)
     return Number.isFinite(amount) ? sum + Math.max(0, amount) : sum
   }, 0)
+}
 
+function renderReportSourceStat(transactions, total) {
   return `
     <article class="report-stat report-source-stat is-neutral">
       <span>Nguồn giao dịch ngày</span>
@@ -812,43 +830,32 @@ function buildAxisTicks(axisMax) {
   return [axisMax, step * 3, step * 2, step, 0]
 }
 
-function buildAttendanceSummary({ students, attendanceRecords, weekStartDate, weekEndDate }) {
-  const totalCount = students.length
-  const activeStudentIds = new Set(students.map((student) => String(student.id ?? '')).filter(Boolean))
-  const presentStudentIds = new Set()
-  const weekRecords = (attendanceRecords ?? []).filter((record) => {
-    const date = String(record.date || record.occurrenceDate || '').slice(0, 10)
-    return date >= weekStartDate && date <= weekEndDate
-  })
-
-  weekRecords.forEach((record) => {
-    const studentId = String(record.studentId ?? '')
-    if (!activeStudentIds.has(studentId)) {
-      return
-    }
-
-    const status = normalizeText(record.attendanceStatus || record.status)
-    if (
-      record.counted ||
-      status.includes('present') ||
-      status.includes('hoc') ||
-      status.includes('di hoc') ||
-      status.includes('co mat')
-    ) {
-      presentStudentIds.add(studentId)
-    }
-  })
-
-  const presentCount = presentStudentIds.size
-  const absentCount = Math.max(0, totalCount - presentCount)
-
-  return {
-    totalCount,
-    presentCount,
-    absentCount,
-    hasAttendanceData: weekRecords.length > 0,
+function buildAttendanceSummary({ attendanceLedger, weekStartDate, weekEndDate }) {
+  // Count the frozen A6 cells, including distinct same-day occurrences.
+  // Current enrollment, local records and session-report copies are not inputs.
+  const counts = { present: 0, absent: 0, makeup: 0, unmarked: 0, future: 0, cancelled: 0 }
+  const keys = new Set((attendanceLedger?.columns || [])
+    .filter(column => column.date >= weekStartDate && column.date <= weekEndDate).map(column => column.key))
+  for (const row of attendanceLedger?.rows || []) for (const cell of row.cells) {
+    if (keys.has(cell.occurrence?.key) && Object.hasOwn(counts, cell.state)) counts[cell.state] += 1
   }
+  const totalCount = counts.present + counts.absent + counts.makeup + counts.unmarked
+  return { source: 'A6_CANONICAL_ATTENDANCE_LEDGER', available: Boolean(attendanceLedger), totalCount,
+    presentCount: counts.present, absentCount: counts.absent, makeupCount: counts.makeup,
+    unmarkedCount: counts.unmarked, futureCount: counts.future, cancelledCount: counts.cancelled,
+    hasAttendanceData: Boolean(attendanceLedger) && totalCount > 0 }
 }
+
+export function getReportAttendanceSegments(summary) {
+  return [
+    { key: 'present', label: 'Có mặt', count: summary.presentCount, color: '#047857' },
+    { key: 'absent', label: 'Vắng', count: summary.absentCount, color: '#dc2626' },
+    { key: 'makeup', label: 'Học bù', count: summary.makeupCount, color: '#2563eb' },
+    ...(summary.unmarkedCount ? [{ key: 'unmarked', label: 'Chưa điểm danh', count: summary.unmarkedCount, color: '#6b7280' }] : []),
+  ]
+}
+
+export { formatMoney as formatReportMoney }
 
 function normalizeActiveStudents(students) {
   return (Array.isArray(students) ? students : []).filter((student) => {

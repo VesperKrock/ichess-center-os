@@ -13,7 +13,7 @@ import {
   renderAttendanceBoardModule,
 } from './attendance-board-module.js'
 import { pullCanonicalAttendanceLedgerContext } from './cloud-attendance-ledger.js'
-import { getCanonicalLedgerAttendance, normalizeAttendanceLedgerFilters } from './attendance-ledger.js'
+import { buildCanonicalAttendanceLedger, getCanonicalLedgerAttendance, normalizeAttendanceLedgerFilters } from './attendance-ledger.js'
 import { buildV28AAttendanceNotificationCandidates } from './attendance-operational-reminders.js'
 import {
   buildUnifiedAttendanceRecords,
@@ -524,10 +524,7 @@ import {
 } from './parent-consultation-module.js'
 import './parent-consultation-v2-8p2-theme.css'
 import {
-  buildReportDownloadText,
-  buildReportPrintHtml,
   createInitialReportState,
-  getReportDownloadFilename,
   getReportTransactionScope,
   getReportTransactionsForScope,
   getWeekStartDate,
@@ -1172,6 +1169,10 @@ let inventoryCycleCountDueDate = new Date().toISOString().slice(0, 10)
 let inventoryCycleCountObservedByLineId = {}
 let inventoryCycleCountExplanationByLineId = {}
 let reportState = createInitialReportState()
+let reportAttendanceContext = { status: 'idle', centerId: '', occurrences: [], assignments: [] }
+let reportAttendanceReadRunId = 0
+let reportPdfSnapshot = null
+let reportPdfExportInFlight = false
 let reportTransactionDrilldownState = null
 let reportTransactionDrilldownToken = 0
 let careNoteDrafts = {}
@@ -1490,8 +1491,8 @@ async function refreshAttendanceLedgerContext() {
   return result
 }
 
-function getAttendanceLedgerPlannedOccurrences(context) {
-  const range = normalizeAttendanceLedgerFilters(attendanceBoardFilters)
+function getAttendanceLedgerPlannedOccurrences(context, filters = attendanceBoardFilters) {
+  const range = normalizeAttendanceLedgerFilters(filters)
   if (range.error || context.status !== 'ready') return []
   const projectedStudents = getStudentsWithCanonicalProjections()
   const canonicalIds = new Set(scheduleSessions.filter(item => Number(item.cloudVersion) > 0).map(item => item.id))
@@ -1507,6 +1508,92 @@ function getAttendanceLedgerPlannedOccurrences(context) {
       .filter(item => item.occurrenceDate >= range.fromDate && item.occurrenceDate <= range.toDate))
   }
   return occurrences
+}
+
+function getReportAttendanceRange() {
+  const fromDate = getWeekStartDate(reportState.filters.weekStartDate)
+  const end = new Date(`${fromDate}T12:00:00Z`)
+  end.setUTCDate(end.getUTCDate() + 6)
+  return { fromDate, toDate: end.toISOString().slice(0, 10) }
+}
+
+function getCurrentReportAttendanceContext() {
+  const range = getReportAttendanceRange()
+  return reportAttendanceContext.centerId === getCurrentCanonicalCenterContext().centerId
+    && reportAttendanceContext.fromDate === range.fromDate
+    && reportAttendanceContext.toDate === range.toDate
+    ? reportAttendanceContext : { status: 'idle', occurrences: [], assignments: [] }
+}
+
+async function refreshReportAttendanceContext() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const range = getReportAttendanceRange()
+  const runId = ++reportAttendanceReadRunId
+  reportAttendanceContext = { status: 'loading', centerId, ...range, occurrences: [], assignments: [] }
+  reportPdfSnapshot = null
+  render()
+  const result = await pullCanonicalAttendanceLedgerContext({
+    supabase: getSupabaseClient(), centerId, filters: range, attendanceRecords,
+  })
+  const currentRange = getReportAttendanceRange()
+  if (runId !== reportAttendanceReadRunId || centerId !== getCurrentCanonicalCenterContext().centerId
+    || currentRange.fromDate !== range.fromDate || currentRange.toDate !== range.toDate) {
+    return { ok: false, outcome_code: 'REPORT_PERIOD_CHANGED' }
+  }
+  reportAttendanceContext = result.ok ? { ...result, status: 'ready' }
+    : { status: 'failed', centerId, ...range, occurrences: [], assignments: [], error: result.error }
+  render()
+  return result
+}
+
+async function exportReportPdf(button, action) {
+  if (reportPdfExportInFlight) return false
+  const context = getCurrentCanonicalCenterContext()
+  const current = reportPdfSnapshot
+  if (!context.ok || !current || current.centerId !== context.centerId) return false
+  const snapshot = structuredClone({ ...current, draft: reportState.draft })
+  const viewer = action === 'print' ? window.open('', '_blank') : null
+  if (action === 'print' && !viewer) {
+    window.alert('Hãy cho phép mở cửa sổ PDF và thử lại.')
+    return false
+  }
+  reportPdfExportInFlight = true
+  const label = button.textContent
+  button.disabled = true
+  button.setAttribute('aria-busy', 'true')
+  button.textContent = 'Đang tạo PDF…'
+  try {
+    if (viewer) {
+      viewer.opener = null
+      viewer.document.body.textContent = 'Đang tạo PDF báo cáo…'
+    }
+    const { generateReportPdf } = await import('./report-pdf.js')
+    const result = await generateReportPdf(snapshot)
+    if (getCurrentCanonicalCenterContext().centerId !== context.centerId) throw new Error('Cơ sở đã thay đổi. Vui lòng xuất lại báo cáo.')
+    const url = URL.createObjectURL(result.blob)
+    if (viewer) viewer.location.replace(url)
+    else {
+      const link = document.createElement('a')
+      link.href = url
+      link.download = result.fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 300_000)
+    return true
+  } catch (error) {
+    if (viewer) try { viewer.close() } catch { /* alert below */ }
+    window.alert(error?.message || 'Không tạo được PDF báo cáo. Vui lòng thử lại.')
+    return false
+  } finally {
+    reportPdfExportInFlight = false
+    if (button.isConnected) {
+      button.disabled = false
+      button.removeAttribute('aria-busy')
+      button.textContent = label
+    }
+  }
 }
 
 async function exportAttendanceBoardPdf(button) {
@@ -2164,6 +2251,9 @@ function resetV23AttendanceRuntimeForAccessBoundary(centerId = '') {
   attendanceLedgerContext = { status: 'idle', centerId, occurrences: [], assignments: [] }
   attendanceBoardDetailState = null
   attendanceBoardPdfSnapshot = null
+  reportAttendanceReadRunId += 1
+  reportAttendanceContext = { status: 'idle', centerId, occurrences: [], assignments: [] }
+  reportPdfSnapshot = null
 }
 
 function resetV24PackageCycleRuntimeForAccessBoundary(centerId = '') {
@@ -12519,6 +12609,18 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'bao-cao') {
     const centerInfo = getCurrentCanonicalCenterContext()
+    const ledgerContext = getCurrentReportAttendanceContext()
+    const attendanceAvailable = ['core', 'attendance'].every(upstream => isModuleUpstreamCurrent('bao-cao', upstream))
+      && ledgerContext.status === 'ready'
+    const attendanceLedger = attendanceAvailable ? buildCanonicalAttendanceLedger({
+      students: getStudentsWithCanonicalProjections(), classSessions, scheduleSessions,
+      occurrences: ledgerContext.occurrences,
+      plannedOccurrences: getAttendanceLedgerPlannedOccurrences(ledgerContext, getReportAttendanceRange()),
+      attendanceRecords: getCanonicalLedgerAttendance(attendanceRecords),
+      filters: { ...getReportAttendanceRange(), classSessionId: 'all', teacherId: 'all', query: '' },
+    }) : null
+    const exportReady = ['core', 'finance'].every(upstream => isModuleUpstreamCurrent('bao-cao', upstream))
+      && (reportState.viewMode === 'day' || attendanceAvailable)
     return renderReportModule({
       viewMode: reportState.viewMode,
       filters: reportState.filters,
@@ -12526,10 +12628,11 @@ function renderWindowBody(windowItem) {
       selectedBarDetail: reportState.selectedBarDetail,
       students,
       cashflowTransactions,
-      attendanceRecords: buildUnifiedAttendanceRecords({
-        sessionReports,
-        storedRecords: attendanceRecords,
-      }),
+      attendanceLedger,
+      exportReady,
+      onData: data => {
+        reportPdfSnapshot = exportReady ? { data, viewMode: reportState.viewMode, centerInfo, centerId: centerInfo.centerId } : null
+      },
       sourceTransactionsState: reportTransactionDrilldownState,
       centerInfo,
     })
@@ -13872,7 +13975,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, settledResult)
     return settledResult
   }))
-  if (moduleId === 'hoc-vien' || moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
+  if (moduleId === 'hoc-vien' || moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh' || moduleId === 'bao-cao') {
     await refreshV22StudentEnrollments({ reason: `${moduleId}:${reason}`, silent: true })
   }
   if (moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
@@ -13888,6 +13991,12 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   }
   if (moduleId === 'bang-diem-danh') {
     const ledgerResult = await refreshAttendanceLedgerContext()
+    const result = { upstream: 'attendance-ledger', ...ledgerResult }
+    results.push(result)
+    recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, result)
+  }
+  if (moduleId === 'bao-cao') {
+    const ledgerResult = await refreshReportAttendanceContext()
     const result = { upstream: 'attendance-ledger', ...ledgerResult }
     results.push(result)
     recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, result)
@@ -20308,6 +20417,8 @@ function handleC51AttendanceRealtimeRecord(record) {
   applyC51AttendanceProjection(mergeResult)
   if (record.entity_type === 'attendance_record'
     && openWindows.some(item => item.moduleId === 'bang-diem-danh')) void refreshAttendanceLedgerContext()
+  if (record.entity_type === 'attendance_record'
+    && openWindows.some(item => item.moduleId === 'bao-cao')) void refreshReportAttendanceContext()
   render()
 }
 
@@ -23411,6 +23522,7 @@ function bindEvents() {
       reportTransactionDrilldownState = null
       reportTransactionDrilldownToken += 1
       render()
+      if (control.dataset.reportFilter === 'weekStartDate') void refreshReportAttendanceContext()
     })
   })
 
@@ -23494,6 +23606,7 @@ function bindEvents() {
       reportTransactionDrilldownState = null
       reportTransactionDrilldownToken += 1
       render()
+      if (reportState.viewMode === 'week' && getCurrentReportAttendanceContext().status !== 'ready') void refreshReportAttendanceContext()
       return
     }
 
@@ -23522,6 +23635,7 @@ function bindEvents() {
     reportTransactionDrilldownState = null
     reportTransactionDrilldownToken += 1
     render()
+    void refreshReportAttendanceContext()
   })
 
   bindStaffFilterControls()
@@ -23751,31 +23865,8 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-report-action="print"]')?.addEventListener('click', () => {
-    const unifiedAttendanceRecords = buildUnifiedAttendanceRecords({
-      sessionReports,
-      storedRecords: attendanceRecords,
-    })
-    const printWindow = window.open('', 'ichess-report-print', 'width=960,height=720')
-
-    if (!printWindow) {
-      return
-    }
-
-    printWindow.document.open()
-    printWindow.document.write(
-      buildReportPrintHtml({
-        filters: reportState.filters,
-        draft: reportState.draft,
-        students,
-        cashflowTransactions,
-        attendanceRecords: unifiedAttendanceRecords,
-        centerInfo: getCurrentCanonicalCenterContext(),
-      }),
-    )
-    printWindow.document.close()
-    printWindow.focus()
-    printWindow.print()
+  document.querySelector('[data-report-action="print"]')?.addEventListener('click', event => {
+    void exportReportPdf(event.currentTarget, 'print')
   })
 
   document.querySelectorAll('[data-report-bar-detail]').forEach((button) => {
@@ -23794,34 +23885,8 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-report-action="download"]')?.addEventListener('click', () => {
-    const unifiedAttendanceRecords = buildUnifiedAttendanceRecords({
-      sessionReports,
-      storedRecords: attendanceRecords,
-    })
-    const content = buildReportDownloadText({
-      filters: reportState.filters,
-      draft: reportState.draft,
-      students,
-      cashflowTransactions,
-      attendanceRecords: unifiedAttendanceRecords,
-      centerInfo: getCurrentCanonicalCenterContext(),
-    })
-    const blob = new Blob([`\uFEFF${content}`], {
-      type: 'text/plain;charset=utf-8',
-    })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-
-    link.href = url
-    link.download = getReportDownloadFilename(
-      reportState.filters.reportDate,
-      getCurrentCanonicalCenterContext(),
-    )
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+  document.querySelector('[data-report-action="download"]')?.addEventListener('click', event => {
+    void exportReportPdf(event.currentTarget, 'download')
   })
 
   document.querySelectorAll('[data-inventory-stock-alert]').forEach((button) => {

@@ -87,7 +87,7 @@ for (const token of [
   'data-report-week-action="current"',
   'data-report-week-action="next"',
   'Thu / Chi theo tuần',
-  'Học / Vắng / Nghỉ',
+  'Có mặt / Vắng / Học bù',
   'data-report-bar-detail',
   'data-report-drilldown-mode="week"',
 ]) assert(weekHtml.includes(token), `Week report missing ${token}`)
