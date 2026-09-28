@@ -195,16 +195,20 @@ assert(
   firstNotificationSyncIndex > cloudStatusInitializationIndex,
   'Notification synchronization must not read canonical Auth/center state before cloudStatus initializes.',
 )
-const refreshStart = mainSource.indexOf('async function refreshNotificationAuthoritativeUpstreams')
+const refreshStart = mainSource.indexOf('function refreshNotificationAuthoritativeUpstreams')
 const refreshEnd = mainSource.indexOf('function openModuleWindowFromChildInteraction', refreshStart)
 const refreshSource = mainSource.slice(refreshStart, refreshEnd)
 assert(refreshSource.includes("'core'"))
 assert(refreshSource.includes("'attendance'"))
 assert(refreshSource.includes("'package-cycles'"))
 assert(!refreshSource.includes("'crm'"), 'Notification refresh must not pull Parent CRM for an unsupported provider.')
-assert(!refreshSource.includes("'tuition'"), 'Notification refresh must consume V2-4 state, not legacy Tuition rows.')
+const refreshUpstreamsSource = refreshSource.slice(refreshSource.indexOf('const upstreams'), refreshSource.indexOf('const refreshId'))
+assert(!refreshUpstreamsSource.includes("'tuition'"), 'Notification refresh must consume canonical cycle/operator reads, not legacy Tuition rows.')
 assert(refreshSource.includes('isC56InventoryCapabilityReady'))
-assert(refreshSource.includes('if (!failures.length)'))
+assert(refreshSource.includes('pullCanonicalAttendanceLedgerContext'))
+assert(refreshSource.includes('pullTuitionOperatorSnapshot'))
+assert(refreshSource.includes('notifications = syncAppNotifications(notifications)'),
+  'Partial refresh must reconcile READY providers while preserving failed provider items.')
 
 const syncStart = mainSource.indexOf('function syncAppNotifications')
 const syncEnd = mainSource.indexOf('function markNotificationRead', syncStart)

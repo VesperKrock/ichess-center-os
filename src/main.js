@@ -470,6 +470,7 @@ import {
   buildMissingSessionReportNotificationCandidates,
   buildScheduleAttentionNotificationCandidates,
   buildStudentBirthdayNotificationCandidates,
+  buildStudentBirthdayMonthNotificationCandidates,
   buildV24TuitionNotificationCandidates,
   getUnreadNotificationCount as countUnreadNotifications,
   filterNotifications,
@@ -477,8 +478,15 @@ import {
   markNotificationReadById,
   markNotificationsReadByIds,
   notificationSourceLabels,
+  pruneExpiredStudentBirthdayNotifications,
+  tagNotificationCandidates,
   upsertNotificationCandidates,
 } from './notification-center.js'
+import {
+  buildIncompleteAttendanceCandidates, buildTuitionN2Candidates, buildPaymentAttentionCandidates,
+  getNotificationAttentionRange, getNotificationRoute, normalizeCachedOperationalNotification,
+} from './notification-operational-assistant.js'
+import { renderNotificationAssistantPanel } from './notification-assistant-panel.js'
 import {
   ONLINE_ACCESS_ROLES,
   buildOnlineAccessState,
@@ -715,6 +723,7 @@ import {
   saveDesktopModuleOrder,
   saveStoredClassSessions,
   saveStoredNotifications,
+  saveNotificationViewedState,
   saveStoredSchedule,
   saveStoredStudents,
   saveStoredTeachers,
@@ -722,6 +731,7 @@ import {
   saveUiTheme,
   saveViewMode,
   setCurrentInstallationStorageNamespace,
+  setCurrentNotificationAccountId,
   setCurrentStorageCenterId,
 } from './storage.js'
 import {
@@ -745,6 +755,7 @@ import {
   renderStudentModule,
   validateStudentForm,
 } from './student-module.js'
+import { getBirthdayLocalDateKey, setStudentBirthYearOnly } from './student-birth-information.js'
 import {
   deriveV22ScheduleRosters,
   normalizeV22Enrollments,
@@ -1055,7 +1066,15 @@ let a3TeacherDialogState = null
 let tuitionRecords = getStoredTuition([])
 let notifications = getStoredNotifications([])
 let deletedNotificationIds = getDeletedNotificationIds()
-let notificationFilters = { sourceModule: 'all', readState: 'unread' }
+let notificationFilters = { sourceModule: 'all', readState: 'attention' }
+let notificationOperationalSources = {
+  attendance: { status: 'idle', centerId: '' }, tuition: { status: 'idle', centerId: '' }, operations: { status: 'idle', centerId: '' },
+}
+let notificationRefreshInFlight = null
+let notificationRefreshQueuedReason = ''
+let notificationRefreshTimer = null
+let notificationCalendarDate = getBirthdayLocalDateKey()
+let activeNotificationAccountId = ''
 let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
 let attendanceBoardDetailState = null
 let attendanceBoardPdfSnapshot = null
@@ -1967,7 +1986,8 @@ function canRenderCenterScopedModuleBadges() {
 }
 
 function getCenterScopedNotificationsForRender() {
-  return canRenderCenterScopedModuleBadges() ? notifications : []
+  return canRenderCenterScopedModuleBadges() && activeNotificationAccountId === cloudStatus.user?.id
+    ? notifications.filter(item => !item.meta?.centerId || item.meta.centerId === getCurrentStorageCenterId()) : []
 }
 
 function resetParentFirstRuntimeForAccessBoundary(centerId = '') {
@@ -2365,6 +2385,13 @@ function resetTransientStateForCenterSwitch() {
   moduleRefreshRunIds.clear()
   authoritativeRefreshInFlight.clear()
   notificationRefreshRunId += 1
+  notificationRefreshInFlight = null
+  notificationRefreshQueuedReason = ''
+  window.clearTimeout(notificationRefreshTimer)
+  notificationOperationalSources = {
+    attendance: { status: 'idle', centerId: '' }, tuition: { status: 'idle', centerId: '' }, operations: { status: 'idle', centerId: '' },
+  }
+  notificationFilters = { sourceModule: 'all', readState: 'attention' }
   moduleRefreshStates.clear()
   notificationRefreshState = createModuleRefreshState()
   studentFilters = { ...initialStudentFilters }
@@ -2506,6 +2533,8 @@ function reloadLocalDataForResolvedCenter() {
   inventoryMovements = []
   inventoryRequests = []
   inventoryCycleCounts = []
+  setCurrentNotificationAccountId(cloudStatus.user?.id || '')
+  activeNotificationAccountId = cloudStatus.user?.id || ''
   notifications = syncAppNotifications(getStoredNotifications([]))
   deletedNotificationIds = getDeletedNotificationIds()
   activeLocalDataCenterId = getCurrentStorageCenterId()
@@ -8197,7 +8226,7 @@ function shouldAllowImmediateRenderForActiveElement(element) {
     return false
   }
 
-  return Boolean(element.closest?.('[data-student-filter], [data-attendance-board-filter], [data-tu-filter]'))
+  return Boolean(element.closest?.('[data-student-filter], [data-student-birth-year-only], [data-attendance-board-filter], [data-tu-filter]'))
 }
 
 function shouldAllowNativeSelectChangeRender() {
@@ -10193,6 +10222,7 @@ async function handleInternalOpenCenter(centerId) {
   await startTeacherRealtimeSubscription(switchSyncId)
   await startClassSessionRealtimeSubscription(switchSyncId)
   await startScheduleSessionRealtimeSubscription(switchSyncId)
+  queueNotificationAttentionRefresh('center-switch')
 }
 
 function normalizeInternalCenters(rows = []) {
@@ -11905,7 +11935,6 @@ function renderModuleNotificationBell(windowItem) {
     : []
   const unreadCount = moduleNotifications.filter((notification) => !notification.readAt).length
   const moduleNotificationItems = moduleNotifications
-    .slice(0, 5)
     .map(
       (notification) => `
         <button
@@ -13424,6 +13453,14 @@ function renderNotificationCenterV15J(unreadCount) {
 }
 
 function renderNotificationCenterHotfix(unreadCount) {
+  return renderNotificationAssistantPanel({
+    notifications: getCenterScopedNotificationsForRender(), readState: notificationFilters.readState, unreadCount,
+    position: notificationPanelPosition, loading: notificationRefreshState.status === 'loading',
+    refreshNotice: renderNotificationRefreshNotice(), canOpen: isProductionModuleAvailable,
+  })
+}
+
+function renderLegacyNotificationModuleSummaries(unreadCount) {
   const visibleNotifications = filterNotifications(getCenterScopedNotificationsForRender(), {
     readState: notificationFilters.readState,
   })
@@ -13802,12 +13839,14 @@ function getFinanceTaskbarWindowTitle(windowItem) {
 
 function renderNotificationRefreshNotice() {
   const state = notificationRefreshState
-  const tone = state.status === 'fresh' ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
-  const message = state.status === 'fresh'
+  const hasStaleItems = getCenterScopedNotificationsForRender().some(item => item.meta?.stale)
+  const fresh = state.status === 'fresh' && !hasStaleItems
+  const tone = fresh ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
+  const message = fresh
     ? `Thông báo đã được cập nhật từ dữ liệu mới nhất${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
     : state.status === 'loading'
       ? 'Đang cập nhật thông báo; kết quả cũ có thể chưa phải bản mới nhất.'
-      : state.message
+      : hasStaleItems ? 'Một số nguồn chưa được cập nhật; nhắc việc trước đó vẫn được giữ lại. Vui lòng làm mới.' : state.message
   return `<p class="notification-refresh-notice ${tone}" role="status">${escapeHtml(message)}</p>`
 }
 
@@ -14181,14 +14220,54 @@ async function runAuthoritativeUpstreamRefresh(upstream, reason) {
   }
 }
 
-async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-open') {
+function queueNotificationAttentionRefresh(reason) {
+  window.clearTimeout(notificationRefreshTimer)
+  const context = getCurrentCanonicalCenterContext()
+  if (!context.ok) return
+  if (notificationRefreshState.status !== 'loading') {
+    notificationRefreshState = createModuleRefreshState({ centerId: context.centerId,
+      message: 'Dữ liệu nghiệp vụ vừa thay đổi; đang chờ cập nhật nhắc việc.' })
+  }
+  for (const source of ['attendance', 'tuition', 'operations']) {
+    notificationOperationalSources[source] = { ...notificationOperationalSources[source], status: 'loading', centerId: context.centerId }
+  }
+  notifications = syncAppNotifications(notifications)
+  if (isNotificationCenterOpen) render()
+  notificationRefreshTimer = window.setTimeout(() => {
+    void refreshNotificationAuthoritativeUpstreams(reason)
+  }, 250)
+}
+
+function refreshNotificationAuthoritativeUpstreams(reason = 'notification-open') {
+  const context = getCurrentCanonicalCenterContext()
+  const scope = `${cloudStatus.user?.id || ''}:${context.centerId}`
+  if (notificationRefreshInFlight?.scope === scope) {
+    if (!['notification-open', 'notification-manual-refresh'].includes(reason)) notificationRefreshQueuedReason = reason
+    return notificationRefreshInFlight.promise
+  }
+  const entry = { scope }
+  entry.promise = runNotificationAuthoritativeRefresh(reason).finally(() => {
+    if (notificationRefreshInFlight !== entry) return
+    notificationRefreshInFlight = null
+    const queuedReason = notificationRefreshQueuedReason
+    notificationRefreshQueuedReason = ''
+    if (queuedReason) queueNotificationAttentionRefresh(queuedReason)
+  })
+  notificationRefreshInFlight = entry
+  return entry.promise
+}
+
+async function runNotificationAuthoritativeRefresh(reason) {
   const centerContext = getCurrentCanonicalCenterContext()
+  const accountId = cloudStatus.user?.id || ''
+  const range = getNotificationAttentionRange()
   const upstreams = [
     'core',
     'attendance',
     'package-cycles',
     'calendar-notes',
     'attendance-operations',
+    'notification-tuition',
     ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerContext.centerId)
       && isV27AInventoryCycleCountCapabilityReady(
         v27aInventoryCycleCountCapabilityState,
@@ -14206,13 +14285,18 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
       ? 'Đang tải nguồn tạo thông báo...'
       : 'Chưa xác định được cơ sở đang hoạt động; chưa thể làm mới thông báo.',
   })
+  for (const source of ['attendance', 'tuition', 'operations']) {
+    notificationOperationalSources[source] = { ...notificationOperationalSources[source], status: 'loading', centerId: centerContext.centerId,
+      ...(source === 'attendance' ? { attendanceReadReady: false } : {}) }
+  }
+  notifications = syncAppNotifications(notifications)
   render()
   if (!centerContext.ok) return { ok: false, outcome_code: 'INVALID_CENTER_CONTEXT' }
 
   const results = await Promise.all(upstreams.map(async (upstream) => {
     try {
-      const result = upstream === 'package-cycles'
-        ? await refreshV24PackageCycles({ reason, silent: true })
+      const result = upstream === 'notification-tuition'
+        ? await pullTuitionOperatorSnapshot({ supabase: getSupabaseClient(), centerId: centerContext.centerId })
         : await refreshAuthoritativeUpstream(upstream, reason)
       return { upstream, ...result }
     } catch (error) {
@@ -14220,14 +14304,40 @@ async function refreshNotificationAuthoritativeUpstreams(reason = 'notification-
     }
   }))
   const latestContext = getCurrentCanonicalCenterContext()
-  if (refreshId !== notificationRefreshRunId || latestContext.centerId !== centerContext.centerId) {
+  if (refreshId !== notificationRefreshRunId || latestContext.centerId !== centerContext.centerId || cloudStatus.user?.id !== accountId) {
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', results }
   }
 
   const failures = results.filter((result) => !result.ok)
-  if (!failures.length) {
-    notifications = syncAppNotifications(notifications)
+  const sourceResult = name => results.find(result => result.upstream === name)
+  const tuitionResult = sourceResult('notification-tuition')
+  notificationOperationalSources.tuition = { ...tuitionResult, centerId: centerContext.centerId,
+    status: tuitionResult.ok ? 'ready' : 'failed' }
+  const operationsResult = sourceResult('attendance-operations')
+  notificationOperationalSources.operations = { ...operationsResult, centerId: centerContext.centerId,
+    status: operationsResult.ok ? 'ready' : 'failed' }
+  const attendanceResult = sourceResult('attendance')
+  const coreResult = sourceResult('core')
+  let ledgerResult = { ok: false }
+  if (attendanceResult.ok && coreResult.ok) {
+    ledgerResult = await pullCanonicalAttendanceLedgerContext({
+      supabase: getSupabaseClient(), centerId: centerContext.centerId, filters: range,
+      attendanceRecords: attendanceResult.projection.attendanceRecords,
+    })
   }
+  if (refreshId !== notificationRefreshRunId || getCurrentCanonicalCenterContext().centerId !== centerContext.centerId
+    || cloudStatus.user?.id !== accountId) return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED' }
+  notificationOperationalSources.attendance = {
+    ...ledgerResult, centerId: centerContext.centerId, status: ledgerResult.ok ? 'ready' : 'failed',
+    attendanceRecords: attendanceResult.projection?.attendanceRecords || [],
+    attendanceReadReady: attendanceResult.ok && coreResult.ok,
+    students: coreResult.data?.students || students, classSessions: coreResult.data?.classSessions || classSessions,
+    scheduleSessions: coreResult.data?.scheduleSessions || scheduleSessions,
+  }
+  if (!ledgerResult.ok) failures.push({ upstream: 'attendance-ledger', ok: false })
+  // Each READY provider reconciles independently; a failed read is not an
+  // empty business result for the other providers or for its cached items.
+  notifications = syncAppNotifications(notifications)
   notificationRefreshState = createModuleRefreshState({
     status: failures.length ? 'failed' : 'fresh',
     centerId: centerContext.centerId,
@@ -15575,6 +15685,15 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
   }
 
   const syncId = ++cloudUserSyncId
+  setCurrentNotificationAccountId(user?.id || '')
+  activeNotificationAccountId = user?.id || ''
+  notificationRefreshRunId += 1
+  notificationRefreshInFlight = null
+  notificationRefreshQueuedReason = ''
+  window.clearTimeout(notificationRefreshTimer)
+  notificationOperationalSources = {
+    attendance: { status: 'idle', centerId: '' }, tuition: { status: 'idle', centerId: '' }, operations: { status: 'idle', centerId: '' },
+  }
   stopClassSessionRealtimeSubscription()
   setCurrentStorageCenterId('')
   setCurrentInstallationStorageNamespace(`${getSupabaseInstallationNamespace()}-unresolved`)
@@ -15849,6 +15968,7 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await startTeacherRealtimeSubscription(syncId)
     await startClassSessionRealtimeSubscription(syncId)
     await startScheduleSessionRealtimeSubscription(syncId)
+    queueNotificationAttentionRefresh('account-center-bound')
   }
 }
 
@@ -16136,6 +16256,7 @@ async function commitAuthoritativeStudentCoreProjection(student, reason, idempot
     installCommittedEntity: (entity) => {
       students = upsertCommittedCoreProjection(students, entity)
       saveStoredStudents(students)
+      notifications = syncAppNotifications(notifications)
     },
     refreshProjection: (commandResult) => refreshAuthoritativeCoreProjectionAfterCommit(
       CLOUD_ENTITY_TYPES.STUDENT,
@@ -16479,6 +16600,7 @@ function handleStudentRealtimeRecord(record) {
 
   students = mergeResult.students
   saveStoredStudents(students)
+  notifications = syncAppNotifications(notifications)
   render()
 }
 
@@ -16788,6 +16910,7 @@ function handleScheduleSessionRealtimeRecord(record) {
 
   scheduleSessions = mergeResult.scheduleSessions
   saveStoredSchedule(scheduleSessions)
+  queueNotificationAttentionRefresh('schedule-realtime')
   render()
 }
 
@@ -18909,6 +19032,7 @@ async function refreshV28AAttendanceOperations({ reason = 'manual-refresh', sile
     return { ok: false, outcome_code: 'INVALID_CENTER' }
   }
   v28aAttendanceReminders = []
+  notificationOperationalSources.operations = { ...notificationOperationalSources.operations, status: 'loading', centerId }
   v28aAttendanceTbhpCheckpoints = []
   v28aAttendanceCellNotes = []
   v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
@@ -18933,10 +19057,13 @@ async function refreshV28AAttendanceOperations({ reason = 'manual-refresh', sile
       message: unavailable ? '' : result.error || getV28AAttendanceOperationOutcomeMessage(result.outcome_code),
       messageTone: unavailable ? '' : 'error',
     })
+    notificationOperationalSources.operations = { ...notificationOperationalSources.operations, status: 'failed', centerId }
+    notifications = syncAppNotifications(notifications)
     if (!silent) render()
     return result
   }
   v28aAttendanceReminders = result.reminders
+  notificationOperationalSources.operations = { ...result, status: 'ready', centerId }
   v28aAttendanceTbhpCheckpoints = result.tbhpCheckpoints
   v28aAttendanceCellNotes = result.cellNotes
   v28aAttendanceOperationsCapabilityState = createV28AAttendanceOperationsCapabilityState({
@@ -19217,6 +19344,7 @@ async function commitV22StudentProjection(student, reason, idempotencyKey) {
   const withoutCurrent = v22StudentEnrollmentSets.filter((set) => set.studentId !== result.enrollmentSet.studentId)
   v22StudentEnrollmentSets = [...withoutCurrent, result.enrollmentSet]
   saveStoredStudents(students)
+  notifications = syncAppNotifications(notifications)
   v22StudentEnrollmentCapabilityState = { ...v22StudentEnrollmentCapabilityState, isSaving: false }
   const projection = await refreshV22StudentEnrollments({ reason: 'after-server-commit', silent: true })
   if (!projection.ok) {
@@ -20283,6 +20411,7 @@ async function writeV23OccurrenceAttendanceThroughCloud({
     await refreshV28AAttendanceOperations({ reason: 'attendance-reconciled', silent: true })
   }
   if (openWindows.some(item => item.moduleId === 'bang-diem-danh')) await refreshAttendanceLedgerContext()
+  queueNotificationAttentionRefresh('attendance-reconciled')
   return { ...result, projection: mergeResult }
 }
 
@@ -20415,6 +20544,7 @@ function handleC51AttendanceRealtimeRecord(record) {
   }
 
   applyC51AttendanceProjection(mergeResult)
+  queueNotificationAttentionRefresh('attendance-realtime')
   if (record.entity_type === 'attendance_record'
     && openWindows.some(item => item.moduleId === 'bang-diem-danh')) void refreshAttendanceLedgerContext()
   if (record.entity_type === 'attendance_record'
@@ -20472,6 +20602,7 @@ async function bootstrapC52TuitionRecordPackageCloudData(
   tuitionRecords = mergeResult.tuitionRecords
   saveStoredTuition(tuitionRecords)
   notifications = syncTuitionNotifications(notifications)
+  queueNotificationAttentionRefresh('tuition-realtime')
   cloudDbState = {
     ...cloudDbState,
     readinessStatus: 'ready',
@@ -20573,6 +20704,7 @@ function handleC52TuitionRealtimeRecord(record) {
   tuitionRecords = mergeResult.tuitionRecords
   saveStoredTuition(tuitionRecords)
   notifications = syncTuitionNotifications(notifications)
+  queueNotificationAttentionRefresh('tuition-realtime')
   render()
 }
 
@@ -22908,7 +23040,7 @@ function bindEvents() {
   document.querySelector('[data-action="toggle-notifications"]')?.addEventListener('click', (event) => {
     notificationPanelPosition = getNotificationPanelPosition(event.currentTarget)
     isNotificationCenterOpen = !isNotificationCenterOpen
-    if (isNotificationCenterOpen) {
+    if (isNotificationCenterOpen && !notificationRefreshInFlight) {
       const context = getCurrentCanonicalCenterContext()
       notificationRefreshState = createModuleRefreshState({
         centerId: context.centerId,
@@ -23197,6 +23329,14 @@ function bindEvents() {
     })
   })
 
+  document.querySelectorAll('[data-notification-action="open-source"]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation()
+      markNotificationRead(button.dataset.notificationId)
+      void openNotificationSourceModule(button.dataset.notificationId)
+    })
+  })
+
   document.querySelector('[data-notification-action="refresh-authoritative"]')?.addEventListener('click', () => {
     void refreshNotificationAuthoritativeUpstreams('notification-manual-refresh')
   })
@@ -23209,6 +23349,7 @@ function bindEvents() {
       .map((notification) => notification.id)
 
     notifications = markNotificationsReadByIds(notifications, visibleNotificationIds)
+    saveNotificationViewedState(notifications)
     saveStoredNotifications(notifications)
     render()
   })
@@ -30779,6 +30920,15 @@ function bindEvents() {
     })
   })
 
+  document.querySelector('[data-student-birth-year-only]')?.addEventListener('change', (event) => {
+    const values = mergeStudentFormControlValues(studentFormState.values,
+      document.querySelectorAll('[data-student-form-field]'))
+    studentFormState = { ...studentFormState,
+      values: setStudentBirthYearOnly(values, event.currentTarget.checked),
+      errors: { ...studentFormState.errors, birthDate: undefined, birthYear: undefined } }
+    render()
+  })
+
   document.querySelectorAll('[data-student-form-field]').forEach((control) => {
     control.addEventListener('input', () => {
       let nextValue = control.value
@@ -31232,6 +31382,7 @@ async function refreshTuitionOperatorSnapshot() {
   const result=await pullTuitionOperatorSnapshot({supabase:getSupabaseClient(),centerId})
   if(runId!==tuitionOperatorReadRunId||centerId!==getCurrentCanonicalCenterContext().centerId)return {ok:false,outcome_code:'CENTER_CONTEXT_CHANGED'}
   tuitionOperatorSnapshot=result.ok?{...result,status:'ready'}:{status:'failed',centerId,students:[],cycleStates:[],catalog:[],receipts:[]}
+  if (result.ok) queueNotificationAttentionRefresh('tuition-reconciled')
   render()
   return result
 }
@@ -31643,44 +31794,62 @@ function syncTuitionNotifications(currentNotifications) {
 
 function syncAppNotifications(currentNotifications) {
   const centerContext = getCurrentCanonicalCenterContext()
-  if (!centerContext.ok) {
+  if (!centerContext.ok || centerContext.centerId !== getCurrentStorageCenterId()) {
     return currentNotifications
   }
 
   const centerId = centerContext.centerId
   const today = new Date()
+  const range = getNotificationAttentionRange(today)
+  const coreReady = ['cloud', 'cloud-empty'].includes(cloudBootstrapState.source) && !cloudDbState.isLoading
+  const operations = notificationOperationalSources.operations
+  const tuition = notificationOperationalSources.tuition
+  const attendance = notificationOperationalSources.attendance
+  const operationsReady = operations.status === 'ready' && operations.centerId === centerId
+  const tuitionReady = tuition.status === 'ready' && tuition.centerId === centerId
+  const attendanceReady = attendance.status === 'ready' && attendance.centerId === centerId
+    && attendance.fromDate === range.fromDate && attendance.toDate === range.toDate
+  const v24Ready = isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)
+  const inventoryReady = isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerId)
+    && isV27AInventoryCycleCountCapabilityReady(v27aInventoryCycleCountCapabilityState, centerId)
   const visibleCurrentWeekOccurrences = getVisibleScheduleSessions(
     scheduleSessions,
     getCurrentScheduleWeekStartDate(today),
     classSessions,
   )
-  const notificationCandidates = [
-    ...buildStudentBirthdayNotificationCandidates(students, { centerId, today }),
-    ...(isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)
-      ? buildV24TuitionNotificationCandidates(v24PackageCycleStudentStates, students, { centerId, today })
-      : []),
-    ...(isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)
-      ? buildV28AAttendanceNotificationCandidates(
-          v28aAttendanceReminders,
-          getStudentsWithCanonicalProjections(),
-          { centerId, today },
-        )
-      : []),
-    ...buildScheduleAttentionNotificationCandidates(visibleCurrentWeekOccurrences, { centerId, today }),
-    ...buildMissingSessionReportNotificationCandidates(
-      visibleCurrentWeekOccurrences,
-      sessionReports,
-      { centerId, now: today },
-    ),
-    ...(isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerId)
-      && isV27AInventoryCycleCountCapabilityReady(
-      v27aInventoryCycleCountCapabilityState,
-      centerId,
-    )
-      ? buildInventoryDueNotificationCandidates(inventoryCycleCounts, { centerId, today })
-      : []),
+  const providers = [
+    { id: 'birthdays', ready: coreReady, operational: true,
+      candidates: buildStudentBirthdayNotificationCandidates(students, { centerId, today }) },
+    { id: 'birthday-month', ready: coreReady,
+      candidates: buildStudentBirthdayMonthNotificationCandidates(students, { centerId, today }) },
+    { id: 'tuition-existing', ready: coreReady && v24Ready, operational: true,
+      candidates: buildV24TuitionNotificationCandidates(v24PackageCycleStudentStates, students, { centerId, today })
+        .filter(item => item.meta.signal !== 'tuition-due') },
+    { id: 'reviews-existing', ready: coreReady && operationsReady, operational: true,
+      candidates: buildV28AAttendanceNotificationCandidates(operations.reminders, getStudentsWithCanonicalProjections(), { centerId, today })
+        .filter(item => item.meta.signal === 'REVIEW_UPDATE_DUE') },
+    { id: 'schedule-attention', ready: coreReady,
+      candidates: buildScheduleAttentionNotificationCandidates(visibleCurrentWeekOccurrences, { centerId, today }) },
+    // Preserve the existing legacy Schedule/report family in All. It never
+    // supplies canonical attendance completeness or the operational view.
+    { id: 'session-reports', ready: coreReady && attendance.centerId === centerId && attendance.attendanceReadReady === true,
+      candidates: buildMissingSessionReportNotificationCandidates(visibleCurrentWeekOccurrences, sessionReports, { centerId, now: today }) },
+    { id: 'inventory-due', ready: inventoryReady, operational: true,
+      candidates: buildInventoryDueNotificationCandidates(inventoryCycleCounts, { centerId, today }) },
+    { id: 'attendance-attention', ready: attendanceReady, operational: true,
+      candidates: buildIncompleteAttendanceCandidates(attendance, { centerId, now: today }) },
+    { id: 'tuition-n2', ready: tuitionReady && operationsReady, operational: true,
+      candidates: buildTuitionN2Candidates(tuition, operations, { centerId, now: today }) },
+    { id: 'payment-attention', ready: tuitionReady && operationsReady, operational: true,
+      candidates: buildPaymentAttentionCandidates(operations, tuition, { centerId, now: today }) },
   ]
-  const nextNotifications = upsertNotificationCandidates(currentNotifications, notificationCandidates)
+  const notificationCandidates = providers.filter(provider => provider.ready).flatMap(provider =>
+    tagNotificationCandidates(provider.candidates, { centerId, providerId: provider.id, operational: provider.operational }))
+  const nextNotifications = upsertNotificationCandidates(
+    pruneExpiredStudentBirthdayNotifications(currentNotifications, { today, centerId })
+      .map(item => normalizeCachedOperationalNotification(item, centerId)), notificationCandidates,
+    { readyProviders: providers.filter(provider => provider.ready).map(provider => provider.id) },
+  )
 
   if (JSON.stringify(nextNotifications) !== JSON.stringify(currentNotifications)) {
     saveStoredNotifications(nextNotifications)
@@ -31697,11 +31866,12 @@ function markNotificationRead(notificationId) {
   }
 
   notifications = markNotificationReadById(notifications, notificationId)
+  saveNotificationViewedState(notifications)
   saveStoredNotifications(notifications)
   render()
 }
 
-function openNotificationSourceModule(notificationId) {
+async function openNotificationSourceModule(notificationId) {
   const notification = notifications.find((item) => item.id === notificationId)
 
   if (!notification || !isProductionModuleAvailable(notification.sourceModule)) {
@@ -31709,6 +31879,44 @@ function openNotificationSourceModule(notificationId) {
   }
 
   isNotificationCenterOpen = false
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const accountId = cloudStatus.user?.id
+  const route = getNotificationRoute(notification, centerId)
+  if (route) {
+    if (route.moduleId === 'thoi-khoa-bieu') {
+      scheduleFormState = null
+      scheduleReportState = null
+      scheduleAdminAttendanceState = null
+      sessionReportAttendanceState = null
+      sessionReportLearningState = null
+      sessionReportLearningFormState = null
+      sessionReportExtraState = null
+      isSessionReportExtraExpanded = false
+      sessionReportGuestFormState = null
+      scheduleWeekStartDate = getCurrentScheduleWeekStartDate(new Date(`${route.occurrenceDate}T12:00:00`))
+    }
+    openModuleWindowFromChildInteraction(route.moduleId, { refresh: false })
+    const result = await refreshModuleAuthoritativeUpstreams(route.moduleId, { reason: 'notification-exact-route' })
+    if (!result.ok || centerId !== getCurrentCanonicalCenterContext().centerId || accountId !== cloudStatus.user?.id) return
+    if (route.moduleId === 'hoc-phi') {
+      const state = tuitionOperatorSnapshot.cycleStates.find(item => item.studentId === route.studentId)
+      const cycle = [state?.currentCycle, state?.preparedNextCycle, ...(state?.cycles || [])].find(item => item?.id === route.cycleId)
+      if (!cycle) {
+        tuitionOperatorState.message = 'Kỳ học phí này không còn trong dữ liệu hiện tại. Vui lòng làm mới thông báo.'
+        render()
+        return
+      }
+      await getTuitionOperatorController().open('detail', route.studentId, route.cycleId)
+    } else {
+      const card = [...document.querySelectorAll('[data-schedule-action="open-edit"]')].find(item =>
+        item.dataset.scheduleSessionId === route.sessionId && item.dataset.scheduleOccurrenceDate === route.occurrenceDate)
+      // Notification only routes an already snapshotted occurrence. Never use
+      // Schedule's mutating RESOLVE fallback to make a notification target.
+      if (card) { card.scrollIntoView({ block: 'nearest' }); card.click() }
+      else window.alert('Ca học này không còn trong lịch hiện tại. Vui lòng làm mới thông báo.')
+    }
+    return
+  }
   if (notification.sourceModule === 'hoc-vien' && notification.meta?.studentId) {
     const studentId = String(notification.meta.studentId)
     if (students.some((student) => String(student.id) === studentId)) {
@@ -32228,13 +32436,20 @@ function withTuitionViewportLock(action, event) {
 }
 
 function updateClock() {
+  const now = new Date()
+  const localDate = getBirthdayLocalDateKey(now)
+  if (localDate && localDate !== notificationCalendarDate) {
+    notificationCalendarDate = localDate
+    notifications = syncAppNotifications(notifications)
+    render()
+    queueNotificationAttentionRefresh('local-day-rollover')
+  }
   const clock = document.querySelector('#taskbar-clock')
 
   if (!clock) {
     return
   }
 
-  const now = new Date()
   const date = now.toLocaleDateString('vi-VN', {
     day: '2-digit',
     month: '2-digit',
@@ -32277,3 +32492,6 @@ if (window.__ichessClockTimer) {
 }
 
 window.__ichessClockTimer = setInterval(updateClock, 1000)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') updateClock()
+})

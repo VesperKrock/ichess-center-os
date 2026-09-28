@@ -1,5 +1,10 @@
 import { botMilestones, sampleStudents, studentStatuses } from './student-data.js'
-import { formatOperatorDate, parseCanonicalDateParts } from './operator-date-format.js'
+import { formatOperatorDate } from './operator-date-format.js'
+import { getStudentStatusPresentation } from './student-status-presentation.js'
+import {
+  buildStudentBirthFields, formatStudentBirthInformation, getStudentBirthInformation,
+  validateStudentBirthFields,
+} from './student-birth-information.js'
 import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
 import {
   V22_WEEKDAY_LABELS,
@@ -70,6 +75,7 @@ export const studentFormTabOrder = {
   schoolName: 3,
   schoolGrade: 4,
   birthDate: 5,
+  birthYear: 5,
   gender: 6,
   registrationDate: 7,
   priorChessKnowledge: 8,
@@ -107,6 +113,8 @@ export const emptyStudentFormValues = {
   fullName: '',
   homeName: '',
   birthDate: '',
+  birthYear: '',
+  birthYearOnly: false,
   registrationDate: '',
   avatarUrl: '',
   schoolName: '',
@@ -142,7 +150,6 @@ export const emptyStudentFormValues = {
 
 const requiredFields = {
   fullName: 'Họ và tên học viên',
-  birthDate: 'Ngày tháng năm sinh',
   schoolName: 'Tên trường',
   level: 'Cấp độ học',
 }
@@ -174,6 +181,8 @@ export function createEditStudentFormState(student) {
       fullName: student.fullName ?? '',
       homeName: student.homeName ?? '',
       birthDate: student.birthDate ?? '',
+      birthYear: student.birthYear ?? '',
+      birthYearOnly: !student.birthDate && Boolean(student.birthYear),
       registrationDate: student.registrationDate ?? '',
       avatarUrl: student.avatarUrl ?? '',
       schoolName: student.schoolName ?? '',
@@ -202,7 +211,7 @@ export function createEditStudentFormState(student) {
       testScore: getTestScoreForForm(student.testScore),
       highestBotMilestone: student.highestBotMilestone ?? 'Chưa có',
       personality: student.personality ?? '',
-      currentStatus: student.currentStatus ?? 'Đang theo học',
+      currentStatus: getStudentStatusPresentation(student),
       achievements: student.achievements ?? '',
       parentNotes: student.parentNotes ?? '',
     },
@@ -356,7 +365,7 @@ export function getFilteredStudents(
         ))
 
     const matchesStatus =
-      activeFilters.status === 'all' || student.currentStatus === activeFilters.status
+      activeFilters.status === 'all' || getStudentStatusPresentation(student) === activeFilters.status
     const matchesLevel =
       activeFilters.level === 'all' || getLevelLabel(student.level) === activeFilters.level
     const classSessionIds = normalizeClassSessionIds(student.classSessionIds)
@@ -383,6 +392,7 @@ export function validateStudentForm(values, classSessions = []) {
 
     return currentErrors
   }, {})
+  Object.assign(errors, validateStudentBirthFields(values))
 
   const fatherPhoneDigits = String(values.fatherPhone ?? '').replace(/\D/g, '')
   const motherPhoneDigits = String(values.motherPhone ?? '').replace(/\D/g, '')
@@ -504,6 +514,7 @@ export function buildStudentFromForm(values, existingStudent = null) {
   const compatibleParent = getCompatibleParentProjection(values, existingStudent)
   const normalizedValues = {
     ...values,
+    ...buildStudentBirthFields(values),
     avatarUrl: values.avatarUrl || existingStudent?.avatarUrl || '',
     classSessionIds: normalizeClassSessionIds(values.classSessionIds),
     level: getLevelLabel(values.level),
@@ -515,6 +526,7 @@ export function buildStudentFromForm(values, existingStudent = null) {
     testScore: values.testScore ? Number(String(values.testScore).replace(',', '.')) : '',
     latestCareNote: values.parentNotes || 'Chưa có ghi chú chăm sóc.',
   }
+  delete normalizedValues.birthYearOnly
 
   return {
     id: existingStudent?.id ?? `stu-${Date.now()}`,
@@ -626,7 +638,7 @@ function renderStudentForm(
                   renderField('schoolGrade', 'Đang học lớp', formState, 'text', {
                     placeholder: 'Ví dụ: Lớp 2',
                   }),
-                  renderField('birthDate', 'Ngày sinh *', formState, 'date'),
+                  renderStudentBirthField(formState),
                   renderSelectField('gender', 'Giới tính', formState, genderOptions),
                   renderField('registrationDate', 'Ngày đăng ký', formState, 'date'),
                   renderSelectField(
@@ -733,6 +745,16 @@ function renderField(name, label, formState, type, options = {}) {
       ${formState.errors[name] ? `<small>${formState.errors[name]}</small>` : ''}
     </label>
   `
+}
+
+function renderStudentBirthField(formState) {
+  const yearOnly = formState.values.birthYearOnly === true
+  return `<div class="student-birth-field">
+    ${yearOnly
+      ? renderField('birthYear', 'Năm sinh', formState, 'text', { inputmode: 'numeric', maxlength: '4', placeholder: 'Ví dụ: 2018' })
+      : renderField('birthDate', 'Ngày sinh', formState, 'date')}
+    <label class="student-birth-year-option"><input type="checkbox" data-student-birth-year-only ${yearOnly ? 'checked' : ''}><span>Chỉ biết năm sinh</span></label>
+  </div>`
 }
 
 function renderTextareaField(name, label, formState, options = {}) {
@@ -1083,6 +1105,7 @@ function compareText(firstValue, secondValue) {
 }
 
 function renderStudentRow(student, classSessions = [], tuitionRows = []) {
+  const statusLabel = getStudentStatusPresentation(student)
   const hasCareNote = hasRealCareNote(student)
   const contactPhone = student.motherPhone || student.fatherPhone || student.parentPhone
   const classSessionLookup = createClassSessionLookup(classSessions)
@@ -1096,13 +1119,13 @@ function renderStudentRow(student, classSessions = [], tuitionRows = []) {
           ${renderStudentAvatar(student)}
           <div>
             <strong title="${escapeAttribute(student.fullName)}">${escapeHtml(getAuthoritativeStudentName(student.fullName))}</strong>
-            <span>${formatBirthDate(student.birthDate)}</span>
+            <span>${formatBirthDate(student)}</span>
           </div>
         </div>
       </td>
       <td title="${escapeAttribute(student.parentName)}">${getShortName(student.parentName)}</td>
       <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
-      <td><span class="student-status ${getStudentStatusToneClass(student.currentStatus)}">${student.currentStatus}</span></td>
+      <td><span class="student-status ${getStudentStatusToneClass(statusLabel)}">${escapeHtml(statusLabel)}</span></td>
       <td>${escapeHtml(getLevelLabel(student.level))}</td>
       <td>${renderStudentClassSessionCell(student, classSessionLookup)}</td>
       <td class="student-next-action-cell" data-student-next-action="${nextAction.key}">
@@ -1406,7 +1429,7 @@ function getStudentStats(students) {
 }
 
 function countByStatus(students, status) {
-  return students.filter((student) => student.currentStatus === status).length
+  return students.filter((student) => getStudentStatusPresentation(student) === status).length
 }
 
 function getCurrentLocalDateKey(now = new Date()) {
@@ -1414,9 +1437,10 @@ function getCurrentLocalDateKey(now = new Date()) {
   return localDate.toISOString().slice(0, 10)
 }
 
-function formatBirthDate(value) {
-  const birthDate = parseCanonicalDateParts(value)
-  if (!birthDate) return String(value || '—')
+function formatBirthDate(student) {
+  const info = getStudentBirthInformation(student)
+  const birthDate = info.date
+  if (!birthDate) return formatStudentBirthInformation(student)
   const age = new Date().getFullYear() - birthDate.year
   return `${formatOperatorDate(birthDate.canonical)} · ${age} tuổi`
 }

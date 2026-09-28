@@ -14168,6 +14168,31 @@ h3 {
   border-color: rgba(255, 132, 132, 0.76);
 }
 
+.student-birth-field {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.is-student-form-window .student-form-section .student-birth-year-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.is-student-form-window .student-form-panel .student-birth-year-option input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.is-student-form-window .student-form-section .student-birth-year-option span {
+  font-weight: 400;
+}
+
 .student-class-session-field {
   display: grid;
   grid-column: 1 / -1;
@@ -22043,9 +22068,92 @@ h3 {
 
 .notification-list {
   display: grid;
+  min-height: 0;
   gap: 8px;
   overflow: auto;
   padding: 10px;
+}
+
+.notification-center .notification-assistant-item.read {
+  opacity: 1;
+}
+
+.notification-assistant-item .notification-item-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notification-assistant-item .notification-state {
+  flex-shrink: 0;
+}
+
+.notification-assistant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.notification-assistant-actions button {
+  border: 1px solid rgba(180, 202, 232, 0.28);
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f7fb;
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.notification-assistant-actions button:hover,
+.notification-assistant-actions button:focus-visible {
+  border-color: #5899e2;
+  background: rgba(88, 153, 226, 0.14);
+}
+
+:root[data-ui-theme='light'] .notification-center {
+  border-color: #d2dae5;
+  background: #fff;
+  color: #172a42;
+  box-shadow: 0 22px 60px rgba(23, 42, 66, 0.2);
+}
+
+:root[data-ui-theme='light'] .notification-center .notification-center-header {
+  border-bottom-color: #d2dae5;
+  background: #f7f9fc;
+}
+
+:root[data-ui-theme='light'] .notification-center h2,
+:root[data-ui-theme='light'] .notification-center .notification-item-header strong {
+  color: #172a42;
+}
+
+:root[data-ui-theme='light'] .notification-center .notification-item,
+:root[data-ui-theme='light'] .notification-center select,
+:root[data-ui-theme='light'] .notification-center button {
+  border-color: #ccd7e5;
+  background: #f7f9fc;
+  color: #172a42;
+}
+
+:root[data-ui-theme='light'] .notification-center p,
+:root[data-ui-theme='light'] .notification-center label,
+:root[data-ui-theme='light'] .notification-center .notification-meta,
+:root[data-ui-theme='light'] .notification-center .notification-empty,
+:root[data-ui-theme='light'] .notification-center .notification-state {
+  color: #526780;
+}
+
+:root[data-ui-theme='light'] .notification-center .notification-item.level-warning {
+  border-left-color: #b56b00;
+}
+
+:root[data-ui-theme='light'] .notification-center .notification-item.level-danger {
+  border-left-color: #bd3346;
+}
+
+:root[data-ui-theme='light'] .notification-center .notification-refresh-notice.is-fresh {
+  background: #edf7f0;
+  color: #21633c;
 }
 
 .notification-item {

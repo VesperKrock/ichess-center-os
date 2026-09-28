@@ -22,6 +22,31 @@ const DESKTOP_ORDER_KEY = 'ichess-center-os:v2-desktop-module-order'
 const DEFAULT_STORAGE_CENTER_ID = 'unbound'
 let currentStorageCenterId = DEFAULT_STORAGE_CENTER_ID
 let currentInstallationStorageNamespace = 'legacy'
+let currentNotificationAccountId = ''
+
+export function setCurrentNotificationAccountId(accountId) {
+  currentNotificationAccountId = String(accountId || '').trim()
+}
+
+function notificationViewedKey() {
+  return createCenterScopedStorageKey(`notifications.viewed.${encodeURIComponent(currentNotificationAccountId)}`)
+}
+
+function applyNotificationViewedState(notifications) {
+  let viewed = {}
+  try { viewed = JSON.parse(localStorage.getItem(notificationViewedKey())) || {} } catch { /* personal cache only */ }
+  return notifications.map(notification => {
+    // The ownership of old center-wide read flags cannot be established.
+    const readAt = currentNotificationAccountId ? normalizeNotificationReadAt(viewed[notification.dedupeKey], false, '') : ''
+    return { ...notification, readAt, read: Boolean(readAt) }
+  })
+}
+
+export function saveNotificationViewedState(notifications) {
+  if (!currentNotificationAccountId) return
+  const viewed = Object.fromEntries(notifications.filter(item => item.readAt).map(item => [item.dedupeKey, item.readAt]))
+  localStorage.setItem(notificationViewedKey(), JSON.stringify(viewed))
+}
 const staffAdministrativeProfileReadStatuses = new Map()
 const staffDocumentReadStatuses = new Map()
 const staffAdministrativeAuditReadStatuses = new Map()
@@ -116,6 +141,8 @@ const VALID_UI_THEMES = ['light', 'dark']
 const VALID_NOTIFICATION_LEVELS = ['info', 'warning', 'danger', 'success']
 const VALID_NOTIFICATION_TYPES = [
   'system',
+  'attendance-operation',
+  'inventory-cycle-count',
   'tuition',
   'tuition-advisory',
   'student',
@@ -445,7 +472,7 @@ export function getStoredNotifications(defaultNotifications) {
       if (nonFixtureNotifications.length !== storedNotifications.length) {
         const normalizedNotifications = normalizeNotifications(nonFixtureNotifications)
         saveStoredNotifications(normalizedNotifications)
-        return normalizedNotifications
+        return applyNotificationViewedState(normalizedNotifications)
       }
       const savedVersion = localStorage.getItem(NOTIFICATIONS_VERSION_KEY)
 
@@ -458,12 +485,12 @@ export function getStoredNotifications(defaultNotifications) {
           storedNotifications,
         )
         saveStoredNotifications(migratedNotifications)
-        return migratedNotifications
+        return applyNotificationViewedState(migratedNotifications)
       }
 
       const normalizedNotifications = normalizeNotifications(storedNotifications)
       saveStoredNotifications(normalizedNotifications)
-      return normalizedNotifications
+      return applyNotificationViewedState(normalizedNotifications)
     }
   } catch {
     localStorage.removeItem(NOTIFICATIONS_KEY)
@@ -471,11 +498,21 @@ export function getStoredNotifications(defaultNotifications) {
 
   const normalizedDefaultNotifications = normalizeNotifications(defaultNotifications)
   saveStoredNotifications(normalizedDefaultNotifications)
-  return normalizedDefaultNotifications
+  return applyNotificationViewedState(normalizedDefaultNotifications)
 }
 
 export function saveStoredNotifications(notifications) {
-  localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(normalizeNotifications(notifications)))
+  let previous = []
+  try { previous = JSON.parse(localStorage.getItem(NOTIFICATIONS_KEY)) || [] } catch { /* cache can be recreated */ }
+  const previousByKey = new Map((Array.isArray(previous) ? previous : []).map(item => [item.dedupeKey || item.id, item]))
+  // Shared conditions never store the current account's viewed flags. Keep
+  // old unattributed flags as compatibility evidence; readers ignore them.
+  const shared = normalizeNotifications(notifications).map(notification => {
+    const old = previousByKey.get(notification.dedupeKey)
+    const readAt = old?.readAt || ''
+    return { ...notification, readAt, read: Boolean(readAt) }
+  })
+  localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(shared))
   localStorage.setItem(NOTIFICATIONS_VERSION_KEY, CURRENT_NOTIFICATIONS_VERSION)
 }
 
@@ -1572,7 +1609,12 @@ function normalizeNotifications(notifications) {
         dedupeKey: String(notification.dedupeKey || id),
         sourceModule,
         sourceLabel: String(notification.sourceLabel || getNotificationSourceLabel(sourceModule)),
-        type: normalizeNotificationType(notification.type),
+        type: normalizeNotificationType(notification.type === 'system'
+          && String(notification.dedupeKey || '').startsWith('v2-8a:')
+          && ['TBHP_SEND_DUE', 'PAYMENT_CHECK_DUE', 'REVIEW_UPDATE_DUE'].includes(notification.meta?.signal)
+            ? 'attendance-operation'
+            : notification.type === 'system' && String(notification.dedupeKey || '').startsWith('inventory-cycle-count-due:')
+              && notification.meta?.cycleCountId ? 'inventory-cycle-count' : notification.type),
         severity,
         level: severity,
         title: String(notification.title || 'ThÄ‚Â´ng bÄ‚Â¡o'),

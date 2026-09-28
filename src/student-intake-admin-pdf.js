@@ -1,4 +1,5 @@
 import { formatOperatorDate, parseCanonicalDateParts } from './operator-date-format.js'
+import { formatStudentBirthInformation } from './student-birth-information.js'
 
 export const STUDENT_INTAKE_ADMIN_TEMPLATE_PATH =
   'forms/student-intake/student-information-admin-template.pdf'
@@ -92,7 +93,7 @@ export function createStudentIntakeAdminPdfProjection(student) {
 
   const projection = {
     fullName: normalizeSingleLine(student.fullName),
-    birthDate: formatStudentDate(student.birthDate),
+    birthDate: formatStudentBirthInformation(student, ''),
     schoolName: normalizeSingleLine(student.schoolName),
     schoolGrade: normalizeSingleLine(student.schoolGrade),
     homeName: normalizeSingleLine(student.homeName),

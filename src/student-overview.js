@@ -3,6 +3,7 @@ import {
   normalizeV22Enrollments,
 } from './student-recurring-enrollment.js'
 import { buildV24TuitionNotificationCandidates } from './notification-center.js'
+import { getStudentStatusPresentation } from './student-status-presentation.js'
 
 // Presentation only. Tuition rows and reminder signals come from their existing
 // owners; this module never allocates money, sessions, packages or workflows.
@@ -16,7 +17,7 @@ export function getStudentNextAction(student, classSessions = [], tuitionRow = n
         'Mở Học phí để kiểm tra khoản cần thanh toán của học viên.',
         'Kiểm tra học phí', 'tuition', 'warning')
     }
-    return action('not-studying', student.currentStatus || 'Chưa cập nhật trạng thái',
+    return action('not-studying', getStudentStatusPresentation(student),
       'Hồ sơ và lịch sử học tập vẫn được giữ nguyên.')
   }
 

@@ -1,3 +1,5 @@
+import { getBirthdayLocalDateKey, getStudentBirthInformation } from './student-birth-information.js'
+
 export const notificationSourceLabels = {
   'hoc-vien': 'Học viên',
   'hoc-phi': 'Học phí',
@@ -64,31 +66,24 @@ const derivedNotificationTypes = new Set([
 ])
 
 export function buildStudentBirthdayNotificationCandidates(students, options = {}) {
-  const today = normalizeDateKey(options.today || new Date())
+  const today = getBirthdayLocalDateKey(options.today || new Date())
   const centerId = String(options.centerId || '').trim()
-  const timestamp = getDateKeyTimestamp(today)
+  const timestamp = today ? new Date(`${today}T00:00:00+07:00`).toISOString() : ''
 
-  if (!today) {
+  if (!today || !centerId) {
     return []
   }
 
-  return (students ?? [])
-    .filter((student) => {
-      const birthDate = normalizeDateKey(student?.birthDate)
-      return student?.id
-        && birthDate
-        && birthDate.slice(5) === today.slice(5)
-        && !inactiveStudentStatuses.has(String(student.currentStatus || '').trim())
-        && (!centerId || !student.centerId || String(student.centerId) === centerId)
-    })
+  return getBirthdayStudents(students, centerId)
+    .filter(student => getStudentBirthInformation(student).birthDate.slice(5) === today.slice(5))
     .map((student) => ({
       dedupeKey: `student-birthday:${student.id}:${today}`,
       sourceModule: 'hoc-vien',
       sourceLabel: notificationSourceLabels['hoc-vien'],
       type: 'student',
       severity: 'info',
-      title: `Sinh nhật hôm nay: ${getEntityLabel(student, 'Học viên')}`,
-      message: 'Mở hồ sơ học viên để xem thông tin liên hệ.',
+      title: `Hôm nay là sinh nhật của ${getEntityLabel(student, 'Học viên')} 🎂`,
+      message: `Sinh nhật ${today.slice(8, 10)}/${today.slice(5, 7)}`,
       entityId: student.id,
       entityType: 'student',
       entityLabel: getEntityLabel(student, 'Học viên'),
@@ -98,8 +93,61 @@ export function buildStudentBirthdayNotificationCandidates(students, options = {
         studentId: String(student.id),
         signal: 'birthday-today',
         date: today,
+        centerId,
+        providerId: 'birthdays',
+        operational: true,
+        actionLabel: 'Mở học viên',
       },
     }))
+}
+
+function getBirthdayStudents(students, centerId) {
+  // The caller passes the authoritative active-center Student projection.
+  // Explicit foreign-center rows and tombstones are still rejected here.
+  return [...new Map((students ?? []).filter(student => student?.id
+    && !student.isDeleted && !student.deletedAt && !student.cloudDeletedAt
+    && !inactiveStudentStatuses.has(String(student.currentStatus || '').trim())
+    && (!student.centerId || String(student.centerId) === centerId)
+    && getStudentBirthInformation(student).kind === 'full')
+    .map(student => [String(student.id), student])).values()]
+}
+
+export function buildStudentBirthdayMonthNotificationCandidates(students, options = {}) {
+  const today = getBirthdayLocalDateKey(options.today || new Date())
+  const centerId = String(options.centerId || '').trim()
+  if (!today || !centerId) return []
+  const month = today.slice(0, 7)
+  const birthdays = getBirthdayStudents(students, centerId)
+    .filter(student => getStudentBirthInformation(student).birthDate.slice(5, 7) === today.slice(5, 7))
+    .sort((first, second) => getStudentBirthInformation(first).date.day - getStudentBirthInformation(second).date.day
+      || getEntityLabel(first).localeCompare(getEntityLabel(second), 'vi')
+      || String(first.id).localeCompare(String(second.id)))
+  if (!birthdays.length) return []
+  const timestamp = new Date(`${month}-01T00:00:00+07:00`).toISOString()
+  return [{
+    dedupeKey: `student-birthday-month:${centerId}:${month}`,
+    sourceModule: 'hoc-vien', sourceLabel: notificationSourceLabels['hoc-vien'], type: 'student', severity: 'info',
+    title: `Sinh nhật tháng ${Number(today.slice(5, 7))}`,
+    message: birthdays.map(student => {
+      const date = getStudentBirthInformation(student).date
+      return `${getEntityLabel(student, 'Học viên')} (${String(date.day).padStart(2, '0')}/${String(date.month).padStart(2, '0')})`
+    }).join(' · '),
+    entityId: '', entityType: 'studentBirthdayMonth', entityLabel: '', createdAt: timestamp, updatedAt: timestamp,
+    meta: { centerId, providerId: 'birthday-month', operational: false, signal: 'birthday-month', month,
+      studentIds: birthdays.map(student => String(student.id)) },
+  }]
+}
+
+export function pruneExpiredStudentBirthdayNotifications(notifications, { today = new Date(), centerId } = {}) {
+  const date = getBirthdayLocalDateKey(today)
+  if (!date || !centerId) return notifications ?? []
+  return (notifications ?? []).filter(item => {
+    if (item.meta?.centerId && item.meta.centerId !== centerId) return true
+    const provider = getNotificationProvider(item)
+    if (provider === 'birthdays') return (item.meta?.date || String(item.dedupeKey).split(':').at(-1)) === date
+    if (provider === 'birthday-month') return item.meta?.month === date.slice(0, 7)
+    return true
+  })
 }
 
 export function buildV24TuitionNotificationCandidates(studentStates, students, options = {}) {
@@ -453,17 +501,49 @@ export function buildParentFollowupNotificationCandidates(parentConsultations) {
     .filter(Boolean)
 }
 
-export function upsertNotificationCandidates(currentNotifications, candidates) {
+export function getNotificationProvider(notification = {}) {
+  const key = String(notification.dedupeKey || '')
+  const meta = notification.meta || {}
+  if (key.startsWith('attention:') && meta.centerId) {
+    if (meta.signal === 'attendance-incomplete' && meta.sessionId && meta.occurrenceDate
+      && key === `attention:${meta.centerId}:${meta.sessionId}|${meta.occurrenceDate}:attendance-incomplete`) return 'attendance-attention'
+    if (meta.studentId && meta.cycleId
+      && key === `attention:${meta.centerId}:${meta.studentId}:${meta.cycleId}:${meta.signal}`) {
+      if (meta.signal === 'tuition-n2') return 'tuition-n2'
+      if (meta.signal === 'payment-check') return 'payment-attention'
+    }
+  }
+  if (key.startsWith('student-birthday:')) return 'birthdays'
+  if (key.startsWith('student-birthday-month:')) return 'birthday-month'
+  if (key.startsWith('schedule-attention:')) return 'schedule-attention'
+  if (key.startsWith('missing-session-report:')) return 'session-reports'
+  if (key.startsWith('inventory-cycle-count-due:')) return 'inventory-due'
+  if (key.startsWith('v2-4:')) return notification.meta?.signal === 'tuition-due' ? 'tuition-n2' : 'tuition-existing'
+  if (key.startsWith('v2-8a:')) return notification.meta?.signal === 'TBHP_SEND_DUE' ? 'tuition-n2'
+    : notification.meta?.signal === 'PAYMENT_CHECK_DUE' ? 'payment-attention' : 'reviews-existing'
+  return ''
+}
+
+export function tagNotificationCandidates(candidates, { centerId, providerId, operational = false }) {
+  return candidates.map(candidate => ({ ...candidate,
+    meta: { ...candidate.meta, centerId, providerId, operational, stale: false } }))
+}
+
+export function upsertNotificationCandidates(currentNotifications, candidates, options = {}) {
   const now = new Date().toISOString()
+  const readyProviders = options.readyProviders == null ? null : new Set(options.readyProviders)
   const existingByDedupeKey = new Map()
   const normalizedExisting = (currentNotifications ?? []).filter(Boolean)
 
   normalizedExisting.forEach((notification) => {
-    existingByDedupeKey.set(notification.dedupeKey || notification.id, notification)
+    const key = notification.dedupeKey || notification.id
+    const previous = existingByDedupeKey.get(key)
+    existingByDedupeKey.set(key, previous?.readAt && !notification.readAt ? previous : notification)
   })
 
   const candidateDedupeKeys = new Set()
   const upsertedCandidates = (candidates ?? [])
+    .filter(candidate => !readyProviders || readyProviders.has(getNotificationProvider(candidate)))
     .map((candidate) => normalizeCandidate(candidate, now))
     .filter((candidate) => {
       if (!candidate || candidateDedupeKeys.has(candidate.dedupeKey)) {
@@ -483,23 +563,26 @@ export function upsertNotificationCandidates(currentNotifications, candidates) {
       return {
         ...existingNotification,
         ...candidate,
-        id: existingNotification.id,
+        id: candidate.dedupeKey.startsWith('attention:') ? candidate.id : existingNotification.id,
         createdAt: existingNotification.createdAt || candidate.createdAt,
         readAt: existingNotification.readAt || '',
         read: Boolean(existingNotification.readAt),
+        meta: { ...candidate.meta, stale: false },
       }
     })
 
   const derivedKeys = new Set(upsertedCandidates.map((notification) => notification.dedupeKey))
-  const retainedNotifications = normalizedExisting.filter((notification) => {
+  const retainedNotifications = [...existingByDedupeKey.values()].filter((notification) => {
     const key = notification.dedupeKey || notification.id
 
     if (derivedKeys.has(key)) {
       return false
     }
 
+    if (readyProviders) return !readyProviders.has(getNotificationProvider(notification))
     return !derivedNotificationTypes.has(notification.type)
-  })
+  }).map(notification => readyProviders && getNotificationProvider(notification)
+    ? { ...notification, meta: { ...notification.meta, stale: true } } : notification)
 
   return [...upsertedCandidates, ...retainedNotifications].sort(
     (firstNotification, secondNotification) =>
@@ -529,6 +612,7 @@ export function filterNotifications(notifications, filters = {}) {
     const moduleMatches = sourceModule === 'all' || notification.sourceModule === sourceModule
     const readMatches =
       readState === 'all' ||
+      (readState === 'attention' && notification.meta?.operational === true && Boolean(getNotificationProvider(notification))) ||
       (readState === 'unread' && !notification.readAt) ||
       (readState === 'read' && Boolean(notification.readAt))
 
@@ -578,7 +662,8 @@ function normalizeCandidate(candidate, fallbackDate) {
   const sourceModule = candidate.sourceModule || 'he-thong'
 
   return {
-    id: candidate.id || `notification-${slugify(candidate.dedupeKey)}`,
+    id: candidate.id || `notification-${String(candidate.dedupeKey).startsWith('attention:')
+      ? encodeURIComponent(candidate.dedupeKey) : slugify(candidate.dedupeKey)}`,
     dedupeKey: String(candidate.dedupeKey),
     sourceModule,
     sourceLabel: candidate.sourceLabel || getNotificationSourceLabel(sourceModule),

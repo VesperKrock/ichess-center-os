@@ -1,6 +1,7 @@
 import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
+import { getStudentStatusPresentation } from './student-status-presentation.js'
+import { formatStudentBirthInformation, getStudentBirthInformation } from './student-birth-information.js'
 import {
-  formatOperatorDate,
   formatOperatorDateTime,
   parseCanonicalDateParts,
 } from './operator-date-format.js'
@@ -50,7 +51,7 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
   const classSessionLabel = getStudentClassSessionLabel(activeStudent, activeClassSessions)
   const tuitionRow = options.tuitionRows?.find((row) => row.student.id === student.id) || null
   const nextAction = getStudentNextAction(student, classSessions, tuitionRow)
-  const studentStatusFact = ['Trạng thái', student.currentStatus]
+  const studentStatusFact = ['Trạng thái', getStudentStatusPresentation(student)]
   const primaryParentPhone = student.motherPhone
     || student.fatherPhone
     || student.parentPhone
@@ -78,7 +79,7 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
             <span class="student-detail-status-badge ${getStudentProfileStatusClass(studentStatusFact[1])}" aria-label="${studentStatusFact[0]}">${displayValue(studentStatusFact[1])}</span>
             <span class="student-detail-level-badge">${getEscapedLevelLabel(student.level)}</span>
           </div>
-          <p class="student-detail-identity-meta">${formatBirthDate(student.birthDate)} · ${formatAgeLabel(student.birthDate)} · ${getGenderLabel(student.gender)}</p>
+          <p class="student-detail-identity-meta">${formatStudentBirthInformation(student)}${getStudentBirthInformation(student).kind === 'full' ? ` · ${formatAgeLabel(student.birthDate)}` : ''} · ${getGenderLabel(student.gender)}</p>
           <p class="student-detail-contact-meta">PH: ${displayValue(student.parentName)} · ${displayValue(formatPhoneNumber(primaryParentPhone))}</p>
         </div>
         <div class="student-detail-hero-actions">
@@ -668,14 +669,6 @@ function getLevelLabel(level) {
 
 function getEscapedLevelLabel(level) {
   return escapeHtml(getLevelLabel(level))
-}
-
-function formatBirthDate(value) {
-  if (!value) {
-    return '—'
-  }
-
-  return formatOperatorDate(value, '—')
 }
 
 function getAge(value) {

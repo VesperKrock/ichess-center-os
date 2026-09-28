@@ -1,4 +1,6 @@
 import { formatOperatorDate, formatOperatorDateTime } from './operator-date-format.js'
+import { formatStudentBirthInformation } from './student-birth-information.js'
+import { getStudentStatusPresentation } from './student-status-presentation.js'
 
 export const CUSTOMER_INFORMATION_PRINT_ROOT_CLASS = 'customer-information-print-runtime-root'
 export const CUSTOMER_INFORMATION_PRINT_ROOT_SELECTOR = `.${CUSTOMER_INFORMATION_PRINT_ROOT_CLASS}`
@@ -243,10 +245,10 @@ function normalizeRelatedStudents(students = [], links = []) {
 
       return {
         name: displayText(student.fullName || student.name),
-        birthDate: displayDate(student.birthDate),
+        birthDate: formatStudentBirthInformation(student, EMPTY_VALUE),
         schoolName: displayText(student.schoolName || student.school),
         level: displayText(student.level),
-        status: displayText(student.currentStatus || student.status),
+        status: getStudentStatusPresentation(student),
         guardianRole: displayText(GUARDIAN_ROLE_LABELS[cleanText(link.guardianRole).toUpperCase()]),
         guardianOccupation: displayText(link.occupation),
       }
