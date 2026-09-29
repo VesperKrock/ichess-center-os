@@ -10,7 +10,6 @@ export const inventoryCategories = [
 export const inventoryConditions = [
   'Đang dùng',
   'Cần bổ sung',
-  'Hết hàng',
   'Hỏng / cần kiểm tra',
 ]
 

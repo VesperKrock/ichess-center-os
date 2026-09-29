@@ -127,8 +127,8 @@ export async function pullC56InventorySharedTruth({ supabase, centerId } = {}) {
     if (items.some((row) => !row) || movements.some((row) => !row) || requests.some((row) => !row)) {
       return failure('INVALID_SERVER_RESULT', '', data)
     }
-    const itemIds = new Set(items.map((item) => item.id))
-    if (movements.some((movement) => !itemIds.has(movement.itemId))) {
+    const itemsById = new Map(items.map((item) => [item.id, item]))
+    if (movements.some((movement) => !itemsById.has(movement.itemId))) {
       return failure('INVALID_SERVER_RESULT', '', data)
     }
 
@@ -137,7 +137,12 @@ export async function pullC56InventorySharedTruth({ supabase, centerId } = {}) {
       outcome_code: data.outcome_code,
       centerId: normalizedCenterId,
       items,
-      movements,
+      movements: movements.map((movement) => ({
+        ...movement,
+        // The authoritative snapshot includes archived item identities. The
+        // server now locks units once a movement exists.
+        itemUnit: itemsById.get(movement.itemId).unit,
+      })),
       requests,
     }
   } catch (error) {
@@ -412,6 +417,8 @@ export function getC56InventoryOutcomeMessage(outcomeCode) {
     RESOURCE_NOT_FOUND_OR_DENIED: 'Không tìm thấy dữ liệu Kho hàng trong cơ sở hiện tại.',
     VERSION_STALE: 'Dữ liệu đã được tài khoản khác cập nhật; hãy Làm mới trước khi lưu.',
     ITEM_ARCHIVED: 'Vật tư đã lưu trữ; không thể nhập/xuất kho.',
+    ITEM_HAS_STOCK: 'Chỉ có thể lưu trữ khi tồn kho bằng 0. Nhập/xuất và kiểm kê phải phản ánh số lượng thực tế.',
+    UNIT_HAS_HISTORY: 'Đơn vị đã được dùng trong lịch sử kho nên không thể đổi.',
     NEGATIVE_STOCK: 'Số lượng xuất vượt tồn hiện tại; thay đổi chưa được lưu.',
     INVALID_WORKFLOW_TRANSITION: 'Chuyển trạng thái đề xuất không hợp lệ.',
     STUDENT_REFERENCE_DENIED: 'Học viên liên kết không tồn tại trong đúng cơ sở.',
@@ -516,12 +523,18 @@ function failure(outcomeCode, detail = '', raw = null, idempotencyKey = '') {
 }
 
 function c56InventoryRpcFailure(error, fallbackCode, idempotencyKey = '') {
+  const serverMessage = cleanText(error?.message)
+  const safetyOutcome = serverMessage.includes('INVENTORY_ITEM_HAS_STOCK')
+    ? 'ITEM_HAS_STOCK'
+    : serverMessage.includes('INVENTORY_UNIT_HAS_HISTORY')
+      ? 'UNIT_HAS_HISTORY'
+      : ''
   const unavailable = isC56InventoryBackendUnavailable({
     outcome_code: error?.code,
     error: error?.message,
     details: error?.details,
     hint: error?.hint,
   })
-  const outcomeCode = unavailable ? 'BACKEND_NOT_DEPLOYED' : fallbackCode
+  const outcomeCode = safetyOutcome || (unavailable ? 'BACKEND_NOT_DEPLOYED' : fallbackCode)
   return failure(outcomeCode, getC56InventoryOutcomeMessage(outcomeCode), error, idempotencyKey)
 }

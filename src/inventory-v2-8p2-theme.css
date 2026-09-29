@@ -454,6 +454,8 @@
 .desktop-window.is-inventory-window .inventory-condition-badge.is-warning { color: var(--inventory-amber); background: var(--inventory-amber-bg); }
 .desktop-window.is-inventory-window .inventory-stock-badge.is-danger,
 .desktop-window.is-inventory-window .inventory-condition-badge.is-danger { color: var(--inventory-red); background: var(--inventory-red-bg); }
+.desktop-window.is-inventory-window .inventory-movement-type.is-in { color: var(--inventory-green); background: var(--inventory-green-bg); }
+.desktop-window.is-inventory-window .inventory-movement-type.is-out { color: var(--inventory-red); background: var(--inventory-red-bg); }
 
 .desktop-window.is-inventory-window .inventory-table-footer {
   display: flex;
@@ -897,15 +899,38 @@
 .desktop-window.is-inventory-window .inventory-cycle-count-history > p { margin: 0 0 14px; color: var(--inventory-secondary); font-size: 14px; line-height: 1.4; }
 .desktop-window.is-inventory-window .inventory-cycle-count-history { margin: 0; }
 .desktop-window.is-inventory-window .inventory-cycle-count-history > p { color: var(--inventory-faint); font-weight: 600; }
+.desktop-window.is-inventory-window .inventory-cycle-count-history-item { border-color: var(--inventory-line); color: var(--inventory-text); background: var(--inventory-panel); }
+.desktop-window.is-inventory-window .inventory-cycle-count-history-item:is(:hover, :focus-visible, .is-active) { border-color: var(--inventory-blue); background: var(--inventory-blue-bg); }
+.desktop-window.is-inventory-window .inventory-cycle-count-history-item :is(span, small),
+.desktop-window.is-inventory-window .inventory-cycle-count-detail-header p,
+.desktop-window.is-inventory-window .inventory-cycle-count-identity small,
+.desktop-window.is-inventory-window .inventory-cycle-count-observed-field > span { color: var(--inventory-secondary); }
+.desktop-window.is-inventory-window .inventory-cycle-count-detail-header h5,
+.desktop-window.is-inventory-window .inventory-cycle-count-identity strong { color: var(--inventory-text); }
+.desktop-window.is-inventory-window .inventory-cycle-count-status { border-color: var(--inventory-blue); color: var(--inventory-blue); background: var(--inventory-blue-bg); }
+.desktop-window.is-inventory-window .inventory-cycle-count-status.is-reconciled { border-color: var(--inventory-green); color: var(--inventory-green); background: var(--inventory-green-bg); }
+.desktop-window.is-inventory-window .inventory-cycle-count-status.is-cancelled { border-color: var(--inventory-line); color: var(--inventory-muted); background: var(--inventory-soft); }
+.desktop-window.is-inventory-window .inventory-cycle-count-blind-line,
+.desktop-window.is-inventory-window .inventory-cycle-count-table-wrap { border-color: var(--inventory-line); background: var(--inventory-soft); }
+.desktop-window.is-inventory-window .inventory-cycle-count-table :is(th, td) { border-color: var(--inventory-line); }
+.desktop-window.is-inventory-window .inventory-cycle-count-table th { color: var(--inventory-secondary); background: var(--inventory-soft); }
+.desktop-window.is-inventory-window .inventory-cycle-count-table td small { color: var(--inventory-secondary); }
+.desktop-window.is-inventory-window .inventory-cycle-count-table tr.is-discrepant td:nth-child(4) { color: var(--inventory-amber); }
+.desktop-window.is-inventory-window .inventory-cycle-count-balanced { color: var(--inventory-green); }
 .desktop-window.is-inventory-window .inventory-cycle-count-empty { display: flex; height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: 10px; color: var(--inventory-secondary); font-size: 14px; text-align: center; }
 .desktop-window.is-inventory-window .inventory-cycle-count-empty::before { content: "Chưa có phiên kiểm kê"; color: var(--inventory-text); font-size: 18px; font-weight: 600; }
 
 /* Add/edit product */
+.desktop-window.is-inventory-window .inventory-movement-summary { border-color: var(--inventory-line); background: var(--inventory-soft); }
+.desktop-window.is-inventory-window .inventory-movement-summary span { color: var(--inventory-muted); }
+.desktop-window.is-inventory-window .inventory-movement-summary strong { color: var(--inventory-text); }
 .desktop-window.is-inventory-window .inventory-item-form-panel {
   display: flex;
   width: 820px;
-  height: 568px;
+  height: 600px;
+  max-height: calc(100% - 24px);
   flex-direction: column;
+  overflow: auto;
   padding: 17px 23px 13px;
 }
 .desktop-window.is-inventory-window .inventory-item-form-panel .inventory-form-header { display: flex; min-height: 58px; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; border: 0; padding: 0; background: transparent; }

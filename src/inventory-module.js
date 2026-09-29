@@ -152,7 +152,7 @@ export function createEditInventoryFormState(item) {
       unit: item.unit ?? 'Cái',
       quantity: String(getSafeQuantity(item.quantity)),
       lowStockThreshold: String(getSafeQuantity(item.lowStockThreshold)),
-      condition: item.condition ?? inventoryConditions[0] ?? 'Đang dùng',
+      condition: getInventoryDisplayCondition(item),
       location: item.location ?? '',
       note: item.note ?? '',
     },
@@ -254,7 +254,7 @@ export function renderInventoryModule(
       ${renderInventorySharedTruthNotice(sharedTruthState)}
 
       ${renderInventoryListSection(filteredItems, activeFilters, categories, locations, stats)}
-      ${formState ? renderInventoryForm(formState, items) : ''}
+      ${formState ? renderInventoryForm(formState, items, movements) : ''}
       ${movementFormState ? renderInventoryMovementForm(movementFormState, items) : ''}
       ${
         isHistoryPanelOpen
@@ -297,6 +297,7 @@ export function renderInventoryCycleCountPanel(state = {}) {
   const canWrite = Boolean(state.canWrite)
   const isSaving = Boolean(state.isSaving)
   const hasOpenCount = counts.some((count) => ['draft', 'submitted'].includes(count.status))
+  const hasActiveItems = Number(state.activeItemCount) > 0
   const message = String(state.message || '').trim()
 
   return `
@@ -324,9 +325,10 @@ export function renderInventoryCycleCountPanel(state = {}) {
                     required
                   />
                 </label>
-                <button type="submit" ${isSaving ? 'disabled' : ''}>
+                <button type="submit" ${isSaving || !hasActiveItems ? 'disabled' : ''}>
                   ${isSaving ? 'Đang tạo...' : 'Bắt đầu kiểm kê'}
                 </button>
+                ${!hasActiveItems ? '<small>Chưa có mặt hàng để kiểm kê.</small>' : ''}
               </form>
             ` : ''}
             ${!canWrite ? '<p class="inventory-cycle-count-readonly">Vai trò hiện tại được xem nhưng không được thay đổi kiểm kê.</p>' : ''}
@@ -672,7 +674,7 @@ function renderInventoryListSection(
       ${stats ? `
         <div class="inventory-stats" aria-label="Tổng quan kho">
           ${renderInventoryStat('Tổng mặt hàng', stats.itemCount, 'neutral')}
-          ${renderInventoryStat('Tổng tồn', stats.totalQuantity, 'stock')}
+          ${renderInventoryStat('Mặt hàng có tồn', stats.inStockCount, 'stock')}
           ${renderInventoryStat('Sắp hết', stats.lowStockCount, 'warning')}
           ${renderInventoryStat('Hết hàng', stats.outOfStockCount, 'danger')}
         </div>
@@ -700,7 +702,7 @@ function renderInventoryListSection(
                 </table>
               </div>
               <footer class="inventory-table-footer">
-                <span>${filteredItems.length.toLocaleString('vi-VN')} mặt hàng · Tồn kho được tính từ dữ liệu nhập/xuất gần nhất.</span>
+                <span>${filteredItems.length.toLocaleString('vi-VN')} mặt hàng · Tồn kho được cập nhật sau mỗi lần nhập/xuất và đối soát kiểm kê.</span>
               </footer>
             </div>
           `
@@ -726,7 +728,7 @@ export function getFilteredInventoryItems(items, filters = initialInventoryFilte
       const matchesCategory =
         activeFilters.category === 'all' || item.category === activeFilters.category
       const matchesCondition =
-        activeFilters.condition === 'all' || item.condition === activeFilters.condition
+        activeFilters.condition === 'all' || getInventoryDisplayCondition(item) === activeFilters.condition
       const matchesLocation =
         activeFilters.location === 'all' || item.location === activeFilters.location
       const matchesStockAlert =
@@ -839,7 +841,7 @@ export function getInventoryStats(items) {
       const threshold = getSafeQuantity(item.lowStockThreshold)
 
       stats.itemCount += 1
-      stats.totalQuantity += quantity
+      if (quantity > 0) stats.inStockCount += 1
 
       if (quantity <= 0) {
         stats.outOfStockCount += 1
@@ -851,7 +853,7 @@ export function getInventoryStats(items) {
     },
     {
       itemCount: 0,
-      totalQuantity: 0,
+      inStockCount: 0,
       lowStockCount: 0,
       outOfStockCount: 0,
     },
@@ -1092,6 +1094,8 @@ export function validateInventoryForm(values) {
 
   if (!String(values.condition ?? '').trim()) {
     errors.condition = 'Tình trạng là bắt buộc.'
+  } else if (String(values.condition).trim() === 'Hết hàng') {
+    errors.condition = 'Hết hàng được xác định từ số lượng tồn, không chọn thủ công.'
   }
 
   return errors
@@ -1198,7 +1202,6 @@ function renderInventoryRow(item) {
     <tr class="inventory-row" data-inventory-item-id="${escapeAttribute(item.id)}" tabindex="0">
       <td title="${escapeAttribute(item.name)}">
         <strong>${escapeHtml(item.name || 'Vật tư')}</strong>
-        <span>${escapeHtml(item.id || '')}</span>
       </td>
       <td title="${escapeAttribute(item.category)}">${escapeHtml(item.category || 'Khác')}</td>
       <td title="${quantity} ${escapeAttribute(item.unit)}">
@@ -1206,9 +1209,9 @@ function renderInventoryRow(item) {
         <span class="inventory-stock-badge is-${stockState.tone}">${stockState.label}</span>
       </td>
       <td>${threshold.toLocaleString('vi-VN')}</td>
-      <td title="${escapeAttribute(item.condition)}">
-        <span class="inventory-condition-badge is-${getConditionTone(item.condition)}">
-          ${escapeHtml(item.condition || 'Đang dùng')}
+      <td title="${escapeAttribute(getInventoryDisplayCondition(item))}">
+        <span class="inventory-condition-badge is-${getConditionTone(getInventoryDisplayCondition(item))}">
+          ${escapeHtml(getInventoryDisplayCondition(item))}
         </span>
       </td>
       <td title="${escapeAttribute(item.location)}">${escapeHtml(item.location || '—')}</td>
@@ -1217,8 +1220,10 @@ function renderInventoryRow(item) {
   `
 }
 
-function renderInventoryForm(formState, items) {
+function renderInventoryForm(formState, items, movements = []) {
   const isEditMode = formState.mode === 'edit'
+  const item = isEditMode ? (items ?? []).find((candidate) => candidate.id === formState.itemId) : null
+  const unitLocked = Boolean(item && (movements ?? []).some((movement) => movement.itemId === item.id))
   const categories = getInventoryFormCategories(items, formState.values.category)
   const conditions = getInventoryFormConditions(formState.values.condition)
   const units = getInventoryFormUnits(items, formState.values.unit)
@@ -1239,7 +1244,7 @@ function renderInventoryForm(formState, items) {
             ${renderInventorySelectField('Nhóm', 'category', formState, categories)}
           </div>
           <div class="inventory-product-form-row">
-            ${renderInventoryUnitField(formState, units)}
+            ${renderInventoryUnitField(formState, units, unitLocked)}
             ${
               isEditMode
                 ? `<label class="inventory-field">
@@ -1270,7 +1275,8 @@ function renderInventoryForm(formState, items) {
               ? `
                 <div class="inventory-form-left-actions">
                   <button class="inventory-movement-button" type="button" data-inventory-action="open-movement">Nhập/Xuất kho</button>
-                  <button class="inventory-delete-button" type="button" data-inventory-action="delete-item">Lưu trữ vật tư</button>
+                  <button class="inventory-delete-button" type="button" data-inventory-action="delete-item" ${getSafeQuantity(item?.quantity) > 0 ? 'disabled' : ''}>Lưu trữ vật tư</button>
+                  ${getSafeQuantity(item?.quantity) > 0 ? '<small class="inventory-field-help">Chỉ có thể lưu trữ khi tồn kho bằng 0. Nhập/xuất và kiểm kê phải phản ánh số lượng thực tế.</small>' : ''}
                 </div>
               `
               : '<span></span>'
@@ -1291,7 +1297,7 @@ function getInventoryFilterLocations(items) {
   ).sort((firstLocation, secondLocation) => firstLocation.localeCompare(secondLocation, 'vi'))
 }
 
-function renderInventoryUnitField(formState, units) {
+function renderInventoryUnitField(formState, units, locked = false) {
   return `
     <label class="inventory-field ${formState.errors.unit ? 'has-error' : ''}">
       <span>Đơn vị tính</span>
@@ -1301,11 +1307,13 @@ function renderInventoryUnitField(formState, units) {
         value="${escapeAttribute(formState.values.unit ?? '')}"
         placeholder="Chọn hoặc gõ đơn vị mới"
         data-inventory-form-field="unit"
+        ${locked ? 'readonly' : ''}
       />
       <datalist id="inventory-unit-options">
         ${units.map((unit) => `<option value="${escapeAttribute(unit)}"></option>`).join('')}
       </datalist>
       ${renderFieldError(formState.errors.unit)}
+      ${locked ? '<small class="inventory-field-help">Đơn vị đã được dùng trong lịch sử kho nên không thể đổi.</small>' : ''}
     </label>
   `
 }
@@ -1321,7 +1329,7 @@ function renderInventoryMovementForm(formState, items) {
         <div class="inventory-form-header">
           <div>
             <h4>Nhập/Xuất kho</h4>
-            <p>Cập nhật số lượng tồn cho một vật tư hiện có, không ghi nhận chi phí.</p>
+            <p>Ghi nhận nhập/xuất kho và cập nhật số lượng tồn của vật tư.</p>
           </div>
           <button type="button" data-inventory-movement-action="cancel" aria-label="Đóng form">×</button>
         </div>
@@ -1346,6 +1354,7 @@ function renderInventoryMovementForm(formState, items) {
                 ${renderInventoryInputField('Chi phí nhập kho', 'costAmount', formState, 'text', '0', 'inventory-movement-field')}
                 ${renderInventorySelectField('Phương thức thanh toán', 'costMethod', formState, ['Tiền mặt', 'Chuyển khoản', 'Khác'], null, 'inventory-movement-field')}
                 ${renderInventoryInputField('Nhà cung cấp / nơi mua', 'supplierName', formState, 'text', 'Nhà cung cấp', 'inventory-movement-field')}
+                <small class="inventory-field-help span-full">Thông tin chi phí tại đây chỉ dùng cho lịch sử nhập kho, không ghi vào Sổ quỹ.</small>
               `
               : ''
           }
@@ -1566,11 +1575,11 @@ function renderInventoryMovementHistory(
       <div class="inventory-history-summary" aria-label="Tóm tắt lịch sử theo bộ lọc hiện tại">
         <div class="inventory-history-stat is-in">
           <span>NHẬP KHO</span>
-          <strong>${stats.inCount.toLocaleString('vi-VN')} lượt · ${stats.totalInQuantity.toLocaleString('vi-VN')} SL</strong>
+          <strong>${stats.inCount.toLocaleString('vi-VN')} lượt</strong>
         </div>
         <div class="inventory-history-stat is-out">
           <span>XUẤT KHO</span>
-          <strong>${stats.outCount.toLocaleString('vi-VN')} lượt · ${stats.totalOutQuantity.toLocaleString('vi-VN')} SL</strong>
+          <strong>${stats.outCount.toLocaleString('vi-VN')} lượt</strong>
         </div>
         <p>Đang hiển thị theo bộ lọc hiện tại.</p>
       </div>
@@ -1600,7 +1609,8 @@ function renderInventoryMovementHistory(
 
 function renderInventoryMovementHistoryItem(movement, items) {
   const item = (items ?? []).find((inventoryItem) => inventoryItem.id === movement.itemId)
-  const unit = item?.unit ? ` ${item.unit}` : ''
+  const unitLabel = movement.itemUnit || item?.unit || ''
+  const unit = unitLabel ? ` ${unitLabel}` : ''
   const noteText = movement.costAmount > 0
     ? `Chi phí: ${formatMoney(movement.costAmount)}${movement.note ? ` · ${movement.note}` : ''}`
     : movement.note || '—'
@@ -1625,7 +1635,8 @@ function renderInventoryMovementHistoryItem(movement, items) {
 
 function renderInventoryMovementDetail(movement, items) {
   const item = (items ?? []).find((inventoryItem) => inventoryItem.id === movement.itemId)
-  const unit = item?.unit ? ` ${item.unit}` : ''
+  const unitLabel = movement.itemUnit || item?.unit || ''
+  const unit = unitLabel ? ` ${unitLabel}` : ''
 
   return `
     <div class="inventory-form-backdrop" role="presentation">
@@ -1946,7 +1957,7 @@ function getInventoryFormCategories(items, currentCategory = '') {
 function getInventoryFormConditions(currentCondition = '') {
   const conditions = new Set(inventoryConditions)
 
-  if (String(currentCondition ?? '').trim()) {
+  if (String(currentCondition ?? '').trim() && String(currentCondition).trim() !== 'Hết hàng') {
     conditions.add(String(currentCondition).trim())
   }
 
@@ -2060,6 +2071,12 @@ function compareInventoryMovements(firstMovement, secondMovement) {
   }
 
   return new Date(secondMovement.createdAt) - new Date(firstMovement.createdAt)
+}
+
+function getInventoryDisplayCondition(item) {
+  const condition = String(item?.condition ?? '').trim()
+  // A legacy manual stock label must never compete with quantity-derived stock.
+  return condition === 'Hết hàng' ? 'Đang dùng' : condition || 'Đang dùng'
 }
 
 function compareInventoryRequests(firstRequest, secondRequest) {

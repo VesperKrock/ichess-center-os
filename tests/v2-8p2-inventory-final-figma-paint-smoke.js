@@ -65,7 +65,8 @@ for (const expected of [
   'data-inventory-filter="location"',
   'inventory-stat-icon',
   'inventory-table-panel',
-  '1 mặt hàng · Tồn kho được tính từ dữ liệu nhập/xuất gần nhất.',
+  'Mặt hàng có tồn',
+  '1 mặt hàng · Tồn kho được cập nhật sau mỗi lần nhập/xuất và đối soát kiểm kê.',
 ]) {
   assert(defaultHtml.includes(expected), `Final Inventory paint is missing ${expected}`)
 }
@@ -146,7 +147,8 @@ for (const expected of [
   'max-height: 636px;',
   'padding: 96px 138px 100px;',
   'width: 820px;',
-  'height: 568px;',
+  'height: 600px;',
+  'max-height: calc(100% - 24px);',
   'inventory-product-form-row:has(.inventory-field-help)',
   '--inventory-workspace: #0f1115;',
   '--inventory-panel: #14171c;',

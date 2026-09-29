@@ -12615,6 +12615,7 @@ function renderWindowBody(windowItem) {
       },
       {
         counts: inventoryCycleCounts,
+        activeItemCount: inventoryItems.length,
         isPanelOpen: isInventoryCycleCountPanelOpen,
         selectedCountId: selectedInventoryCycleCountId,
         dueDate: inventoryCycleCountDueDate,
@@ -24544,7 +24545,12 @@ function bindEvents() {
       return
     }
 
+    const existingItem = inventoryItems.find((item) => item.id === inventoryFormState.itemId)
     const errors = validateInventoryForm(inventoryFormState.values)
+    if (existingItem && inventoryMovements.some((movement) => movement.itemId === existingItem.id)
+      && String(inventoryFormState.values.unit).trim() !== existingItem.unit) {
+      errors.unit = 'Đơn vị đã được dùng trong lịch sử kho nên không thể đổi.'
+    }
 
     if (Object.keys(errors).length) {
       inventoryFormState = {
@@ -24555,7 +24561,6 @@ function bindEvents() {
       return
     }
 
-    const existingItem = inventoryItems.find((item) => item.id === inventoryFormState.itemId)
     const nextItem = buildInventoryItemFromForm(inventoryFormState.values, existingItem)
     const result = await writeC56InventoryCommand(buildC56SaveItemCommand(nextItem), {
       reason: inventoryFormState.mode === 'edit' ? 'update-item' : 'create-item',
@@ -24570,12 +24575,22 @@ function bindEvents() {
       return
     }
 
+    const item = inventoryItems.find((candidate) => candidate.id === inventoryFormState.itemId)
+    if (!item) return
+    if (item.quantity > 0) {
+      inventoryFormState = {
+        ...inventoryFormState,
+        errors: {
+          ...inventoryFormState.errors,
+          archive: 'Chỉ có thể lưu trữ khi tồn kho bằng 0. Nhập/xuất và kiểm kê phải phản ánh số lượng thực tế.',
+        },
+      }
+      render()
+      return
+    }
     if (!window.confirm('Bạn muốn lưu trữ vật tư này khỏi danh sách đang sử dụng? Lịch sử nhập/xuất vẫn được giữ nguyên.')) {
       return
     }
-
-    const item = inventoryItems.find((candidate) => candidate.id === inventoryFormState.itemId)
-    if (!item) return
     const result = await writeC56InventoryCommand(buildC56ArchiveItemCommand(item), {
       reason: 'archive-item',
     })
@@ -31938,12 +31953,31 @@ async function openNotificationSourceModule(notificationId) {
   }
   if (notification.sourceModule === 'kho-hang' && notification.meta?.cycleCountId) {
     const cycleCountId = String(notification.meta.cycleCountId)
+    // Refresh before selecting: opening an Inventory window can otherwise
+    // replace the count panel while its upstreams are still loading.
+    openModuleWindow('kho-hang', { refresh: false })
+    let result = await refreshModuleAuthoritativeUpstreams('kho-hang', {
+      reason: 'notification-exact-route',
+    })
+    // A just-opened Inventory window may finish its own refresh after this
+    // route starts. Retry only when that same-center refresh superseded ours.
+    if (!result.ok && result.outcome_code === 'CENTER_CONTEXT_CHANGED'
+      && centerId === getCurrentCanonicalCenterContext().centerId
+      && accountId === cloudStatus.user?.id) {
+      result = await refreshModuleAuthoritativeUpstreams('kho-hang', {
+        reason: 'notification-exact-route-retry',
+      })
+    }
+    if (!result.ok || centerId !== getCurrentCanonicalCenterContext().centerId
+      || accountId !== cloudStatus.user?.id) return
     if (inventoryCycleCounts.some((count) => count.id === cycleCountId)) {
       isInventoryCycleCountPanelOpen = true
       selectedInventoryCycleCountId = cycleCountId
       inventoryCycleCountObservedByLineId = {}
       inventoryCycleCountExplanationByLineId = {}
+      render()
     }
+    return
   } else if (notification.sourceModule === 'kho-hang' && notification.entityLabel) {
     inventoryRequestFilters = {
       ...inventoryRequestFilters,
