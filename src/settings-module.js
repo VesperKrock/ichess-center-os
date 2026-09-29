@@ -383,11 +383,8 @@ function renderCenterInfoPanel(centerInfo, cloudDbPanelState, options = {}) {
           ${renderInfoItem('Tên hiển thị', centerInfo.name)}
           ${renderInfoItem('Địa chỉ', centerInfo.address)}
           ${renderInfoItem('Số điện thoại', centerInfo.phone)}
-          ${renderInfoItem('Trạng thái', centerInfo.status, { status: true })}
-          ${renderInfoItem('Mã cơ sở', centerInfo.code)}
-          ${renderInfoItem('Môi trường', centerInfo.environment)}
+          ${renderInfoItem('Trạng thái', getCenterOperationalStatusLabel(centerInfo.status), { status: true })}
         </div>
-        <p class="settings-product-note">Mã cơ sở là định danh hệ thống và không thể sửa tại đây.</p>
         <section class="settings-tuition-receipt-group" aria-label="Học phí & Phiếu Thu">
           <h5>Học phí & Phiếu Thu</h5>
           <div class="settings-info-grid">
@@ -401,7 +398,7 @@ function renderCenterInfoPanel(centerInfo, cloudDbPanelState, options = {}) {
       </section>
       ${renderCenterAppearancePanel(options.wallpaperState, state)}
       ${renderCloudDbPanel(cloudDbPanelState, centerInfo)}
-      ${options.centerProfileFormState ? renderCenterProfileForm(options.centerProfileFormState, centerInfo, state) : ''}
+      ${options.centerProfileFormState ? renderCenterProfileForm(options.centerProfileFormState, state) : ''}
     </div>
   `
 }
@@ -514,14 +511,13 @@ function renderCenterSettingsCapabilityNotice(state = {}) {
   return `<p class="settings-capability-notice is-${escapeAttribute(status)}" role="status">${escapeHtml(state.message || messages[status] || messages.failed)}</p>`
 }
 
-function renderCenterProfileForm(formState, centerInfo, state) {
+function renderCenterProfileForm(formState, state) {
   const values = formState.values || {}
   const errors = formState.errors || {}
   return `
     <div class="settings-form-backdrop" role="presentation">
       <form class="settings-class-session-form settings-center-profile-form" data-settings-center-form aria-label="Chỉnh sửa thông tin cơ sở">
         <div class="settings-form-header"><h4>Chỉnh sửa thông tin cơ sở</h4><button type="button" data-settings-center-action="cancel" aria-label="Đóng">×</button></div>
-        <p class="settings-immutable-code">Mã cơ sở: <strong>${escapeHtml(centerInfo.code)}</strong> — không thể thay đổi.</p>
         <div class="settings-form-grid">
           ${renderSettingsTextField('center', 'displayName', 'Tên hiển thị *', values.displayName, errors.displayName, { className: 'span-full' })}
           ${renderSettingsTextField('center', 'address', 'Địa chỉ vận hành', values.address, errors.address)}
@@ -623,13 +619,19 @@ function renderInfoItem(label, value, options = {}) {
   `
 }
 
+function getCenterOperationalStatusLabel(status) {
+  if (status === 'active' || status === 'Đang hoạt động') return 'Đang hoạt động'
+  if (status === 'inactive') return 'Tạm ngưng'
+  return 'Cần kiểm tra'
+}
+
 function buildCenterInfo(centerInfo = {}) {
   const code = centerInfo.centerCode || centerInfo.code || centerInfo.centerId
   const name = centerInfo.displayName || centerInfo.name
   const resolved = (centerInfo.ok === true || Number.isSafeInteger(Number(centerInfo.version)))
     && /^[A-Za-z0-9_-]{1,160}$/.test(String(code || '').trim())
   return {
-    name: resolved ? (name || code) : 'Chưa xác định',
+    name: resolved ? (name || 'Chưa cập nhật') : 'Chưa xác định',
     code: resolved ? code : 'Chưa xác định',
     environment: centerInfo.environment || 'Vận hành chính',
     status: centerInfo.status || 'Đang hoạt động',
@@ -810,9 +812,9 @@ function renderCloudDbPanel(state = null, centerInfo = {}) {
         </span>
       </div>
       <div class="settings-data-status-grid">
-        <span>Dữ liệu cloud: <strong>${dataLabel}</strong></span>
+        <span>Dữ liệu vận hành: <strong>${dataLabel}</strong></span>
         <span>Đồng bộ: <strong>${syncLabel}</strong></span>
-        <span>Cơ sở: <strong>${escapeHtml(centerInfo.name || centerInfo.code || 'Chưa xác định')}</strong></span>
+        <span>Cơ sở: <strong>${escapeHtml(centerInfo.name || 'Chưa xác định')}</strong></span>
       </div>
       ${
         message

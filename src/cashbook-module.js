@@ -179,7 +179,7 @@ export function renderCashbookModule(
         </div>
       </div>
 
-      <p class="cashbook-helper">Số dư hệ thống được tự động tính từ giao dịch canonical. Kiểm quỹ tiền mặt là bước xác minh thực tế tùy chọn tại cơ sở ${escapeHtml(centerName || 'hiện tại')}.</p>
+      <p class="cashbook-helper">Số dư hệ thống được tự động tính từ các giao dịch đã ghi nhận. Kiểm quỹ tiền mặt là bước xác minh thực tế tùy chọn tại cơ sở ${escapeHtml(centerName || 'hiện tại')}.</p>
 
       ${renderFinanceSharedTruthNotice(financeSharedTruthState)}
 

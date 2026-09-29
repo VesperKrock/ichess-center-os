@@ -436,7 +436,7 @@ export function validateParentContactForm(values) {
   }
 
   if (values.customerStage && !parentCustomerStages.includes(values.customerStage)) {
-    errors.customerStage = 'Stage khách hàng không hợp lệ.'
+    errors.customerStage = 'Giai đoạn khách hàng không hợp lệ.'
   }
 
   const receiptAddress = String(values.receiptAddress ?? '').trim()
@@ -1260,7 +1260,7 @@ function renderContactsTable(contacts) {
           <tr>
             <th>Phụ huynh / Liên hệ</th>
             <th>Họ và tên bé</th>
-            <th>Stage / Trạng thái</th>
+            <th>Giai đoạn / Trạng thái</th>
             <th>Tư vấn / Nguồn</th>
             <th>Các công việc tiếp theo</th>
             <th>Ghi chú</th>
@@ -1356,7 +1356,7 @@ function renderParentContactDetailPanel(contact) {
             <h4>Tình trạng tư vấn</h4>
             <div class="parent-contact-detail-body">
               <article>
-                <span>Stage</span>
+                <span>Giai đoạn</span>
                 <strong>${escapeHtml(parentCustomerStageLabels[customerStage])}</strong>
               </article>
               <article>
@@ -2311,7 +2311,7 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
       <section class="parent-contact-form-section">
         <h4>Thông tin phụ huynh</h4>
         <div class="parent-contact-form-grid">
-          ${renderFormSelect('Stage khách hàng', 'customerStage', values.customerStage, parentCustomerStageLabels, errors.customerStage)}
+          ${renderFormSelect('Giai đoạn khách hàng', 'customerStage', values.customerStage, parentCustomerStageLabels, errors.customerStage)}
           ${renderFormSelect('Loại liên hệ', 'contactType', values.contactType, parentContactTypeLabels, errors.contactType)}
           ${renderFormInput('Tên phụ huynh/khách', 'parentName', values.parentName, errors.parentName, 'text', values.identityReadOnly)}
           ${renderFormInput('Số điện thoại', 'phone', values.phone, errors.phone, 'text', values.identityReadOnly)}
@@ -3425,7 +3425,7 @@ function getParentConvertSourceRows(contact, source) {
     { label: 'Tuổi/năm sinh', value: [source.leadStudentAge, source.studentBirthYear].filter(Boolean).join(' / ') },
     { label: 'Chương trình quan tâm', value: source.interestedProgram },
     { label: 'Lịch mong muốn', value: source.preferredSchedule },
-    { label: 'Stage hiện tại', value: source.customerStageLabel },
+    { label: 'Giai đoạn hiện tại', value: source.customerStageLabel },
     { label: 'Trạng thái tư vấn', value: source.consultationStatusLabel },
     { label: 'Số ghi chú chăm sóc', value: source.careLogCount },
     { label: 'Số lịch hẹn', value: source.appointmentCount },

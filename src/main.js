@@ -10210,6 +10210,12 @@ async function handleInternalOpenCenter(centerId) {
     return
   }
 
+  // A center switch clears the Tuition window's read snapshot. Its open window
+  // must start a new-center read; notification reads use a separate snapshot.
+  if (openWindows.some((item) => item.moduleId === 'hoc-phi')) {
+    void refreshModuleAuthoritativeUpstreams('hoc-phi', { reason: 'center-switch' })
+  }
+
   await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
   await refreshInventoryAuthoritativeTruth({ reason: 'capability-probe', silent: true })
   await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
@@ -16003,13 +16009,13 @@ function renderCashflowCloudAuthNotice(status, financeState = c54FinanceSharedTr
       ? 'Đang cập nhật...'
       : financeState.lastLoadedAt
         ? `Đã cập nhật ${formatRefreshTime(financeState.lastLoadedAt)}`
-        : 'Cloud sẵn sàng'
+        : 'Sẵn sàng'
     return `
       <aside class="cashflow-cloud-auth-note is-ready" role="note">
         <span class="cashflow-cloud-status-copy">
           <span class="cashflow-cloud-status-dot" aria-hidden="true"></span>
           <strong>${updatedLabel}</strong>
-          <span>Ảnh cloud sẵn sàng cho chứng từ giao dịch.</span>
+          <span>Có thể lưu ảnh chứng từ giao dịch.</span>
         </span>
         <button type="button" data-cloud-action="open-gallery">
           Mở kho ảnh
