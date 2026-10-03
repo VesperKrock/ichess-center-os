@@ -370,6 +370,7 @@ export function createEditParentContactFormState(contact) {
   return {
     mode: 'edit',
     contactId: contact.id,
+    hasLinkedStudent: hasAuthoritativeStudentRelationship(contact),
     values: {
       contactType: contact.contactType || 'consultingLead',
       parentName: contact.parentName || '',
@@ -415,7 +416,7 @@ export function createEditParentContactFormState(contact) {
   }
 }
 
-export function validateParentContactForm(values) {
+export function validateParentContactForm(values, hasLinkedStudent = false) {
   const errors = {}
 
   if (!String(values.parentName ?? '').trim() && !String(values.phone ?? '').trim()) {
@@ -437,6 +438,12 @@ export function validateParentContactForm(values) {
 
   if (values.customerStage && !parentCustomerStages.includes(values.customerStage)) {
     errors.customerStage = 'Giai đoạn khách hàng không hợp lệ.'
+  }
+  if (!hasLinkedStudent && values.customerStage === 'converted') {
+    errors.customerStage = 'Chỉ chuyển đổi qua thao tác liên kết Học viên.'
+  }
+  if (!hasLinkedStudent && values.consultationStatus === 'converted') {
+    errors.consultationStatus = 'Chỉ ghi nhận đã đăng ký khi có Học viên liên kết.'
   }
 
   const receiptAddress = String(values.receiptAddress ?? '').trim()
@@ -955,21 +962,12 @@ export function getParentConsultationStats(contacts) {
 export function deriveParentCustomerStage(contact = {}) {
   const explicitStage = String(contact.customerStage || '').trim()
 
-  if (parentCustomerStages.includes(explicitStage)) {
-    return explicitStage
+  if (hasAuthoritativeStudentRelationship(contact)) {
+    return 'converted'
   }
 
-  const linkedStudentIds = Array.isArray(contact.linkedStudentIds)
-    ? contact.linkedStudentIds.filter(Boolean)
-    : []
-
-  if (
-    contact.consultationStatus === 'converted' ||
-    contact.contactType === 'currentParent' ||
-    contact.studentId ||
-    linkedStudentIds.length
-  ) {
-    return 'converted'
+  if (explicitStage === 'lead' || explicitStage === 'consulting') {
+    return explicitStage
   }
 
   if (
@@ -990,6 +988,14 @@ export function deriveParentCustomerStage(contact = {}) {
   }
 
   return 'lead'
+}
+
+export function hasAuthoritativeStudentRelationship(contact = {}) {
+  const students = Array.isArray(contact.relatedStudents) ? contact.relatedStudents : []
+  if (contact.isDerivedFromStudents) return students.some((student) => student?.id && !student.isDeleted)
+  const links = Array.isArray(contact.parentStudentLinks) ? contact.parentStudentLinks : []
+  return links.some((link) => link?.linkStatus === 'ACTIVE'
+    && students.some((student) => student?.id === link.studentId && !student.isDeleted))
 }
 
 export function mergeParentContactsWithStudents(contacts = [], students = [], links = []) {
@@ -1018,14 +1024,19 @@ export function mergeParentContactsWithStudents(contacts = [], students = [], li
     return {
       ...contact,
       groupKey: contactId ? `contact:${contactId}` : `case:${contact.id}`,
-      customerStage: deriveParentCustomerStage({ ...contact, linkedStudentIds: exactStudentIds }),
+      customerStage: deriveParentCustomerStage({
+        ...contact, parentStudentLinks: contactLinks, relatedStudents: exactStudents,
+      }),
       consultantName: getConsultantDisplayName(contact),
       parentName: identity?.contactDisplayName || contact.parentName,
       phone: identity?.contactPhones?.[0] || contact.phone || '',
       secondaryPhone: identity?.contactPhones?.[1] || contact.secondaryPhone || '',
       email: identity?.contactEmails?.[0] || contact.email || '',
-      contactVersion: identity?.contactVersion || contact.contactVersion || 0,
+      contactVersion: identity?.contactVersion || contact.cloudContactVersion || contact.contactVersion || 0,
       contactIdentityAvailable: Boolean(identity?.contactIdentityAvailable),
+      contactIdentityEditable: Boolean(identity?.contactIdentityAvailable
+        || (!contactLinks.length && Number(contact.cloudContactVersion) >= 1)),
+      contactMethodsKnown: Boolean(identity?.contactIdentityAvailable),
       parentStudentLinks: contactLinks,
       linkedStudentIds: exactStudentIds,
       relatedStudents: exactStudents,
@@ -1211,7 +1222,7 @@ function renderParentConsultationReadyBody(filteredContacts, mergedContacts, fil
         ${renderFilterSelect('Nguồn', 'source', filters.source, { all: 'Tất cả nguồn', ...parentContactSourceLabels })}
         <span class="parent-consultation-filter-count">${filteredContacts.length}/${mergedContacts.length} liên hệ</span>
       </div>
-      ${filteredContacts.length ? renderContactsTable(filteredContacts) : '<div class="parent-consultation-empty">Không tìm thấy liên hệ phù hợp với bộ lọc hiện tại.</div>'}
+      ${filteredContacts.length ? renderContactsTable(filteredContacts) : `<div class="parent-consultation-empty">${mergedContacts.length === 0 && !String(filters.query || '').trim() && ['customerStage', 'contactType', 'consultationStatus', 'source'].every((key) => !filters[key] || filters[key] === 'all') ? 'Chưa có khách hàng tại cơ sở này.' : 'Không tìm thấy liên hệ phù hợp với bộ lọc hiện tại.'}</div>`}
     </section>
   `
 }
@@ -1345,7 +1356,7 @@ function renderParentContactDetailPanel(contact) {
               ? `<button type="button" data-parent-link-action="open-derived" data-contact-id="${escapeAttribute(contact.id)}" data-student-id="${escapeAttribute(contact.studentId)}">Tạo/ghép hồ sơ CRM</button>`
               : `
                 <button type="button" data-parent-contact-action="print-information" data-contact-id="${escapeAttribute(contact.id)}">In/PDF thông tin</button>
-                ${contact.contactIdentityAvailable ? `<button type="button" data-parent-identity-action="open" data-contact-id="${escapeAttribute(contact.id)}">Sửa thông tin liên hệ</button>` : ''}
+                ${contact.contactIdentityEditable ? `<button type="button" data-parent-identity-action="open" data-contact-id="${escapeAttribute(contact.id)}">Sửa thông tin liên hệ</button>` : ''}
                 <button type="button" data-parent-contact-action="edit" data-contact-id="${escapeAttribute(contact.id)}">Sửa hồ sơ tư vấn</button>
               `}
           <button type="button" data-parent-contact-action="close-detail" aria-label="Đóng">X</button>
@@ -1520,11 +1531,11 @@ export function buildF4bStudentPayload(contact = {}, values = {}) {
 }
 
 function renderF4bConversionEntry(contact, customerStage, relatedStudents = []) {
-  if (customerStage === 'converted' || contact.consultationStatus === 'converted') {
+  if (hasAuthoritativeStudentRelationship(contact) && relatedStudents.length) {
     return `
       <section class="parent-convert-preview parent-contact-detail-section" aria-label="Chuyển đổi Khách hàng thành Học viên">
         <div><h4>Đã chuyển đổi thành Học viên</h4><p>Lịch sử CRM được giữ nguyên và liên kết với hồ sơ vận hành.</p></div>
-        ${relatedStudents.length ? `<button type="button" data-parent-linked-student-id="${escapeAttribute(relatedStudents[0].id)}">Mở hồ sơ Học viên</button>` : '<span class="parent-convert-status">Đã chuyển đổi</span>'}
+        <button type="button" data-parent-linked-student-id="${escapeAttribute(relatedStudents[0].id)}">Mở hồ sơ Học viên</button>
       </section>
     `
   }
@@ -2066,6 +2077,7 @@ function renderParentIdentityEditModal(state) {
         <div class="parent-contact-form-scroll">
           ${state.error ? `<div class="parent-contact-form-error" role="alert">${escapeHtml(state.error)}</div>` : ''}
           ${state.message ? `<div class="parent-contact-form-message" role="status">${escapeHtml(state.message)}</div>` : ''}
+          ${state.contactMethodsKnown ? '' : '<p class="parent-identity-methods-warning">Thông tin liên hệ hiện tại được bảo vệ và không hiển thị ở đây. Nhập lại tất cả số điện thoại và email cần giữ; ô để trống sẽ được xóa khi lưu.</p>'}
           <div class="parent-contact-form-grid">
             <label><span>Tên phụ huynh</span><input type="text" value="${escapeAttribute(state.displayName || '')}" data-parent-identity-field="displayName"></label>
             <label><span>Số điện thoại chính</span><input type="tel" value="${escapeAttribute(state.primaryPhone || '')}" data-parent-identity-field="primaryPhone"></label>
@@ -2305,13 +2317,21 @@ function renderParentContactWizardIndicator(activeStep) {
 
 function renderParentContactWizardStep(activeStep, formState, students, eligibleConsultants = []) {
   const { values, errors } = formState
+  const hasLinkedStudent = Boolean(formState.hasLinkedStudent)
+  const stageOptions = hasLinkedStudent ? { converted: parentCustomerStageLabels.converted } : {
+    lead: parentCustomerStageLabels.lead,
+    consulting: parentCustomerStageLabels.consulting,
+  }
+  const statusOptions = hasLinkedStudent ? parentConsultationStatusLabels : Object.fromEntries(
+    Object.entries(parentConsultationStatusLabels).filter(([status]) => status !== 'converted'),
+  )
 
   if (activeStep === 1) {
     return `
       <section class="parent-contact-form-section">
         <h4>Thông tin phụ huynh</h4>
         <div class="parent-contact-form-grid">
-          ${renderFormSelect('Giai đoạn khách hàng', 'customerStage', values.customerStage, parentCustomerStageLabels, errors.customerStage)}
+          ${renderFormSelect('Giai đoạn khách hàng', 'customerStage', values.customerStage, stageOptions, errors.customerStage, hasLinkedStudent)}
           ${renderFormSelect('Loại liên hệ', 'contactType', values.contactType, parentContactTypeLabels, errors.contactType)}
           ${renderFormInput('Tên phụ huynh/khách', 'parentName', values.parentName, errors.parentName, 'text', values.identityReadOnly)}
           ${renderFormInput('Số điện thoại', 'phone', values.phone, errors.phone, 'text', values.identityReadOnly)}
@@ -2372,7 +2392,7 @@ function renderParentContactWizardStep(activeStep, formState, students, eligible
       <section class="parent-contact-form-section">
         <h4>Tư vấn / chăm sóc</h4>
         <div class="parent-contact-form-grid">
-          ${renderFormSelect('Trạng thái', 'consultationStatus', values.consultationStatus, parentConsultationStatusLabels, errors.consultationStatus)}
+          ${renderFormSelect('Trạng thái', 'consultationStatus', values.consultationStatus, statusOptions, errors.consultationStatus)}
           ${renderFormSelect('Nguồn', 'source', values.source, parentContactSourceLabels, errors.source)}
           ${renderConsultantAssignmentSelect(values.consultantId, values.consultantName, eligibleConsultants)}
           ${renderFormInput('Ngày tư vấn', 'consultedAt', values.consultedAt, '', 'date')}
@@ -2761,7 +2781,7 @@ function renderCrmChoiceButton({ field, group = '', value, mode, selected = fals
   `
 }
 
-function renderFormSelect(label, field, selectedValue, optionsByValue, error = '') {
+function renderFormSelect(label, field, selectedValue, optionsByValue, error = '', disabled = false) {
   const options = Object.entries(optionsByValue)
     .map(
       ([value, optionLabel]) => `
@@ -2775,7 +2795,7 @@ function renderFormSelect(label, field, selectedValue, optionsByValue, error = '
   return `
     <label class="${error ? 'has-error' : ''}">
       <span>${escapeHtml(label)}</span>
-      <select data-parent-contact-field="${escapeAttribute(field)}">
+      <select data-parent-contact-field="${escapeAttribute(field)}" ${disabled ? 'disabled' : ''}>
         ${options}
       </select>
       ${error ? `<small>${escapeHtml(error)}</small>` : ''}

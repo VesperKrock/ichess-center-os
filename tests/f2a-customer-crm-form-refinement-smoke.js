@@ -83,7 +83,11 @@ assert.equal(parentConsultationStatusLabels.closed, 'Khách chưa phù hợp')
 const contacts = [
   { id: 'lead', customerStage: 'lead', contactType: 'consultingLead', consultationStatus: 'newLead' },
   { id: 'consulting', customerStage: 'consulting', contactType: 'consultingLead', consultationStatus: 'activeCare' },
-  { id: 'converted', customerStage: 'converted', contactType: 'currentParent', consultationStatus: 'converted' },
+  {
+    id: 'converted', customerStage: 'converted', contactType: 'currentParent', consultationStatus: 'converted',
+    relatedStudents: [{ id: 'student-1' }],
+    parentStudentLinks: [{ linkStatus: 'ACTIVE', studentId: 'student-1' }],
+  },
   { id: 'lost', customerStage: 'lead', contactType: 'consultingLead', consultationStatus: 'closed' },
 ]
 assert.deepEqual(getParentConsultationStats(contacts), {

@@ -1694,6 +1694,28 @@
 
 :root[data-ui-theme='dark'] .desktop-window.is-parent-consultation-window .parent-contact-wizard-modal .parent-contact-wizard button.is-active strong { background: var(--parent-primary); }
 
+:root:not([data-ui-theme='dark']) .desktop-window.is-parent-consultation-window .parent-convert-preview h4 {
+  color: #78350f;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-parent-consultation-window .parent-convert-preview p,
+:root:not([data-ui-theme='dark']) .desktop-window.is-parent-consultation-window .parent-convert-status {
+  color: #92400e;
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-parent-consultation-window .parent-convert-preview button:not(:disabled) {
+  border-color: #1d4ed8;
+  color: #ffffff;
+  background: #1d4ed8;
+}
+
+.desktop-window.is-parent-consultation-window .parent-identity-methods-warning {
+  margin: 0 0 12px;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .desktop-window.is-parent-consultation-window .parent-convert-preview-modal {
   width: min(760px, calc(100vw - 48px));
   max-height: min(760px, calc(100vh - 48px));
