@@ -1065,6 +1065,7 @@ let isSessionReportExtraExpanded = false
 let sessionReportGuestFormState = null
 let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
 let a3TeacherContext = { status: 'idle', centerId: '', fromDate: '', assignments: [], occurrences: [] }
+let a3TeacherReadRunId = 0
 let a3TeacherDialogState = null
 let tuitionRecords = getStoredTuition([])
 let notifications = getStoredNotifications([])
@@ -1472,6 +1473,7 @@ function getCurrentA3TeacherContext(weekStartDate = scheduleWeekStartDate) {
 async function refreshA3TeacherContext() {
   const centerId = getCurrentCanonicalCenterContext().centerId
   const fromDate = scheduleWeekStartDate
+  const runId = ++a3TeacherReadRunId
   const end = new Date(`${fromDate}T12:00:00Z`)
   end.setUTCDate(end.getUTCDate() + 6)
   const toDate = end.toISOString().slice(0, 10)
@@ -1480,7 +1482,8 @@ async function refreshA3TeacherContext() {
   const result = await pullA3TeacherContext({
     supabase: getSupabaseClient(), centerId, fromDate, toDate,
   })
-  if (centerId !== getCurrentCanonicalCenterContext().centerId
+  if (runId !== a3TeacherReadRunId
+      || centerId !== getCurrentCanonicalCenterContext().centerId
       || fromDate !== scheduleWeekStartDate) return result
   a3TeacherContext = result.ok
     ? { ...result, status: 'ready' }
@@ -1743,12 +1746,21 @@ function createCurrentSchedulePrintSnapshot() {
     centerCalendarItems,
     centerCalendarTags,
     teachers: [],
+    teacherContext: getCurrentA3TeacherContext(),
     activityFilters: scheduleCalendarFilters,
     createdAt: new Date().toISOString(),
   })
 }
 
-function printCurrentScheduleWeek() {
+async function printCurrentScheduleWeek() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const weekStartDate = scheduleWeekStartDate
+  if (getCurrentA3TeacherContext() !== a3TeacherContext) {
+    await refreshA3TeacherContext()
+  }
+  if (centerId !== getCurrentCanonicalCenterContext().centerId
+      || weekStartDate !== scheduleWeekStartDate
+      || getCurrentA3TeacherContext() !== a3TeacherContext) return
   const filteredSnapshot = getSchedulePrintFilteredSnapshot(
     createCurrentSchedulePrintSnapshot(),
     SCHEDULE_PRINT_FILTER_ALL,
@@ -2396,7 +2408,8 @@ function resetTransientStateForCenterSwitch() {
   openWindows = openWindows.filter((windowItem) => !closedStudentWindowIds.has(windowItem.id))
   if (closedStudentWindowIds.has(pendingWindowFocusAfterRender)) pendingWindowFocusAfterRender = null
   careNoteDrafts = {}
-  moduleRefreshRunIds.clear()
+  // Preserve monotonically increasing tokens so an old A → B → A read cannot
+  // match the new run for the same center after a rapid switch.
   authoritativeRefreshInFlight.clear()
   notificationRefreshRunId += 1
   notificationRefreshInFlight = null
@@ -10136,6 +10149,8 @@ function canOpenInternalCenter(center) {
 }
 
 function resetCloudRuntimeStateForOwnerCenterSwitch() {
+  a3TeacherReadRunId += 1
+  a3TeacherContext = { status: 'idle', centerId: '', fromDate: '', assignments: [], occurrences: [] }
   stopStudentRealtimeSubscription()
   stopTeacherRealtimeSubscription()
   stopClassSessionRealtimeSubscription()
@@ -10246,6 +10261,10 @@ async function handleInternalOpenCenter(centerId) {
   await startTeacherRealtimeSubscription(switchSyncId)
   await startClassSessionRealtimeSubscription(switchSyncId)
   await startScheduleSessionRealtimeSubscription(switchSyncId)
+  if (cloudUserSyncId !== switchSyncId) return
+  if (openWindows.some((item) => item.moduleId === 'thoi-khoa-bieu' && !item.type)) {
+    await refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'center-switch' })
+  }
   queueNotificationAttentionRefresh('center-switch')
 }
 
@@ -12777,12 +12796,21 @@ function renderWindowBody(windowItem) {
 }
 
 function renderStudentDetailWithDeleteAction(student, classSessions = []) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const teacherAssignments = a3TeacherContext.status === 'ready' && a3TeacherContext.centerId === centerId
+    ? a3TeacherContext.assignments : []
   const detailHtml = renderStudentDetail(
     student,
     [],
     classSessions,
     tuitionRecords,
-    getStudentOverviewOptions(),
+    {
+      ...getStudentOverviewOptions(),
+      scheduleTeacherAssignments: teacherAssignments,
+      scheduleTeacherContextStatus: a3TeacherContext.centerId === centerId
+        ? a3TeacherContext.status : 'loading',
+      scheduleTeacherDate: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()),
+    },
   )
 
   if (!student || student.isDeleted || student.readOnlyProjection) {
@@ -14431,6 +14459,10 @@ function openInventorySubwindow(view) {
 }
 
 function openStudentDetailWindow(studentId) {
+  if (a3TeacherContext.status !== 'ready'
+      || a3TeacherContext.centerId !== getCurrentCanonicalCenterContext().centerId) {
+    void refreshA3TeacherContext()
+  }
   const existingWindow = openWindows.find(
     (windowItem) => windowItem.type === 'student-detail' && windowItem.studentId === studentId,
   )

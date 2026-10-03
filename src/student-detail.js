@@ -1,4 +1,5 @@
 import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
+import { resolveA3TeacherForDate } from './cloud-authoritative-teacher-history.js'
 import { getStudentStatusPresentation } from './student-status-presentation.js'
 import { formatStudentBirthInformation, getStudentAge, getStudentBirthInformation } from './student-birth-information.js'
 import {
@@ -127,7 +128,7 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
           ${renderStudentCurrentPeriodTile(tuitionRow)}
           ${renderStudentTuitionTile(student, tuitionRow)}
         </div>
-        ${renderStudentScheduleOverview(activeStudent, activeClassSessions)}
+        ${renderStudentScheduleOverview(activeStudent, activeClassSessions, options)}
         <details class="student-profile-more">
           <summary>Xem thêm · Phụ huynh, chăm sóc và thông tin bổ sung</summary>
         <div class="student-secondary-grid">
@@ -474,7 +475,7 @@ function getStudentClassSessionLabel(student, classSessions = []) {
     .join(', ')
 }
 
-function renderStudentScheduleOverview(student, classSessions = []) {
+function renderStudentScheduleOverview(student, classSessions = [], options = {}) {
   const classSessionIds = Array.isArray(student?.classSessionIds)
     ? Array.from(new Set(student.classSessionIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
     : []
@@ -523,7 +524,7 @@ function renderStudentScheduleOverview(student, classSessions = []) {
                 <header><strong>${V22_WEEKDAY_LABELS[weekday]}</strong></header>
                 <div>
                   ${slotsByWeekday.get(weekday).length
-                    ? slotsByWeekday.get(weekday).map(renderStudentProfileScheduleSlot).join('')
+                    ? slotsByWeekday.get(weekday).map((slot) => renderStudentProfileScheduleSlot(slot, options)).join('')
                     : '<span class="student-profile-schedule-empty">—</span>'}
                 </div>
               </section>
@@ -540,13 +541,21 @@ function renderStudentScheduleOverview(student, classSessions = []) {
   `
 }
 
-function renderStudentProfileScheduleSlot(classSession) {
-  const instructorName = String(classSession?.instructorName || '').trim()
+function renderStudentProfileScheduleSlot(classSession, options = {}) {
+  const instructorName = String(resolveA3TeacherForDate(
+    options.scheduleTeacherAssignments || [],
+    classSession?.id,
+    options.scheduleTeacherDate || '',
+  )?.teacher_name || '').trim()
+  const instructorLabel = instructorName || ({
+    loading: 'Đang tải giáo viên...',
+    failed: 'Chưa tải được giáo viên',
+  }[options.scheduleTeacherContextStatus] || 'Chưa xếp giáo viên')
   const isInactive = classSession?.status === 'inactive'
   return `
     <article class="student-profile-schedule-slot ${isInactive ? 'is-inactive' : ''}">
       <strong>${escapeHtml(formatStudentProfileScheduleTime(classSession))}</strong>
-      <span class="${instructorName ? '' : 'is-unassigned'}">${escapeHtml(instructorName || 'Chưa xếp giáo viên')}</span>
+      <span class="${instructorName ? '' : 'is-unassigned'}">${escapeHtml(instructorLabel)}</span>
       ${isInactive ? '<small>Đã ngưng</small>' : ''}
     </article>
   `

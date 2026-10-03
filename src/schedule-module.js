@@ -7,7 +7,7 @@ import {
 } from './schedule-data.js'
 import { buildScheduleDeadlineAlerts } from './schedule-deadline.js'
 import { deriveV22ScheduleRosters } from './student-recurring-enrollment.js'
-import { projectA3ScheduleSessions } from './cloud-authoritative-teacher-history.js'
+import { projectA3ScheduleSessions, resolveA3TeacherForDate } from './cloud-authoritative-teacher-history.js'
 import {
   CENTER_CALENDAR_ITEM_TYPES,
   CENTER_CALENDAR_ITEM_TYPE_LABELS,
@@ -104,7 +104,7 @@ export const emptyScheduleFormValues = {
   teacherName: '',
   studentIds: [],
   groupName: '',
-  level: 'beginner',
+  level: 'mixed',
   status: 'scheduled',
   note: '',
 }
@@ -158,7 +158,7 @@ export function createEditScheduleFormState(session) {
       teacherName: session.teacherName ?? '',
       studentIds: Array.isArray(session.studentIds) ? [...session.studentIds] : [],
       groupName: session.groupName ?? '',
-      level: session.level ?? 'beginner',
+      level: session.level ?? 'mixed',
       status: session.status ?? 'scheduled',
       note: session.note ?? '',
       allowOpenRange:
@@ -328,7 +328,14 @@ export function renderScheduleModule(
         sessions,
         normalizedWeekStart,
         classSessions,
-        { recurringRosterManaged: deadlineOptions.recurringRosterManaged === true },
+        {
+          recurringRosterManaged: deadlineOptions.recurringRosterManaged === true,
+          teacherAssignments: deadlineOptions.a3TeacherContext?.assignments || [],
+          teacherContextReady: deadlineOptions.a3TeacherReady === true,
+          teacherContextStatus: deadlineOptions.a3TeacherStatus,
+          teacherReferenceDate: deadlineOptions.teacherReferenceDate
+            || new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()),
+        },
       ) : ''}
       ${calendarNotesAvailable && centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags) : ''}
       ${calendarNotesAvailable && centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
@@ -520,7 +527,7 @@ export function buildScheduleSessionFromForm(
     teacherName,
     studentIds: normalizeIdArray(normalizedValues.studentIds),
     groupName,
-    level: scheduleLevels.includes(normalizedValues.level) ? normalizedValues.level : 'mixed',
+    level: existingSession?.level ?? 'mixed',
     status: scheduleStatuses.includes(normalizedValues.status) ? normalizedValues.status : 'scheduled',
     note: String(normalizedValues.note ?? '').trim(),
     createdAt: existingSession?.createdAt ?? now,
@@ -923,23 +930,31 @@ export function getVisibleScheduleSessions(
   const cleanedSessions = (Array.isArray(sessions) ? sessions : []).filter(
     (session) => session && session.isDeleted !== true,
   )
-  const assignmentByClassSessionId = new Map(
-    cleanedSessions
-      .filter((session) => normalizeScheduleType(session?.scheduleType) === 'recurring')
-      .filter((session) => normalizeOptionalId(session?.classSessionId) && !session?.isDeleted)
-      .filter((session) => validClassSessionIds.has(normalizeOptionalId(session.classSessionId)))
-      .map((session) => [normalizeOptionalId(session.classSessionId), session]),
-  )
+  const savedOneOffClassDates = new Set(cleanedSessions
+    .filter((session) => normalizeScheduleType(session.scheduleType) === 'oneOff'
+      && normalizeOptionalId(session.classSessionId)
+      && weekDateSet.has(normalizeDateString(session.date)))
+    .map((session) => `${normalizeOptionalId(session.classSessionId)}|${normalizeDateString(session.date)}`))
+  const recurringAssignments = cleanedSessions
+    .filter((session) => normalizeScheduleType(session?.scheduleType) === 'recurring')
+    .filter((session) => validClassSessionIds.has(normalizeOptionalId(session.classSessionId)))
   const classSessionSlots = getVisibleScheduleClassSessions(classSessions)
     .flatMap((classSession) =>
       getScheduleDaysFromClassSession(classSession).map((dayOfWeek) => {
         const occurrenceDate = weekDays.find((day) => day.id === dayOfWeek)?.date
 
-        if (!occurrenceDate) {
+        if (!occurrenceDate || savedOneOffClassDates.has(`${normalizeOptionalId(classSession.id)}|${occurrenceDate}`)) {
           return null
         }
 
-        const assignment = assignmentByClassSessionId.get(normalizeOptionalId(classSession.id)) || null
+        const assignment = recurringAssignments
+          .filter((session) => normalizeOptionalId(session.classSessionId) === normalizeOptionalId(classSession.id)
+            && getScheduleDaysFromClassSession({ daysOfWeek: [session.dayOfWeek] }).includes(dayOfWeek)
+            && isRecurringSessionVisible(session, occurrenceDate)
+            && (!session.centerId || !classSession.centerId || session.centerId === classSession.centerId))
+          .sort((first, second) => String(second.startDate || '').localeCompare(String(first.startDate || ''))
+            || String(second.updatedAt || '').localeCompare(String(first.updatedAt || ''))
+            || String(first.id || '').localeCompare(String(second.id || '')))[0] || null
         return buildClassSessionScheduleSlot(classSession, assignment, dayOfWeek, occurrenceDate)
       }),
     )
@@ -1884,7 +1899,7 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap, t
 
   return `
     <article
-      class="schedule-session-card is-${escapeAttribute(session.level)} is-${escapeAttribute(session.scheduleType)} ${isEmptySlot ? 'is-empty-slot' : ''} ${conflicts ? 'has-conflict' : ''}"
+      class="schedule-session-card is-${escapeAttribute(session.scheduleType)} ${isEmptySlot ? 'is-empty-slot' : ''} ${conflicts ? 'has-conflict' : ''}"
       data-schedule-action="open-edit"
       data-schedule-session-id="${escapeAttribute(session.id)}"
       data-schedule-occurrence-date="${escapeAttribute(session.occurrenceDate ?? '')}"
@@ -2178,13 +2193,20 @@ function renderScheduleForm(
         }
         ${renderField('room', 'Phòng *', formState, 'text')}
         ${scheduleType === 'recurring'
-          ? renderSlotInstructorNotice(displayValues.teacherName)
+          ? renderSlotInstructorNotice(
+              resolveA3TeacherForDate(
+                options.teacherAssignments,
+                displayValues.classSessionId,
+                options.teacherReferenceDate,
+              )?.teacher_name || '',
+              options.teacherContextReady,
+              options.teacherContextStatus,
+            )
           : renderField('teacherName', 'Giáo viên thực tế (không bắt buộc)', formState, 'text', {
               placeholder: 'Chưa xếp giáo viên',
             })}
         ${isCompactFixedScheduleForm ? '' : '<h5 class="schedule-form-section-heading">Thông tin phân công</h5>'}
         ${isCompactFixedScheduleForm ? '' : renderField('groupName', 'Nhóm/lớp', formState, 'text')}
-        ${isCompactFixedScheduleForm ? '' : renderSelectField('level', 'Cấp độ', formState, scheduleLevels.map((level) => [level, getLevelLabel(level)]))}
         ${renderSelectField('status', 'Trạng thái', formState, scheduleStatuses.map((status) => [status, getStatusLabel(status)]))}
         ${scheduleType === 'recurring' && options.recurringRosterManaged
           ? renderManagedRecurringRosterNotice(displayValues)
@@ -3525,13 +3547,16 @@ function renderHiddenScheduleField(name, value) {
   return `<input type="hidden" name="${escapeAttribute(name)}" value="${escapeAttribute(value ?? '')}" data-schedule-form-field="${escapeAttribute(name)}" />`
 }
 
-function renderSlotInstructorNotice(instructorName = '') {
+function renderSlotInstructorNotice(instructorName = '', teacherContextReady = false, teacherContextStatus = '') {
   const normalizedName = String(instructorName ?? '').trim()
+  const label = normalizedName || (teacherContextReady
+    ? 'Chưa xếp giáo viên'
+    : teacherContextStatus === 'failed' ? 'Chưa tải được giáo viên' : 'Đang tải giáo viên...')
   return `
     <div class="schedule-slot-instructor ${normalizedName ? '' : 'is-unassigned'}" role="status">
-      <span>Giáo viên mặc định của ca học</span>
-      <strong>${escapeHtml(normalizedName || 'Chưa xếp giáo viên')}</strong>
-      <small>Cập nhật tại Cài đặt cơ sở → Ca học. Ca học vẫn hoạt động khi để trống.</small>
+      <span>Giáo viên phụ trách hiện tại</span>
+      <strong>${escapeHtml(label)}</strong>
+      <small>Thay đổi giáo viên theo ngày áp dụng trong Thời khóa biểu.</small>
     </div>
   `
 }
@@ -3554,7 +3579,7 @@ function renderStudentPicker(formState, students) {
         <span>Chọn / chỉnh sửa</span>
       </summary>
       <p class="schedule-student-picker-note">
-        Giai đoạn sau học viên sẽ được gán theo lớp/khung giờ; H7 vẫn giữ cách chọn thủ công hiện tại.
+        Chọn học viên tham gia buổi học.
       </p>
       <div class="schedule-student-options" data-schedule-form-scroll-region="students">
         ${

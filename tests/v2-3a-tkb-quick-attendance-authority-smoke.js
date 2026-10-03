@@ -182,6 +182,11 @@ const multiDaySchedule = {
   endTime: '20:30',
   status: 'scheduled',
 }
+const fridaySchedule = {
+  ...multiDaySchedule,
+  id: 'schedule-fri',
+  dayOfWeek: 'friday',
+}
 const multiDayStudents = [
   { id: 'student-fri-only', fullName: 'Friday only', currentStatus: 'Đang theo học' },
   { id: 'student-both-days', fullName: 'Both days', currentStatus: 'Đang theo học' },
@@ -199,9 +204,9 @@ const multiDayEnrollmentSets = [
   },
 ]
 const renderMultiDayAttendance = (occurrenceDate) => renderScheduleModule(
-  [multiDaySchedule],
+  [multiDaySchedule, fridaySchedule],
   null,
-  { sessionId: multiDaySchedule.id, occurrenceDate, mode: 'adminPlaceholder' },
+  { sessionId: occurrenceDate === '2026-09-11' ? fridaySchedule.id : multiDaySchedule.id, occurrenceDate, mode: 'adminPlaceholder' },
   [], null, null, null, null, false, null, [], multiDayStudents,
   '2026-09-07',
   { rows: [] },

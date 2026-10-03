@@ -11,6 +11,7 @@ import {
   isWeeklyRecurringCenterCalendarItem,
 } from './center-calendar-recurrence.js'
 import { getVisibleScheduleSessions } from './schedule-module.js'
+import { projectA3ScheduleSessions } from './cloud-authoritative-teacher-history.js'
 
 export const SCHEDULE_PRINT_FILTER_ALL = 'all'
 export const SCHEDULE_PRINT_FILTER_CURRENT = 'current'
@@ -37,6 +38,7 @@ export function createSchedulePrintSnapshot({
   centerCalendarItems = [],
   centerCalendarTags = [],
   teachers = [],
+  teacherContext = null,
   activityFilters = {},
   createdAt = new Date().toISOString(),
 } = {}) {
@@ -45,7 +47,13 @@ export function createSchedulePrintSnapshot({
   const weekEndDate = addDays(normalizedWeekStart, 6)
   const rangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
   const rangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
-  const visibleSessions = getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
+  const visibleSessions = teacherContext
+    ? projectA3ScheduleSessions(
+        getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions),
+        teacherContext,
+        { scheduleSessions: sessions, classSessions },
+      )
+    : getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions)
   const activities = getCenterCalendarItemsForPrintRange(centerCalendarItems, rangeStartAt, rangeEndAt)
   const teacherLookup = new Map((Array.isArray(teachers) ? teachers : []).map((teacher) => [String(teacher.id), teacher]))
   const tagLookup = new Map((Array.isArray(centerCalendarTags) ? centerCalendarTags : []).map((tag) => [String(tag.id), tag]))
@@ -189,7 +197,8 @@ function createPrintSessionEntry(session, teacherLookup) {
     teacherName,
     isAllDay: false,
     isCrossMidnight: Boolean(session.startTime && session.endTime && session.endTime <= session.startTime),
-    isCancelled: Boolean(session.isCancelled || session.status === 'cancelled'),
+    isCancelled: Boolean(session.isCancelled || session.status === 'cancelled'
+      || session.a2LifecycleState === 'CANCELLED'),
     isRecurring: session.scheduleType === 'recurring',
     color: isClassSlot ? '#2563eb' : '#0f766e',
     sortKey: `${date}-${session.startTime || '99:99'}-${title}`,
@@ -291,7 +300,7 @@ function renderSchedulePrintLegend(legend = {}) {
         ${tagItems.length ? tagItems.map((item) => `<span class="schedule-print-tag" style="--schedule-print-tag-color: ${escapeAttribute(item.color)};">${escapeHtml(item.label)}</span>`).join('') : '<em>Không có nhãn</em>'}
       </div>
       <div>
-        <strong>Marker</strong>
+        <strong>Ký hiệu</strong>
         ${legend.hasRecurring ? '<span>Lặp hàng tuần</span>' : ''}
         ${legend.hasCancelled ? '<span>Đã hủy</span>' : ''}
       </div>

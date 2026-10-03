@@ -70,11 +70,14 @@ export function projectA3ScheduleSessions(sessions = [], context = {}, sources =
   const facts = new Map(occurrences.map((item) => [
     `${item.schedule_session_local_id}|${item.occurrence_date}`, item,
   ]))
-  const projected = sessions.map((session) => {
+  const materializedClassDates = new Set(occurrences
+    .filter((item) => text(item.class_session_local_id))
+    .map((item) => `${item.class_session_local_id}|${item.occurrence_date}`))
+  const projected = sessions.flatMap((session) => {
     const date = text(session.occurrenceDate || session.date)
     const fact = facts.get(`${session.id}|${date}`)
     if (fact) {
-      return {
+      return [{
         ...session,
         classSessionId: fact.class_session_local_id || null,
         studentIds: fact.roster_student_ids || [],
@@ -86,15 +89,18 @@ export function projectA3ScheduleSessions(sessions = [], context = {}, sources =
         teacherName: fact.actual_teacher_override ? fact.actual_teacher_name : fact.planned_teacher_name,
         a3OccurrenceMaterialized: true,
         a3ActualTeacherOverride: fact.actual_teacher_override === true,
-      }
+      }]
     }
-    if (session.scheduleType !== 'recurring' || !session.classSessionId) return session
+    if (session.scheduleType !== 'recurring' || !session.classSessionId) return [session]
+    // A stored occurrence for this teaching slot/date owns the historical card.
+    // Its schedule ID can differ from the current recurring assignment ID.
+    if (materializedClassDates.has(`${session.classSessionId}|${date}`)) return []
     const assignment = resolveA3TeacherForDate(assignments, session.classSessionId, date)
-    return {
+    return [{
       ...session,
       teacherId: assignment?.teacher_id || null,
       teacherName: assignment?.teacher_name || '',
-    }
+    }]
   })
   const known = new Set(projected.map((item) => `${item.id}|${item.occurrenceDate}`))
   for (const fact of occurrences) {
