@@ -331,6 +331,7 @@ import {
   pullTuitionNotices,
 } from './cloud-authoritative-tuition-notices.js'
 import { generateTuitionNoticePdf } from './tuition-notice-pdf.js'
+import { bindTuitionNoticePaymentTruth } from './tuition-notice-payment-truth.js'
 import {
   CLOUD_BOOTSTRAP_STATUS,
   canRunCloudBootstrap,
@@ -806,6 +807,7 @@ import {
 import {buildTuitionRows,initialTuitionFilters,renderTuitionModule} from './tuition-module.js'
 import {createTuitionOperatorState,createTuitionOperatorController} from './tuition-operator-controller.js'
 import {pullTuitionOperatorSnapshot} from './cloud-tuition-operator.js'
+import {openConvertedStudentTuition} from './tuition-customer-handoff.js'
 import './tuition-theme.css'
 import { getUploaderDisplayName } from './uploader-display.js'
 import {
@@ -1145,6 +1147,7 @@ let tuitionOperatorController = null
 let tuitionOperatorSnapshot = {status:'idle',centerId:'',students:[],cycleStates:[],catalog:[],receipts:[]}
 let tuitionOperatorReadRunId = 0
 let studentTuitionDetailRouteRunId = 0
+let customerTuitionHandoffRunId = 0
 // C5.4 never renders the legacy Finance keys as business authority. They are
 // inventoried/quarantined before the first exact-center authoritative pull.
 let cashflowTransactions = []
@@ -2385,6 +2388,7 @@ async function refreshSharedWallpaperForCurrentContext(supabase, centerId, wallp
 
 function resetTransientStateForCenterSwitch() {
   studentTuitionDetailRouteRunId += 1
+  customerTuitionHandoffRunId += 1
   const studentWindowTypes = ['student-detail', 'student-care-notes', 'student-learning']
   const closedStudentWindowIds = new Set(openWindows
     .filter((windowItem) => studentWindowTypes.includes(windowItem.type))
@@ -13902,7 +13906,7 @@ function selectFinanceWorkspaceViewForModule(moduleId) {
   }
 }
 
-function openModuleWindow(moduleId, { refresh = true } = {}) {
+function openModuleWindow(moduleId, { refresh = true, preserveCurrentness = false } = {}) {
   selectFinanceWorkspaceViewForModule(moduleId)
   moduleId = getCanonicalFinanceModuleId(moduleId)
 
@@ -13917,7 +13921,7 @@ function openModuleWindow(moduleId, { refresh = true } = {}) {
     isStartMenuOpen = false
     isWindowOverflowOpen = false
     isNotificationCenterOpen = false
-    resetModuleRefreshStateForOpen(moduleId)
+    if (!preserveCurrentness) resetModuleRefreshStateForOpen(moduleId)
     render()
     if (refresh) void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-reopen' })
     return true
@@ -13952,7 +13956,7 @@ function openModuleWindow(moduleId, { refresh = true } = {}) {
   isStartMenuOpen = false
   isWindowOverflowOpen = false
   isNotificationCenterOpen = false
-  resetModuleRefreshStateForOpen(moduleId)
+  if (!preserveCurrentness) resetModuleRefreshStateForOpen(moduleId)
   render()
   if (refresh) void refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-open' })
   return true
@@ -19037,13 +19041,19 @@ async function exportCurrentTuitionDocument(cycleId, button = null) {
     pdfViewer.opener = null
     pdfViewer.document.title = 'Đang tạo TBHP'
     pdfViewer.document.body.textContent = 'Đang đọc các buổi đã học từ dữ liệu chính thức…'
+    const centerId = getCurrentResolvedCenterId()
     const result = await getPrintableTuitionDocument({
       supabase: getSupabaseClient(),
-      centerId: getCurrentResolvedCenterId(),
+      centerId,
       cycleId,
     })
     if (!result.ok) throw new Error(result.error || getTuitionNoticeOutcomeMessage(result.outcome_code))
-    const pdf = await generateTuitionNoticePdf(result.document)
+    if (centerId !== getCurrentResolvedCenterId()) throw new Error('Cơ sở đã thay đổi.')
+    const paymentRead = await pullTuitionOperatorSnapshot({ supabase: getSupabaseClient(), centerId })
+    if (!paymentRead.ok || centerId !== getCurrentResolvedCenterId()) throw new Error('Không tải được trạng thái học phí hiện tại.')
+    const document = bindTuitionNoticePaymentTruth(result.document, paymentRead, centerId)
+    const pdf = await generateTuitionNoticePdf(document)
+    if (centerId !== getCurrentResolvedCenterId()) throw new Error('Cơ sở đã thay đổi.')
     const objectUrl = URL.createObjectURL(pdf.blob)
     pdfViewer.location.replace(objectUrl)
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000)
@@ -27044,8 +27054,7 @@ function bindEvents() {
     if (!studentId) return
     f4bConversionState = null
     parentContactDetailId = null
-    openModuleWindowFromChildInteraction('hoc-phi')
-    openTuitionPackageForm(studentId)
+    void openTuitionPackageForm(studentId)
   })
 
   document.querySelectorAll('[data-parent-link-action="open-derived"]').forEach((button) => {
@@ -31495,10 +31504,29 @@ async function openStudentTuitionDetailFromProfile(student) {
   await getTuitionOperatorController().open('detail', student.id, currentCycle?.id || '')
 }
 
-function openTuitionPackageForm(studentId) {
-  openModuleWindowFromChildInteraction('hoc-phi')
-  const cycle=v24PackageCycleStudentStates.find(s=>s.studentId===studentId)?.currentCycle
-  void getTuitionOperatorController().open(cycle?'detail':'assign',studentId)
+async function openTuitionPackageForm(studentId) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const runId = ++customerTuitionHandoffRunId
+  const alreadyReady = tuitionOperatorSnapshot.status === 'ready'
+    && tuitionOperatorSnapshot.centerId === centerId
+    && tuitionOperatorSnapshot.students.some(item => item.id === studentId)
+    && getModuleRefreshState('hoc-phi').status === 'fresh'
+    && isModuleUpstreamCurrent('hoc-phi', 'tuition-operator')
+  openModuleWindowFromChildInteraction('hoc-phi', {
+    refresh: false, preserveCurrentness: alreadyReady,
+  })
+  return openConvertedStudentTuition({
+    studentId, centerId, forceRefresh: !alreadyReady,
+    getSnapshot: () => tuitionOperatorSnapshot,
+    refresh: () => refreshModuleAuthoritativeUpstreams('hoc-phi', { reason: 'customer-conversion-tuition' }),
+    isCurrent: () => runId === customerTuitionHandoffRunId
+      && centerId === getCurrentCanonicalCenterContext().centerId,
+    openPanel: (kind, id) => getTuitionOperatorController().open(kind, id),
+    showMessage: message => {
+      tuitionOperatorState.message = message
+      render()
+    },
+  })
 }
 
 async function saveParentEnrollmentDraft(markReady = false) {

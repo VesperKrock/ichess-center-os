@@ -18,6 +18,7 @@ export function makeA4Notice(count = 16, legacy = false) {
         totalSessions: count, maxCompletionWeeks: Math.ceil(count / 2) + 1 },
       currentProgress: { usedSessions: used, totalSessions: count },
       paymentWindow: { from: '2026-09-25', to: '2026-09-30' },
+      paymentTruth: { status: 'UNPAID', paidBeforeIChess: false },
       money: { tuitionAmount: price, discountAmount: discount, materialFee: 80000, totalAmount: price - discount + 80000 },
       transfer: { ...COMPANY_TUITION_PAYMENT_PROFILE,
         content: count === 8 ? 'HP LE MINH AN KY 1' : count === 24 ? 'HP NGUYEN HOANG MINH ANH KY 2' : legacy ? 'HP TRAN GIA HAN KY 1' : 'HP NGUYEN MINH ANH KY 2' },

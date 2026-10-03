@@ -478,5 +478,5 @@ export function renderTuitionModule(context, state) {
     )
     .join(
       '',
-    )}</div></div><div class="tuition-table-wrap" data-tuition-scroll-region="table"><table class="tuition-table"><thead><tr><th>HỌC VIÊN</th><th>KỲ / TIẾN ĐỘ</th><th>THANH TOÁN</th><th>VIỆC CẦN LÀM</th></tr></thead><tbody>${filtered.map(renderRow).join('') || '<tr><td colspan="4">Chưa có học viên phù hợp.</td></tr>'}</tbody></table></div></div>${!state.panel ? successNotice(state) : ''}${panel(context, state, rows)}</section>`
+    )}</div></div><div class="tuition-table-wrap" data-tuition-scroll-region="table"><table class="tuition-table"><thead><tr><th>HỌC VIÊN</th><th>KỲ / TIẾN ĐỘ</th><th>THANH TOÁN</th><th>VIỆC CẦN LÀM</th></tr></thead><tbody>${filtered.map(renderRow).join('') || `<tr><td colspan="4">${context.readStatus === 'ready' && rows.length === 0 ? 'Chưa có học viên để quản lý học phí tại cơ sở này.' : 'Chưa có học viên phù hợp.'}</td></tr>`}</tbody></table></div></div>${!state.panel ? successNotice(state) : ''}${panel(context, state, rows)}</section>`
 }

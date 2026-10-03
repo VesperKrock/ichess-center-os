@@ -50,6 +50,7 @@ const makeNotice = (sessionCount) => ({
     tuition: { packageName: `Gói ${sessionCount} buổi`, termNumber: 2, programName: 'Cờ vua nâng cao', learningForm: 'Tái đăng ký', totalSessions: sessionCount, maxCompletionWeeks: 9 },
     currentProgress: { usedSessions: 14, totalSessions: 16 },
     paymentWindow: { from: '2026-09-25', to: '2026-09-27' },
+    paymentTruth: { status: 'UNPAID', paidBeforeIChess: false },
     money: { tuitionAmount: 2400000, discountAmount: 100000, materialFee: 80000, totalAmount: 2380000 },
     notes: ['Thời gian tối đa hoàn thành khóa: 9 tuần.'],
     transfer: { ...COMPANY_TUITION_PAYMENT_PROFILE, content: 'Nguyen Minh Anh HP K2' },

@@ -53,6 +53,7 @@ const notice = {
     tuition: { packageName: 'Gói 16 buổi', termNumber: 1, programName: 'Cờ vua', learningForm: 'Đăng ký mới', totalSessions: 16, maxCompletionWeeks: 9 },
     currentProgress: { usedSessions: 6, totalSessions: 16 },
     paymentWindow: { from: '', to: '' },
+    paymentTruth: { status: 'UNPAID', paidBeforeIChess: false },
     money: { tuitionAmount: 1600000, discountAmount: 0, materialFee: 0, totalAmount: 1600000 },
     notes: [],
     transfer: { ...COMPANY_TUITION_PAYMENT_PROFILE, content: 'Nguyen Minh An HP K1' },

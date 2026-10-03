@@ -36,6 +36,12 @@ export function createTuitionNoticePdfProjection(notice = {}) {
   const tuition = isPlainObject(snapshot.tuition) ? snapshot.tuition : {}
   const progress = isPlainObject(snapshot.currentProgress) ? snapshot.currentProgress : {}
   const paymentWindow = isPlainObject(snapshot.paymentWindow) ? snapshot.paymentWindow : {}
+  const paymentTruth = isPlainObject(snapshot.paymentTruth) ? snapshot.paymentTruth : {}
+  if (!['PAID', 'UNPAID'].includes(paymentTruth.status)
+    || typeof paymentTruth.paidBeforeIChess !== 'boolean'
+    || (paymentTruth.paidBeforeIChess && paymentTruth.status !== 'PAID')) {
+    throw new TuitionNoticePdfValidationError('Chưa xác định được trạng thái thanh toán của kỳ học phí.', 'paymentTruth')
+  }
   const money = isPlainObject(snapshot.money) ? snapshot.money : {}
   const transfer = isPlainObject(snapshot.transfer) ? snapshot.transfer : {}
   const totalSessions = positiveInteger(tuition.totalSessions, 'Số buổi gói')
@@ -64,6 +70,7 @@ export function createTuitionNoticePdfProjection(notice = {}) {
     currentTotalSessions: positiveInteger(progress.totalSessions, 'Tổng buổi hiện tại'),
     paymentFrom: optionalDate(paymentWindow.from, 'Ngày bắt đầu thanh toán'),
     paymentTo: optionalDate(paymentWindow.to, 'Hạn thanh toán'),
+    paymentStatus: paymentTruth.status, paidBeforeIChess: paymentTruth.paidBeforeIChess,
     tuitionAmount: moneyValue(money.tuitionAmount, 'Học phí'), discountAmount: moneyValue(money.discountAmount, 'Ưu đãi'),
     materialFee: moneyValue(money.materialFee, 'Phí giáo trình'), totalAmount: moneyValue(money.totalAmount, 'Tổng cộng'),
     discountExplanation: normalizeText(money.discountExplanation),
@@ -90,13 +97,15 @@ export async function generateTuitionNoticePdf(notice, options = {}) {
   }
   const [templateBytes, qrBytes] = await Promise.all([
     loadAsset(TUITION_NOTICE_TEMPLATE_PATH, fetchImpl, options.baseUrl, 'Không tải được mẫu TBHP A4 đã duyệt.'),
-    loadAsset(TUITION_TRANSFER_QR_PATH, fetchImpl, options.baseUrl, 'Không tải được ảnh QR công ty đã duyệt.'),
+    projection.paymentStatus === 'UNPAID'
+      ? loadAsset(TUITION_TRANSFER_QR_PATH, fetchImpl, options.baseUrl, 'Không tải được ảnh QR công ty đã duyệt.')
+      : Promise.resolve(null),
     ensureFonts(documentRef, fetchImpl, options),
   ])
   if (await sha256(templateBytes) !== TUITION_NOTICE_TEMPLATE_SHA256) throw new Error('Mẫu TBHP A4 không khớp bản đã duyệt.')
   const decodeImage = options.decodeImage || (bytes => globalThis.createImageBitmap(new Blob([bytes], { type: 'image/png' })))
-  const qr = await decodeImage(qrBytes)
-  if (qr.width < 300 || qr.height < 300 || Math.abs(qr.width / qr.height - 1) > 0.02) {
+  const qr = qrBytes ? await decodeImage(qrBytes) : null
+  if (qr && (qr.width < 300 || qr.height < 300 || Math.abs(qr.width / qr.height - 1) > 0.02)) {
     throw new Error('Ảnh QR công ty chưa đủ sắc nét để in.')
   }
   const { PDFDocument } = await import('pdf-lib')
@@ -111,19 +120,49 @@ export async function generateTuitionNoticePdf(notice, options = {}) {
   pdf.addPage(page)
   const { canvas, context } = createCanvas(documentRef)
   const renderedFields = drawDocument(context, projection, layout)
-  const qrImage = await pdf.embedPng(qrBytes)
   const overlay = await pdf.embedPng(new Uint8Array(await canvasToPngArrayBuffer(canvas)))
   page.drawImage(overlay, { x: 0, y: 0, ...TBHP_A4_PAGE })
-  // The golden QR includes a fixed white quiet zone around the unchanged asset.
-  const inset = layout.qr.quietZone
-  page.drawImage(qrImage, { x: layout.qr.x + inset, y: TBHP_A4_PAGE.height - layout.qr.y - layout.qr.height + inset,
-    width: layout.qr.width - inset * 2, height: layout.qr.height - inset * 2 })
-  qr.close?.()
+  if (qrBytes) {
+    // The golden QR includes a fixed white quiet zone around the unchanged asset.
+    const qrImage = await pdf.embedPng(qrBytes)
+    const inset = layout.qr.quietZone
+    page.drawImage(qrImage, { x: layout.qr.x + inset, y: TBHP_A4_PAGE.height - layout.qr.y - layout.qr.height + inset,
+      width: layout.qr.width - inset * 2, height: layout.qr.height - inset * 2 })
+  }
+  qr?.close?.()
   return {
     blob: new Blob([await pdf.save({ useObjectStreams: false })], { type: 'application/pdf' }),
     fileName: createFileName(projection.studentName, projection.issuedAt), pageCount: 1,
     rowCount: projection.totalSessions, projection,
-    layout: { profile: layout.name, page: layout.page, table: layout.table, qr: layout.qr, fields: renderedFields },
+    layout: { profile: layout.name, page: layout.page, table: layout.table, qr: qrBytes ? layout.qr : null, fields: renderedFields },
+  }
+}
+
+export function buildTuitionNoticePaymentCopy(projection) {
+  if (projection.paymentStatus === 'PAID') {
+    return {
+      request: projection.paidBeforeIChess
+        ? ['Học phí kỳ này đã được thanh toán trước', 'khi dùng iChess.']
+        : 'Học phí kỳ này đã được thanh toán.',
+      window: [],
+      title: 'Tình trạng thanh toán:',
+      method: projection.paidBeforeIChess
+        ? '• Đã thanh toán trước khi dùng iChess.' : '• Đã thanh toán kỳ học phí này.',
+      footer: ['TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG xác nhận học phí kỳ này đã được thanh toán.',
+        `Mọi thắc mắc vui lòng liên hệ: ${projection.centerPhone}`],
+      showPaymentInstructions: false,
+    }
+  }
+  return {
+    request: ['Quý phụ huynh vui lòng thanh toán học phí', 'khóa mới:'],
+    window: projection.paymentFrom && projection.paymentTo
+      ? [`từ ngày ${formatDate(projection.paymentFrom)} đến ngày`, `${formatDate(projection.paymentTo)}.`]
+      : projection.paymentTo ? `Hạn thanh toán: ${formatDate(projection.paymentTo)}.` : [],
+    title: 'Hình thức thanh toán:',
+    method: '• Trực tiếp tại trung tâm: Tiền mặt (TM).',
+    footer: ['TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG rất mong quý phụ huynh đóng học phí nêu trên',
+      `đúng thời hạn. Mọi thắc mắc vui lòng liên hệ: ${projection.centerPhone}`],
+    showPaymentInstructions: true,
   }
 }
 
@@ -145,12 +184,14 @@ function drawDocument(context, p, layout) {
   draw('progress', `${p.currentUsedSessions}/${p.currentTotalSessions} buổi`)
   draw('reminder', ['Nhằm đảm bảo lộ trình học tập xuyên suốt, thông báo',
     'học phí sẽ được gửi trước 07 ngày (tương đương 02', 'buổi) trước khi kết thúc khóa học hiện tại.'])
-  draw('paymentRequest', ['Quý phụ huynh vui lòng thanh toán học phí', 'khóa mới:'])
-  draw('paymentWindow', [`từ ngày ${formatDate(p.paymentFrom)} đến ngày`, p.paymentTo ? `${formatDate(p.paymentTo)}.` : ''])
+  const paymentCopy = buildTuitionNoticePaymentCopy(p)
+  draw('paymentRequest', paymentCopy.request)
+  draw('paymentWindow', paymentCopy.window)
   const money = [
     ['tuition', `Học phí khóa ${p.totalSessions} buổi:`, p.tuitionAmount],
     ['discount', 'Ưu đãi học phí:', p.discountAmount],
-    ['material', 'Phí giáo trình:', p.materialFee], ['total', 'Tổng cộng:', p.totalAmount],
+    ['material', 'Phí giáo trình:', p.materialFee],
+    ['total', p.paymentStatus === 'PAID' ? 'Giá trị kỳ học:' : 'Tổng cộng:', p.totalAmount],
   ]
   money.forEach(([name, label, amount]) => {
     const box = f[name]
@@ -169,20 +210,21 @@ function drawDocument(context, p, layout) {
   drawText(context, 'nếu vắng học có thông báo (P).', f.makeup.x, f.makeup.baseline + f.makeup.lineHeight, { color: '#0000ff' })
   draw('completion', ['• Đối với học viên học 2 buổi/tuần thời', p.maxCompletionWeeks
     ? `gian tối đa hoàn thành khóa học là ${p.maxCompletionWeeks} tuần.` : 'gian hoàn thành khóa học theo gói đã đăng ký.'])
-  draw('paymentTitle', 'Hình thức thanh toán:')
-  draw('cash', '• Trực tiếp tại trung tâm: Tiền mặt (TM).')
-  draw('transferTitle', '• Chuyển khoản:')
-  draw('account', `STK: ${p.transferProfile.accountNumber}`)
-  draw('beneficiary', `Tên tài khoản: ${p.transferProfile.beneficiary}`)
-  draw('bank', `Ngân hàng: ${p.transferProfile.bank}`)
-  draw('transferContent', `Nội dung: ${p.transferContent}`)
-  ;['account', 'beneficiary', 'bank', 'transferContent'].forEach(name => {
-    const b = layout.bankBullet
-    context.fillStyle = '#000000'
-    context.fillRect(b.x, f[name].baseline + b.baselineOffset, b.size, b.size)
-  })
-  draw('footerRequest', ['TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG rất mong quý phụ huynh đóng học phí nêu trên',
-    `đúng thời hạn. Mọi thắc mắc vui lòng liên hệ: ${p.centerPhone}`])
+  draw('paymentTitle', paymentCopy.title)
+  draw('cash', paymentCopy.method)
+  if (paymentCopy.showPaymentInstructions) {
+    draw('transferTitle', '• Chuyển khoản:')
+    draw('account', `STK: ${p.transferProfile.accountNumber}`)
+    draw('beneficiary', `Tên tài khoản: ${p.transferProfile.beneficiary}`)
+    draw('bank', `Ngân hàng: ${p.transferProfile.bank}`)
+    draw('transferContent', `Nội dung: ${p.transferContent}`)
+    ;['account', 'beneficiary', 'bank', 'transferContent'].forEach(name => {
+      const b = layout.bankBullet
+      context.fillStyle = '#000000'
+      context.fillRect(b.x, f[name].baseline + b.baselineOffset, b.size, b.size)
+    })
+  }
+  draw('footerRequest', paymentCopy.footer)
   draw('thanks', 'Xin trân trọng cảm ơn sự tin tưởng và đồng hành của Quý phụ huynh và học viên!')
   draw('hotline', `Hotline: ${p.centerPhone}`)
   drawText(context, 'Website: ', f.website.x, f.website.baseline, f.website)
