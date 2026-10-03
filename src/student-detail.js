@@ -1,6 +1,6 @@
 import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
 import { getStudentStatusPresentation } from './student-status-presentation.js'
-import { formatStudentBirthInformation, getStudentBirthInformation } from './student-birth-information.js'
+import { formatStudentBirthInformation, getStudentAge, getStudentBirthInformation } from './student-birth-information.js'
 import {
   formatOperatorDateTime,
   parseCanonicalDateParts,
@@ -354,7 +354,7 @@ function renderStudentTuitionTile(student, row) {
           ...(nextPaid ? [['Kỳ tiếp theo', 'Đã thanh toán · Chờ kết thúc kỳ hiện tại']] : []),
         ]
       : [],
-    '<button type="button" class="student-detail-open-button" data-student-overview-action="tuition" data-student-id="' + escapeAttribute(student.id) + '">Mở chi tiết học phí</button>',
+    '<button type="button" class="student-detail-open-button" data-student-overview-action="tuition" data-student-tuition-detail data-student-id="' + escapeAttribute(student.id) + '">Mở chi tiết học phí</button>',
     'student-tuition-summary-tile',
     row?.tuition ? '' : '<p class="student-profile-card-empty">Chưa có dữ liệu học phí.</p>',
   )
@@ -671,26 +671,8 @@ function getEscapedLevelLabel(level) {
   return escapeHtml(getLevelLabel(level))
 }
 
-function getAge(value) {
-  if (!value) {
-    return null
-  }
-
-  const birthDate = parseCanonicalDateParts(value)
-  if (!birthDate) return null
-  const today = new Date()
-  let age = today.getFullYear() - birthDate.year
-  const monthDelta = today.getMonth() + 1 - birthDate.month
-
-  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.day)) {
-    age -= 1
-  }
-
-  return age
-}
-
 function formatAgeLabel(value) {
-  const age = getAge(value)
+  const age = getStudentAge(value)
   return Number.isFinite(age) ? `${age} tuổi` : '—'
 }
 

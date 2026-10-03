@@ -18,6 +18,15 @@ export function formatStudentBirthInformation(student, fallback = '—') {
     : info.kind === 'year' ? info.birthYear : fallback
 }
 
+export function getStudentAge(birthDate, now = new Date()) {
+  const date = parseCanonicalDateParts(birthDate)
+  if (!date) return null
+  let age = now.getFullYear() - date.year
+  if (now.getMonth() + 1 < date.month
+    || (now.getMonth() + 1 === date.month && now.getDate() < date.day)) age -= 1
+  return age
+}
+
 export function setStudentBirthYearOnly(values, yearOnly) {
   return { ...values, birthYearOnly: yearOnly === true,
     birthYear: values.birthYear || (yearOnly ? getStudentBirthInformation(values).birthYear : '') }

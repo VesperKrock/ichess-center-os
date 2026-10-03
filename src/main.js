@@ -1143,6 +1143,7 @@ const tuitionOperatorState = createTuitionOperatorState()
 let tuitionOperatorController = null
 let tuitionOperatorSnapshot = {status:'idle',centerId:'',students:[],cycleStates:[],catalog:[],receipts:[]}
 let tuitionOperatorReadRunId = 0
+let studentTuitionDetailRouteRunId = 0
 // C5.4 never renders the legacy Finance keys as business authority. They are
 // inventoried/quarantined before the first exact-center authoritative pull.
 let cashflowTransactions = []
@@ -2382,6 +2383,14 @@ async function refreshSharedWallpaperForCurrentContext(supabase, centerId, wallp
 }
 
 function resetTransientStateForCenterSwitch() {
+  studentTuitionDetailRouteRunId += 1
+  const studentWindowTypes = ['student-detail', 'student-care-notes', 'student-learning']
+  const closedStudentWindowIds = new Set(openWindows
+    .filter((windowItem) => studentWindowTypes.includes(windowItem.type))
+    .map((windowItem) => windowItem.id))
+  openWindows = openWindows.filter((windowItem) => !closedStudentWindowIds.has(windowItem.id))
+  if (closedStudentWindowIds.has(pendingWindowFocusAfterRender)) pendingWindowFocusAfterRender = null
+  careNoteDrafts = {}
   moduleRefreshRunIds.clear()
   authoritativeRefreshInFlight.clear()
   notificationRefreshRunId += 1
@@ -30837,8 +30846,12 @@ function bindEvents() {
       } else if (studentOverviewAction === 'tuition') {
         const student = getStudentById(studentId)
         if (!student) return
-        tuitionOperatorState.filters = { ...initialTuitionFilters, query: student.fullName }
-        openModuleWindowFromChildInteraction('hoc-phi')
+        if (button.hasAttribute('data-student-tuition-detail')) {
+          void openStudentTuitionDetailFromProfile(student)
+        } else {
+          tuitionOperatorState.filters = { ...initialTuitionFilters, query: student.fullName }
+          openModuleWindowFromChildInteraction('hoc-phi')
+        }
       } else if (studentOverviewAction === 'schedule') {
         openModuleWindowFromChildInteraction('thoi-khoa-bieu')
       } else if (studentOverviewAction === 'customer' && customerId) {
@@ -31427,6 +31440,26 @@ function getTuitionOperatorController() {
     writePayment:(command,idempotencyKey)=>mutateF5BTuitionReceipt({supabase:getSupabaseClient(),centerId:getCurrentResolvedCenterId(),command,idempotencyKey}),
     printTbhp:exportCurrentTuitionDocument,printReceipt:exportTuitionReceiptById})
   return tuitionOperatorController
+}
+
+async function openStudentTuitionDetailFromProfile(student) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const routeRunId = ++studentTuitionDetailRouteRunId
+  tuitionOperatorState.filters = { ...initialTuitionFilters, query: student.fullName }
+  openModuleWindowFromChildInteraction('hoc-phi', { refresh: false })
+  await refreshModuleAuthoritativeUpstreams('hoc-phi', { reason: 'student-profile-detail' })
+  if (routeRunId !== studentTuitionDetailRouteRunId
+    || centerId !== getCurrentCanonicalCenterContext().centerId) return
+  if (tuitionOperatorSnapshot.status !== 'ready'
+    || tuitionOperatorSnapshot.centerId !== centerId) return
+  if (!tuitionOperatorSnapshot.students.some((item) => item.id === student.id)) {
+    tuitionOperatorState.message = 'Không tìm thấy học viên này trong dữ liệu Học phí của cơ sở hiện tại.'
+    render()
+    return
+  }
+  const currentCycle = tuitionOperatorSnapshot.cycleStates
+    .find((item) => item.studentId === student.id)?.currentCycle
+  await getTuitionOperatorController().open('detail', student.id, currentCycle?.id || '')
 }
 
 function openTuitionPackageForm(studentId) {

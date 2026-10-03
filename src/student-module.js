@@ -2,7 +2,7 @@ import { botMilestones, sampleStudents, studentStatuses } from './student-data.j
 import { formatOperatorDate } from './operator-date-format.js'
 import { getStudentStatusPresentation } from './student-status-presentation.js'
 import {
-  buildStudentBirthFields, formatStudentBirthInformation, getStudentBirthInformation,
+  buildStudentBirthFields, formatStudentBirthInformation, getStudentAge, getStudentBirthInformation,
   validateStudentBirthFields,
 } from './student-birth-information.js'
 import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
@@ -321,7 +321,7 @@ export function renderStudentModule(
                     ? filteredStudents
                         .map((student) => renderStudentRow(student, classSessions, options.tuitionRows))
                         .join('')
-                    : renderEmptyState()
+                    : renderEmptyState(visibleStudents.length === 0 && !hasEffectiveStudentFilter(filters))
                 }
               </tbody>
             </table>
@@ -347,6 +347,8 @@ export function getFilteredStudents(
   const activeFilters = { ...initialStudentFilters, ...filters }
   const normalizedQuery = normalizeText(activeFilters.query)
   const queryDigits = String(activeFilters.query).replace(/\D/g, '')
+  const phoneQuery = String(activeFilters.query).trim()
+  const matchesPhoneQuery = queryDigits.length >= 6 && /^[+\d().\s-]+$/.test(phoneQuery)
 
   const classSessionLookup = createClassSessionLookup(classSessions)
   const filteredStudents = getVisibleStudents(students).filter((student) => {
@@ -359,7 +361,7 @@ export function getFilteredStudents(
         student.schoolName,
         ...classSessionLabels,
       ].some((value) => normalizeText(value).includes(normalizedQuery)) ||
-      (queryDigits &&
+      (matchesPhoneQuery &&
         [student.fatherPhone, student.motherPhone, student.parentPhone].some((phone) =>
           String(phone ?? '').replace(/\D/g, '').includes(queryDigits),
         ))
@@ -1277,11 +1279,19 @@ function renderStudentAvatar(student) {
   `
 }
 
-function renderEmptyState() {
+function hasEffectiveStudentFilter(filters = {}) {
+  const activeFilters = { ...initialStudentFilters, ...filters }
+  return Boolean(String(activeFilters.query ?? '').trim())
+    || activeFilters.status !== 'all'
+    || activeFilters.level !== 'all'
+    || activeFilters.classSessionId !== 'all'
+}
+
+function renderEmptyState(isEmptyCenter = false) {
   return `
     <tr>
       <td class="student-empty" colspan="8">
-        Không tìm thấy học viên phù hợp với bộ lọc hiện tại.
+        ${isEmptyCenter ? 'Chưa có học viên tại cơ sở này.' : 'Không tìm thấy học viên phù hợp với bộ lọc hiện tại.'}
       </td>
     </tr>
   `
@@ -1441,7 +1451,7 @@ function formatBirthDate(student) {
   const info = getStudentBirthInformation(student)
   const birthDate = info.date
   if (!birthDate) return formatStudentBirthInformation(student)
-  const age = new Date().getFullYear() - birthDate.year
+  const age = getStudentAge(birthDate.canonical)
   return `${formatOperatorDate(birthDate.canonical)} · ${age} tuổi`
 }
 
