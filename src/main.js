@@ -2398,6 +2398,10 @@ async function refreshSharedWallpaperForCurrentContext(supabase, centerId, wallp
   return true
 }
 
+function clearAttendanceBoardCenterFilters() {
+  attendanceBoardFilters = { ...attendanceBoardFilters, classSessionId: 'all', teacherId: 'all' }
+}
+
 function resetTransientStateForCenterSwitch() {
   studentTuitionDetailRouteRunId += 1
   customerTuitionHandoffRunId += 1
@@ -2424,6 +2428,7 @@ function resetTransientStateForCenterSwitch() {
   studentFilters = { ...initialStudentFilters }
   teacherFilters = { ...initialTeacherFilters }
   parentConsultationFilters = { ...initialParentConsultationFilters }
+  clearAttendanceBoardCenterFilters()
   parentConsultations = []
   settingsFilters = { ...initialSettingsFilters }
   settingsActiveTab = 'class-sessions'
@@ -10238,6 +10243,11 @@ async function handleInternalOpenCenter(centerId) {
   if (cloudUserSyncId !== switchSyncId || cloudStatus.membershipStatus !== 'loaded') {
     return
   }
+
+  if (openWindows.some((item) => item.moduleId === 'bang-diem-danh' && !item.type)) {
+    await refreshModuleAuthoritativeUpstreams('bang-diem-danh', { reason: 'center-switch' })
+  }
+  if (cloudUserSyncId !== switchSyncId) return
 
   // A center switch clears the Tuition window's read snapshot. Its open window
   // must start a new-center read; notification reads use a separate snapshot.
