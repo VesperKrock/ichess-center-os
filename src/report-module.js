@@ -23,7 +23,7 @@ export const initialReportDraft = {
 }
 
 const DATA_SOURCE_NOTE =
-  'Dữ liệu hiển thị là derived view từ Học viên, Điểm danh và Tài chính authoritative của đúng active center.'
+  'Dữ liệu được tổng hợp từ Học viên, Điểm danh và Sổ quỹ của cơ sở đang xem.'
 
 export function createInitialReportState(now = new Date()) {
   const today = toDateKey(now)
@@ -160,6 +160,40 @@ export function buildReportData({
   }
 }
 
+export function isReportPdfSnapshotCurrent(snapshot, { centerId, viewMode, filters, inputValue } = {}) {
+  const mode = viewMode === 'week' ? 'week' : 'day'
+  const periodKey = mode === 'week' ? 'weekStartDate' : 'reportDate'
+  const selectedPeriod = String(filters?.[periodKey] || '')
+  const loadedPeriod = String(snapshot?.data?.filters?.[periodKey] || '')
+  return Boolean(snapshot && centerId && snapshot.centerId === centerId
+    && snapshot.viewMode === mode && selectedPeriod && loadedPeriod === selectedPeriod
+    && (inputValue === undefined || inputValue === selectedPeriod))
+}
+
+export function getReportPdfSnapshotFingerprint(snapshot) {
+  const data = snapshot?.data
+  if (!data) return ''
+  return JSON.stringify(snapshot.viewMode === 'week' ? {
+    weekStartDate: data.filters?.weekStartDate,
+    weekLabel: data.weekLabel,
+    weeklyIncome: data.weeklyIncome,
+    weeklyExpense: data.weeklyExpense,
+    weeklyBalance: data.weeklyBalance,
+    weeklyTransactions: data.weeklyTransactions,
+    weeklyBars: data.weeklyBars,
+    studentCount: data.studentCount,
+    attendanceSummary: data.attendanceSummary,
+  } : {
+    reportDate: data.filters?.reportDate,
+    reportDateLabel: data.reportDateLabel,
+    dailyIncome: data.dailyIncome,
+    dailyExpense: data.dailyExpense,
+    dailyBalance: data.dailyBalance,
+    dailySourceTotal: data.dailySourceTotal,
+    dailyTransactions: data.dailyTransactions,
+  })
+}
+
 export function getReportTransactionScope(filters = initialReportFilters, scope = {}) {
   const activeFilters = normalizeReportFilters(filters)
   const mode = scope.mode === 'week' ? 'week' : 'day'
@@ -219,7 +253,7 @@ export function buildReportDownloadText({
     `Mã cơ sở: ${activeCenter.codeLabel}`,
     `Ngày báo cáo: ${data.reportDateLabel}`,
     `Tuần đang xem: ${data.weekLabel}`,
-    'Nguồn dữ liệu: derived từ authoritative upstream của đúng active center.',
+    'Nguồn dữ liệu: Học viên, Điểm danh và Sổ quỹ của cơ sở đang xem.',
     '',
     'Báo cáo ngày',
     `Công việc ngày: ${activeDraft.dailyTasks || 'Chưa nhập công việc ngày.'}`,
@@ -256,7 +290,7 @@ export function buildReportDownloadText({
     'Nguồn dữ liệu',
     data.dataSourceNote,
     data.attendanceSummary.hasAttendanceData
-      ? 'Điểm danh tuần được tổng hợp từ sổ điểm danh canonical A6.'
+      ? 'Điểm danh tuần được tổng hợp từ sổ điểm danh của cơ sở đang xem.'
       : 'Chưa có lượt điểm danh trong tuần đang chọn.',
   ].join('\n')
 }
@@ -334,7 +368,7 @@ export function buildReportPrintHtml({
         <p>Học bù: ${data.attendanceSummary.makeupCount.toLocaleString('vi-VN')}</p>
         <p>Chưa điểm danh: ${data.attendanceSummary.unmarkedCount.toLocaleString('vi-VN')}</p>
         <p>Tổng: ${data.attendanceSummary.totalCount.toLocaleString('vi-VN')}</p>
-        <p class="muted">${escapeHtml(data.attendanceSummary.available ? 'Nguồn: sổ điểm danh canonical A6 của cơ sở hiện tại.' : 'Chưa tải được sổ điểm danh. Vui lòng làm mới.')}</p>
+        <p class="muted">${escapeHtml(data.attendanceSummary.available ? 'Nguồn: sổ điểm danh của cơ sở đang xem.' : 'Chưa tải được sổ điểm danh. Vui lòng làm mới.')}</p>
       </body>
     </html>`
 }
@@ -410,7 +444,7 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
           ${renderCashflowBarChart(data.weeklyBars)}
           ${renderReportBarDetail(selectedBarDetail)}
         </section>
-        <section class="report-chart-card" aria-label="Biểu đồ điểm danh canonical trong tuần">
+        <section class="report-chart-card" aria-label="Biểu đồ điểm danh trong tuần">
           <div class="report-chart-heading">
             <h5>Có mặt / Vắng / Học bù</h5>
             <span>Lượt học viên theo từng buổi trong tuần</span>
@@ -762,7 +796,7 @@ function renderReportBarButton(week, type, axisMax) {
       data-report-bar-label="${escapeAttribute(label)}"
       data-report-bar-week="${escapeAttribute(week.weekLabel)}"
       data-report-bar-value="${value}"
-      data-report-bar-source="Tài chính authoritative projection trong tuần đang xem"
+      data-report-bar-source="Sổ quỹ trong tuần đang xem"
       aria-label="${escapeAttribute(title)}"
     ></button>
   `
@@ -777,7 +811,7 @@ function renderReportBarDetail(detail) {
     <section class="report-bar-detail" aria-label="Chi tiết cột thu chi">
       <strong>Chi tiết cột</strong>
       <p>${escapeHtml(detail.label)} · Tuần ${escapeHtml(detail.weekLabel)} · ${escapeHtml(formatMoney(detail.value))}</p>
-      <small>Nguồn: ${escapeHtml(detail.source || 'Tài chính authoritative projection.')}</small>
+      <small>Nguồn: ${escapeHtml(detail.source || 'Sổ quỹ trong tuần đang xem.')}</small>
     </section>
   `
 }

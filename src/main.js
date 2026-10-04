@@ -535,9 +535,11 @@ import {
 import './parent-consultation-v2-8p2-theme.css'
 import {
   createInitialReportState,
+  getReportPdfSnapshotFingerprint,
   getReportTransactionScope,
   getReportTransactionsForScope,
   getWeekStartDate,
+  isReportPdfSnapshotCurrent,
   renderReportModule,
 } from './report-module.js'
 import './report-theme.css'
@@ -1573,12 +1575,44 @@ async function refreshReportAttendanceContext() {
   return result
 }
 
+function applyReportPeriodControl(control) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(control.value) || control.validity?.valid === false) {
+    reportPdfSnapshot = null
+    control.closest('.report-module')?.querySelectorAll('[data-report-action]').forEach(button => { button.disabled = true })
+    return false
+  }
+  const key = control.dataset.reportFilter
+  const value = key === 'weekStartDate' ? getWeekStartDate(control.value) : control.value
+  if (reportState.filters[key] === value && reportPdfSnapshot) return false
+  reportState = {
+    ...reportState,
+    filters: { ...reportState.filters, [key]: value },
+    selectedBarDetail: null,
+  }
+  reportTransactionDrilldownState = null
+  reportTransactionDrilldownToken += 1
+  render()
+  if (key === 'weekStartDate') void refreshReportAttendanceContext()
+  return true
+}
+
 async function exportReportPdf(button, action) {
   if (reportPdfExportInFlight) return false
   const context = getCurrentCanonicalCenterContext()
   const current = reportPdfSnapshot
-  if (!context.ok || !current || current.centerId !== context.centerId) return false
+  const periodKey = reportState.viewMode === 'week' ? 'weekStartDate' : 'reportDate'
+  const periodControl = document.querySelector(`.report-module [data-report-filter="${periodKey}"]`)
+  if (periodControl?.value !== reportState.filters[periodKey]) {
+    if (periodControl) applyReportPeriodControl(periodControl)
+    return false
+  }
+  if (!context.ok || !isReportPdfSnapshotCurrent(current, {
+    centerId: context.centerId, viewMode: reportState.viewMode,
+    filters: reportState.filters, inputValue: periodControl?.value,
+  })) return false
   const snapshot = structuredClone({ ...current, draft: reportState.draft })
+  const exportedData = getReportPdfSnapshotFingerprint(snapshot)
+  const exportedDraft = JSON.stringify(snapshot.draft)
   const viewer = action === 'print' ? window.open('', '_blank') : null
   if (action === 'print' && !viewer) {
     window.alert('Hãy cho phép mở cửa sổ PDF và thử lại.')
@@ -1596,7 +1630,12 @@ async function exportReportPdf(button, action) {
     }
     const { generateReportPdf } = await import('./report-pdf.js')
     const result = await generateReportPdf(snapshot)
-    if (getCurrentCanonicalCenterContext().centerId !== context.centerId) throw new Error('Cơ sở đã thay đổi. Vui lòng xuất lại báo cáo.')
+    const latestControl = document.querySelector(`.report-module [data-report-filter="${periodKey}"]`)
+    if (!isReportPdfSnapshotCurrent(reportPdfSnapshot, {
+      centerId: getCurrentCanonicalCenterContext().centerId, viewMode: reportState.viewMode,
+      filters: reportState.filters, inputValue: latestControl?.value,
+    }) || getReportPdfSnapshotFingerprint(reportPdfSnapshot) !== exportedData
+      || JSON.stringify(reportState.draft) !== exportedDraft) throw new Error('Báo cáo đã thay đổi. Vui lòng xuất lại PDF.')
     const url = URL.createObjectURL(result.blob)
     if (viewer) viewer.location.replace(url)
     else {
@@ -1616,7 +1655,10 @@ async function exportReportPdf(button, action) {
   } finally {
     reportPdfExportInFlight = false
     if (button.isConnected) {
-      button.disabled = false
+      button.disabled = !isReportPdfSnapshotCurrent(reportPdfSnapshot, {
+        centerId: getCurrentCanonicalCenterContext().centerId, viewMode: reportState.viewMode,
+        filters: reportState.filters, inputValue: document.querySelector(`.report-module [data-report-filter="${periodKey}"]`)?.value,
+      })
       button.removeAttribute('aria-busy')
       button.textContent = label
     }
@@ -2517,7 +2559,11 @@ function resetTransientStateForCenterSwitch() {
   }
   reportTransactionDrilldownState = null
   reportTransactionDrilldownToken += 1
-  reportState = createInitialReportState()
+  reportState = {
+    ...createInitialReportState(),
+    viewMode: reportState.viewMode,
+    filters: { ...reportState.filters },
+  }
   cashbookSettingsFormState = null
   cashbookReconciliationFormState = null
   inventoryFormState = null
@@ -8258,7 +8304,7 @@ function shouldAllowImmediateRenderForActiveElement(element) {
     return false
   }
 
-  return Boolean(element.closest?.('[data-student-filter], [data-student-birth-year-only], [data-attendance-board-filter], [data-tu-filter]'))
+  return Boolean(element.closest?.('[data-student-filter], [data-student-birth-year-only], [data-attendance-board-filter], [data-tu-filter], [data-report-filter]'))
 }
 
 function shouldAllowNativeSelectChangeRender() {
@@ -10246,6 +10292,11 @@ async function handleInternalOpenCenter(centerId) {
 
   if (openWindows.some((item) => item.moduleId === 'bang-diem-danh' && !item.type)) {
     await refreshModuleAuthoritativeUpstreams('bang-diem-danh', { reason: 'center-switch' })
+  }
+  if (cloudUserSyncId !== switchSyncId) return
+
+  if (openWindows.some((item) => item.moduleId === 'bao-cao' && !item.type)) {
+    await refreshModuleAuthoritativeUpstreams('bao-cao', { reason: 'center-switch' })
   }
   if (cloudUserSyncId !== switchSyncId) return
 
@@ -23741,25 +23792,8 @@ function bindEvents() {
   })
 
   document.querySelectorAll('[data-report-filter]').forEach((control) => {
-    control.addEventListener('input', () => {
-      const value =
-        control.dataset.reportFilter === 'weekStartDate'
-          ? getWeekStartDate(control.value)
-          : control.value
-
-      reportState = {
-        ...reportState,
-        filters: {
-          ...reportState.filters,
-          [control.dataset.reportFilter]: value,
-        },
-        selectedBarDetail: null,
-      }
-      reportTransactionDrilldownState = null
-      reportTransactionDrilldownToken += 1
-      render()
-      if (control.dataset.reportFilter === 'weekStartDate') void refreshReportAttendanceContext()
-    })
+    control.addEventListener('input', () => applyReportPeriodControl(control))
+    control.addEventListener('change', () => applyReportPeriodControl(control))
   })
 
   document.querySelector('.report-module')?.addEventListener('click', (event) => {
