@@ -95,7 +95,8 @@ export function validateSettingsTuitionPackageForm(values = {}) {
   const errors = {}
   const packageName = String(values.packageName || '').trim()
   const totalSessions = Number(values.totalSessions)
-  const defaultAmount = Number(values.defaultAmount)
+  const defaultAmountText = String(values.defaultAmount ?? '').trim()
+  const defaultAmount = Number(defaultAmountText)
   const maxCompletionWeeks = String(values.maxCompletionWeeks ?? '').trim()
   if (!packageName) errors.packageName = 'Nhập tên gói học phí.'
   if (packageName.length > 120) errors.packageName = 'Tên gói tối đa 120 ký tự.'
@@ -103,7 +104,9 @@ export function validateSettingsTuitionPackageForm(values = {}) {
   if (!Number.isSafeInteger(totalSessions) || totalSessions < 1 || totalSessions > 1000) {
     errors.totalSessions = 'Số buổi cần là số nguyên từ 1 đến 1.000.'
   }
-  if (!Number.isSafeInteger(defaultAmount) || defaultAmount < 0) {
+  if (!defaultAmountText) {
+    errors.defaultAmount = 'Nhập học phí mặc định của gói.'
+  } else if (!Number.isSafeInteger(defaultAmount) || defaultAmount < 0) {
     errors.defaultAmount = 'Học phí mặc định cần là số nguyên không âm.'
   }
   if (maxCompletionWeeks
@@ -114,6 +117,17 @@ export function validateSettingsTuitionPackageForm(values = {}) {
   }
   if (String(values.note || '').trim().length > 500) errors.note = 'Ghi chú tối đa 500 ký tự.'
   return errors
+}
+
+export function retainSettingsDraftsOnRefresh(previousCenterId, nextCenterId, profileDraft, packageDraft) {
+  return previousCenterId && previousCenterId === nextCenterId
+    ? { profileDraft, packageDraft }
+    : { profileDraft: null, packageDraft: null }
+}
+
+export function isCurrentSettingsDraftSubmission(submittingCenterId, currentCenterId, submittedDraft, currentDraft) {
+  return Boolean(submittingCenterId && submittingCenterId === currentCenterId
+    && submittedDraft && submittedDraft === currentDraft)
 }
 
 const classSessionStatusOptions = [
@@ -379,7 +393,7 @@ function renderCenterInfoPanel(centerInfo, cloudDbPanelState, options = {}) {
           </div>
           <button type="button" data-settings-center-action="open-edit" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>Chỉnh sửa</button>
         </div>
-        <div class="settings-info-grid">
+        ${ready ? `<div class="settings-info-grid">
           ${renderInfoItem('Tên hiển thị', centerInfo.name)}
           ${renderInfoItem('Địa chỉ', centerInfo.address)}
           ${renderInfoItem('Số điện thoại', centerInfo.phone)}
@@ -388,13 +402,13 @@ function renderCenterInfoPanel(centerInfo, cloudDbPanelState, options = {}) {
         <section class="settings-tuition-receipt-group" aria-label="Học phí & Phiếu Thu">
           <h5>Học phí & Phiếu Thu</h5>
           <div class="settings-info-grid">
-            ${renderInfoItem('Phí giáo trình khi tái đăng ký', Number.isSafeInteger(centerInfo.renewalMaterialFee) ? formatMoney(centerInfo.renewalMaterialFee) : '—')}
+            ${renderInfoItem('Phí giáo trình khi tái đăng ký', formatMoney(centerInfo.renewalMaterialFee))}
             ${renderInfoItem('Mã Phiếu Thu', centerInfo.receiptPrefix)}
             ${renderInfoItem('Người thu tiền mặc định', centerInfo.defaultReceiptCollectorName)}
             ${renderInfoItem('Thiết lập dữ liệu học viên ban đầu', centerInfo.initialStudentSetupEnabled ? 'Đang bật' : 'Đang tắt', { status: true })}
           </div>
           <p class="settings-product-note">Người thu tiền được điền sẵn khi ghi nhận thanh toán và có thể thay đổi cho từng giao dịch.</p>
-        </section>
+        </section>` : renderCenterSettingsCapabilityNotice(state)}
       </section>
       ${renderCenterAppearancePanel(options.wallpaperState, state)}
       ${renderCloudDbPanel(cloudDbPanelState, centerInfo)}
@@ -416,7 +430,7 @@ function renderCenterAppearancePanel(wallpaperState = {}, centerSettingsState = 
   return `
     <section class="settings-appearance-panel" aria-label="Giao diện cơ sở">
       <div>
-        <h4>Hình nền desktop</h4>
+        <h4>Hình nền của ứng dụng</h4>
         <p>Ưu tiên nền riêng trên thiết bị, sau đó nền dùng chung, cuối cùng là nền mặc định.</p>
       </div>
       <div class="settings-appearance-grid">
@@ -426,7 +440,9 @@ function renderCenterAppearancePanel(wallpaperState = {}, centerSettingsState = 
         </article>
         <article>
           <span>Nền dùng chung</span>
-          <strong>${centerSettingsState.sharedWallpaper ? 'Đã thiết lập' : 'Chưa thiết lập'}</strong>
+          <strong>${centerSettingsState.status === 'ready'
+            ? centerSettingsState.sharedWallpaper ? 'Đã thiết lập' : 'Chưa thiết lập'
+            : centerSettingsState.status === 'loading' ? 'Đang tải...' : 'Chưa xác nhận'}</strong>
         </article>
         <article>
           <span>Nền riêng</span>
@@ -442,7 +458,7 @@ function renderCenterAppearancePanel(wallpaperState = {}, centerSettingsState = 
         ` : ''}
       </div>
       ${wallpaperState.message ? `<p class="settings-wallpaper-message ${wallpaperState.messageTone === 'error' ? 'is-error' : ''}" role="status">${escapeHtml(wallpaperState.message)}</p>` : ''}
-      <p class="settings-product-note">Nền riêng không rời khỏi trình duyệt này. Chỉ Owner quản lý nền dùng chung; lớp phủ tương phản luôn được giữ để chữ dễ đọc.</p>
+      <p class="settings-product-note">Nền riêng chỉ áp dụng trên tài khoản và thiết bị này. Chủ hệ thống quản lý nền dùng chung. Hệ thống luôn giữ chữ dễ đọc trên hình nền.</p>
     </section>
   `
 }
@@ -459,6 +475,7 @@ function renderTuitionPackagePanel(tuitionPackages, state = {}, formState = null
         <button type="button" data-settings-package-action="open-create" ${ready && !state.isSaving ? '' : 'disabled aria-disabled="true"'}>+ Thêm gói</button>
       </div>
       <p class="settings-product-note">Có thể nhập số buổi từ 1 đến 1000. Gói đã ngưng không dùng cho lượt gán mới; hồ sơ học phí cũ vẫn được giữ nguyên.</p>
+      ${!ready || state.message ? renderCenterSettingsCapabilityNotice(state) : ''}
       <div class="settings-class-session-table-wrap">
         <table class="settings-class-session-table">
           <thead>
@@ -502,13 +519,13 @@ function renderCenterSettingsCapabilityNotice(state = {}) {
   const status = state.status || 'idle'
   if (status === 'ready' && !state.message) return ''
   const messages = {
-    idle: 'Cài đặt dùng chung chưa được kiểm tra.',
-    loading: 'Đang tải cài đặt dùng chung...',
-    unavailable: 'Cài đặt dùng chung hiện chưa khả dụng. Ca học và lớp vẫn sử dụng bình thường.',
-    failed: 'Chưa tải được cài đặt dùng chung. Ca học và lớp vẫn sử dụng bình thường.',
+    idle: 'Cài đặt cơ sở chưa sẵn sàng. Vui lòng bấm Làm mới.',
+    loading: 'Đang tải Cài đặt cơ sở...',
+    unavailable: 'Chưa tải được Cài đặt cơ sở. Vui lòng bấm Làm mới để thử lại.',
+    failed: 'Chưa tải được Cài đặt cơ sở. Vui lòng bấm Làm mới để thử lại.',
     ready: state.message || '',
   }
-  return `<p class="settings-capability-notice is-${escapeAttribute(status)}" role="status">${escapeHtml(state.message || messages[status] || messages.failed)}</p>`
+  return `<p class="settings-capability-notice is-${escapeAttribute(status)}" role="status">${escapeHtml(messages[status] || messages.failed)}</p>`
 }
 
 function renderCenterProfileForm(formState, state) {
@@ -524,7 +541,7 @@ function renderCenterProfileForm(formState, state) {
           ${renderSettingsTextField('center', 'phone', 'Số điện thoại', values.phone, errors.phone)}
           <fieldset class="settings-tuition-receipt-fields">
             <legend>Học phí & Phiếu Thu</legend>
-            ${renderSettingsTextField('center', 'renewalMaterialFee', 'Phí giáo trình khi tái đăng ký', values.renewalMaterialFee, errors.renewalMaterialFee, { type: 'number', min: '0', step: '1000' })}
+            ${renderSettingsTextField('center', 'renewalMaterialFee', 'Phí giáo trình khi tái đăng ký', values.renewalMaterialFee, errors.renewalMaterialFee, { type: 'number', min: '0', step: '1' })}
             ${renderSettingsTextField('center', 'receiptPrefix', 'Mã Phiếu Thu *', values.receiptPrefix, errors.receiptPrefix, { placeholder: 'Ví dụ: DH' })}
             ${renderSettingsTextField('center', 'defaultReceiptCollectorName', 'Người thu tiền mặc định', values.defaultReceiptCollectorName, errors.defaultReceiptCollectorName, { className: 'span-full', placeholder: 'Ví dụ: Hoàng Thị Vân' })}
             <p class="settings-product-note">Được điền sẵn khi ghi nhận thanh toán và có thể thay đổi cho từng giao dịch.</p>
@@ -536,7 +553,8 @@ function renderCenterProfileForm(formState, state) {
           ${renderSettingsTextareaField('center', 'note', 'Ghi chú', values.note, errors.note)}
         </div>
         ${errors.form ? `<p class="settings-form-error">${escapeHtml(errors.form)}</p>` : ''}
-        <div class="settings-form-actions"><button type="button" data-settings-center-action="cancel">Hủy</button><button type="submit" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}</button></div>
+        ${state.status !== 'ready' ? renderCenterSettingsCapabilityNotice(state) : ''}
+        <div class="settings-form-actions"><button type="button" data-settings-center-action="cancel">Hủy</button><button type="submit" ${state.isSaving || state.status !== 'ready' ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}</button></div>
       </form>
     </div>
   `
@@ -555,12 +573,13 @@ function renderTuitionPackageForm(formState, state) {
           ${renderSettingsTextField('package', 'programName', 'Chương trình', values.programName, errors.programName, { placeholder: 'Để trống nếu gói dùng chung' })}
           ${renderSettingsTextField('package', 'totalSessions', 'Tổng số buổi *', values.totalSessions, errors.totalSessions, { type: 'number', min: '1', max: '1000' })}
           ${renderSettingsTextField('package', 'maxCompletionWeeks', 'Thời gian tối đa hoàn thành khóa (tuần)', values.maxCompletionWeeks, errors.maxCompletionWeeks, { type: 'number', min: '1', max: '5200', placeholder: 'Để trống nếu chưa quy định' })}
-          ${renderSettingsTextField('package', 'defaultAmount', 'Học phí mặc định (VNĐ) *', values.defaultAmount, errors.defaultAmount, { type: 'number', min: '0', step: '1000' })}
+          ${renderSettingsTextField('package', 'defaultAmount', 'Học phí mặc định (VNĐ) *', values.defaultAmount, errors.defaultAmount, { type: 'number', min: '0', step: '1' })}
           <label><span>Trạng thái</span><select data-settings-package-field="isActive"><option value="true" ${values.isActive !== false ? 'selected' : ''}>Đang dùng</option><option value="false" ${values.isActive === false ? 'selected' : ''}>Đã ngưng</option></select></label>
           ${renderSettingsTextareaField('package', 'note', 'Ghi chú', values.note, errors.note)}
         </div>
         ${errors.form ? `<p class="settings-form-error">${escapeHtml(errors.form)}</p>` : ''}
-        <div class="settings-form-actions"><button type="button" data-settings-package-action="cancel">Hủy</button><button type="submit" ${state.isSaving ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo gói'}</button></div>
+        ${state.status !== 'ready' ? renderCenterSettingsCapabilityNotice(state) : ''}
+        <div class="settings-form-actions"><button type="button" data-settings-package-action="cancel">Hủy</button><button type="submit" ${state.isSaving || state.status !== 'ready' ? 'disabled' : ''}>${state.isSaving ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo gói'}</button></div>
       </form>
     </div>
   `
@@ -1225,9 +1244,10 @@ function normalizeSearchText(value) {
 }
 
 function formatMoney(value) {
-  const amount = Number(value || 0)
+  if (value == null || value === '') return 'Chưa cập nhật'
+  const amount = Number(value)
 
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (!Number.isFinite(amount) || amount < 0) {
     return 'Chưa cập nhật'
   }
 

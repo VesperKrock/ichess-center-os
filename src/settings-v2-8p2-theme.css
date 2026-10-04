@@ -963,6 +963,26 @@
   background: #fef2f2;
 }
 
+.desktop-window.is-settings-window .settings-capability-notice {
+  border-color: var(--settings-line-strong);
+  color: var(--settings-text);
+  background: var(--settings-soft);
+}
+
+:root:not([data-ui-theme='dark']) .desktop-window.is-settings-window .settings-capability-notice.is-failed,
+:root:not([data-ui-theme='dark']) .desktop-window.is-settings-window .settings-capability-notice.is-unavailable {
+  border-color: #fecaca;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+:root[data-ui-theme='dark'] .desktop-window.is-settings-window .settings-capability-notice.is-failed,
+:root[data-ui-theme='dark'] .desktop-window.is-settings-window .settings-capability-notice.is-unavailable {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+  background: #3f1d22;
+}
+
 :root[data-ui-theme='dark'] .desktop-window.is-settings-window .settings-wallpaper-message.is-error {
   border-color: #7f1d1d;
   color: #fca5a5;

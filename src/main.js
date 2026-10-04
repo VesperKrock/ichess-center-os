@@ -609,6 +609,8 @@ import {
   createSettingsCenterProfileFormState,
   getClassSessionStudentCount,
   initialSettingsFilters,
+  isCurrentSettingsDraftSubmission,
+  retainSettingsDraftsOnRefresh,
   renderSettingsModule,
   validateSettingsCenterProfileForm,
   validateSettingsClassSessionForm,
@@ -12219,6 +12221,8 @@ function renderModuleRefreshControl(windowItem) {
   if (!isPrimaryBusinessModuleWindow(windowItem)) return ''
   const state = getModuleRefreshState(windowItem.moduleId)
   const isFinanceWindow = isFinanceModuleWindow(windowItem)
+  const isSettingsSaving = windowItem.moduleId === 'cai-dat-co-so'
+    && v21CenterSettingsCapabilityState.isSaving
   const label = isFinanceWindow
     ? getFinanceTitlebarCurrentnessLabel(state)
     : state.status === 'loading' ? 'Đang tải…' : 'Làm mới'
@@ -12227,7 +12231,7 @@ function renderModuleRefreshControl(windowItem) {
       class="module-authoritative-refresh ${isFinanceWindow ? `is-finance-currentness is-${escapeAttribute(state.status)}` : ''}"
       type="button"
       data-module-authoritative-refresh="${escapeAttribute(windowItem.moduleId)}"
-      ${state.status === 'loading' ? 'disabled' : ''}
+      ${state.status === 'loading' || isSettingsSaving ? 'disabled' : ''}
       aria-label="Làm mới dữ liệu của ${escapeAttribute(getWindowHeaderTitle(windowItem))}"
     >${escapeHtml(label)}</button>
   `
@@ -18860,6 +18864,11 @@ function isC56RetryableInventoryFailure(result = {}) {
 async function refreshV21CenterSettings({ reason = 'manual-refresh', silent = false } = {}) {
   const centerContext = getCurrentCanonicalCenterContext()
   const centerId = centerContext.centerId
+  if (centerContext.ok
+    && v21CenterSettingsCapabilityState.centerId === centerId
+    && v21CenterSettingsCapabilityState.isSaving) {
+    return { ok: true, skipped: true, outcome_code: 'SETTINGS_SAVE_IN_PROGRESS' }
+  }
   const runId = ++v21CenterSettingsSyncRunId
   if (!centerContext.ok) {
     resetV21CenterSettingsRuntimeForAccessBoundary('')
@@ -18873,12 +18882,18 @@ async function refreshV21CenterSettings({ reason = 'manual-refresh', silent = fa
     return { ok: false, outcome_code: 'INVALID_CENTER', error }
   }
 
+  const retainedDrafts = retainSettingsDraftsOnRefresh(
+    v21CenterSettingsCapabilityState.centerId,
+    centerId,
+    settingsCenterProfileFormState,
+    settingsTuitionPackageFormState,
+  )
   v21CenterProfile = null
   v21TuitionPackages = []
   v21SharedWallpaper = null
   v21SharedWallpaperVersion = 0
-  settingsCenterProfileFormState = null
-  settingsTuitionPackageFormState = null
+  settingsCenterProfileFormState = retainedDrafts.profileDraft
+  settingsTuitionPackageFormState = retainedDrafts.packageDraft
   v21CenterSettingsCapabilityState = createV21CenterSettingsCapabilityState({
     centerId,
     status: V21_CENTER_SETTINGS_CAPABILITY_STATUS.LOADING,
@@ -26626,23 +26641,34 @@ function bindEvents() {
 
   document.querySelector('[data-settings-center-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
-    if (!settingsCenterProfileFormState || !v21CenterProfile) return
+    const submittingCenterId = getCurrentCanonicalCenterContext().centerId
+    if (!settingsCenterProfileFormState || !v21CenterProfile
+      || !isV21CenterSettingsCapabilityReady(v21CenterSettingsCapabilityState, submittingCenterId)
+      || v21CenterSettingsCapabilityState.isSaving) return
     const errors = validateSettingsCenterProfileForm(settingsCenterProfileFormState.values)
     if (Object.keys(errors).length) {
       settingsCenterProfileFormState = { ...settingsCenterProfileFormState, errors }
       render()
       return
     }
+    let submittedDraft = settingsCenterProfileFormState
     try {
       const command = settingsCenterProfileFormState.pendingCommand
         || buildV21UpdateCenterProfileCommand(settingsCenterProfileFormState.values, v21CenterProfile)
       const requestId = settingsCenterProfileFormState.requestId || createV21SettingsIdempotencyKey()
-      settingsCenterProfileFormState = {
+      submittedDraft = {
         ...settingsCenterProfileFormState,
         requestId,
         pendingCommand: command,
       }
+      settingsCenterProfileFormState = submittedDraft
       const result = await writeV21CenterSettingsCommand(command, requestId)
+      if (!isCurrentSettingsDraftSubmission(
+        submittingCenterId,
+        getCurrentCanonicalCenterContext().centerId,
+        submittedDraft,
+        settingsCenterProfileFormState,
+      )) return
       if (!result.ok) {
         settingsCenterProfileFormState = {
           ...settingsCenterProfileFormState,
@@ -26654,6 +26680,12 @@ function bindEvents() {
       settingsCenterProfileFormState = null
       render()
     } catch (error) {
+      if (!isCurrentSettingsDraftSubmission(
+        submittingCenterId,
+        getCurrentCanonicalCenterContext().centerId,
+        submittedDraft,
+        settingsCenterProfileFormState,
+      )) return
       settingsCenterProfileFormState = {
         ...settingsCenterProfileFormState,
         errors: { ...settingsCenterProfileFormState.errors, form: String(error?.message || error) },
@@ -26685,11 +26717,17 @@ function bindEvents() {
         return
       }
       if (action === 'toggle-status') {
+        if (button.disabled || v21CenterSettingsCapabilityState.isSaving) return
+        if (tuitionPackage.isActive && !window.confirm(
+          `Ngưng dùng gói “${tuitionPackage.packageName}”? Gói này sẽ không còn được chọn cho lượt gán học phí mới; hồ sơ học phí cũ vẫn được giữ nguyên.`,
+        )) return
+        if (centerId !== getCurrentCanonicalCenterContext().centerId) return
+        button.disabled = true
         const result = await writeV21CenterSettingsCommand(
           buildV21SetTuitionPackageStatusCommand(tuitionPackage, !tuitionPackage.isActive),
           createV21SettingsIdempotencyKey(),
         )
-        if (!result.ok) render()
+        if (!result.ok && centerId === getCurrentCanonicalCenterContext().centerId) render()
       }
     })
   })
@@ -26711,13 +26749,17 @@ function bindEvents() {
 
   document.querySelector('[data-settings-package-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
-    if (!settingsTuitionPackageFormState) return
+    const submittingCenterId = getCurrentCanonicalCenterContext().centerId
+    if (!settingsTuitionPackageFormState
+      || !isV21CenterSettingsCapabilityReady(v21CenterSettingsCapabilityState, submittingCenterId)
+      || v21CenterSettingsCapabilityState.isSaving) return
     const errors = validateSettingsTuitionPackageForm(settingsTuitionPackageFormState.values)
     if (Object.keys(errors).length) {
       settingsTuitionPackageFormState = { ...settingsTuitionPackageFormState, errors }
       render()
       return
     }
+    let submittedDraft = settingsTuitionPackageFormState
     try {
       const current = settingsTuitionPackageFormState.packageId
         ? v21TuitionPackages.find((item) => item.id === settingsTuitionPackageFormState.packageId)
@@ -26725,12 +26767,19 @@ function bindEvents() {
       const command = settingsTuitionPackageFormState.pendingCommand
         || buildV21UpsertTuitionPackageCommand(settingsTuitionPackageFormState.values, current)
       const requestId = settingsTuitionPackageFormState.requestId || createV21SettingsIdempotencyKey()
-      settingsTuitionPackageFormState = {
+      submittedDraft = {
         ...settingsTuitionPackageFormState,
         requestId,
         pendingCommand: command,
       }
+      settingsTuitionPackageFormState = submittedDraft
       const result = await writeV21CenterSettingsCommand(command, requestId)
+      if (!isCurrentSettingsDraftSubmission(
+        submittingCenterId,
+        getCurrentCanonicalCenterContext().centerId,
+        submittedDraft,
+        settingsTuitionPackageFormState,
+      )) return
       if (!result.ok) {
         settingsTuitionPackageFormState = {
           ...settingsTuitionPackageFormState,
@@ -26742,6 +26791,12 @@ function bindEvents() {
       settingsTuitionPackageFormState = null
       render()
     } catch (error) {
+      if (!isCurrentSettingsDraftSubmission(
+        submittingCenterId,
+        getCurrentCanonicalCenterContext().centerId,
+        submittedDraft,
+        settingsTuitionPackageFormState,
+      )) return
       settingsTuitionPackageFormState = {
         ...settingsTuitionPackageFormState,
         errors: { ...settingsTuitionPackageFormState.errors, form: String(error?.message || error) },
