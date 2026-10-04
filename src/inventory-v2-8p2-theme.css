@@ -217,6 +217,58 @@
 
 .desktop-window.is-inventory-window .inventory-shared-truth-notice p { margin: 0; }
 
+.desktop-window.is-inventory-window .inventory-archived-stock-notice {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--inventory-amber);
+  border-radius: 8px;
+  padding: 9px 14px;
+  color: var(--inventory-text);
+  background: var(--inventory-amber-bg);
+  font-size: 12px;
+}
+.desktop-window.is-inventory-window .inventory-archived-stock-notice > div { min-width: 0; }
+.desktop-window.is-inventory-window .inventory-archived-stock-notice p { margin: 2px 0; color: var(--inventory-secondary); }
+.desktop-window.is-inventory-window .inventory-archived-stock-notice ul {
+  display: flex;
+  max-height: 50px;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+.desktop-window.is-inventory-window .inventory-archived-stock-notice button,
+.desktop-window.is-inventory-window .inventory-read-state button {
+  flex: 0 0 auto;
+  border: 1px solid var(--inventory-line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--inventory-text);
+  background: var(--inventory-panel);
+  font-size: 12px;
+  font-weight: 600;
+}
+.desktop-window.is-inventory-window .inventory-read-state {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--inventory-line);
+  border-radius: 8px;
+  color: var(--inventory-secondary);
+  background: var(--inventory-panel);
+  text-align: center;
+}
+.desktop-window.is-inventory-window .inventory-read-state strong { color: var(--inventory-text); }
+.desktop-window.is-inventory-window .inventory-read-state p { margin: 0; }
+
 .desktop-window.is-inventory-window .inventory-list-section {
   display: grid;
   min-height: 0;
@@ -775,7 +827,20 @@
 
 .desktop-window.is-inventory-window .inventory-request-table { width: 100%; border-collapse: collapse; color: var(--inventory-secondary); font-size: 12px; }
 .desktop-window.is-inventory-window .inventory-request-table th { padding: 10px 14px; border-bottom: 1px solid var(--inventory-line); color: var(--inventory-muted); background: var(--inventory-soft); text-align: left; text-transform: uppercase; }
-.desktop-window.is-inventory-window .inventory-request-table td { padding: 12px 14px; border-bottom: 1px solid var(--inventory-line); }
+.desktop-window.is-inventory-window .inventory-request-table td { padding: 12px 14px; border-bottom: 1px solid var(--inventory-line); color: var(--inventory-secondary); }
+.desktop-window.is-inventory-window .inventory-request-table td strong { color: var(--inventory-text); }
+.desktop-window.is-inventory-window .inventory-request-table td > span:not(.inventory-request-status) { color: var(--inventory-muted); }
+.desktop-window.is-inventory-window .inventory-request-chip-list span {
+  border-color: var(--inventory-line);
+  color: var(--inventory-secondary);
+  background: var(--inventory-soft);
+}
+.desktop-window.is-inventory-window .inventory-request-status.is-new,
+.desktop-window.is-inventory-window .inventory-request-status.is-pending { color: var(--inventory-text) !important; background: var(--inventory-amber-bg); }
+.desktop-window.is-inventory-window .inventory-request-status.is-preparing { color: var(--inventory-text) !important; background: var(--inventory-blue-bg); }
+.desktop-window.is-inventory-window .inventory-request-status.is-fulfilled { color: var(--inventory-text) !important; background: var(--inventory-green-bg); }
+.desktop-window.is-inventory-window .inventory-request-status.is-rejected,
+.desktop-window.is-inventory-window .inventory-request-status.is-cancelled { color: var(--inventory-text) !important; background: var(--inventory-red-bg); }
 
 /* Add proposal */
 .desktop-window.is-inventory-window .inventory-request-panel > .inventory-form-backdrop { z-index: 12; }

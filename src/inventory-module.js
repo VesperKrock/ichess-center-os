@@ -216,6 +216,7 @@ export function renderInventoryModule(
   sharedTruthState = {},
   capabilities = {},
   cycleCountState = {},
+  archivedStockItems = [],
 ) {
   const activeFilters = { ...initialInventoryFilters, ...filters, stockAlert: 'all' }
   const activeMovementFilters = { ...initialInventoryMovementFilters, ...movementFilters }
@@ -232,6 +233,8 @@ export function renderInventoryModule(
     (movements ?? []).find((movement) => movement.id === selectedMovementId) ?? null
   const selectedRequest =
     (inventoryRequests ?? []).find((request) => request.id === selectedRequestId) ?? null
+  const readState = getInventoryReadState(sharedTruthState, capabilities)
+  const isReady = readState === 'ready'
 
   return `
     <section class="inventory-module inventory-main-table" aria-label="Kho hàng">
@@ -242,10 +245,10 @@ export function renderInventoryModule(
           <p>Quản lý vật tư, tài sản và tồn kho tại cơ sở ${escapeHtml(capabilities.centerName || 'hiện tại')}.</p>
         </div>
         <nav class="inventory-dashboard-actions" aria-label="Tác vụ Kho hàng">
-          <button type="button" data-inventory-open-subwindow="movements">Lịch sử nhập/xuất</button>
-          <button type="button" data-inventory-request-action="open-panel">Đề xuất vật tư</button>
-          <button type="button" data-inventory-cycle-count-action="open-panel">Kiểm kê định kỳ</button>
-          <button class="inventory-add-button" type="button" data-inventory-action="open-create">
+          <button type="button" data-inventory-open-subwindow="movements" ${isReady ? '' : 'disabled'}>Lịch sử nhập/xuất</button>
+          <button type="button" data-inventory-request-action="open-panel" ${isReady ? '' : 'disabled'}>Đề xuất vật tư</button>
+          <button type="button" data-inventory-cycle-count-action="open-panel" ${isReady ? '' : 'disabled'}>Kiểm kê định kỳ</button>
+          <button class="inventory-add-button" type="button" data-inventory-action="open-create" ${isReady ? '' : 'disabled'}>
             + Thêm sản phẩm
           </button>
         </nav>
@@ -253,11 +256,14 @@ export function renderInventoryModule(
 
       ${renderInventorySharedTruthNotice(sharedTruthState)}
 
-      ${renderInventoryListSection(filteredItems, activeFilters, categories, locations, stats)}
-      ${formState ? renderInventoryForm(formState, items, movements) : ''}
-      ${movementFormState ? renderInventoryMovementForm(movementFormState, items) : ''}
+      ${isReady ? renderArchivedInventoryStockNotice(archivedStockItems) : ''}
+      ${isReady
+        ? renderInventoryListSection(filteredItems, activeFilters, categories, locations, stats)
+        : renderInventoryReadState(readState)}
+      ${isReady && formState ? renderInventoryForm(formState, items, movements) : ''}
+      ${isReady && movementFormState ? renderInventoryMovementForm(movementFormState, items) : ''}
       ${
-        isHistoryPanelOpen
+        isReady && isHistoryPanelOpen
           ? renderInventoryHistoryPanel(
               filteredMovements,
               movements,
@@ -269,7 +275,7 @@ export function renderInventoryModule(
           : ''
       }
       ${
-        isRequestsPanelOpen
+        isReady && isRequestsPanelOpen
           ? renderInventoryRequestsPanel(
               filteredRequests,
               inventoryRequests,
@@ -283,8 +289,58 @@ export function renderInventoryModule(
             )
           : ''
       }
-      ${cycleCountState.isPanelOpen ? renderInventoryCycleCountPanel(cycleCountState) : ''}
+      ${isReady && cycleCountState.isPanelOpen ? renderInventoryCycleCountPanel(cycleCountState) : ''}
     </section>
+  `
+}
+
+export function getInventoryReadState(state = {}, capabilities = {}) {
+  const status = String(capabilities.inventoryStatus || '')
+  if (status) {
+    if (status === 'failed' || status === 'unavailable') return 'error'
+    if (status !== 'ready') return 'loading'
+    if (capabilities.centerId
+      && (state.centerId !== capabilities.centerId || !state.lastLoadedAt)) return 'loading'
+    return 'ready'
+  }
+  if (state.isLoading) return 'loading'
+  return 'ready'
+}
+
+function renderInventoryReadState(readState) {
+  if (readState === 'error') {
+    return `
+      <div class="inventory-read-state is-error" role="alert">
+        <strong>Chưa tải được dữ liệu Kho hàng.</strong>
+        <p>Vui lòng thử lại. Số liệu tồn kho chưa được xác nhận.</p>
+        <button type="button" data-inventory-action="refresh-authoritative">Làm mới</button>
+      </div>
+    `
+  }
+  return `
+    <div class="inventory-read-state is-loading" role="status">
+      <strong>Đang tải dữ liệu Kho hàng...</strong>
+      <p>Vui lòng chờ số liệu tồn kho của cơ sở hiện tại.</p>
+    </div>
+  `
+}
+
+function renderArchivedInventoryStockNotice(items = []) {
+  const archivedWithStock = (items ?? []).filter(
+    (item) => item?.isArchived && getSafeQuantity(item.quantity) > 0,
+  )
+  if (!archivedWithStock.length) return ''
+  return `
+    <aside class="inventory-archived-stock-notice" role="status" aria-label="Tồn ghi nhận ở mặt hàng đã lưu trữ">
+      <div>
+        <strong>Có mặt hàng đã lưu trữ nhưng vẫn còn tồn được ghi nhận.</strong>
+        <p>Hãy kiểm tra lịch sử trước khi xử lý tồn thực tế.</p>
+        <ul>
+          ${archivedWithStock.map((item) => `<li>${escapeHtml(item.name)}: <strong>${getSafeQuantity(item.quantity).toLocaleString('vi-VN')} ${escapeHtml(item.unit)}</strong></li>`).join('')}
+        </ul>
+      </div>
+      <button type="button" data-inventory-open-subwindow="movements">Xem lịch sử nhập/xuất</button>
+    </aside>
   `
 }
 
@@ -708,7 +764,9 @@ function renderInventoryListSection(
           `
           : `
             <div class="inventory-empty">
-              <p>Không tìm thấy vật tư/tài sản/sản phẩm phù hợp.</p>
+              <p>${stats?.itemCount === 0
+                ? 'Kho hàng chưa có mặt hàng đang sử dụng.'
+                : 'Không tìm thấy vật tư/tài sản/sản phẩm phù hợp.'}</p>
               <button class="inventory-add-button" type="button" data-inventory-action="open-create">
                 + Thêm sản phẩm
               </button>
@@ -875,7 +933,7 @@ export function getFilteredInventoryMovements(
       const matchesDate = !activeFilters.date || movement.movementDate === activeFilters.date
       const matchesQuery =
         !normalizedQuery ||
-        [movement.itemName, movement.reason, movement.handledBy, movement.note].some((value) =>
+        [movement.itemName, movement.reason, getInventoryMovementActorRoleLabel(movement), movement.note].some((value) =>
           normalizeText(value).includes(normalizedQuery),
         )
 
@@ -1540,7 +1598,7 @@ function renderInventoryMovementHistory(
           <input
             type="search"
             value="${escapeAttribute(filters.query)}"
-            placeholder="Vật tư, lý do, người thực hiện, ghi chú"
+            placeholder="Vật tư, lý do, vai trò thực hiện, ghi chú"
             data-inventory-movement-filter="query"
           />
         </label>
@@ -1594,7 +1652,7 @@ function renderInventoryMovementHistory(
                 <span>Số lượng</span>
                 <span>Tồn trước → sau</span>
                 <span>Lý do</span>
-                <span>Người thực hiện</span>
+                <span>Vai trò thực hiện</span>
                 <span>Ghi chú</span>
               </div>
               ${filteredMovements.map((movement) => renderInventoryMovementHistoryItem(movement, items)).join('')}
@@ -1627,7 +1685,7 @@ function renderInventoryMovementHistoryItem(movement, items) {
       <span>${getMovementSign(movement.type)}${getSafeQuantity(movement.quantity).toLocaleString('vi-VN')}${escapeHtml(unit)}</span>
       <span>${getSafeQuantity(movement.beforeQuantity).toLocaleString('vi-VN')} → ${getSafeQuantity(movement.afterQuantity).toLocaleString('vi-VN')}</span>
       <span title="${escapeAttribute(movement.reason)}">${escapeHtml(movement.reason || 'Khác')}</span>
-      <span title="${escapeAttribute(movement.handledBy)}">${escapeHtml(movement.handledBy || 'Admin')}</span>
+      <span title="${escapeAttribute(getInventoryMovementActorRoleLabel(movement))}">${escapeHtml(getInventoryMovementActorRoleLabel(movement))}</span>
       <span title="${escapeAttribute(noteText)}">${escapeHtml(noteText)}</span>
     </button>
   `
@@ -1656,7 +1714,7 @@ function renderInventoryMovementDetail(movement, items) {
           ${renderMovementDetailField('Tồn trước', getSafeQuantity(movement.beforeQuantity).toLocaleString('vi-VN'))}
           ${renderMovementDetailField('Tồn sau', getSafeQuantity(movement.afterQuantity).toLocaleString('vi-VN'))}
           ${renderMovementDetailField('Lý do', movement.reason || 'Khác')}
-          ${renderMovementDetailField('Người thực hiện', movement.handledBy || 'Admin')}
+          ${renderMovementDetailField('Vai trò thực hiện', getInventoryMovementActorRoleLabel(movement))}
           ${
             movement.costAmount > 0
               ? `
@@ -2250,6 +2308,19 @@ function isValidDate(value) {
 
 function getMovementTypeLabel(type) {
   return type === 'out' ? 'Xuất kho' : 'Nhập kho'
+}
+
+export function getInventoryMovementActorRoleLabel(movement = {}) {
+  const role = String(movement.actorRole || movement.handledBy || '').trim().toLowerCase()
+  return {
+    owner: 'Chủ hệ thống',
+    qtv: 'Quản trị viên',
+    admin: 'Quản lý cơ sở',
+    center_admin: 'Quản lý cơ sở',
+    teacher: 'Giáo viên',
+    consultant: 'Tư vấn',
+    viewer: 'Chỉ xem',
+  }[role] || 'Vai trò chưa xác định'
 }
 
 function getMovementSign(type) {

@@ -1177,6 +1177,7 @@ let cashbookReconciliationFormState = null
 // C5.6 projection is memory-only and starts empty. Legacy/sample browser data
 // is inventoried separately and can never bootstrap server authority.
 let inventoryItems = []
+let inventoryArchivedStockItems = []
 let inventoryMovements = []
 let inventoryRequests = []
 let inventoryCycleCounts = []
@@ -2221,6 +2222,7 @@ function resetC56InventoryRuntimeForAccessBoundary(centerId = '') {
   v27aInventoryCycleCountSyncRunId += 1
   v27aInventoryCycleCountRetryCommands.clear()
   inventoryItems = []
+  inventoryArchivedStockItems = []
   inventoryMovements = []
   inventoryRequests = []
   inventoryCycleCounts = []
@@ -2632,6 +2634,7 @@ function reloadLocalDataForResolvedCenter() {
   cashbookSettings = createDefaultCashbookSettings(cashflowTransactions)
   cashbookReconciliations = []
   inventoryItems = []
+  inventoryArchivedStockItems = []
   inventoryMovements = []
   inventoryRequests = []
   inventoryCycleCounts = []
@@ -8328,7 +8331,7 @@ function shouldAllowImmediateRenderForActiveElement(element) {
     return false
   }
 
-  return Boolean(element.closest?.('[data-student-filter], [data-student-birth-year-only], [data-attendance-board-filter], [data-tu-filter], [data-report-filter]'))
+  return Boolean(element.closest?.('[data-student-filter], [data-student-birth-year-only], [data-attendance-board-filter], [data-tu-filter], [data-report-filter], [data-inventory-filter], [data-inventory-movement-filter], [data-inventory-request-filter]'))
     || Boolean(element.matches?.('[data-cashbook-date], [data-cashflow-filter][type="date"]'))
 }
 
@@ -8477,6 +8480,8 @@ function getStableElementSelector(element) {
     'data-cashbook-date',
     'data-cashflow-filter',
     'data-inventory-filter',
+    'data-inventory-movement-filter',
+    'data-inventory-request-filter',
     'data-attendance-board-filter',
     'data-attendance-baseline-cell-input',
     'data-report-filter',
@@ -12764,6 +12769,8 @@ function renderWindowBody(windowItem) {
         coreStatus,
         coreCurrent,
         centerName: centerInfo.centerName,
+        centerId: centerInfo.centerId,
+        inventoryStatus: c56InventoryCapabilityState.status,
       },
       {
         counts: inventoryCycleCounts,
@@ -12786,6 +12793,7 @@ function renderWindowBody(windowItem) {
         message: v27aInventoryCycleCountCapabilityState.message,
         messageTone: v27aInventoryCycleCountCapabilityState.messageTone,
       },
+      inventoryArchivedStockItems,
     )
   }
 
@@ -18248,6 +18256,7 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
   const runId = ++c56InventorySyncRunId
   if (!centerContext.ok) {
     inventoryItems = []
+    inventoryArchivedStockItems = []
     inventoryMovements = []
     inventoryRequests = []
     const error = 'Chưa xác định được cơ sở đang hoạt động; chưa thể tải Kho hàng.'
@@ -18285,6 +18294,7 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
   if (!legacy.ok) {
     const legacyError = 'Không thể kiểm tra an toàn dữ liệu Kho hàng cũ. Dữ liệu chưa bị thay đổi; vui lòng liên hệ quản trị.'
     inventoryItems = []
+    inventoryArchivedStockItems = []
     inventoryMovements = []
     inventoryRequests = []
     c56InventorySharedTruthState = {
@@ -18325,6 +18335,7 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
 
   if (!canUseCoreCloudDb()) {
     inventoryItems = []
+    inventoryArchivedStockItems = []
     inventoryMovements = []
     inventoryRequests = []
     const error = 'Cần đăng nhập và có quyền tại cơ sở hiện tại để xem Kho hàng.'
@@ -18373,6 +18384,7 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
     const unavailable = isC56InventoryBackendUnavailable(result)
     if (unavailable || ['CENTER_ACCESS_DENIED', 'NOT_AUTHENTICATED'].includes(result.outcome_code)) {
       inventoryItems = []
+      inventoryArchivedStockItems = []
       inventoryMovements = []
       inventoryRequests = []
     }
@@ -18401,6 +18413,7 @@ async function refreshC56InventorySharedTruth({ reason = 'manual-refresh', silen
   // Validate the complete snapshot first in the adapter. Only active catalog
   // rows render; archived identities remain on server for movement history.
   inventoryItems = result.items.filter((item) => !item.isArchived)
+  inventoryArchivedStockItems = result.items.filter((item) => item.isArchived && item.quantity > 0)
   inventoryMovements = result.movements
   inventoryRequests = result.requests
   notifications = syncAppNotifications(notifications)
@@ -24669,12 +24682,23 @@ function bindEvents() {
   })
 
   document.querySelector('[data-inventory-export-movements]')?.addEventListener('click', () => {
+    const centerContext = getCurrentCanonicalCenterContext()
+    const centerName = String(centerContext.centerName || '').trim()
+    if (!centerContext.ok
+      || !centerName
+      || centerName === centerContext.centerId
+      || !isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerContext.centerId)
+      || c56InventorySharedTruthState.centerId !== centerContext.centerId
+      || !c56InventorySharedTruthState.lastLoadedAt) {
+      window.alert('Chưa xác định được dữ liệu và tên cơ sở để xuất CSV. Vui lòng Làm mới rồi thử lại.')
+      return
+    }
     const csvCell = (value) => `"${String(value || '').replaceAll('"', '""')}"`
     const rows = Array.from(document.querySelectorAll('.inventory-history-item')).map((row) =>
-      Array.from(row.children).map((cell) => cell.textContent.trim()),
+      [centerName, ...Array.from(row.children).map((cell) => cell.textContent.trim())],
     )
     const content = [
-      ['Ngày', 'Loại', 'Vật tư', 'Số lượng', 'Tồn trước → sau', 'Lý do', 'Người thực hiện', 'Ghi chú'],
+      ['Cơ sở', 'Ngày', 'Loại', 'Vật tư', 'Số lượng', 'Tồn trước → sau', 'Lý do', 'Vai trò thực hiện', 'Ghi chú'],
       ...rows,
     ].map((row) => row.map(csvCell).join(',')).join('\n')
     const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' })
