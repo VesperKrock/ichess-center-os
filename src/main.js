@@ -38,6 +38,8 @@ import {
   createCashbookReconciliationFormState,
   createCashbookSettingsFormState,
   createDefaultCashbookSettings,
+  FINANCE_READ_FAILURE_MESSAGE,
+  getFinanceAdminErrorMessage,
   getCashbookBalanceStats,
   getCashbookPhysicalCashStats,
   getDefaultCashbookDate,
@@ -1869,6 +1871,28 @@ async function printCashflowTransaction(transactionId) {
 
     cashflowTransactions = latestCashflowTransactions
     const transactionCode = getCashflowTransactionCodesForTransactions(latestCashflowTransactions)[transaction.id]
+    const detailContext = cashflowTransactionDetailState?.centerId === centerId
+      && cashflowTransactionDetailState?.transaction?.id === printTransactionId
+      ? cashflowTransactionDetailState : null
+    let printStudents = detailContext?.students || students
+    const printTuitionRecords = detailContext?.tuitionRecords || tuitionRecords
+
+    const studentContext = await resolveCashflowLinkedStudentContext(transaction, centerId, printStudents)
+    if (!isCashflowTransactionPrintRequestCurrent(requestToken, centerId, printTransactionId)) {
+      finishCashflowTransactionPrint(requestToken)
+      return
+    }
+    printStudents = studentContext.students
+    if (detailContext && cashflowTransactionDetailState === detailContext) {
+      cashflowTransactionDetailState = { ...detailContext, students: printStudents }
+      render()
+    }
+
+    if (transaction.sourceStudentId && !studentContext.found) {
+      setCloudUploadMessage('Chưa tải được thông tin Học viên của giao dịch. Vui lòng làm mới rồi thử lại.', 'error')
+      finishCashflowTransactionPrint(requestToken)
+      return
+    }
     const cloudAttachments = await resolveCashflowTransactionPrintCloudAttachments({
       centerId,
       transactionCode,
@@ -1888,8 +1912,8 @@ async function printCashflowTransaction(transactionId) {
       exportedAt: new Date().toISOString(),
       cloudAttachments,
       legacyAttachment: transaction.attachment || null,
-      students,
-      tuitionRecords,
+      students: printStudents,
+      tuitionRecords: printTuitionRecords,
     })
 
     if (!snapshot) {
@@ -8305,6 +8329,7 @@ function shouldAllowImmediateRenderForActiveElement(element) {
   }
 
   return Boolean(element.closest?.('[data-student-filter], [data-student-birth-year-only], [data-attendance-board-filter], [data-tu-filter], [data-report-filter]'))
+    || Boolean(element.matches?.('[data-cashbook-date], [data-cashflow-filter][type="date"]'))
 }
 
 function shouldAllowNativeSelectChangeRender() {
@@ -8449,6 +8474,7 @@ function getStableElementSelector(element) {
     'data-tu-filter',
     'data-tu-field',
     'data-tuition-scroll-region',
+    'data-cashbook-date',
     'data-cashflow-filter',
     'data-inventory-filter',
     'data-attendance-board-filter',
@@ -10246,6 +10272,11 @@ async function handleInternalOpenCenter(centerId) {
   }
 
   const switchSyncId = ++cloudUserSyncId
+  const hasOpenFinanceWindow = openWindows.some((item) =>
+    !item.type && ['nhom-tai-chinh', 'so-quy', 'thu-chi'].includes(item.moduleId))
+  const selectedFinanceView = financeWorkspaceView
+  const selectedCashbookDate = cashbookSelectedDate
+  const selectedCashflowFilters = { ...cashflowFilters }
 
   internalCenterSwitchState = createInternalCenterSwitchState({
     status: 'switching',
@@ -10254,6 +10285,18 @@ async function handleInternalOpenCenter(centerId) {
   resetCloudRuntimeStateForOwnerCenterSwitch()
   setCurrentStorageCenterId(normalizedCenterId)
   reloadLocalDataForResolvedCenter()
+  if (hasOpenFinanceWindow) {
+    financeWorkspaceView = selectedFinanceView
+    cashbookSelectedDate = selectedCashbookDate
+    cashflowFilters = selectedCashflowFilters
+    c54FinanceSharedTruthState = {
+      ...c54FinanceSharedTruthState,
+      centerId: normalizedCenterId,
+      isLoading: true,
+      message: 'Đang tải dữ liệu Thu chi cho cơ sở này...',
+      messageTone: '',
+    }
+  }
   cloudStatus = {
     ...cloudStatus,
     centerId: normalizedCenterId,
@@ -10297,6 +10340,11 @@ async function handleInternalOpenCenter(centerId) {
 
   if (openWindows.some((item) => item.moduleId === 'bao-cao' && !item.type)) {
     await refreshModuleAuthoritativeUpstreams('bao-cao', { reason: 'center-switch' })
+  }
+  if (cloudUserSyncId !== switchSyncId) return
+
+  if (hasOpenFinanceWindow) {
+    await refreshModuleAuthoritativeUpstreams('nhom-tai-chinh', { reason: 'center-switch' })
   }
   if (cloudUserSyncId !== switchSyncId) return
 
@@ -14748,6 +14796,19 @@ async function openCashflowSyncedTransactionDetail(transactionId, latestTransact
   }
   render()
 
+  const studentContext = await resolveCashflowLinkedStudentContext(transaction, currentCenterId, students)
+  if (!isCashflowTransactionDetailRequestCurrent(hydrateToken, currentCenterId, transactionId)) {
+    return
+  }
+  const studentError = transaction.sourceStudentId && !studentContext.found
+    ? 'Chưa tải được thông tin Học viên của giao dịch. Vui lòng làm mới rồi thử lại.' : ''
+  cashflowTransactionDetailState = {
+    ...cashflowTransactionDetailState,
+    students: studentContext.students,
+    error: studentError || cashflowTransactionDetailState.error,
+  }
+  render()
+
   if (!transactionCode) {
     return
   }
@@ -14768,7 +14829,7 @@ async function openCashflowSyncedTransactionDetail(transactionId, latestTransact
     cashflowTransactionDetailState = {
       ...cashflowTransactionDetailState,
       status: result.ok ? 'loaded' : 'error',
-      error: result.ok ? '' : result.error || 'Không thể tải chứng từ giao dịch.',
+      error: result.ok ? studentError : 'Không thể tải chứng từ giao dịch. Vui lòng thử lại.',
       attachments,
     }
     render()
@@ -14780,10 +14841,42 @@ async function openCashflowSyncedTransactionDetail(transactionId, latestTransact
     cashflowTransactionDetailState = {
       ...cashflowTransactionDetailState,
       status: 'error',
-      error: getCloudErrorMessage(error, 'Không thể tải chứng từ giao dịch.'),
+      error: 'Không thể tải chứng từ giao dịch. Vui lòng thử lại.',
       attachments: [],
     }
     render()
+  }
+}
+
+async function resolveCashflowLinkedStudentContext(transaction, centerId, candidateStudents = []) {
+  const studentId = String(transaction?.sourceStudentId || '').trim()
+  if (!studentId) return { students: candidateStudents, found: true }
+  if (candidateStudents.some((student) => student.id === studentId)) {
+    return { students: candidateStudents, found: true }
+  }
+
+  try {
+    const context = await getCloudDbContext(centerId)
+    if (!context.ok || context.centerId !== centerId || getCurrentResolvedCenterId() !== centerId) {
+      return { students: candidateStudents, found: false }
+    }
+    const result = await listCloudEntityPayloads({
+      supabase: context.supabase,
+      centerId,
+      entityType: CLOUD_ENTITY_TYPES.STUDENT,
+    })
+    if (!result.ok || getCurrentResolvedCenterId() !== centerId) {
+      if (!result.ok) console.warn('[Finance read] Linked Student unavailable:', result.error || result.outcome_code)
+      return { students: candidateStudents, found: false }
+    }
+    const resolvedStudents = Array.isArray(result.data) ? result.data : []
+    return {
+      students: resolvedStudents,
+      found: resolvedStudents.some((student) => student.id === studentId),
+    }
+  } catch (error) {
+    console.warn('[Finance read] Linked Student lookup failed:', error)
+    return { students: candidateStudents, found: false }
   }
 }
 
@@ -15140,7 +15233,7 @@ function syncCashflowEvidencePreview() {
           type: existing.mimeType || existing.type || 'image/*',
           size: existing.sizeBytes || existing.size || 0,
           imageUrl: existing.dataUrl || existing.signedUrl || '',
-          status: draft.source === 'cloud' ? 'Có chứng từ' : 'Chứng từ legacy hiện có',
+          status: 'Có chứng từ',
         }
       : null
   const error = cashflowFormState.errors.attachment || draft.error || ''
@@ -16137,8 +16230,8 @@ function renderCashflowCloudAuthNotice(status, financeState = c54FinanceSharedTr
 
   const message =
     status.configStatus !== 'configured'
-      ? 'Chưa cấu hình Supabase Cloud. Thu Chi vẫn dùng dữ liệu local như cũ.'
-      : 'Vui lòng đăng nhập ở cổng hệ thống để dùng tính năng cloud.'
+      ? 'Chưa thể kết nối dữ liệu Thu chi. Vui lòng liên hệ người quản trị.'
+      : 'Vui lòng đăng nhập ở cổng hệ thống để sử dụng ảnh chứng từ.'
 
   return `
     <aside class="cashflow-cloud-auth-note" role="note">
@@ -17919,6 +18012,7 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
   if (!legacy.ok) {
+    console.warn('[Finance read] Legacy preservation failed:', legacy.error)
     cashflowTransactions = []
     cashflowCategories = []
     cashbookSettings = createDefaultCashbookSettings([])
@@ -17928,7 +18022,7 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
       centerId,
       isLoading: false,
       isSaving: false,
-      message: legacy.error,
+      message: FINANCE_READ_FAILURE_MESSAGE,
       messageTone: 'error',
       legacyMigrationRequired: true,
     }
@@ -17969,10 +18063,11 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
   if (!readiness.ok || readiness.centerId !== centerId) {
+    console.warn('[Finance read] Context unavailable:', readiness.error || readiness.outcome_code)
     c54FinanceSharedTruthState = {
       ...c54FinanceSharedTruthState,
       isLoading: false,
-      message: readiness.error || getC54FinanceOutcomeMessage('FINANCE_SHARED_TRUTH_READ_FAILED'),
+      message: FINANCE_READ_FAILURE_MESSAGE,
       messageTone: 'error',
     }
     render()
@@ -17984,6 +18079,7 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED', error: getC54FinanceOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
   if (!result.ok) {
+    console.warn('[Finance read] Authoritative pull failed:', result.error || result.outcome_code)
     if (['CENTER_ACCESS_DENIED', 'NOT_AUTHENTICATED'].includes(result.outcome_code)) {
       cashflowTransactions = []
       cashflowCategories = []
@@ -17993,7 +18089,7 @@ async function refreshC54FinanceSharedTruth({ reason = 'manual-refresh', silent 
     c54FinanceSharedTruthState = {
       ...c54FinanceSharedTruthState,
       isLoading: false,
-      message: result.error || getC54FinanceOutcomeMessage(result.outcome_code),
+      message: FINANCE_READ_FAILURE_MESSAGE,
       messageTone: 'error',
     }
     render()
@@ -18038,7 +18134,7 @@ async function writeC54FinanceCommand(command, {
       ...c54FinanceSharedTruthState,
       centerId,
       isSaving: false,
-      message: result.error,
+      message: getFinanceAdminErrorMessage(result.error),
       messageTone: 'error',
     }
     render()
@@ -18078,7 +18174,7 @@ async function writeC54FinanceCommand(command, {
       c54FinanceSharedTruthState = {
         ...c54FinanceSharedTruthState,
         isSaving: false,
-        message: result.error || getC54FinanceOutcomeMessage('SERVER_COMMAND_FAILED'),
+        message: getFinanceAdminErrorMessage(result.error || getC54FinanceOutcomeMessage('SERVER_COMMAND_FAILED')),
         messageTone: 'error',
       }
       render()
@@ -18109,7 +18205,7 @@ async function writeC54FinanceCommand(command, {
     c54FinanceSharedTruthState = {
       ...c54FinanceSharedTruthState,
       isSaving: false,
-      message: result.error || getC54FinanceOutcomeMessage(result.outcome_code),
+      message: getFinanceAdminErrorMessage(result.error || getC54FinanceOutcomeMessage(result.outcome_code)),
       messageTone: 'error',
     }
     render()
@@ -21855,7 +21951,7 @@ async function openCloudGallery() {
   const access = getCloudAttachmentAccessContext()
 
   if (!access.ok) {
-    setCloudUploadMessage(access.error, 'error')
+    setCloudUploadMessage('Chưa mở được kho ảnh giao dịch. Vui lòng đăng nhập và thử lại.', 'error')
     return
   }
 
@@ -21863,7 +21959,7 @@ async function openCloudGallery() {
     cloudStatus.configStatus !== 'configured' ||
     cloudStatus.authStatus !== 'signed-in'
   ) {
-    setCloudUploadMessage('Vui lòng đăng nhập Supabase Cloud trước.', 'error')
+    setCloudUploadMessage('Vui lòng đăng nhập để xem ảnh chứng từ.', 'error')
     return
   }
 
@@ -21903,7 +21999,7 @@ async function loadCloudGalleryAttachments() {
     cloudGalleryState = {
       ...cloudGalleryState,
       status: 'error',
-      error: access.error || 'Co so hien tai da thay doi. Vui long mo lai kho anh.',
+      error: 'Chưa tải được kho ảnh giao dịch. Vui lòng đóng và mở lại kho ảnh.',
     }
     render()
     return
@@ -21927,7 +22023,7 @@ async function loadCloudGalleryAttachments() {
     status: result.ok ? 'loaded' : 'error',
     error: result.ok
       ? ''
-      : result.error || 'Không thể tải kho ảnh cloud.',
+      : 'Chưa tải được kho ảnh giao dịch. Vui lòng thử lại.',
     currentUser: cloudStatus.user,
     memberProfileMap: cloudStatus.memberProfileMap,
     transactionIdsByCode: getTransactionIdsByCode(),
@@ -21946,7 +22042,7 @@ async function openTransactionImageManagerFromGallery(transactionCode) {
   if (!transactionId) {
     cloudGalleryState = {
       ...cloudGalleryState,
-      message: 'Không tìm thấy giao dịch local tương ứng.',
+      message: 'Không tìm thấy giao dịch tương ứng.',
       messageTone: 'error',
     }
     render()
@@ -21969,7 +22065,7 @@ async function openTransactionImageManager(transactionId) {
   const access = getCloudAttachmentAccessContext()
 
   if (!access.ok) {
-    setCloudUploadMessage(access.error, 'error')
+    setCloudUploadMessage('Chưa mở được ảnh chứng từ. Vui lòng thử lại.', 'error')
     return
   }
 
@@ -22004,7 +22100,7 @@ async function refreshTransactionImageManager() {
     transactionImageManagerState = {
       ...transactionImageManagerState,
       status: 'error',
-      error: access.error || 'Co so hien tai da thay doi. Vui long mo lai giao dich.',
+      error: 'Chưa tải được ảnh chứng từ. Vui lòng đóng và mở lại giao dịch.',
       deletingAttachmentId: null,
     }
     render()
@@ -22030,7 +22126,7 @@ async function refreshTransactionImageManager() {
     ...transactionImageManagerState,
     attachments,
     status: result.ok ? 'loaded' : 'error',
-    error: result.ok ? '' : result.error,
+    error: result.ok ? '' : 'Chưa tải được ảnh chứng từ. Vui lòng thử lại.',
     deletingAttachmentId: null,
   }
   render()
@@ -22058,7 +22154,7 @@ async function deleteManagedTransactionAttachment(attachmentId) {
     transactionImageManagerState = {
       ...transactionImageManagerState,
       deletingAttachmentId: null,
-      message: access.error || 'Co so hien tai da thay doi. Vui long mo lai giao dich.',
+      message: 'Cơ sở đã thay đổi. Vui lòng mở lại giao dịch.',
       messageTone: 'error',
     }
     render()
@@ -22091,7 +22187,7 @@ async function deleteManagedTransactionAttachment(attachmentId) {
       transactionImageManagerState = {
         ...transactionImageManagerState,
         deletingAttachmentId: null,
-        message: 'Không resolve được danh mục authoritative; chưa gỡ chứng từ.',
+        message: 'Chưa tìm thấy danh mục giao dịch. Vui lòng làm mới rồi thử lại.',
         messageTone: 'error',
       }
       render()
@@ -22107,7 +22203,7 @@ async function deleteManagedTransactionAttachment(attachmentId) {
     if (!result.ok) return
     transactionImageManagerState = null
     setCloudUploadMessage(
-      'Đã gỡ binding; file private được giữ lại, không silent-delete chứng từ tài chính.',
+      'Đã gỡ ảnh khỏi giao dịch. Ảnh gốc được giữ lại để đối chiếu.',
       'success',
     )
     return
@@ -22122,12 +22218,12 @@ async function deleteManagedTransactionAttachment(attachmentId) {
       transactionImageManagerState = {
         ...transactionImageManagerState,
         deletingAttachmentId: null,
-        message: `Không thể xóa file Storage: ${storageResult.error}`,
+        message: 'Chưa xóa được ảnh chứng từ. Vui lòng thử lại.',
         messageTone: 'error',
       }
       render()
     } else {
-      setCloudUploadMessage(`Không thể xóa file Storage: ${storageResult.error}`, 'error')
+      setCloudUploadMessage('Chưa xóa được ảnh chứng từ. Vui lòng thử lại.', 'error')
     }
     return
   }
@@ -22135,7 +22231,7 @@ async function deleteManagedTransactionAttachment(attachmentId) {
   const metadataResult = await deleteTransactionAttachmentMetadata(attachment.id, centerId)
 
   if (!metadataResult.ok) {
-    const message = `File Storage đã được xử lý nhưng xóa metadata thất bại: ${metadataResult.error}`
+    const message = 'Chưa hoàn tất xóa ảnh chứng từ. Vui lòng làm mới rồi kiểm tra lại.'
 
     if (transactionImageManagerState?.transactionCode === transactionCode) {
       transactionImageManagerState = {
@@ -22183,7 +22279,7 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
 
   const category = cashflowCategories.find((item) => item.id === transaction.categoryId)
   if (!category) {
-    setCloudUploadMessage('Danh mục authoritative không còn khả dụng.', 'error')
+    setCloudUploadMessage('Chưa tìm thấy danh mục giao dịch. Vui lòng làm mới rồi thử lại.', 'error')
     return
   }
   const centerId = getCurrentResolvedCenterId()
@@ -22195,7 +22291,8 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
     centerId,
   })
   if (!uploadResult.ok) {
-    setCloudUploadMessage(uploadResult.error, 'error')
+    console.warn('[Finance attachment] Upload failed:', uploadResult.error)
+    setCloudUploadMessage('Chưa tải được ảnh chứng từ. Vui lòng thử lại.', 'error')
     return
   }
   const bindResult = await writeC54FinanceCommand(
@@ -22210,10 +22307,11 @@ async function uploadCloudAttachmentForTransaction(transactionId, file) {
     if (!bindResult.committed) {
       await cleanupCloudCashflowAttachment(uploadResult.attachment, centerId)
     }
-    setCloudUploadMessage(bindResult.error, 'error')
+    console.warn('[Finance attachment] Link failed:', bindResult.error)
+    setCloudUploadMessage('Chưa lưu được ảnh vào giao dịch. Vui lòng làm mới rồi thử lại.', 'error')
     return
   }
-  setCloudUploadMessage('Đã upload và bind ảnh vào giao dịch authoritative.', 'success')
+  setCloudUploadMessage('Đã lưu ảnh chứng từ vào giao dịch.', 'success')
   await loadCurrentMonthCloudAttachments()
 }
 
@@ -23534,12 +23632,13 @@ function bindEvents() {
       const nextControl = document.querySelector(`[data-cashflow-filter="${filterName}"]`)
       focusElementWithoutScrolling(nextControl)
 
-      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+      if (cursorPosition !== null && nextControl && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
     }
 
     control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'input', updateCashflowFilter)
+    if (control.type === 'date') control.addEventListener('change', updateCashflowFilter)
   })
 
   document.querySelector('[data-required-credential-change-form]')?.addEventListener('submit', async (event) => {
@@ -24801,13 +24900,15 @@ function bindEvents() {
     render()
   })
 
-  document.querySelector('[data-cashbook-date]')?.addEventListener('input', (event) => {
+  const updateCashbookDate = (event) => {
     cashbookSelectedDate = event.currentTarget.value
     render()
-  })
+  }
+  document.querySelector('[data-cashbook-date]')?.addEventListener('input', updateCashbookDate)
+  document.querySelector('[data-cashbook-date]')?.addEventListener('change', updateCashbookDate)
 
   document.querySelector('[data-cashbook-action="today"]')?.addEventListener('click', () => {
-    cashbookSelectedDate = new Date().toISOString().slice(0, 10)
+    cashbookSelectedDate = getBirthdayLocalDateKey()
     render()
   })
 
@@ -24884,7 +24985,7 @@ function bindEvents() {
     if (!result.ok) {
       cashbookSettingsFormState = {
         ...cashbookSettingsFormState,
-        errors: { ...cashbookSettingsFormState.errors, form: result.error },
+        errors: { ...cashbookSettingsFormState.errors, form: getFinanceAdminErrorMessage(result.error) },
       }
       render()
       return
@@ -25016,7 +25117,7 @@ function bindEvents() {
       if (!result.ok) {
         cashbookReconciliationFormState = {
           ...cashbookReconciliationFormState,
-          errors: { ...cashbookReconciliationFormState.errors, form: result.error },
+          errors: { ...cashbookReconciliationFormState.errors, form: getFinanceAdminErrorMessage(result.error) },
         }
         render()
         return
@@ -25521,7 +25622,7 @@ function bindEvents() {
     ) {
       cashflowFormState = createCashflowFormErrorState(
         cashflowFormState,
-        'Không thể tải ảnh lên. Vui lòng kiểm tra đăng nhập/quyền cloud trước khi lưu chứng từ.',
+        'Chưa tải được ảnh chứng từ. Vui lòng kiểm tra đăng nhập và quyền tại cơ sở rồi thử lại.',
         formValues,
       )
       render()
@@ -25611,16 +25712,17 @@ function bindEvents() {
       })
 
       if (!uploadResult.ok) {
+        console.warn('[Finance attachment] Upload failed:', uploadResult.error)
         cashflowFormState = createCashflowFormErrorState(
           {
             ...cashflowFormState,
             attachmentDraft: {
               ...attachmentDraft,
               isUploading: false,
-              error: uploadResult.error,
+              error: 'Chưa tải được ảnh chứng từ. Vui lòng thử lại.',
             },
           },
-          uploadResult.error || 'Không thể tải ảnh lên.',
+          'Chưa tải được ảnh chứng từ. Vui lòng thử lại.',
           formValues,
         )
         render()
@@ -25642,7 +25744,7 @@ function bindEvents() {
       if (uploadedAttachment) await cleanupCloudCashflowAttachment(uploadedAttachment, currentCenterId)
       cashflowFormState = createCashflowFormErrorState(
         cashflowFormState,
-        'Danh mục authoritative không còn khả dụng. Hãy Làm mới và chọn lại.',
+        'Danh mục giao dịch đã thay đổi. Hãy bấm Làm mới và chọn lại.',
         formValues,
       )
       render()
@@ -25687,7 +25789,7 @@ function bindEvents() {
       }
       cashflowFormState = createCashflowFormErrorState(
         cashflowFormState,
-        authoritativeResult.error || 'Giao dịch chưa được commit server.',
+        getFinanceAdminErrorMessage(authoritativeResult.error),
         formValues,
       )
       render()
@@ -25695,11 +25797,11 @@ function bindEvents() {
     }
 
     if (uploadedAttachment) {
-      setCloudUploadMessage('Đã commit giao dịch và bind chứng từ authoritative.', 'success')
+      setCloudUploadMessage('Đã lưu giao dịch và ảnh chứng từ.', 'success')
       await loadCurrentMonthCloudAttachments()
     } else if (attachmentDraft.mode === 'remove-existing') {
       setCloudUploadMessage(
-        'Đã gỡ binding khỏi giao dịch; file private được giữ lại phục vụ audit/migration.',
+        'Đã gỡ ảnh khỏi giao dịch. Ảnh gốc được giữ lại để đối chiếu.',
         'success',
       )
     }
@@ -25728,7 +25830,7 @@ function bindEvents() {
       if (isSyncedTuitionPaymentTransaction(transaction)) {
         cashflowFormState = createCashflowFormErrorState(
           cashflowFormState,
-          'Giao dịch này được đồng bộ từ Học phí và không thể xóa cứng trong F23.8C.',
+          'Giao dịch này được đồng bộ từ Học phí và không thể xóa tại đây.',
           cashflowFormState.values,
         )
         render()
@@ -25742,7 +25844,7 @@ function bindEvents() {
       if (!result.ok) {
         cashflowFormState = createCashflowFormErrorState(
           cashflowFormState,
-          result.error || 'Không thể void giao dịch.',
+          getFinanceAdminErrorMessage(result.error, 'Chưa hủy được giao dịch. Vui lòng thử lại.'),
           cashflowFormState.values,
         )
         render()

@@ -1,5 +1,7 @@
 import { cashflowMethods } from './cashflow-data.js'
 import { getUploaderDisplayName } from './uploader-display.js'
+import { getBirthdayLocalDateKey } from './student-birth-information.js'
+import { FINANCE_READ_FAILURE_MESSAGE, getFinanceAdminErrorMessage } from './cashbook-module.js'
 
 export const CASHFLOW_ATTACHMENT_MAX_SIZE = 1024 * 1024
 export const CASHFLOW_EVIDENCE_ACCEPT = '.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp'
@@ -274,7 +276,7 @@ export function renderCashflowModule(
               <th title="Phương thức thanh toán">THANH TOÁN</th>
               <th>Số tiền</th>
               <th title="Người ghi nhận">Ghi nhận</th>
-              <th title="Ảnh giao dịch cloud và ghi chú">Chứng từ / Ghi chú</th>
+              <th title="Ảnh giao dịch và ghi chú">Chứng từ / Ghi chú</th>
               <th>Thao tác</th>
             </tr>
           </thead>
@@ -313,9 +315,11 @@ export function renderCashflowModule(
 }
 
 function renderFinanceSharedTruthNotice(state = {}) {
-  const message = String(state.message || '').trim()
+  const message = state.messageTone === 'error'
+    ? getFinanceAdminErrorMessage(state.message, FINANCE_READ_FAILURE_MESSAGE)
+    : String(state.message || '').trim()
   const migrationWarning = state.legacyMigrationRequired
-    ? ' Legacy local đã được quarantine đúng cơ sở; cần migration có preview + xác nhận, chưa nhập vào server.'
+    ? ' Dữ liệu Thu chi cũ cần được kiểm tra trước khi sử dụng tại cơ sở này.'
     : ''
   if (!message && !migrationWarning) return ''
   return `<p class="finance-shared-truth-notice is-${escapeAttribute(state.messageTone || 'info')}" role="status">${escapeHtml(`${message}${migrationWarning}`.trim())}</p>`
@@ -813,7 +817,7 @@ function renderEvidenceField(formState) {
           type: draft.existingAttachment.mimeType || draft.existingAttachment.type || 'image/*',
           size: draft.existingAttachment.sizeBytes || draft.existingAttachment.size || 0,
           imageUrl: draft.existingAttachment.dataUrl || draft.existingAttachment.signedUrl || '',
-          status: draft.source === 'cloud' ? 'Có chứng từ' : 'Chứng từ legacy hiện có',
+          status: 'Có chứng từ',
         }
       : null
 
@@ -1220,7 +1224,7 @@ function renderCashflowTransactionDetailRow(label, value) {
   `
 }
 
-function getCashflowSyncedTransactionDetailContext(transaction, students = [], tuitionRecords = []) {
+export function getCashflowSyncedTransactionDetailContext(transaction, students = [], tuitionRecords = []) {
   const student = (students || []).find((item) => item.id === transaction.sourceStudentId)
   const tuitionRecord = (tuitionRecords || []).find((record) => record.id === transaction.sourceTuitionId)
   const periodId = String(transaction.sourcePeriodId || transaction.sourceTermId || '')
@@ -1259,7 +1263,7 @@ function getCashflowTransactionDetailEvidenceStatus(state) {
   }
 
   if (state.transaction?.attachment) {
-    return 'Có chứng từ legacy'
+    return 'Có chứng từ'
   }
 
   return 'Không có chứng từ'
@@ -1354,7 +1358,7 @@ function renderCloudGallery(state) {
       >
         <header class="cloud-gallery-header">
           <div>
-            <h4 id="cloud-gallery-title">Kho ảnh giao dịch cloud</h4>
+            <h4 id="cloud-gallery-title">Kho ảnh giao dịch</h4>
             <p>${escapeHtml(state.centerName || 'Cơ sở hiện tại')} · Tháng ${escapeHtml(state.monthKey)}</p>
           </div>
           <button type="button" data-cloud-gallery-action="close" aria-label="Đóng">×</button>
@@ -1382,11 +1386,11 @@ function renderCloudGallery(state) {
         <div class="cloud-gallery-body">
           ${
             state.status === 'loading'
-              ? '<p class="cloud-gallery-empty">Đang tải kho ảnh cloud...</p>'
+              ? '<p class="cloud-gallery-empty">Đang tải kho ảnh giao dịch...</p>'
               : state.status === 'error'
-                ? `<p class="cloud-gallery-error">${escapeHtml(state.error || 'Không thể tải kho ảnh cloud. Vui lòng kiểm tra đăng nhập và quyền tại cơ sở hiện tại.')}</p>`
+                ? `<p class="cloud-gallery-error">${escapeHtml(state.error || 'Chưa tải được kho ảnh giao dịch. Vui lòng thử lại.')}</p>`
                 : !state.attachments.length
-                  ? '<p class="cloud-gallery-empty">Chưa có ảnh giao dịch cloud trong tháng này.</p>'
+                  ? '<p class="cloud-gallery-empty">Chưa có ảnh giao dịch trong tháng này.</p>'
                   : !filteredAttachments.length
                     ? '<p class="cloud-gallery-empty">Không tìm thấy ảnh phù hợp.</p>'
                     : filteredAttachments.map((attachment) => renderCloudGalleryItem(attachment, state)).join('')
@@ -1955,12 +1959,12 @@ function formatAmountForInput(amount) {
 }
 
 function getTodayDate() {
-  return new Date().toISOString().slice(0, 10)
+  return getBirthdayLocalDateKey()
 }
 
 function getCurrentWeekInputValue() {
-  const today = new Date()
-  const utcDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
+  const [year, month, day] = getTodayDate().split('-').map(Number)
+  const utcDate = new Date(Date.UTC(year, month - 1, day))
   const dayNumber = utcDate.getUTCDay() || 7
   utcDate.setUTCDate(utcDate.getUTCDate() + 4 - dayNumber)
 
@@ -1975,11 +1979,11 @@ function getCurrentMonthInputValue() {
 }
 
 function getCurrentQuarterValue() {
-  return String(Math.floor(new Date().getMonth() / 3) + 1)
+  return String(Math.floor((Number(getTodayDate().slice(5, 7)) - 1) / 3) + 1)
 }
 
 function getCurrentYearValue() {
-  return String(new Date().getFullYear())
+  return getTodayDate().slice(0, 4)
 }
 
 function toDateInputValue(date) {

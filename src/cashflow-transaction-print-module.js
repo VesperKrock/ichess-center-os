@@ -1,3 +1,5 @@
+import { getCashflowSyncedTransactionDetailContext } from './cashflow-module.js'
+
 export const CASHFLOW_TRANSACTION_PRINT_ROOT_CLASS = 'cashflow-transaction-print-runtime-root'
 export const CASHFLOW_TRANSACTION_PRINT_ROOT_SELECTOR = `.${CASHFLOW_TRANSACTION_PRINT_ROOT_CLASS}`
 
@@ -275,35 +277,14 @@ function getTransactionSourceContext(transaction, students = [], tuitionRecords 
     return []
   }
 
-  const student = students.find((item) => item.id === transaction.sourceStudentId)
-  const tuitionRecord = tuitionRecords.find((record) => record.id === transaction.sourceTuitionId)
-  const periodId = String(transaction.sourcePeriodId || transaction.sourceTermId || '')
-  const periodLabel = getTuitionPeriodLabel(tuitionRecord, periodId)
-  const payer = transaction.personName || student?.parentName || student?.name || ''
+  const context = getCashflowSyncedTransactionDetailContext(transaction, students, tuitionRecords)
 
   return [
-    ['Học viên', student?.name || EMPTY_VALUE],
-    ['Phụ huynh / Người nộp', payer || EMPTY_VALUE],
-    ['Kỳ học phí', periodLabel || EMPTY_VALUE],
+    ['Học viên', context.studentName || EMPTY_VALUE],
+    ['Phụ huynh / Người nộp', context.parentName || EMPTY_VALUE],
+    ['Kỳ học phí', context.periodLabel || EMPTY_VALUE],
     ['Ngữ cảnh nguồn', 'Thanh toán học phí được đồng bộ sang Thu chi'],
   ]
-}
-
-function getTuitionPeriodLabel(tuitionRecord, periodId) {
-  if (!tuitionRecord || !periodId) {
-    return ''
-  }
-
-  if (String(tuitionRecord.currentTermId || '') === periodId) {
-    return `Kỳ hiện tại ${tuitionRecord.currentTermNumber ? `#${tuitionRecord.currentTermNumber}` : ''}`.trim()
-  }
-
-  const historicalTerm = (tuitionRecord.termHistory || []).find((term) => term.id === periodId)
-  if (historicalTerm) {
-    return `Kỳ #${historicalTerm.termNumber || historicalTerm.id}`
-  }
-
-  return periodId.startsWith('term-') ? 'Kỳ học phí hiện có' : ''
 }
 
 function normalizeTransactionType(type) {

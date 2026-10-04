@@ -1,3 +1,14 @@
+import { getBirthdayLocalDateKey } from './student-birth-information.js'
+
+export const FINANCE_READ_FAILURE_MESSAGE = 'Chưa tải được dữ liệu Sổ quỹ. Vui lòng bấm Làm mới để thử lại.'
+export const FINANCE_ACTION_FAILURE_MESSAGE = 'Chưa hoàn tất thao tác Thu chi. Vui lòng bấm Làm mới rồi thử lại.'
+
+export function getFinanceAdminErrorMessage(value, fallback = FINANCE_ACTION_FAILURE_MESSAGE) {
+  const message = String(value || '').trim()
+  return !message || /postgrest|pgrst\d*|\bsql\b|\brpc\b|schema|\btable\b|\brelation\b|\bcolumn\b|\bconstraint\b|\bprovider\b|\bcloud\b|supabase|storage|metadata|authoritative|\blegacy\b|\blocal\b|public\.|42p01|42501|23505/i.test(message)
+    ? fallback : message
+}
+
 export function createDefaultCashbookSettings(transactions = []) {
   return {
     openingBalance: 0,
@@ -228,9 +239,11 @@ export function renderCashbookModule(
 }
 
 function renderFinanceSharedTruthNotice(state = {}) {
-  const message = String(state.message || '').trim()
+  const message = state.messageTone === 'error'
+    ? getFinanceAdminErrorMessage(state.message, FINANCE_READ_FAILURE_MESSAGE)
+    : String(state.message || '').trim()
   const migrationWarning = state.legacyMigrationRequired
-    ? ' Legacy local đã được quarantine đúng cơ sở; cần migration có preview + xác nhận, chưa nhập vào server.'
+    ? ' Dữ liệu Thu chi cũ cần được kiểm tra trước khi sử dụng tại cơ sở này.'
     : ''
   if (!message && !migrationWarning) return ''
   const tone = state.messageTone || 'info'
@@ -808,7 +821,7 @@ function formatAmountForInput(amount) {
 }
 
 function getTodayDate() {
-  return new Date().toISOString().slice(0, 10)
+  return getBirthdayLocalDateKey()
 }
 
 function isValidDate(value) {
