@@ -10,7 +10,8 @@ const contextLabel = occurrence => `${dateLabel(occurrence.date)} · ${timeLabel
 const field = (label, value) => `<div><dt>${html(label)}</dt><dd>${html(value)}</dd></div>`
 const route = occurrence => `<button type="button" data-attendance-open-occurrence data-schedule-session-id="${html(occurrence.scheduleSessionId)}" data-occurrence-date="${html(occurrence.date)}">Mở ca học</button>`
 
-export function renderCanonicalAttendanceLedgerModule({ students = [], classSessions = [], filters = {}, detailState = null, availability = {}, onModel = null } = {}) {
+export function renderCanonicalAttendanceLedgerModule({ students = [], classSessions = [], filters = {}, detailState = null,
+  notificationReview = null, availability = {}, onModel = null } = {}) {
   const context = availability.ledgerContext || {}
   const ready = availability.attendanceAvailable === true && context.status === 'ready'
   const model = buildCanonicalAttendanceLedger({
@@ -62,6 +63,14 @@ export function renderCanonicalAttendanceLedgerModule({ students = [], classSess
     ${ready && model.columns.some(item => item.partialHistoricalRoster) ? '<p class="attendance-ledger-history-note">Một số buổi cũ chỉ có danh sách học viên đã được ghi nhận trong lịch sử.</p>' : ''}
     ${ready ? renderHistoricalOpeningEvidence(availability.historicalBaselineRecords || [], students) : ''}
     ${ready ? renderDetail(detailState, model) : ''}
+    ${notificationReview ? `<div class="attendance-ledger-detail-overlay" data-attendance-detail-close>
+      <section class="attendance-ledger-detail attendance-ledger-notification-context" role="dialog" aria-modal="true" aria-label="Chi tiết nhắc nhận xét" tabindex="-1">
+        <header><h4>Cần cập nhật nhận xét</h4><button type="button" data-attendance-detail-close aria-label="Đóng chi tiết">×</button></header>
+        <dl>${field('Học viên', notificationReview.studentName)}${field('Kỳ học', `Kỳ ${notificationReview.cycleNumber}`)}
+          ${field('Ngày nhắc', dateLabel(notificationReview.triggerDate))}</dl>
+        <p>Kiểm tra đúng học viên và kỳ học trước khi cập nhật nhận xét.</p>
+        <footer><button type="button" data-attendance-detail-close>Đóng chi tiết</button></footer>
+      </section></div>` : ''}
   </section>`
 }
 

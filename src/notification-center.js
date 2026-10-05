@@ -261,7 +261,7 @@ export function buildV24TuitionNotificationCandidates(studentStates, students, o
 }
 
 export function buildScheduleAttentionNotificationCandidates(occurrences, options = {}) {
-  const today = normalizeDateKey(options.today || new Date())
+  const today = getBirthdayLocalDateKey(options.today || new Date())
   const centerId = String(options.centerId || '').trim()
   const timestamp = getDateKeyTimestamp(today)
 
@@ -272,7 +272,7 @@ export function buildScheduleAttentionNotificationCandidates(occurrences, option
   return (occurrences ?? [])
     .filter((occurrence) => occurrence?.id
       && occurrence.scheduleType === 'oneOff'
-      && normalizeDateKey(occurrence.occurrenceDate || occurrence.date) === today
+      && normalizeScheduleDateKey(occurrence.occurrenceDate || occurrence.date) === today
       && occurrence.status !== 'cancelled'
       && (!centerId || !occurrence.centerId || String(occurrence.centerId) === centerId))
     .map((occurrence) => {
@@ -305,12 +305,12 @@ export function buildScheduleAttentionNotificationCandidates(occurrences, option
 
 export function buildMissingSessionReportNotificationCandidates(occurrences, sessionReports, options = {}) {
   const now = options.now instanceof Date ? options.now : new Date(options.now || Date.now())
-  const today = normalizeDateKey(options.today || now)
+  const today = getBirthdayLocalDateKey(options.today || now)
   const centerId = String(options.centerId || '').trim()
   const timestamp = getDateKeyTimestamp(today)
   const reportKeys = new Set((sessionReports ?? [])
     .filter((report) => !centerId || !report?.centerId || String(report.centerId) === centerId)
-    .map((report) => `${String(report?.sessionId || '').trim()}|${normalizeDateKey(report?.occurrenceDate)}`))
+    .map((report) => `${String(report?.sessionId || '').trim()}|${normalizeScheduleDateKey(report?.occurrenceDate)}`))
 
   if (!today || Number.isNaN(now.getTime())) {
     return []
@@ -318,7 +318,7 @@ export function buildMissingSessionReportNotificationCandidates(occurrences, ses
 
   return (occurrences ?? [])
     .filter((occurrence) => {
-      const occurrenceDate = normalizeDateKey(occurrence?.occurrenceDate || occurrence?.date)
+      const occurrenceDate = normalizeScheduleDateKey(occurrence?.occurrenceDate || occurrence?.date)
       const identityKey = `${String(occurrence?.id || '').trim()}|${occurrenceDate}`
       return occurrence?.id
         && occurrenceDate
@@ -328,7 +328,7 @@ export function buildMissingSessionReportNotificationCandidates(occurrences, ses
         && !reportKeys.has(identityKey)
     })
     .map((occurrence) => {
-      const occurrenceDate = normalizeDateKey(occurrence.occurrenceDate || occurrence.date)
+      const occurrenceDate = normalizeScheduleDateKey(occurrence.occurrenceDate || occurrence.date)
       const sessionLabel = String(occurrence.title || occurrence.groupName || 'Buổi học').trim()
       return {
         dedupeKey: `missing-session-report:${occurrence.id}:${occurrenceDate}`,
@@ -612,7 +612,8 @@ export function filterNotifications(notifications, filters = {}) {
     const moduleMatches = sourceModule === 'all' || notification.sourceModule === sourceModule
     const readMatches =
       readState === 'all' ||
-      (readState === 'attention' && notification.meta?.operational === true && Boolean(getNotificationProvider(notification))) ||
+      (readState === 'attention' && notification.meta?.operational === true
+        && notification.meta?.stale !== true && Boolean(getNotificationProvider(notification))) ||
       (readState === 'unread' && !notification.readAt) ||
       (readState === 'read' && Boolean(notification.readAt))
 
@@ -734,6 +735,10 @@ function normalizeDateKey(value) {
     : `${match[1]}-${match[2]}-${match[3]}`
 }
 
+function normalizeScheduleDateKey(value) {
+  return value instanceof Date ? getBirthdayLocalDateKey(value) : normalizeDateKey(value)
+}
+
 function getDateKeyTimestamp(dateKey) {
   return dateKey ? `${dateKey}T00:00:00.000Z` : ''
 }
@@ -765,7 +770,7 @@ function hasOccurrenceEnded(occurrence, occurrenceDate, today, now) {
   }
 
   const [hours, minutes] = endTime.split(':').map(Number)
-  const occurrenceEnd = new Date(now)
-  occurrenceEnd.setHours(hours, minutes, 0, 0)
-  return occurrenceEnd.getTime() <= now.getTime()
+  if (hours > 23 || minutes > 59) return false
+  const occurrenceEnd = Date.parse(`${occurrenceDate}T${endTime}:00+07:00`)
+  return Number.isFinite(occurrenceEnd) && occurrenceEnd <= now.getTime()
 }

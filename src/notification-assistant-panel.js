@@ -4,13 +4,15 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, character =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character])
 
 export function renderNotificationAssistantPanel({ notifications = [], readState = 'attention', unreadCount = 0,
-  position = { right: 12, bottom: 56 }, loading = false, refreshNotice = '', canOpen = () => true } = {}) {
+  position = { right: 12, bottom: 56 }, loading = false, snapshotStatus = 'fresh',
+  refreshNotice = '', canOpen = () => true } = {}) {
+  const status = loading ? 'loading' : snapshotStatus
   const visible = filterNotifications(notifications, { readState })
   const attentionCount = filterNotifications(notifications, { readState: 'attention' }).length
   const unreadVisibleCount = visible.filter(item => !item.readAt).length
   const items = visible.map(item => {
     const known = Boolean(getNotificationProvider(item))
-    const action = known && canOpen(item.sourceModule)
+    const action = known && !item.meta?.stale && status === 'fresh' && canOpen(item.sourceModule)
       ? `<button type="button" data-notification-action="open-source" data-notification-id="${escape(item.id)}">${escape(item.meta?.actionLabel || 'Mở chi tiết')}</button>` : ''
     return `<article class="notification-item notification-assistant-item ${item.readAt ? 'read' : 'unread'} level-${escape(item.severity)}" data-notification-item="${escape(item.id)}" data-notification-signal="${escape(item.meta?.signal || '')}">
       <div class="notification-item-header"><strong>${escape(item.title)}</strong><span class="notification-state">${item.readAt ? 'Đã xem' : 'Chưa đọc'}</span></div>
@@ -19,11 +21,16 @@ export function renderNotificationAssistantPanel({ notifications = [], readState
       <div class="notification-assistant-actions">${action}${item.readAt ? '' : `<button type="button" data-notification-action="mark-read" data-notification-id="${escape(item.id)}">Đánh dấu đã xem</button>`}</div>
     </article>`
   }).join('')
-  const empty = readState === 'attention' ? 'Không có việc cần xử lý.'
+  const empty = status === 'loading' ? 'Đang cập nhật việc cần xử lý…'
+    : status !== 'fresh' ? 'Chưa xác nhận đủ thông báo. Vui lòng làm mới.'
+    : readState === 'attention' ? 'Không có việc cần xử lý.'
     : readState === 'unread' ? 'Không có thông báo chưa đọc.'
       : readState === 'read' ? 'Không có thông báo đã đọc.' : 'Không có thông báo.'
+  const summary = status === 'loading' ? `Đang cập nhật việc cần xử lý… · ${unreadCount} chưa đọc`
+    : status !== 'fresh' ? `Chưa xác nhận đủ việc cần xử lý · ${unreadCount} chưa đọc`
+      : `${attentionCount} cần xử lý · ${unreadCount} chưa đọc`
   return `<section class="notification-center" id="notification-center" aria-label="Thông báo" style="--notification-panel-right: ${Number(position.right)}px; --notification-panel-bottom: ${Number(position.bottom)}px;">
-    <div class="notification-center-header"><div><h2>Thông báo</h2><p>${attentionCount} cần xử lý · ${unreadCount} chưa đọc</p></div>
+    <div class="notification-center-header"><div><h2>Thông báo</h2><p>${summary}</p></div>
       <div class="notification-center-actions"><button type="button" data-notification-action="refresh-authoritative" ${loading ? 'disabled' : ''}>${loading ? 'Đang tải…' : 'Làm mới'}</button><button type="button" data-notification-action="mark-all-read" ${unreadVisibleCount ? '' : 'disabled'}>Đánh dấu tất cả đã đọc</button></div>
     </div>${refreshNotice}
     <div class="notification-center-filters is-status-only" aria-label="Lọc thông báo"><label><span>Trạng thái</span><select data-notification-filter="readState">${[

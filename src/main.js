@@ -488,6 +488,7 @@ import {
 import {
   buildIncompleteAttendanceCandidates, buildTuitionN2Candidates, buildPaymentAttentionCandidates,
   getNotificationAttentionRange, getNotificationRoute, normalizeCachedOperationalNotification,
+  resolveCurrentNotificationTarget,
 } from './notification-operational-assistant.js'
 import { renderNotificationAssistantPanel } from './notification-assistant-panel.js'
 import {
@@ -890,6 +891,7 @@ const authoritativeRefreshInFlight = new Map()
 let notificationRefreshRunId = 0
 const moduleRefreshStates = new Map()
 let notificationRefreshState = createModuleRefreshState()
+let notificationProviderReadiness = { centerId: '', allReady: false }
 let desktopModuleOrder = getDesktopModuleOrder(
   getProductionLauncherModules().map((moduleItem) => moduleItem.id),
 )
@@ -2495,6 +2497,7 @@ function resetTransientStateForCenterSwitch() {
   notificationFilters = { sourceModule: 'all', readState: 'attention' }
   moduleRefreshStates.clear()
   notificationRefreshState = createModuleRefreshState()
+  notificationProviderReadiness = { centerId: '', allReady: false }
   studentFilters = { ...initialStudentFilters }
   teacherFilters = { ...initialTeacherFilters }
   parentConsultationFilters = { ...initialParentConsultationFilters }
@@ -12875,11 +12878,24 @@ function renderWindowBody(windowItem) {
       isModuleUpstreamCurrent('bang-diem-danh', upstream))
     const tuitionAvailable = isModuleUpstreamCurrent('bang-diem-danh', 'package-cycles')
     const ledgerContext = getCurrentAttendanceLedgerContext()
+    const boardStudents = getStudentsWithCanonicalProjections()
+    const reviewRoute = attendanceBoardDetailState?.notificationReview
+    const currentReview = reviewRoute?.centerId === getCurrentCanonicalCenterContext().centerId
+      && notificationOperationalSources.operations.status === 'ready'
+      && notificationOperationalSources.operations.centerId === reviewRoute.centerId
+      ? v28aAttendanceReminders.find(item => item.centerId === reviewRoute.centerId
+        && item.studentId === reviewRoute.studentId && item.cycleId === reviewRoute.cycleId
+        && item.signal === 'REVIEW_UPDATE_DUE') : null
+    const reviewStudent = currentReview ? boardStudents.find(item => item.id === currentReview.studentId) : null
     return renderAttendanceBoardModule({
-      students: getStudentsWithCanonicalProjections(),
+      students: reviewStudent ? [reviewStudent] : boardStudents,
       classSessions,
       filters: attendanceBoardFilters,
       detailState: attendanceBoardDetailState,
+      notificationReview: currentReview && reviewStudent ? {
+        studentName: reviewStudent.fullName, cycleNumber: currentReview.cycleNumber,
+        triggerDate: currentReview.triggerDate,
+      } : null,
       onModel: (model, ready) => {
         attendanceBoardPdfSnapshot = ready ? { model, centerId: ledgerContext.centerId } : null
       },
@@ -13630,6 +13646,7 @@ function renderNotificationCenterHotfix(unreadCount) {
   return renderNotificationAssistantPanel({
     notifications: getCenterScopedNotificationsForRender(), readState: notificationFilters.readState, unreadCount,
     position: notificationPanelPosition, loading: notificationRefreshState.status === 'loading',
+    snapshotStatus: getNotificationSnapshotStatus(),
     refreshNotice: renderNotificationRefreshNotice(), canOpen: isProductionModuleAvailable,
   })
 }
@@ -14014,14 +14031,23 @@ function getFinanceTaskbarWindowTitle(windowItem) {
 function renderNotificationRefreshNotice() {
   const state = notificationRefreshState
   const hasStaleItems = getCenterScopedNotificationsForRender().some(item => item.meta?.stale)
-  const fresh = state.status === 'fresh' && !hasStaleItems
+  const snapshotStatus = getNotificationSnapshotStatus()
+  const fresh = snapshotStatus === 'fresh'
   const tone = fresh ? 'is-fresh' : state.status === 'loading' ? 'is-loading' : 'is-unfresh'
   const message = fresh
     ? `Thông báo đã được cập nhật từ dữ liệu mới nhất${state.lastFreshAt ? ` lúc ${formatRefreshTime(state.lastFreshAt)}` : ''}.`
     : state.status === 'loading'
       ? 'Đang cập nhật thông báo; kết quả cũ có thể chưa phải bản mới nhất.'
-      : hasStaleItems ? 'Một số nguồn chưa được cập nhật; nhắc việc trước đó vẫn được giữ lại. Vui lòng làm mới.' : state.message
+      : hasStaleItems ? 'Một số nguồn chưa được cập nhật; nhắc việc trước đó vẫn được giữ lại. Vui lòng làm mới.'
+        : snapshotStatus === 'partial' ? 'Một số nguồn chưa được cập nhật. Vui lòng làm mới.' : state.message
   return `<p class="notification-refresh-notice ${tone}" role="status">${escapeHtml(message)}</p>`
+}
+
+function getNotificationSnapshotStatus() {
+  if (notificationRefreshState.status !== 'fresh') return notificationRefreshState.status
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  return notificationProviderReadiness.centerId === centerId && notificationProviderReadiness.allReady
+    && !getCenterScopedNotificationsForRender().some(item => item.meta?.stale) ? 'fresh' : 'partial'
 }
 
 const moduleLauncherSelector = [
@@ -26186,6 +26212,9 @@ function bindEvents() {
   document.querySelectorAll('[data-attendance-detail-close]').forEach((button) => {
     button.addEventListener('click', (event) => {
       if (event.target.closest('.attendance-ledger-detail') && !event.target.closest('button[data-attendance-detail-close]')) return
+      if (attendanceBoardDetailState?.notificationReview) {
+        attendanceBoardFilters = attendanceBoardDetailState.previousFilters
+      }
       attendanceBoardDetailState = null
       render()
     })
@@ -32186,7 +32215,7 @@ function syncAppNotifications(currentNotifications) {
     && isV27AInventoryCycleCountCapabilityReady(v27aInventoryCycleCountCapabilityState, centerId)
   const visibleCurrentWeekOccurrences = getVisibleScheduleSessions(
     scheduleSessions,
-    getCurrentScheduleWeekStartDate(today),
+    getCurrentScheduleWeekStartDate(new Date(`${range.toDate}T12:00:00`)),
     classSessions,
   )
   const providers = [
@@ -32215,6 +32244,7 @@ function syncAppNotifications(currentNotifications) {
     { id: 'payment-attention', ready: tuitionReady && operationsReady, operational: true,
       candidates: buildPaymentAttentionCandidates(operations, tuition, { centerId, now: today }) },
   ]
+  notificationProviderReadiness = { centerId, allReady: providers.every(provider => provider.ready) }
   const notificationCandidates = providers.filter(provider => provider.ready).flatMap(provider =>
     tagNotificationCandidates(provider.candidates, { centerId, providerId: provider.id, operational: provider.operational }))
   const nextNotifications = upsertNotificationCandidates(
@@ -32250,10 +32280,60 @@ async function openNotificationSourceModule(notificationId) {
     return
   }
 
-  isNotificationCenterOpen = false
   const centerId = getCurrentCanonicalCenterContext().centerId
   const accountId = cloudStatus.user?.id
+  if (notification.meta?.centerId !== centerId || notification.meta?.stale
+    || getNotificationSnapshotStatus() !== 'fresh') return
   const route = getNotificationRoute(notification, centerId)
+  const routeStillCurrent = () => centerId === getCurrentCanonicalCenterContext().centerId
+    && accountId === cloudStatus.user?.id
+  const unavailable = () => window.alert('Chưa kiểm tra được nội dung này. Vui lòng làm mới thông báo.')
+  const changed = () => {
+    window.alert('Nội dung này không còn cần xử lý hoặc đã thay đổi.')
+    void refreshNotificationAuthoritativeUpstreams('notification-target-changed')
+  }
+  if (['bcht-due', 'REVIEW_UPDATE_DUE'].includes(notification.meta?.signal) && !route) return
+  if (route?.moduleId === 'hoc-phi' && notification.meta?.signal === 'bcht-due') {
+    const cycleRead = await refreshAuthoritativeUpstream('package-cycles', 'notification-bcht-route')
+    if (!routeStillCurrent()) return
+    if (!cycleRead?.ok) return unavailable()
+    const result = await refreshModuleAuthoritativeUpstreams('hoc-phi', { reason: 'notification-exact-route' })
+    if (!routeStillCurrent()) return
+    if (!result.ok || tuitionOperatorSnapshot.status !== 'ready'
+      || tuitionOperatorSnapshot.centerId !== centerId) return unavailable()
+    const target = resolveCurrentNotificationTarget(route, {
+      centerId, students: getStudentsWithCanonicalProjections(),
+      bchtCandidates: buildV24TuitionNotificationCandidates(v24PackageCycleStudentStates, students, { centerId }),
+    })
+    const state = tuitionOperatorSnapshot.cycleStates.find(item => item.studentId === route.studentId)
+    const cycle = [state?.currentCycle, state?.preparedNextCycle, ...(state?.cycles || [])]
+      .find(item => item?.id === route.cycleId)
+    if (!target || !cycle) return changed()
+    isNotificationCenterOpen = false
+    openModuleWindowFromChildInteraction('hoc-phi', { refresh: false, preserveCurrentness: true })
+    await getTuitionOperatorController().open('detail', route.studentId, route.cycleId)
+    return
+  }
+  if (route?.moduleId === 'bang-diem-danh') {
+    const reviewRead = await refreshV28AAttendanceOperations({ reason: 'notification-review-route', silent: true })
+    if (!routeStillCurrent()) return
+    if (!reviewRead?.ok) return unavailable()
+    const result = await refreshModuleAuthoritativeUpstreams('bang-diem-danh', { reason: 'notification-exact-route' })
+    if (!routeStillCurrent()) return
+    if (!result.ok) return unavailable()
+    const target = resolveCurrentNotificationTarget(route, {
+      centerId, students: getStudentsWithCanonicalProjections(), reviewReminders: v28aAttendanceReminders,
+    })
+    if (!target) return changed()
+    const previousFilters = { ...attendanceBoardFilters }
+    attendanceBoardFilters = { ...attendanceBoardFilters, query: target.student.fullName || '' }
+    attendanceBoardDetailState = { previousFilters,
+      notificationReview: { centerId, studentId: route.studentId, cycleId: route.cycleId } }
+    isNotificationCenterOpen = false
+    openModuleWindowFromChildInteraction('bang-diem-danh', { refresh: false, preserveCurrentness: true })
+    return
+  }
+  isNotificationCenterOpen = false
   if (route) {
     if (route.moduleId === 'thoi-khoa-bieu') {
       scheduleFormState = null

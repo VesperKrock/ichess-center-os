@@ -2,7 +2,7 @@ import { buildCanonicalAttendanceLedger, isAttendanceLedgerOccurrenceFuture } fr
 import { normalizeTuitionCyclePresentation } from './tuition-module.js'
 
 const text = value => String(value ?? '').trim()
-const operationalSignals = new Set(['attendance-incomplete', 'tuition-n2', 'payment-check'])
+const operationalSignals = new Set(['attendance-incomplete', 'tuition-n2', 'payment-check', 'bcht-due', 'REVIEW_UPDATE_DUE'])
 
 export function getNotificationAttentionRange(now = new Date()) {
   const toDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now)
@@ -121,6 +121,30 @@ export function getNotificationRoute(item, centerId) {
   if (meta.signal === 'attendance-incomplete' && meta.sessionId && /^\d{4}-\d{2}-\d{2}$/.test(meta.occurrenceDate)) {
     return { moduleId: 'thoi-khoa-bieu', sessionId: meta.sessionId, occurrenceDate: meta.occurrenceDate }
   }
+  if (meta.signal === 'REVIEW_UPDATE_DUE' && meta.studentId && meta.cycleId) {
+    return { moduleId: 'bang-diem-danh', studentId: meta.studentId, cycleId: meta.cycleId }
+  }
   if (meta.studentId && meta.cycleId) return { moduleId: 'hoc-phi', studentId: meta.studentId, cycleId: meta.cycleId }
+  return null
+}
+
+// Exact notification targets are checked against a fresh, center-scoped read
+// before navigation. Display names never identify a business record.
+export function resolveCurrentNotificationTarget(route, { centerId, students = [], bchtCandidates = [], reviewReminders = [] } = {}) {
+  if (!route || !centerId || !route.studentId || !route.cycleId) return null
+  const student = students.find(item => String(item.id) === String(route.studentId)
+    && (!item.centerId || String(item.centerId) === String(centerId)))
+  if (!student) return null
+  if (route.moduleId === 'hoc-phi') {
+    const candidate = bchtCandidates.find(item => item.meta?.signal === 'bcht-due'
+      && item.meta.studentId === route.studentId && item.meta.cycleId === route.cycleId)
+    return candidate ? { student, candidate } : null
+  }
+  if (route.moduleId === 'bang-diem-danh') {
+    const reminder = reviewReminders.find(item => item.centerId === centerId
+      && item.signal === 'REVIEW_UPDATE_DUE' && item.studentId === route.studentId
+      && item.cycleId === route.cycleId)
+    return reminder ? { student, reminder } : null
+  }
   return null
 }
