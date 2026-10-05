@@ -6,6 +6,13 @@ export const STUDENT_INTAKE_ADMIN_TEMPLATE_PATH =
 export const STUDENT_INTAKE_ADMIN_TEMPLATE_SHA256 =
   '42df7f6fc5587b21153b7175a8b4795a24f91301cb2a874788b521e9d91c6855'
 
+// Existing iChess square asset selected for the Student document branding.
+export const STUDENT_INTAKE_ADMIN_LOGO_PATH = 'forms/attendance/ichess-logo-square.png'
+// Top-down PDF points, immediately before the existing brand line (x=53.904).
+export const STUDENT_INTAKE_ADMIN_LOGO_BOX = Object.freeze({ x: 20, y: 27, width: 30, height: 30 })
+export const STUDENT_INTAKE_ADMIN_BRAND_BOX = Object.freeze({ x: 53.904, y: 33, width: 180, height: 25 })
+const brandBaselineBottomInset = 2
+
 export const STUDENT_INTAKE_ADMIN_MAPPING_VERSION = 'student-intake-template-v1-field-boxes-v1'
 export const STUDENT_INTAKE_ADMIN_TEMPLATE_GEOMETRY = Object.freeze({
   pageCount: 1,
@@ -166,7 +173,7 @@ export async function generateStudentIntakeAdminPdf(student, options = {}) {
     throw new Error('Mẫu PDF học viên không khớp bản đã duyệt. Không xuất tệp.')
   }
 
-  const { PDFDocument, rgb } = await import('pdf-lib')
+  const { PDFDocument, PDFName, decodePDFRawStream, rgb } = await import('pdf-lib')
   const pdfDocument = await PDFDocument.load(templateBytes, { updateMetadata: false })
   if (pdfDocument.getPageCount() !== 1) {
     throw new Error('Mẫu PDF học viên phải có đúng một trang.')
@@ -175,6 +182,30 @@ export async function generateStudentIntakeAdminPdf(student, options = {}) {
   const page = pdfDocument.getPage(0)
   const { width, height } = page.getSize()
   assertStudentIntakeTemplateGeometry(page)
+
+  const logoResponse = await fetchImpl(resolveTemplateUrl(options.baseUrl, STUDENT_INTAKE_ADMIN_LOGO_PATH), { cache: 'no-cache' })
+  if (!logoResponse.ok) throw new Error('Không tải được logo iChess cho phiếu thông tin học viên.')
+  const logo = await pdfDocument.embedPng(new Uint8Array(await logoResponse.arrayBuffer()))
+  const logoHeight = STUDENT_INTAKE_ADMIN_LOGO_BOX.width * logo.height / logo.width
+  const brandBaseline = height - (STUDENT_INTAKE_ADMIN_LOGO_BOX.y + logoHeight - brandBaselineBottomInset)
+  // The hash-verified template has fourteen text runs on this branding baseline.
+  // Move those runs only, preserving their original embedded fonts and wording.
+  const content = Array.from(decodePDFRawStream(page.node.Contents()).decode(), byte => String.fromCharCode(byte)).join('')
+  let brandRuns = 0
+  const alignedContent = content.replace(/(\b1 0 0 1 [\d.]+ )796\.8( Tm\b)/g, (_, before, after) => {
+    brandRuns += 1
+    return `${before}${brandBaseline}${after}`
+  })
+  if (brandRuns !== 14) throw new Error('Không xác nhận được dòng thương hiệu trong mẫu PDF học viên.')
+  page.node.set(PDFName.of('Contents'), pdfDocument.context.register(pdfDocument.context.flateStream(
+    Uint8Array.from(alignedContent, character => character.charCodeAt(0)),
+  )))
+  page.drawImage(logo, {
+    x: STUDENT_INTAKE_ADMIN_LOGO_BOX.x,
+    y: height - STUDENT_INTAKE_ADMIN_LOGO_BOX.y - logoHeight,
+    width: STUDENT_INTAKE_ADMIN_LOGO_BOX.width,
+    height: logoHeight,
+  })
 
   const canvas = documentRef.createElement('canvas')
   canvas.width = Math.round(width * overlayScale)
@@ -218,11 +249,11 @@ export async function generateStudentIntakeAdminPdf(student, options = {}) {
   }
 }
 
-function resolveTemplateUrl(baseUrl = import.meta.env?.BASE_URL ?? '/') {
+function resolveTemplateUrl(baseUrl = import.meta.env?.BASE_URL ?? '/', assetPath = STUDENT_INTAKE_ADMIN_TEMPLATE_PATH) {
   const normalizedBase = String(baseUrl || '/').endsWith('/')
     ? String(baseUrl || '/')
     : `${String(baseUrl || '/')}/`
-  return `${normalizedBase}${STUDENT_INTAKE_ADMIN_TEMPLATE_PATH}`
+  return `${normalizedBase}${assetPath}`
 }
 
 async function ensureTimesNewRomanReady(documentRef) {

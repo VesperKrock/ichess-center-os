@@ -1110,6 +1110,7 @@ function renderStudentRow(student, classSessions = [], tuitionRows = []) {
   const statusLabel = getStudentStatusPresentation(student)
   const hasCareNote = hasRealCareNote(student)
   const contactPhone = student.motherPhone || student.fatherPhone || student.parentPhone
+  const parentDisplay = getStudentListParentDisplay(student)
   const classSessionLookup = createClassSessionLookup(classSessions)
   const nextAction = getStudentNextAction(student, classSessions,
     tuitionRows.find((row) => row.student.id === student.id))
@@ -1125,7 +1126,7 @@ function renderStudentRow(student, classSessions = [], tuitionRows = []) {
           </div>
         </div>
       </td>
-      <td title="${escapeAttribute(student.parentName)}">${getShortName(student.parentName)}</td>
+      <td title="${escapeAttribute(parentDisplay)}">${escapeHtml(parentDisplay)}</td>
       <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
       <td><span class="student-status ${getStudentStatusToneClass(statusLabel)}">${escapeHtml(statusLabel)}</span></td>
       <td>${escapeHtml(getLevelLabel(student.level))}</td>
@@ -1315,14 +1316,14 @@ function hasRealCareNote(student) {
   )
 }
 
-function getShortName(value) {
-  const parts = String(value ?? '').trim().split(/\s+/).filter(Boolean)
-
-  if (parts.length <= 2) {
-    return parts.join(' ')
-  }
-
-  return parts.slice(-2).join(' ')
+// Match the existing contact projection to explicit relationship fields only.
+// Legacy or ambiguous contacts retain their truthful name without a prefix.
+export function getStudentListParentDisplay(student) {
+  const name = String(student.parentName ?? '').trim()
+  const isFather = Boolean(name && name === String(student.fatherName ?? '').trim())
+  const isMother = Boolean(name && name === String(student.motherName ?? '').trim())
+  const role = isFather !== isMother ? (isFather ? 'Ba' : 'Mẹ') : ''
+  return [role, name].filter(Boolean).join(' ')
 }
 
 function getAuthoritativeStudentName(value) {
