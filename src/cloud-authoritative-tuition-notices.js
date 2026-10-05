@@ -1,3 +1,28 @@
+import { listCloudEntityPayloads } from './cloud-db-sync.js'
+import { pullV22StudentEnrollments } from './cloud-authoritative-student-enrollments.js'
+import { projectTuitionNoticeWeekdays } from './tuition-notice-forecast.js'
+
+// Fresh existing read authorities; nothing is persisted or added to the notice.
+export async function readTuitionNoticeForecastFacts({ supabase, centerId, studentId, operatorSnapshot } = {}) {
+  if (!centerId || operatorSnapshot?.centerId !== centerId) return null
+  const student = operatorSnapshot.students?.find(item => item.id === studentId)
+  const cycle = operatorSnapshot.cycleStates?.find(item => item.studentId === studentId)?.currentCycle
+  if (!student || !cycle) return null
+  try {
+    const [classes, enrollments] = await Promise.all([
+      listCloudEntityPayloads({ supabase, centerId, entityType: 'class_session' }),
+      pullV22StudentEnrollments({ supabase, centerId }),
+    ])
+    if (!classes.ok || !enrollments.ok) return null
+    return {
+      packageSessions: cycle.totalSessions, usedSessions: cycle.usedSessions,
+      weekdays: projectTuitionNoticeWeekdays(student, enrollments.enrollmentSets, classes.data),
+    }
+  } catch {
+    return null // An unavailable advisory forecast must not block TBHP.
+  }
+}
+
 const BACKEND_UNAVAILABLE_CODES = new Set([
   '42P01', '42703', '42883', 'PGRST202', 'PGRST205', 'BACKEND_NOT_DEPLOYED',
 ])
@@ -154,9 +179,7 @@ function projectNotice(row = {}, expectedCenterId = '') {
     || !Number.isSafeInteger(version) || version < 1
     || !Number.isSafeInteger(cycleNumber) || cycleNumber < 1
     || !Number.isSafeInteger(totalSessions) || totalSessions < 1
-    || !isPlainObject(row.snapshot)
-    || !Array.isArray(row.snapshot.scheduleRows)
-    || row.snapshot.scheduleRows.length !== totalSessions) return null
+    || !isPlainObject(row.snapshot)) return null
   return {
     id: row.id,
     centerId: expectedCenterId,

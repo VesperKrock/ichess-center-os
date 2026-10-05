@@ -326,6 +326,7 @@ import {
   createTuitionNoticeCapabilityState,
   createTuitionNoticeIdempotencyKey,
   getPrintableTuitionDocument,
+  readTuitionNoticeForecastFacts,
   getTuitionNoticeOutcomeMessage,
   isTuitionNoticeBackendUnavailable,
   isTuitionNoticeCapabilityReady,
@@ -19461,7 +19462,11 @@ async function exportCurrentTuitionDocument(cycleId, button = null) {
     const paymentRead = await pullTuitionOperatorSnapshot({ supabase: getSupabaseClient(), centerId })
     if (!paymentRead.ok || centerId !== getCurrentResolvedCenterId()) throw new Error('Không tải được trạng thái học phí hiện tại.')
     const document = bindTuitionNoticePaymentTruth(result.document, paymentRead, centerId)
-    const pdf = await generateTuitionNoticePdf(document)
+    const forecastFacts = await readTuitionNoticeForecastFacts({
+      supabase: getSupabaseClient(), centerId, studentId: document.studentId, operatorSnapshot: paymentRead,
+    })
+    if (centerId !== getCurrentResolvedCenterId()) throw new Error('Cơ sở đã thay đổi.')
+    const pdf = await generateTuitionNoticePdf(document, { forecastFacts })
     if (centerId !== getCurrentResolvedCenterId()) throw new Error('Cơ sở đã thay đổi.')
     const objectUrl = URL.createObjectURL(pdf.blob)
     pdfViewer.location.replace(objectUrl)

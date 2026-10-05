@@ -486,7 +486,7 @@ try {
     const document=await PDFDocument.load(Buffer.from(pdf.bytes))
     assert.equal(document.getPageCount(),1)
     const {width,height}=document.getPage(0).getSize()
-    assert(Math.abs(width-595.28)<1 && Math.abs(height-841.89)<1,'TBHP must be A4 portrait')
+    assert(Math.abs(width-419.5276)<0.02 && Math.abs(height-595.2756)<0.02,'TBHP must be A5 portrait')
     report.document={name,pages:1,width,height}
   }
 

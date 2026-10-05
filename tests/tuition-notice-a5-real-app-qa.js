@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import { projectTuitionNoticeWeekdays, forecastTuitionNotice, buildTuitionNoticeForecastLines, getTuitionNoticeGenerationDate } from '../src/tuition-notice-forecast.js'
 
 // Runs the existing localhost application, with its real Vite environment and
 // normal login UI. No response mocks, source transforms, SQL bridge or boot hook.
@@ -28,7 +29,7 @@ const password = credentialLines[emailIndex + 1]
   .slice(credentialLines[emailIndex + 1].indexOf(':') + 1)
   .trim()
 assert(email.includes('@') && password)
-const artifacts = path.resolve('artifacts/tuition-notice-a4-runtime')
+const artifacts = path.resolve('artifacts/l2-simple-tbhp/runtime')
 fs.mkdirSync(artifacts, { recursive: true })
 const profile = fs.mkdtempSync(
   path.join(os.tmpdir(), 'ichess-tuition-real-remote-chrome-'),
@@ -155,7 +156,8 @@ try {
     ) {
       const request = requests.get(params.requestId)
       const operation = new URL(request.url).pathname.split('/').at(-1)
-      if (/package_cycle|tuition|tbhp/.test(operation)) {
+      if (/package_cycle|tuition|tbhp|student_enrollments/.test(operation)
+        || (operation === 'center_cloud_entities' && new URL(request.url).searchParams.get('entity_type') === 'eq.class_session')) {
         const task = cdp('Network.getResponseBody', {
           requestId: params.requestId,
         })
@@ -333,34 +335,6 @@ try {
     click('[data-tu-panel] .tuition-form-header [data-tu-action="close"]')
   const textPanel = () =>
     evaluate('document.querySelector("[data-tu-panel]")?.innerText')
-  const setField = async (field, value) => {
-    const selector = `[data-tu-field="${field}"]`
-    const isSelect = await evaluate(
-      `document.querySelector(${JSON.stringify(selector)}).tagName==='SELECT'`,
-    )
-    if (isSelect)
-      await evaluate(
-        `(()=>{const s=document.querySelector(${JSON.stringify(selector)});s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('input',{bubbles:true}));s.dispatchEvent(new Event('change',{bubbles:true}));})()`,
-      )
-    else {
-      await click(selector)
-      await cdp('Input.dispatchKeyEvent', {
-        type: 'keyDown',
-        key: 'a',
-        code: 'KeyA',
-        windowsVirtualKeyCode: 65,
-        modifiers: 2,
-      })
-      await cdp('Input.dispatchKeyEvent', {
-        type: 'keyUp',
-        key: 'a',
-        code: 'KeyA',
-        windowsVirtualKeyCode: 65,
-        modifiers: 2,
-      })
-      await cdp('Input.insertText', { text: String(value) })
-    }
-  }
   const search = async (value) => {
     await click('[data-tu-filter="query"]')
     await cdp('Input.dispatchKeyEvent', {
@@ -451,40 +425,67 @@ try {
   }
 
   await Promise.allSettled([...responseJobs])
-  const initial = report.requests.filter(r => r.url.endsWith('/rpc/tuition_operator_read')).at(-1)
+  const initial = report.requests.filter(r => r.method === 'POST' && r.url.endsWith('/rpc/tuition_operator_read')).at(-1)
   assert(initial?.status === 200 && initial.body?.ok && initial.body.center_id === 'phongtrong_prod')
   const before = JSON.stringify({cycle:initial.body.cycle_state,receipts:initial.body.receipt_state})
-  await screenshot('a4-list-entry-points')
-  const dependencies = path.join(os.tmpdir(), 'ichess-tuition-pdf-render-270927/node_modules')
-  const { createCanvas } = await import(pathToFileURL(process.env.TBHP_CANVAS_PATH || path.join(dependencies, '@napi-rs/canvas/index.js')))
-  const pdfjs = await import(pathToFileURL(process.env.TBHP_PDFJS_PATH || path.join(dependencies, 'pdfjs-dist/legacy/build/pdf.mjs')))
-  for (const [key, name] of [['a','Legacy 6/16'],['b','Legacy + iChess'],['d','N-2']]) {
-    const id='tuition-demo-20260927-'+key
-    await openDetail(id)
-    assert((await textPanel()).includes('Thông báo học phí'))
-    if(key==='b')await screenshot('a4-detail-document-entry')
-    await capturePdf('[data-tu-panel=detail] [data-tu-action=tbhp]', 'real-app-'+key+'-tbhp-a4')
-    const bytes=fs.readFileSync(path.join(artifacts,'real-app-'+key+'-tbhp-a4.pdf'))
-    const pdf=await PDFDocument.load(bytes)
-    assert.equal(pdf.getPageCount(),1)
-    const size=pdf.getPage(0).getSize()
-    assert(Math.abs(size.width-595.2756)<0.02 && Math.abs(size.height-841.8898)<0.02)
-    const document=await pdfjs.getDocument({data:new Uint8Array(bytes)}).promise
-    const page=await document.getPage(1), viewport=page.getViewport({scale:2})
-    const preview=createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height))
-    await page.render({canvasContext:preview.getContext('2d'),viewport}).promise
-    fs.writeFileSync(path.join(artifacts,'real-app-'+key+'-tbhp-a4.png'),preview.toBuffer('image/png'))
-    report.observations.push({student:name,studentId:id,pageCount:1,size})
-    await close()
+  await screenshot('phongtrong-list')
+  const studentId = 'attqa_20260928_student_06'
+  assert(initial.body.students.some(s => s.id === studentId && /^ATT QA/.test(s.fullName)), 'Existing ATT QA Student only')
+  await openDetail(studentId)
+  await screenshot('phongtrong-detail')
+  await capturePdf('[data-tu-panel=detail] [data-tu-action=tbhp]', 'phongtrong-bao-ngoc-tbhp-a5')
+  await Promise.allSettled([...responseJobs])
+  const printRead = report.requests.filter(r => r.method === 'POST' && r.url.endsWith('/rpc/tuition_operator_read')).at(-1).body
+  const currentCycle = printRead.cycle_state.students.find(s => s.student_id === studentId).current_cycle
+  const classRead = report.requests.filter(r => new URL(r.url).searchParams.get('entity_type') === 'eq.class_session' && r.body).at(-1).body
+  const enrollmentRead = report.requests.filter(r => r.method === 'POST' && r.url.endsWith('/rpc/v2_2_list_student_enrollments')).at(-1).body
+  assert.equal(enrollmentRead.center_id, 'phongtrong_prod')
+  assert(classRead.every(c => c.center_id === 'phongtrong_prod'))
+  const enrollmentSets = enrollmentRead.enrollment_sets.map(s => ({ studentId: s.student_id,
+    enrollments: s.enrollments.map(e => ({ classSessionId: e.class_session_id, weekdays: e.weekdays })) }))
+  const weekdays = projectTuitionNoticeWeekdays(printRead.students.find(s => s.id === studentId), enrollmentSets, classRead.map(c => c.payload))
+  const facts = { generatedDate: getTuitionNoticeGenerationDate(), packageSessions: currentCycle.total_sessions,
+    usedSessions: currentCycle.used_sessions, weekdays }
+  const forecast = forecastTuitionNotice(facts)
+  assert(forecast?.estimatedNextCycleStartDate, 'Current Ca data must support forecast')
+  const bytes = fs.readFileSync(path.join(artifacts,'phongtrong-bao-ngoc-tbhp-a5.pdf'))
+  const pdf = await PDFDocument.load(bytes)
+  assert.equal(pdf.getPageCount(),1)
+  const size = pdf.getPage(0).getSize()
+  assert(Math.abs(size.width-419.5276)<0.02 && Math.abs(size.height-595.2756)<0.02)
+  const deps = path.join(os.tmpdir(), 'ichess-tuition-pdf-render-270927/node_modules')
+  const { createCanvas } = await import(pathToFileURL(path.join(deps, '@napi-rs/canvas/index.js')))
+  const pdfjs = await import(pathToFileURL(path.join(deps, 'pdfjs-dist/legacy/build/pdf.mjs')))
+  const rendered = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true }).promise
+  const renderedPage = await rendered.getPage(1), viewport = renderedPage.getViewport({ scale: 3 })
+  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height))
+  await renderedPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+  fs.writeFileSync(path.join(artifacts, 'phongtrong-bao-ngoc-tbhp-a5.png'), canvas.toBuffer('image/png'))
+  const items = (await renderedPage.getTextContent()).items.filter(item => item.str?.trim())
+  const text = items.map(item => item.str).join(' ').replace(/\s+/g, ' ')
+  const noticeLines = ['Học viên được học bù trong khóa học nếu vắng học có thông báo (P).', ...buildTuitionNoticeForecastLines(forecast)]
+  for (const line of noticeLines) assert(text.includes(line), `Actual application PDF is missing ${line}`)
+  assert(!/tối đa|Ngày học|Giáo viên|Tiến độ|Buổi đã học/.test(text))
+  for (const item of items) {
+    assert(item.transform[4] >= 0 && item.transform[4] + item.width <= 419.6276)
+    for (const other of items.filter(other => other !== item && Math.abs(other.transform[5] - item.transform[5]) < 0.2 && other.transform[4] > item.transform[4])) {
+      assert(item.transform[4] + item.width <= other.transform[4] + 0.6, `Overlap: ${item.str} / ${other.str}`)
+    }
   }
+  const jsQR = (await import(pathToFileURL(path.join(os.tmpdir(), 'ichess-tbc-qr-qa/node_modules/jsqr/dist/jsQR.js')))).default
+  const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
+  assert(jsQR(pixels.data, canvas.width, canvas.height)?.data.includes('442228866'), 'Actual runtime company QR scans')
+  await close()
   await hardRefresh()
   await Promise.allSettled([...responseJobs])
-  const after=report.requests.filter(r=>r.url.endsWith('/rpc/tuition_operator_read')).at(-1)
-  assert.equal(JSON.stringify({cycle:after.body.cycle_state,receipts:after.body.receipt_state}),before,'PDF presentation must not change cycle or payment/receipt state')
-  const reads=report.requests.filter(r=>r.method==='POST'&&r.url.endsWith('/rpc/tbhp_get_printable_document'))
-  assert.equal(reads.length,3)
-  for(const request of reads)assert(request.status===200 && request.body.ok && request.centerId==='phongtrong_prod')
-  assert(!report.requests.some(r=>/mutate|create_notice|issue|write|record/.test(new URL(r.url).pathname)))
+  const after = report.requests.filter(r=>r.method === 'POST' && r.url.endsWith('/rpc/tuition_operator_read')).at(-1)
+  assert.equal(JSON.stringify({cycle:after.body.cycle_state,receipts:after.body.receipt_state}),before)
+  const reads=report.requests.filter(r=>r.method==='POST' && r.url.endsWith('/rpc/tbhp_get_printable_document'))
+  assert.equal(reads.length,1)
+  assert.equal(reads[0].body.document.snapshot.center.id, 'phongtrong_prod')
+  const phone = reads[0].body.document.snapshot.center.phone?.trim() || '090 1197 260'
+  assert.equal(items.filter(item => item.str.includes(phone)).length, 2)
+  assert(reads[0].status===200 && reads[0].body.ok)
   report.failedTuitionReads=report.requests.filter(r=>/tuition|package_cycle|tbhp/.test(r.url)&&(r.failure||!(r.status>=200&&r.status<300)))
   assert.equal(report.failedTuitionReads.length,0)
   assert.equal(report.runtimeExceptions.length,0)
@@ -493,6 +494,9 @@ try {
   assert.deepEqual(await evaluate('window.__remoteQaAlerts'),[])
   report.passed=true
   report.businessMutationRequests=0
-  console.log(JSON.stringify({passed:true,students:3,a4Documents:3,uncaught:0,consoleErrors:0,failedTuitionReads:0,businessWrites:0}))
+  report.document={studentId,studentName:'ATT QA - Bảo Ngọc',pageCount:1,size,phone,facts,forecast,noticeLines, noClippingOrOverlap:true}
+  report.qaMutation = null
+  report.dreamHomeWrites = 0
+  console.log(JSON.stringify({passed:true,a5Documents:1,uncaught:0,consoleErrors:0,businessWrites:0}))
 } catch(error) { report.failure=String(error); throw error }
 finally { fs.writeFileSync(path.join(artifacts,'real-app-qa.json'),JSON.stringify(report,null,2));ws?.close();chrome.kill() }

@@ -62,9 +62,8 @@ const notice = {
 }
 
 const projection = createTuitionNoticePdfProjection(notice)
-assert.equal(projection.scheduleRows.length, 16)
-assert.equal(projection.scheduleRows.filter((row) => row.source === 'ACTUAL').length, 6)
-assert.equal(projection.scheduleRows.slice(6).every((row) => !row.date && !row.teacherName), true)
+assert.equal(projection.totalSessions, 16)
+assert(!('scheduleRows' in projection))
 
 const result = await generateTuitionNoticePdf(notice, {
   documentRef,
@@ -75,6 +74,7 @@ const result = await generateTuitionNoticePdf(notice, {
 })
 const bytes = Buffer.from(await result.blob.arrayBuffer())
 assert.equal((await PDFDocument.load(bytes)).getPageCount(), result.pageCount)
-assert.equal(result.rowCount, 16)
+assert.equal(result.projection.totalSessions, 16)
+assert.equal(result.layout.profile, 'TBHP_A5')
 if (process.env.TBHP_SIMPLE_CORE_RENDER_TO) fs.writeFileSync(process.env.TBHP_SIMPLE_CORE_RENDER_TO, bytes)
-console.log('Tuition Simple Core PDF: 6 actual + 10 blank rows, valid export PASS')
+console.log('Tuition Simple Core PDF: known N, no Attendance rows, valid export PASS')

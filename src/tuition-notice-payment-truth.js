@@ -10,7 +10,8 @@ export function bindTuitionNoticePaymentTruth(document, operatorSnapshot, center
     || notice?.tuition?.targetCycleId !== cycleId) throw invalid()
 
   const studentState = operatorSnapshot.cycleStates?.find(item => item.studentId === studentId)
-  if (!operatorSnapshot.students?.some(item => item.id === studentId) || !studentState) throw invalid()
+  const student = operatorSnapshot.students?.find(item => item.id === studentId)
+  if (!student || !studentState) throw invalid()
   const cycle = [studentState.currentCycle, studentState.preparedNextCycle, ...(studentState.cycles || [])]
     .find(item => item?.id === cycleId)
   if (!cycle || cycle.centerId !== centerId || cycle.studentId !== studentId
@@ -22,6 +23,12 @@ export function bindTuitionNoticePaymentTruth(document, operatorSnapshot, center
     ...document,
     snapshot: {
       ...notice,
+      student: {
+        ...notice.student,
+        name: student.fullName || notice.student.name,
+        birthDate: student.birthDate || '',
+        birthYear: student.birthYear || '',
+      },
       paymentTruth: {
         status: cycle.paymentStatus,
         paidBeforeIChess: cycle.paymentStatus === 'PAID'

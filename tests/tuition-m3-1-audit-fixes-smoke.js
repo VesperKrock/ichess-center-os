@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { PDFDocument } from 'pdf-lib'
-import { makeA4Notice } from './tuition-notice-a4-fixtures.js'
+import { makeA5Notice } from './tuition-notice-a5-fixtures.js'
 import { bindTuitionNoticePaymentTruth } from '../src/tuition-notice-payment-truth.js'
 import { buildTuitionNoticePaymentCopy, createTuitionNoticePdfProjection, generateTuitionNoticePdf } from '../src/tuition-notice-pdf.js'
 import { openConvertedStudentTuition } from '../src/tuition-customer-handoff.js'
@@ -12,7 +12,7 @@ import { renderTuitionModule } from '../src/tuition-module.js'
 const centerId = 'qa_center'
 const studentId = 'qa_student'
 function noticeFor(status, paidBeforeIChess = false) {
-  const notice = makeA4Notice(16)
+  const notice = makeA5Notice(16)
   notice.centerId = centerId
   notice.studentId = studentId
   notice.targetCycleId = notice.id
@@ -42,7 +42,7 @@ for (const [name, entry, expected] of [
   assert.equal(projection.totalSessions, 16, name)
   assert.equal(projection.totalAmount, 2330000, name)
   assert.equal(copy.showPaymentInstructions, expected === 'UNPAID', name)
-  assert.equal(JSON.stringify(copy).includes('vui lòng thanh toán'), expected === 'UNPAID', name)
+  assert.equal(JSON.stringify(copy).includes('vui lòng đóng học phí'), expected === 'UNPAID', name)
   if (name === 'legacy') assert(JSON.stringify(copy).includes('trước khi dùng iChess'))
 }
 const noTruth = { ...paid.notice, snapshot: { ...paid.notice.snapshot, paymentTruth: null } }
@@ -86,7 +86,7 @@ const pdfOptions = { documentRef, fetchImpl, baseUrl: '/',
 for (const [name, entry] of [['unpaid', unpaid], ['paid', paid], ['legacy', legacy]]) {
   const result = await generateTuitionNoticePdf(bindTuitionNoticePaymentTruth(entry.notice, entry.operator, centerId), pdfOptions)
   assert.equal(result.pageCount, 1, name)
-  assert.equal(result.rowCount, 16, name)
+  assert.equal(result.projection.totalSessions, 16, name)
   assert.equal(result.layout.qr === null, name !== 'unpaid', name)
   assert.equal((await PDFDocument.load(await result.blob.arrayBuffer())).getPageCount(), 1, name)
 }

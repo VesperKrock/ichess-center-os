@@ -1,400 +1,199 @@
-import { TBHP_A4_PAGE, selectTuitionNoticeA4Layout } from './tuition-notice-a4-layout.js'
+import { TBHP_A5_PAGE, TUITION_NOTICE_A5_LAYOUT } from './tuition-notice-a5-layout.js'
+import { formatStudentBirthInformation } from './student-birth-information.js'
+import { forecastTuitionNotice, getTuitionNoticeGenerationDate, buildTuitionNoticeForecastLines } from './tuition-notice-forecast.js'
 
-export const TUITION_NOTICE_TEMPLATE_PATH = 'forms/tuition-notice/tuition-notice-a4-background.pdf'
-export const TUITION_NOTICE_TEMPLATE_SHA256 = '2ef559a0d30597ca5d59ff1bc223586d1a3a200380c1ff5b598acf056ebd88a7'
+export const TUITION_NOTICE_TEMPLATE_PATH = 'forms/tuition-notice/tuition-notice-template.pdf'
+export const TUITION_NOTICE_TEMPLATE_SHA256 = '23131e615eefe01028ae18f45375a6526bb9c27156131cc54a5147621fd47814'
 export const TUITION_TRANSFER_QR_PATH = 'assets/payment/ichess-company-tuition-qr.png'
+export const TUITION_NOTICE_HOTLINE_FALLBACK = '090 1197 260'
 export const COMPANY_TUITION_PAYMENT_PROFILE = Object.freeze({
   accountNumber: '442228866', beneficiary: 'CÔNG TY TNHH ICHESS VIET NAM',
   bank: 'Ngân hàng TMCP Á Châu (ACB)',
 })
-const OVERLAY_SCALE = 3
-const FONT_ASSETS = Object.freeze([
-  { name: 'TBHP Lora', file: 'Lora-Regular.ttf', sha256: '80aac4498fe8b3c16c54ae820a72506c929ccaee96b92c226f915a901c857a96' },
-  { name: 'TBHP Lora Bold', file: 'Lora-Bold.ttf', sha256: '2aba152528d3526cbb342d8564f19aa92ca9d2e71d2c7e98fec98c5c89558558' },
-  { name: 'TBHP Lora Italic', file: 'Lora-Italic.ttf', sha256: '27aac8eaa1b9ca94554cdc2c7ae2799d4dcea72055b95bfdc7fdc450cf9a77a4' },
-])
-const FONT_FAMILIES = Object.freeze({
-  regular: '"TBHP Lora"', bold: '"TBHP Lora Bold"', italic: '"TBHP Lora Italic"',
-  contact: 'Arial, sans-serif',
+// Licensed Times-compatible Vietnamese fonts shared with the Receipt renderer.
+const FONT_ASSETS = Object.freeze({
+  regular: { file: 'Tinos-Regular.ttf', sha256: '60a0e8ef0c04dd5dd69ffe91025fa2ae5836cbd35600a82ba031977557e2cb61' },
+  bold: { file: 'Tinos-Bold.ttf', sha256: '393269dbab8899f938db19783eca5eac92eb431f7ae0ab45b8349ca895f1a06b' },
 })
-
 export class TuitionNoticePdfValidationError extends Error {
   constructor(message, field = '') { super(message); this.name = 'TuitionNoticePdfValidationError'; this.field = field }
 }
-
-export function createTuitionNoticePdfProjection(notice = {}) {
+export function createTuitionNoticePdfProjection(notice = {}, options = {}) {
   const snapshot = isPlainObject(notice.snapshot) ? notice.snapshot : null
-  if (!isUuid(notice.id) || !snapshot || snapshot.noticeId !== notice.id
-    || snapshot.documentType !== 'TUITION_NOTICE') {
+  if (!isUuid(notice.id) || !snapshot || snapshot.noticeId !== notice.id || snapshot.documentType !== 'TUITION_NOTICE') {
     throw new TuitionNoticePdfValidationError('Chỉ có thể xuất PDF từ Thông báo học phí có dữ liệu chính thức hợp lệ.')
   }
   if (!['NEW_REGISTRATION', 'RENEWAL'].includes(snapshot.registration?.code)) {
     throw new TuitionNoticePdfValidationError('TBHP không xác định được loại kỳ học.', 'registration')
   }
-  const center = isPlainObject(snapshot.center) ? snapshot.center : {}
-  const student = isPlainObject(snapshot.student) ? snapshot.student : {}
-  const tuition = isPlainObject(snapshot.tuition) ? snapshot.tuition : {}
-  const progress = isPlainObject(snapshot.currentProgress) ? snapshot.currentProgress : {}
-  const paymentWindow = isPlainObject(snapshot.paymentWindow) ? snapshot.paymentWindow : {}
-  const paymentTruth = isPlainObject(snapshot.paymentTruth) ? snapshot.paymentTruth : {}
-  if (!['PAID', 'UNPAID'].includes(paymentTruth.status)
-    || typeof paymentTruth.paidBeforeIChess !== 'boolean'
+  const center = snapshot.center || {}, student = snapshot.student || {}
+  const tuition = snapshot.tuition || {}, money = snapshot.money || {}, transfer = snapshot.transfer || {}
+  const paymentTruth = snapshot.paymentTruth || {}
+  if (!['PAID', 'UNPAID'].includes(paymentTruth.status) || typeof paymentTruth.paidBeforeIChess !== 'boolean'
     || (paymentTruth.paidBeforeIChess && paymentTruth.status !== 'PAID')) {
     throw new TuitionNoticePdfValidationError('Chưa xác định được trạng thái thanh toán của kỳ học phí.', 'paymentTruth')
   }
-  const money = isPlainObject(snapshot.money) ? snapshot.money : {}
-  const transfer = isPlainObject(snapshot.transfer) ? snapshot.transfer : {}
-  const totalSessions = positiveInteger(tuition.totalSessions, 'Số buổi gói')
-  if (!selectTuitionNoticeA4Layout(totalSessions)) {
-    throw new TuitionNoticePdfValidationError('TBHP A4 hiện hỗ trợ gói từ 1 đến 24 buổi.', 'totalSessions')
-  }
-  const scheduleRows = Array.isArray(snapshot.scheduleRows)
-    ? snapshot.scheduleRows.map((row, index) => projectScheduleRow(row, index + 1)) : []
-  if (scheduleRows.length !== totalSessions) {
-    throw new TuitionNoticePdfValidationError(`Dữ liệu phải có đúng ${totalSessions} dòng lịch học.`, 'scheduleRows')
-  }
   if (transfer.accountNumber !== COMPANY_TUITION_PAYMENT_PROFILE.accountNumber
-    || transfer.beneficiary !== COMPANY_TUITION_PAYMENT_PROFILE.beneficiary
-    || transfer.bank !== COMPANY_TUITION_PAYMENT_PROFILE.bank) {
+    || transfer.beneficiary !== COMPANY_TUITION_PAYMENT_PROFILE.beneficiary || transfer.bank !== COMPANY_TUITION_PAYMENT_PROFILE.bank) {
     throw new TuitionNoticePdfValidationError('Hồ sơ chuyển khoản không khớp hồ sơ công ty đã duyệt.', 'transfer')
   }
+  const totalSessions = positiveInteger(tuition.totalSessions, 'Số buổi gói')
   const projection = {
     noticeId: notice.id, issuedAt: requiredText(snapshot.issuedAt || notice.issuedAt, 'Ngày phát hành'),
-    centerName: requiredText(center.name, 'Tên trung tâm'), centerAddress: normalizeText(center.address),
-    centerPhone: normalizeText(center.phone), centerWebsite: normalizeText(center.website) || 'www.ichess.edu.vn',
-    studentName: requiredText(student.name, 'Học viên'), packageName: requiredText(tuition.packageName, 'Gói học phí'),
+    centerName: requiredText(center.name, 'Tên trung tâm'), centerPhone: String(center.phone ?? '').trim() || TUITION_NOTICE_HOTLINE_FALLBACK,
+    studentName: requiredText(student.name, 'Học viên'), birthDate: formatStudentBirthInformation(student, '—'),
+    totalSessions,
     termNumber: positiveInteger(tuition.termNumber ?? notice.targetTermNumber, 'Kỳ học phí'),
-    programName: normalizeText(tuition.programName), learningForm: normalizeText(tuition.learningForm), totalSessions,
-    maxCompletionWeeks: tuition.maxCompletionWeeks == null ? null : positiveInteger(tuition.maxCompletionWeeks, 'Thời gian tối đa hoàn thành khóa'),
-    currentUsedSessions: nonNegativeInteger(progress.usedSessions, 'Tiến độ hiện tại'),
-    currentTotalSessions: positiveInteger(progress.totalSessions, 'Tổng buổi hiện tại'),
-    paymentFrom: optionalDate(paymentWindow.from, 'Ngày bắt đầu thanh toán'),
-    paymentTo: optionalDate(paymentWindow.to, 'Hạn thanh toán'),
+    paymentTo: optionalDate(snapshot.paymentWindow?.to, 'Hạn thanh toán'),
     paymentStatus: paymentTruth.status, paidBeforeIChess: paymentTruth.paidBeforeIChess,
     tuitionAmount: moneyValue(money.tuitionAmount, 'Học phí'), discountAmount: moneyValue(money.discountAmount, 'Ưu đãi'),
     materialFee: moneyValue(money.materialFee, 'Phí giáo trình'), totalAmount: moneyValue(money.totalAmount, 'Tổng cộng'),
-    discountExplanation: normalizeText(money.discountExplanation),
-    notes: Array.isArray(snapshot.notes) ? snapshot.notes.map(normalizeText).filter(Boolean) : [],
-    transferContent: requiredText(transfer.content, 'Nội dung chuyển khoản'),
-    transferProfile: COMPANY_TUITION_PAYMENT_PROFILE, scheduleRows,
-  }
-  if (projection.currentUsedSessions > projection.currentTotalSessions) {
-    throw new TuitionNoticePdfValidationError('Tiến độ hiện tại không hợp lệ.', 'currentProgress')
+    forecast: forecastTuitionNotice({ ...options.forecastFacts,
+      generatedDate: options.generatedDate ?? getTuitionNoticeGenerationDate() }),
+    transferContent: requiredText(transfer.content, 'Nội dung chuyển khoản'), transferProfile: COMPANY_TUITION_PAYMENT_PROFILE,
   }
   if (projection.totalAmount !== projection.tuitionAmount - projection.discountAmount + projection.materialFee) {
     throw new TuitionNoticePdfValidationError('Tổng tiền không khớp dữ liệu học phí.', 'money')
   }
   return Object.freeze(projection)
 }
-
+export function buildTuitionNoticePaymentCopy(p) {
+  const paid = p.paymentStatus === 'PAID'
+  return {
+    request: paid ? (p.paidBeforeIChess ? 'Học phí kỳ này đã được thanh toán trước khi dùng iChess.' : 'Học phí kỳ này đã được thanh toán.')
+      : `Quý phụ huynh vui lòng đóng học phí khóa mới${p.paymentTo ? `: trước ngày ${formatDate(p.paymentTo)}` : '.'}`,
+    window: !paid && p.paymentTo ? `Hạn thanh toán: ${formatDate(p.paymentTo)}.` : [],
+    showPaymentInstructions: !paid, title: paid ? 'Tình trạng thanh toán:' : 'Hình thức thanh toán:',
+    footer: paid ? 'TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG xác nhận học phí kỳ này đã được thanh toán.'
+      : 'TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG rất mong quý phụ huynh đóng học phí nêu trên đúng thời hạn.',
+  }
+}
+export function buildTuitionNoticeNotes(p) {
+  const makeup = 'Học viên được học bù trong khóa học nếu vắng học có thông báo (P).'
+  return { paragraphs: [makeup, ...buildTuitionNoticeForecastLines(p.forecast)] }
+}
 export async function generateTuitionNoticePdf(notice, options = {}) {
-  const projection = createTuitionNoticePdfProjection(notice)
-  const layout = selectTuitionNoticeA4Layout(projection.totalSessions)
-  const documentRef = options.documentRef ?? globalThis.document
+  const projection = createTuitionNoticePdfProjection(notice, options)
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
-  if (!documentRef?.createElement || typeof fetchImpl !== 'function') {
-    throw new Error('Trình duyệt hiện tại không hỗ trợ xuất PDF Thông báo học phí.')
-  }
-  const [templateBytes, qrBytes] = await Promise.all([
-    loadAsset(TUITION_NOTICE_TEMPLATE_PATH, fetchImpl, options.baseUrl, 'Không tải được mẫu TBHP A4 đã duyệt.'),
-    projection.paymentStatus === 'UNPAID'
-      ? loadAsset(TUITION_TRANSFER_QR_PATH, fetchImpl, options.baseUrl, 'Không tải được ảnh QR công ty đã duyệt.')
-      : Promise.resolve(null),
-    ensureFonts(documentRef, fetchImpl, options),
-  ])
-  if (await sha256(templateBytes) !== TUITION_NOTICE_TEMPLATE_SHA256) throw new Error('Mẫu TBHP A4 không khớp bản đã duyệt.')
-  const decodeImage = options.decodeImage || (bytes => globalThis.createImageBitmap(new Blob([bytes], { type: 'image/png' })))
-  const qr = qrBytes ? await decodeImage(qrBytes) : null
-  if (qr && (qr.width < 300 || qr.height < 300 || Math.abs(qr.width / qr.height - 1) > 0.02)) {
-    throw new Error('Ảnh QR công ty chưa đủ sắc nét để in.')
-  }
-  const { PDFDocument } = await import('pdf-lib')
+  if (typeof fetchImpl !== 'function') throw new Error('Trình duyệt hiện tại không hỗ trợ xuất PDF Thông báo học phí.')
+  const templateBytes = await loadAsset(TUITION_NOTICE_TEMPLATE_PATH, fetchImpl, options.baseUrl)
+  if (await sha256(templateBytes) !== TUITION_NOTICE_TEMPLATE_SHA256) throw new Error('Mẫu TBHP A5 không khớp bản đã duyệt.')
+  const { PDFDocument, PDFName, decodePDFRawStream, rgb } = await import('pdf-lib')
   const template = await PDFDocument.load(templateBytes, { updateMetadata: false })
-  if (template.getPageCount() !== 1) throw new Error('Mẫu TBHP A4 phải có đúng một trang.')
+  if (template.getPageCount() !== 1) throw new Error('Mẫu TBHP A5 phải có đúng một trang.')
   const size = template.getPage(0).getSize()
-  if (Math.abs(size.width - TBHP_A4_PAGE.width) > 0.02 || Math.abs(size.height - TBHP_A4_PAGE.height) > 0.02) {
-    throw new Error('Mẫu TBHP không đúng khổ A4 đã duyệt.')
+  if (Math.abs(size.width - TBHP_A5_PAGE.width) > 0.02 || Math.abs(size.height - TBHP_A5_PAGE.height) > 0.02) {
+    throw new Error('Mẫu TBHP không đúng khổ A5 đã duyệt.')
   }
+  // Fresh catalog avoids carrying the source PDF's nonzero Root generation.
   const pdf = await PDFDocument.create()
   const [page] = await pdf.copyPages(template, [0])
   pdf.addPage(page)
-  const { canvas, context } = createCanvas(documentRef)
-  const renderedFields = drawDocument(context, projection, layout)
-  const overlay = await pdf.embedPng(new Uint8Array(await canvasToPngArrayBuffer(canvas)))
-  page.drawImage(overlay, { x: 0, y: 0, ...TBHP_A4_PAGE })
-  if (qrBytes) {
-    // The golden QR includes a fixed white quiet zone around the unchanged asset.
-    const qrImage = await pdf.embedPng(qrBytes)
-    const inset = layout.qr.quietZone
-    page.drawImage(qrImage, { x: layout.qr.x + inset, y: TBHP_A4_PAGE.height - layout.qr.y - layout.qr.height + inset,
-      width: layout.qr.width - inset * 2, height: layout.qr.height - inset * 2 })
+  // Suppress only measured placeholder text in this hash-pinned template.
+  // Preserve all artwork without opaque rectangles over its watermark.
+  const content = new TextDecoder('latin1').decode(decodePDFRawStream(page.node.Contents()).decode())
+  const paid = projection.paymentStatus === 'PAID'
+  const slotBaselines = [387.0256, 373.8256, 360.6256, 282.3856, 112.1756]
+  let removed = 0
+  let clean = content.replace(/BT\b[\s\S]*?\bET/g, (block, offset) => {
+    const tm = block.match(/1 0 0 1 ([\d.]+) ([\d.]+) Tm/)
+    if (!tm) return block
+    const x = Number(tm[1]), y = Number(tm[2])
+    const slot = slotBaselines.some(b => Math.abs(b - y) < 0.001) && !(x === 65.664 && y === 360.6256)
+      || (paid && y >= 174.7 && y <= 269.15)
+      || (paid && x === 0 && /73\.104 122\.2556 cm/.test(content.slice(Math.max(0, offset - 80), offset)))
+    if (!slot) return block
+    removed++
+    return ''
+  })
+  if (removed !== (paid ? 17 : 8)) throw new Error('Các vùng dữ liệu TBHP A5 không khớp mẫu đã duyệt.')
+  // All advisory bullets now wrap together in the existing notice area.
+  clean = clean.replace(/n\s+60\.084 285\.3856 m[\s\S]*?f\*/, '')
+  if (paid) {
+    clean = clean.replace(/1 1 1 rg\s+n 285\.96 150\.1056 91\.44 91\.44 re f\*\s+q\s+72\.04 0 0 72\.04 295\.66 159\.8056 cm\s+\/FormXob\.e670f2ab4150a7972594039f3c5847f5 Do\s+Q/, '')
+      .replace(/n 75\.864 (?:230\.3456|217\.0256|190\.6256|176\.7056) 2\.7 2\.7 re f\*/g, '')
+      .replace(/n\s+60\.964 (?:258\.4656|244\.5456) m[\s\S]*?f\*/g, '')
   }
-  qr?.close?.()
+  page.node.set(PDFName.of('Contents'), pdf.context.register(pdf.context.flateStream(clean)))
+  pdf.registerFontkit((await import('@pdf-lib/fontkit')).default)
+  const fonts = Object.fromEntries(await Promise.all(Object.entries(FONT_ASSETS).map(async ([key, asset]) => {
+    const bytes = await loadAsset(`forms/tuition-receipt/fonts/${asset.file}`, fetchImpl, options.baseUrl)
+    if (await sha256(bytes) !== asset.sha256) throw new Error('Phông TBHP không khớp bản đã duyệt.')
+    return [key, await pdf.embedFont(bytes, { subset: true })]
+  })))
+  const fields = {}
+  const draw = (name, value, box = TUITION_NOTICE_A5_LAYOUT.fields[name]) => {
+    const font = fonts[box.font]
+    let fontSize = box.fontSize, lines
+    for (;;) {
+      lines = wrapText(value, font, fontSize, box.width)
+      if (lines && lines.length <= box.maxLines) break
+      if (fontSize === box.minFontSize) break
+      fontSize = Math.max(box.minFontSize, fontSize - 0.25)
+    }
+    if (!lines || lines.length > box.maxLines || fontSize < box.minFontSize - 0.001) {
+      throw new TuitionNoticePdfValidationError(`Nội dung ${name} không vừa vùng in đã duyệt.`, name)
+    }
+    lines.forEach((line, i) => {
+      const width = font.widthOfTextAtSize(line, fontSize)
+      page.drawText(line, { x: box.x + (box.align === 'center' ? (box.width - width) / 2 : 0),
+        y: TBHP_A5_PAGE.height - box.baseline - i * box.lineHeight,
+        size: fontSize, font, color: rgb(...(box.color || [0, 0, 0])) })
+    })
+    fields[name] = { ...box, fontSize, lines, value }
+  }
+  const p = projection, copy = buildTuitionNoticePaymentCopy(p)
+  draw('studentName', p.studentName)
+  draw('birthDate', p.birthDate)
+  draw('sessionCount', String(p.totalSessions))
+  draw('centerName', p.centerName)
+  draw('dueDate', copy.request)
+  draw('tuitionAmount', `HP khóa “${p.totalSessions} buổi”: ${formatMoney(p.tuitionAmount)} VNĐ${p.materialFee ? `; Phí giáo trình: ${formatMoney(p.materialFee)} VNĐ` : ''}`)
+  draw('totalAmount', `${formatMoney(p.totalAmount)} VNĐ`)
+  draw('discount', p.discountAmount ? `(Giảm ${formatMoney(p.discountAmount)} VNĐ)` : '')
+  const notes = buildTuitionNoticeNotes(p)
+  draw('note', notes.paragraphs.map(note => `• ${note}`))
+  if (copy.showPaymentInstructions) draw('paymentContent', p.transferContent)
+  else {
+    draw('paymentStatus', copy.request)
+    draw('paymentTitle', copy.title)
+    draw('footer', copy.footer)
+  }
+  draw('contact', `Mọi thắc mắc vui lòng liên hệ: ${p.centerPhone}`)
+  draw('hotline', p.centerPhone)
+  pdf.setTitle(`Thông báo học phí — ${p.studentName}`)
   return {
     blob: new Blob([await pdf.save({ useObjectStreams: false })], { type: 'application/pdf' }),
-    fileName: createFileName(projection.studentName, projection.issuedAt), pageCount: 1,
-    rowCount: projection.totalSessions, projection,
-    layout: { profile: layout.name, page: layout.page, table: layout.table, qr: qrBytes ? layout.qr : null, fields: renderedFields },
+    fileName: createFileName(p.studentName, p.issuedAt), pageCount: 1, projection,
+    layout: { profile: 'TBHP_A5', page: TBHP_A5_PAGE, fields, qr: copy.showPaymentInstructions ? TUITION_NOTICE_A5_LAYOUT.qr : null },
   }
 }
-
-export function buildTuitionNoticePaymentCopy(projection) {
-  if (projection.paymentStatus === 'PAID') {
-    return {
-      request: projection.paidBeforeIChess
-        ? ['Học phí kỳ này đã được thanh toán trước', 'khi dùng iChess.']
-        : 'Học phí kỳ này đã được thanh toán.',
-      window: [],
-      title: 'Tình trạng thanh toán:',
-      method: projection.paidBeforeIChess
-        ? '• Đã thanh toán trước khi dùng iChess.' : '• Đã thanh toán kỳ học phí này.',
-      footer: ['TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG xác nhận học phí kỳ này đã được thanh toán.',
-        `Mọi thắc mắc vui lòng liên hệ: ${projection.centerPhone}`],
-      showPaymentInstructions: false,
-    }
-  }
-  return {
-    request: ['Quý phụ huynh vui lòng thanh toán học phí', 'khóa mới:'],
-    window: projection.paymentFrom && projection.paymentTo
-      ? [`từ ngày ${formatDate(projection.paymentFrom)} đến ngày`, `${formatDate(projection.paymentTo)}.`]
-      : projection.paymentTo ? `Hạn thanh toán: ${formatDate(projection.paymentTo)}.` : [],
-    title: 'Hình thức thanh toán:',
-    method: '• Trực tiếp tại trung tâm: Tiền mặt (TM).',
-    footer: ['TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG rất mong quý phụ huynh đóng học phí nêu trên',
-      `đúng thời hạn. Mọi thắc mắc vui lòng liên hệ: ${projection.centerPhone}`],
-    showPaymentInstructions: true,
-  }
-}
-
-function drawDocument(context, p, layout) {
-  const f = layout.fields
-  const rendered = {}
-  const draw = (name, value) => { rendered[name] = drawField(context, value, f[name], name) }
-  draw('greeting', 'Mến chào phụ huynh;')
-  draw('introduction', ['TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG xin', 'phép thông báo học phí (HP) cờ vua:'])
-  const labels = ['Học viên:', 'Khóa Học:', 'Hình thức:', 'Số buổi học:']
-  labels.forEach((label, i) => {
-    const baseline = layout.labels.baselines[i]
-    drawText(context, '•', layout.labels.bulletX, baseline)
-    drawText(context, label, layout.labels.textX, baseline)
-  })
-  draw('student', p.studentName)
-  draw('package', `${p.packageName} · Kỳ ${p.termNumber}`)
-  draw('center', `Cơ sở ${p.centerName}`)
-  draw('progress', `${p.currentUsedSessions}/${p.currentTotalSessions} buổi`)
-  draw('reminder', ['Nhằm đảm bảo lộ trình học tập xuyên suốt, thông báo',
-    'học phí sẽ được gửi trước 07 ngày (tương đương 02', 'buổi) trước khi kết thúc khóa học hiện tại.'])
-  const paymentCopy = buildTuitionNoticePaymentCopy(p)
-  draw('paymentRequest', paymentCopy.request)
-  draw('paymentWindow', paymentCopy.window)
-  const money = [
-    ['tuition', `Học phí khóa ${p.totalSessions} buổi:`, p.tuitionAmount],
-    ['discount', 'Ưu đãi học phí:', p.discountAmount],
-    ['material', 'Phí giáo trình:', p.materialFee],
-    ['total', p.paymentStatus === 'PAID' ? 'Giá trị kỳ học:' : 'Tổng cộng:', p.totalAmount],
-  ]
-  money.forEach(([name, label, amount]) => {
-    const box = f[name]
-    setFont(context, box.fontSize, box.font)
-    const offset = context.measureText(label + ' ').width
-    drawText(context, label, box.x, box.baseline, box)
-    drawText(context, `${formatMoney(amount)} VNĐ`, box.x + offset, box.baseline,
-      { ...box, font: 'bold', color: '#ff0000', width: box.width - offset })
-    rendered[name] = { ...box, lines: 1, fontSize: box.fontSize }
-  })
-  draw('notesTitle', 'Lưu ý:')
-  drawText(context, '• Học viên ', f.makeup.x, f.makeup.baseline)
-  setFont(context, 11, 'regular')
-  const prefix = context.measureText('• Học viên ').width
-  drawText(context, 'được học bù trong khóa học', f.makeup.x + prefix, f.makeup.baseline, { color: '#0000ff' })
-  drawText(context, 'nếu vắng học có thông báo (P).', f.makeup.x, f.makeup.baseline + f.makeup.lineHeight, { color: '#0000ff' })
-  draw('completion', ['• Đối với học viên học 2 buổi/tuần thời', p.maxCompletionWeeks
-    ? `gian tối đa hoàn thành khóa học là ${p.maxCompletionWeeks} tuần.` : 'gian hoàn thành khóa học theo gói đã đăng ký.'])
-  draw('paymentTitle', paymentCopy.title)
-  draw('cash', paymentCopy.method)
-  if (paymentCopy.showPaymentInstructions) {
-    draw('transferTitle', '• Chuyển khoản:')
-    draw('account', `STK: ${p.transferProfile.accountNumber}`)
-    draw('beneficiary', `Tên tài khoản: ${p.transferProfile.beneficiary}`)
-    draw('bank', `Ngân hàng: ${p.transferProfile.bank}`)
-    draw('transferContent', `Nội dung: ${p.transferContent}`)
-    ;['account', 'beneficiary', 'bank', 'transferContent'].forEach(name => {
-      const b = layout.bankBullet
-      context.fillStyle = '#000000'
-      context.fillRect(b.x, f[name].baseline + b.baselineOffset, b.size, b.size)
-    })
-  }
-  draw('footerRequest', paymentCopy.footer)
-  draw('thanks', 'Xin trân trọng cảm ơn sự tin tưởng và đồng hành của Quý phụ huynh và học viên!')
-  draw('hotline', `Hotline: ${p.centerPhone}`)
-  drawText(context, 'Website: ', f.website.x, f.website.baseline, f.website)
-  setFont(context, f.website.fontSize, f.website.font)
-  const websiteOffset = context.measureText('Website: ').width
-  drawText(context, p.centerWebsite, f.website.x + websiteOffset, f.website.baseline,
-    { ...f.website, width: f.website.width - websiteOffset, color: '#0000ff', underline: true })
-  drawTable(context, p.scheduleRows, layout.table)
-  return Object.freeze(rendered)
-}
-
-function drawTable(context, rows, table) {
-  const { x, y, width, headerHeight, rowStep, columns, fontSize } = table
-  const height = headerHeight + rows.length * rowStep
-  context.save()
-  context.strokeStyle = '#000000'
-  context.lineWidth = table.borderWidth
-  for (const cx of columns) { context.beginPath(); context.moveTo(cx, y); context.lineTo(cx, y + height); context.stroke() }
-  for (const cy of [y, ...Array.from({ length: rows.length + 1 }, (_, i) => y + headerHeight + i * rowStep)]) {
-    context.beginPath(); context.moveTo(x, cy); context.lineTo(x + width, cy); context.stroke()
-  }
-  const centers = columns.slice(0, -1).map((left, i) => (left + columns[i + 1]) / 2)
-  ;['Buổi', 'Ngày học', 'Giáo viên'].forEach((label, i) => drawText(context, label, centers[i], table.headerBaseline,
-    { fontSize, align: 'center' }))
-  const teacherLabels = buildTuitionNoticeTeacherLabels(rows.map(row => row.source === 'ACTUAL' ? row : {}))
-  rows.forEach((row, i) => {
-    const baseline = table.firstRowBaseline + i * rowStep
-    const actual = row.source === 'ACTUAL'
-    const values = [String(row.sessionNumber), actual ? formatDate(row.date) : '', actual ? teacherLabels[i] : '']
-    values.forEach((value, col) => drawText(context, value, centers[col], baseline,
-      { fontSize, align: 'center', width: columns[col + 1] - columns[col] - table.padding * 2 }))
-  })
-  context.restore()
-}
-
-// Presentation-only labels from frozen occurrence facts, never live Teacher metadata.
-export function buildTuitionNoticeTeacherLabels(rows) {
-  const facts = rows.map(row => {
-    const full = normalizeText(row.teacherName)
-    const explicit = normalizeText(row.teacherDisplayName)
-    const match = full.match(/^(Thầy|Cô)\s+(.+)$/u)
-    const labelPrefix = explicit.match(/^(Thầy|Cô)\s+/u)?.[1]
-    const prefix = match ? match[1] + ' ' : labelPrefix ? labelPrefix + ' ' : ''
-    const words = (match ? match[2] : full).split(' ').filter(Boolean)
-    const take = prefix.startsWith('Thầy') ? 1 : 2
-    return { full, explicit, prefix, words, take, label: explicit || (prefix ? prefix + words.slice(-take).join(' ') : full) }
-  })
-  for (let iteration = 0; iteration < 12; iteration++) {
-    const groups = new Map()
-    facts.forEach(fact => { if (!fact.full) return; const group = groups.get(fact.label) || []; group.push(fact); groups.set(fact.label, group) })
-    let changed = false
-    for (const group of groups.values()) {
-      if (new Set(group.map(fact => fact.full)).size < 2) continue
-      group.forEach(fact => {
-        if (fact.take >= fact.words.length) return
-        fact.take++
-        fact.label = fact.prefix + fact.words.slice(-fact.take).join(' ')
-        changed = true
-      })
-    }
-    if (!changed) break
-  }
-  for (const fact of facts) {
-    if (facts.some(other => other.full !== fact.full && other.full && fact.full && other.label === fact.label)) {
-      throw new TuitionNoticePdfValidationError('Tên giáo viên trên TBHP chưa đủ rõ để phân biệt.', 'scheduleRows')
-    }
-  }
-  return facts.map(fact => fact.label)
-}
-
-function drawField(context, value, box, name) {
-  let size = box.fontSize
-  let lines = fitLines(context, value, box, size)
-  if (!lines && box.fallbackSize) { size = box.fallbackSize; lines = fitLines(context, value, box, size) }
-  const label = { student: 'tên học viên', center: 'tên cơ sở', package: 'gói học phí', transferContent: 'nội dung chuyển khoản' }[name] || 'TBHP'
-  if (!lines) throw new TuitionNoticePdfValidationError(`Nội dung ${label} không vừa vùng in đã duyệt.`, name)
-  lines.forEach((line, i) => drawText(context, line, box.align === 'center' ? box.x + box.width / 2 : box.x,
-    box.baseline + i * box.lineHeight, { ...box, fontSize: size }))
-  return { ...box, lines: lines.length, fontSize: size }
-}
-
-function fitLines(context, value, box, size) {
-  setFont(context, size, box.font)
+function wrapText(value, font, size, width) {
+  // Paragraph boundaries are semantic note entries, never sample line breaks.
   if (Array.isArray(value)) {
-    return value.length <= box.maxLines && value.every(line => context.measureText(line).width <= box.width) ? value : null
+    const paragraphs = value.map(text => wrapText(text, font, size, width))
+    return paragraphs.some(lines => !lines) ? null : paragraphs.flat()
   }
-  const words = normalizeText(value).split(' ').filter(Boolean)
-  const lines = []
+  const singleLine = String(value ?? '').trim()
+  if (!/[\u0000-\u001f\u007f]/.test(singleLine) && font.widthOfTextAtSize(singleLine, size) <= width) {
+    return singleLine ? [singleLine] : []
+  }
+  const lines = [], words = normalizeText(value).split(' ').filter(Boolean)
   let line = ''
   for (const word of words) {
-    if (context.measureText(word).width > box.width) return null
-    const candidate = line ? line + ' ' + word : word
-    if (context.measureText(candidate).width <= box.width) line = candidate
+    if (font.widthOfTextAtSize(word, size) > width) return null
+    const candidate = line ? `${line} ${word}` : word
+    if (font.widthOfTextAtSize(candidate, size) <= width) line = candidate
     else { lines.push(line); line = word }
   }
   if (line) lines.push(line)
-  return lines.length <= box.maxLines ? lines : null
+  return lines
 }
-
-function setFont(context, size, font = 'regular') {
-  context.font = `${font === 'contact' ? 'bold ' : ''}${size}px ${FONT_FAMILIES[font]}`
-}
-function drawText(context, value, x, baseline, options = {}) {
-  if (!value) return
-  const fontSize = options.fontSize || 11
-  setFont(context, fontSize, options.font || 'regular')
-  const measured = context.measureText(value).width
-  if (options.width && measured > options.width + 0.01) throw new TuitionNoticePdfValidationError('Nội dung không vừa vùng in TBHP đã duyệt.', 'layout')
-  context.save()
-  context.fillStyle = options.color || '#000000'
-  context.textAlign = options.align || 'left'
-  context.textBaseline = 'alphabetic'
-  context.fillText(value, x, baseline)
-  if (options.underline) {
-    context.strokeStyle = context.fillStyle; context.lineWidth = 0.6
-    const left = options.align === 'center' ? x - measured / 2 : x
-    context.beginPath(); context.moveTo(left, baseline + 2); context.lineTo(left + measured, baseline + 2); context.stroke()
-  }
-  context.restore()
-}
-
-async function ensureFonts(documentRef, fetchImpl, options) {
-  if (!documentRef.fonts?.ready || typeof documentRef.fonts.load !== 'function') throw new Error('Trình duyệt không thể tải phông TBHP đã duyệt.')
-  const bytes = await Promise.all(FONT_ASSETS.map(async asset => {
-    const data = await loadAsset(`forms/tuition-notice/fonts/${asset.file}`, fetchImpl, options.baseUrl, 'Không tải được phông TBHP đã duyệt.')
-    if (await sha256(data) !== asset.sha256) throw new Error('Phông TBHP không khớp bản đã duyệt.')
-    return data
-  }))
-  await documentRef.fonts.ready
-  for (let i = 0; i < FONT_ASSETS.length; i++) {
-    const name = FONT_ASSETS[i].name
-    if (options.registerFont) await options.registerFont(bytes[i], name)
-    else {
-      const font = await new FontFace(name, bytes[i]).load()
-      documentRef.fonts.add(font)
-    }
-    await documentRef.fonts.load(`11px "${name}"`, 'Tiếng Việt: Nguyễn Đình Chiểu')
-    if (documentRef.fonts.check && !documentRef.fonts.check(`11px "${name}"`)) throw new Error('Chưa tải được phông TBHP đã duyệt.')
-  }
-}
-async function loadAsset(path, fetchImpl, baseUrl, message) {
-  const response = await fetchImpl(resolveAssetUrl(path, baseUrl), { cache: 'no-cache' })
-  if (!response.ok) throw new Error(message)
+async function loadAsset(path, fetchImpl, baseUrl = import.meta.env?.BASE_URL ?? '/') {
+  const base = String(baseUrl || '/').replace(/\/?$/, '/')
+  const response = await fetchImpl(`${base}${path}`, { cache: 'no-cache' })
+  if (!response.ok) throw new Error('Không tải được tài nguyên TBHP đã duyệt.')
   return new Uint8Array(await response.arrayBuffer())
-}
-function createCanvas(documentRef) {
-  const canvas = documentRef.createElement('canvas')
-  canvas.width = Math.round(TBHP_A4_PAGE.width * OVERLAY_SCALE)
-  canvas.height = Math.round(TBHP_A4_PAGE.height * OVERLAY_SCALE)
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('Không khởi tạo được lớp dữ liệu TBHP.')
-  context.scale(OVERLAY_SCALE, OVERLAY_SCALE)
-  return { canvas, context }
-}
-function projectScheduleRow(row = {}, expectedNumber) {
-  const sessionNumber = positiveInteger(row.sessionNumber, 'Số thứ tự buổi')
-  if (sessionNumber !== expectedNumber) throw new TuitionNoticePdfValidationError('Thứ tự lịch học không liên tục.', 'scheduleRows')
-  return Object.freeze({ sessionNumber, date: optionalDate(row.date, 'Ngày học'),
-    teacherName: normalizeText(row.teacherName), teacherDisplayName: normalizeText(row.teacherDisplayName || row.teacherDisplayLabel),
-    source: normalizeText(row.source) || 'UNRESOLVED' })
-}
-function resolveAssetUrl(path, baseUrl = import.meta.env?.BASE_URL ?? '/') {
-  const base = String(baseUrl || '/').endsWith('/') ? String(baseUrl || '/') : `${baseUrl}/`
-  return `${base}${path}`
-}
-function canvasToPngArrayBuffer(canvas) {
-  return new Promise((resolve, reject) => canvas.toBlob(async blob => {
-    if (!blob) return reject(new Error('Không tạo được lớp dữ liệu TBHP.'))
-    resolve(await blob.arrayBuffer())
-  }, 'image/png'))
 }
 async function sha256(bytes) {
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
@@ -414,10 +213,9 @@ function optionalDate(value, label) {
   if (!date || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== text) throw new TuitionNoticePdfValidationError(`${label} không hợp lệ.`, label)
   return text
 }
-function positiveInteger(value, label) { const n = Number(value); if (!Number.isSafeInteger(n) || n < 1) throw new TuitionNoticePdfValidationError(`${label} không hợp lệ.`, label); return n }
-function nonNegativeInteger(value, label) { const n = Number(value); if (!Number.isSafeInteger(n) || n < 0) throw new TuitionNoticePdfValidationError(`${label} không hợp lệ.`, label); return n }
-function moneyValue(value, label) { return nonNegativeInteger(value, label) }
+function positiveInteger(value, label) { const n = Number(value); if (value == null || !Number.isSafeInteger(n) || n < 1) throw new TuitionNoticePdfValidationError(`${label} không hợp lệ.`, label); return n }
+function moneyValue(value, label) { const n = Number(value); if (value == null || !Number.isSafeInteger(n) || n < 0) throw new TuitionNoticePdfValidationError(`${label} không hợp lệ.`, label); return n }
 function requiredText(value, label) { const text = normalizeText(value); if (!text) throw new TuitionNoticePdfValidationError(`Thiếu ${label} trong dữ liệu TBHP.`, label); return text }
-function normalizeText(value) { return String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim() }
+function normalizeText(value) { return String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim() }
 function isPlainObject(value) { return Boolean(value && typeof value === 'object' && !Array.isArray(value)) }
 function isUuid(value) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim()) }

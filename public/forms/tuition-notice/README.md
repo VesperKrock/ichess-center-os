@@ -1,17 +1,38 @@
-# TBHP runtime assets
+# TBHP A5 runtime assets
 
-Runtime uses `tuition-notice-a4-background.pdf`, a native **595.2756 × 841.8898 pt**, single-page A4 background containing only the approved iChess identity/title graphic and watermark. It contains no Student, package, progress, price, session rows, bank account, QR, contact data or prototype warning.
+The only production template is `tuition-notice-template.pdf`, approved on
+2026-10-05: one A5 portrait page, **419.5276 × 595.2756 pt** (148 × 210 mm).
+SHA-256: `23131e615eefe01028ae18f45375a6526bb9c27156131cc54a5147621fd47814`.
+Runtime rejects a different hash, page count or geometry; there is no A4 fallback.
 
-The header was rendered at 3 pixels/pt from the existing approved `tuition-notice-template.pdf`, cropped to its identity/title region `[50, 692, 550, 782]`, and placed without resizing at the golden A4 position. The original watermark image and alpha mask were extracted separately and placed at the golden position. This is a blank graphic background, not a filled golden PDF. The legacy Letter asset remains only as the original graphic source; the current renderer never loads it.
+`src/tuition-notice-a5-layout.js` defines fixed top-left field boxes, baselines,
+widths, font fitting and paragraph wrapping. The renderer keeps the approved
+artwork and static text, removes measured placeholder text operators, and adds
+searchable vector text using the existing licensed Tinos Regular/Bold fonts in
+`forms/tuition-receipt/fonts`. It does not cover the watermark with white boxes.
 
-| Asset | SHA-256 |
-|---|---|
-| Original `tuition-notice-template.pdf` | `3acbc86a6633f780fcdebd2951aa9e28b1603142b737660e5d1ae2f933b9ac6a` |
-| A4 `tuition-notice-a4-background.pdf` | `2ef559a0d30597ca5d59ff1bc223586d1a3a200380c1ff5b598acf056ebd88a7` |
-| `fonts/Lora-Regular.ttf` | `80aac4498fe8b3c16c54ae820a72506c929ccaee96b92c226f915a901c857a96` |
-| `fonts/Lora-Bold.ttf` | `2aba152528d3526cbb342d8564f19aa92ca9d2e71d2c7e98fec98c5c89558558` |
-| `fonts/Lora-Italic.ttf` | `27aac8eaa1b9ca94554cdc2c7ae2799d4dcea72055b95bfdc7fdc450cf9a77a4` |
+The template embeds the single company QR and payment block. QA scans its payload
+and compares it with `assets/payment/ichess-company-tuition-qr.png`, account
+442228866, CÔNG TY TNHH ICHESS VIET NAM, ACB. Runtime does not add a duplicate QR.
+Paid notices retain explicit payment status and omit payment instructions/QR.
 
-The three full fonts were extracted from the original template's `NewLoraR/B/I` resources. QA verifies their bytes equal the approved goldens' `LoraR/B/I` resources. Runtime verifies asset hashes and loads explicit font faces before rendering. No dependency on an installed Lora font or substitution to Times exists for dynamic content.
+The persisted Settings source is `center_operational_profiles.phone`, exposed
+as `snapshot.center.phone` by `tbhp_get_printable_document`. Nonblank values are
+used; blank values resolve to **090 1197 260** in both contact positions.
+Student birth information is bound from the existing Tuition operator Student
+projection, preserving full-date/year-only/unknown precision. Dates and amounts
+come from the existing frozen Tuition notice read. The advisory “Lưu ý” uses
+current Tuition countable progress and current active individualized Ca học days
+read at PDF generation time. Duration is `ceil(N / sessionsPerWeek) + 1` weeks;
+the next-cycle forecast counts normal study occurrences strictly after today's
+Vietnam date. Missing or ambiguous facts omit the relevant estimate. These
+estimates are never stored and never enforce Tuition or Attendance rules.
 
-The existing `assets/payment/ichess-company-tuition-qr.png` is unchanged. The A4 renderer adds the fixed white quiet zone shown in the golden and embeds the same company QR separately from the text overlay. Golden files remain under `docs/business-reference/tuition-notice/golden-a4` and are never fetched by runtime.
+Tests: `tests/tuition-notice-a5-runtime-qa.js` and
+`tests/tuition-notice-a5-real-app-qa.js`. QA artifacts: `artifacts/l2-tbhp-a5/`.
+The sample under `docs/business-reference/tuition-notice/` is a reference export
+derived from the approved production template/runtime, with the approved sample
+values and percentage discount annotation. L2.1 replaced its corrupt compressed
+streams; production template/runtime remain authoritative. Re-export and safety
+evidence: `artifacts/l2-1-tbhp/REPORT.md`.
+Old A4 goldens and prior QA artifacts remain historical references only.
