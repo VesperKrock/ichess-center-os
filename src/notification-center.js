@@ -394,6 +394,15 @@ export function buildInventoryDueNotificationCandidates(cycleCounts, options = {
     })
 }
 
+export function resolveCurrentInventoryDueNotification(notification, cycleCounts, centerId) {
+  const targetCenterId = String(centerId || '').trim()
+  const cycleCountId = String(notification?.meta?.cycleCountId || '').trim()
+  if (!targetCenterId || !cycleCountId || notification?.meta?.centerId !== targetCenterId) return null
+  return buildInventoryDueNotificationCandidates(cycleCounts, { centerId: targetCenterId })
+    .find((candidate) => candidate.meta.cycleCountId === cycleCountId
+      && candidate.dedupeKey === notification.dedupeKey) || null
+}
+
 // These legacy builders remain exported for historical fixture tests only.
 // The active V2-5 read model is wired exclusively to the providers above.
 export function buildTuitionNotificationCandidates(tuitionRows, monthKey) {

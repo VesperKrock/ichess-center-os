@@ -128,7 +128,8 @@ assert.equal(buildScheduleSessionFromForm(form.values, { ...assignments[0], leve
 const mainSource = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 const centerSwitch = mainSource.slice(mainSource.indexOf('async function handleInternalOpenCenter'),
   mainSource.indexOf('function normalizeInternalCenters'))
-assert(centerSwitch.includes("refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'center-switch' })"))
+assert(centerSwitch.includes('closeCenterBoundWorkspacesForSwitch()'))
+assert(!centerSwitch.includes("refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'center-switch' })"))
 assert(centerSwitch.includes('cloudUserSyncId !== switchSyncId'))
 assert(mainSource.includes('runId !== a3TeacherReadRunId'))
 assert(!mainSource.includes('moduleRefreshRunIds.clear()'))

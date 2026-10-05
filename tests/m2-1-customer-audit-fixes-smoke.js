@@ -89,7 +89,8 @@ assert.match(render([standalone], { ...initialParentConsultationFilters, query: 
 const main = fs.readFileSync('src/main.js', 'utf8')
 const centerSwitch = main.slice(main.indexOf('async function handleInternalOpenCenter('),
   main.indexOf('function normalizeInternalCenters('))
-assert.match(centerSwitch, /openWindows\.some\(\(item\) => item\.moduleId === 'khach-hang-tu-van'[^]*?refreshModuleAuthoritativeUpstreams\('khach-hang-tu-van', \{ reason: 'center-switch' \}\)/)
+assert.match(centerSwitch, /closeCenterBoundWorkspacesForSwitch\(\)[^]*?setCurrentStorageCenterId\(normalizedCenterId\)/)
+assert.doesNotMatch(centerSwitch, /refreshModuleAuthoritativeUpstreams\('khach-hang-tu-van', \{ reason: 'center-switch' \}\)/)
 assert.match(main, /runId !== c53CrmSyncRunId \|\| centerId !== getCurrentCanonicalCenterContext\(\)\.centerId/)
 assert.match(main, /const crmRefresh = await refreshC53CrmSharedTruth\(\{ reason: 'after-server-commit', silent: true \}\)/)
 

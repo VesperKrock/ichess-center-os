@@ -482,6 +482,7 @@ import {
   markNotificationsReadByIds,
   notificationSourceLabels,
   pruneExpiredStudentBirthdayNotifications,
+  resolveCurrentInventoryDueNotification,
   tagNotificationCandidates,
   upsertNotificationCandidates,
 } from './notification-center.js'
@@ -491,6 +492,7 @@ import {
   resolveCurrentNotificationTarget,
 } from './notification-operational-assistant.js'
 import { renderNotificationAssistantPanel } from './notification-assistant-panel.js'
+import { createCenterSwitchDraftTracker } from './center-switch-drafts.js'
 import {
   ONLINE_ACCESS_ROLES,
   buildOnlineAccessState,
@@ -882,6 +884,7 @@ let isStartMenuOpen = false
 let isWindowOverflowOpen = false
 let isNotificationCenterOpen = false
 let isCenterProfilePopoverOpen = false
+const centerSwitchDraftTracker = createCenterSwitchDraftTracker()
 let notificationPanelPosition = { right: 12, bottom: 56 }
 let openWindows = []
 let nextWindowNumber = 1
@@ -935,6 +938,8 @@ let parentStudentLinks = []
 let parentLinkReviewState = null
 let parentIdentityEditState = null
 let f4bConversionState = null
+let f4bConversionOperationId = 0
+let reviewCompletionState = null
 let parentFirstCapabilityState = createParentFirstCapabilityState()
 let parentFirstCapabilityRunId = 0
 let c53CrmSharedTruthState = {
@@ -2474,7 +2479,149 @@ function clearAttendanceBoardCenterFilters() {
   attendanceBoardFilters = { ...attendanceBoardFilters, classSessionId: 'all', teacherId: 'all' }
 }
 
+function getCenterBoundDrafts() {
+  const drafts = []
+  const add = (key, label, state, value = state?.values, identity = '') => {
+    if (state) drafts.push({ key, label, identity: String(identity), value })
+  }
+  add('student', 'Học viên', studentFormState, studentFormState?.values,
+    `${studentFormState?.mode}:${studentFormState?.studentId || ''}`)
+  add('teacher', 'Giáo viên', teacherFormState, teacherFormState?.values,
+    `${teacherFormState?.mode}:${teacherFormState?.teacherId || ''}`)
+  add('customer', 'Khách hàng', parentConsultationFormState, parentConsultationFormState && {
+    values: parentConsultationFormState.values,
+    careLogs: parentConsultationFormState.careLogs,
+    careLogDraft: parentConsultationFormState.careLogDraft,
+    appointments: parentConsultationFormState.appointments,
+    appointmentDraft: parentConsultationFormState.appointmentDraft,
+    enrollmentDraft: parentConsultationFormState.enrollmentDraft,
+  }, `${parentConsultationFormState?.mode}:${parentConsultationFormState?.contactId || ''}`)
+  add('customer-conversion', 'Khách hàng', f4bConversionState,
+    { mode: f4bConversionState?.mode, values: f4bConversionState?.values },
+    f4bConversionState?.contactId)
+  add('customer-quick-note', 'Khách hàng', parentQuickNoteState,
+    parentQuickNoteState?.content, parentQuickNoteState?.contactId)
+  add('customer-link', 'Khách hàng', parentLinkReviewState,
+    parentLinkReviewState, parentLinkReviewState?.contactId)
+  add('customer-identity', 'Khách hàng', parentIdentityEditState,
+    parentIdentityEditState, parentIdentityEditState?.contactId)
+  add('tuition', 'Học phí', tuitionOperatorState.panel,
+    tuitionOperatorState.panel?.values,
+    `${tuitionOperatorState.panel?.kind}:${tuitionOperatorState.panel?.studentId}:${tuitionOperatorState.panel?.cycleId || ''}`)
+  add('schedule', 'Thời khóa biểu', scheduleFormState, scheduleFormState?.values,
+    `${scheduleFormState?.mode}:${scheduleFormState?.sessionId || ''}`)
+  add('calendar-item', 'Thời khóa biểu', scheduleCalendarItemState,
+    scheduleCalendarItemState?.values, scheduleCalendarItemState?.id)
+  add('calendar-tag', 'Thời khóa biểu', scheduleCalendarTagState,
+    scheduleCalendarTagState?.values, scheduleCalendarTagState?.id)
+  add('session-report', 'Thời khóa biểu', scheduleReportState,
+    scheduleReportState?.values, scheduleReportState?.sessionId)
+  add('session-learning', 'Thời khóa biểu', sessionReportLearningFormState,
+    sessionReportLearningFormState?.values, sessionReportLearningFormState?.sessionId)
+  add('session-guest', 'Thời khóa biểu', sessionReportGuestFormState,
+    sessionReportGuestFormState?.values, scheduleReportState?.sessionId)
+  add('session-attendance', 'Thời khóa biểu', sessionReportAttendanceState,
+    sessionReportAttendanceState, scheduleReportState?.sessionId)
+  add('schedule-attendance', 'Thời khóa biểu', scheduleAdminAttendanceState,
+    scheduleAdminAttendanceState?.rows?.map((row) => ({
+      studentId: row.studentId, attendanceStatus: row.attendanceStatus,
+      makeupForAttendanceLocalId: row.makeupForAttendanceLocalId, note: row.note, dirty: row.dirty,
+    })), `${scheduleAdminAttendanceState?.sessionId}:${scheduleAdminAttendanceState?.occurrenceDate}`)
+  add('attendance-baseline', 'Bảng điểm danh', attendanceBaselineDraftRecords,
+    attendanceBaselineDraftRecords, attendanceBaselineDraftState?.centerId)
+  add('attendance-note', 'Bảng điểm danh', attendanceCellNoteFormState,
+    attendanceCellNoteFormState?.note,
+    attendanceCellNoteFormState?.id)
+  add('attendance-board-note', 'Bảng điểm danh', attendanceBoardNoteFormState,
+    attendanceBoardNoteFormState?.note, attendanceBoardNoteFormState?.studentId)
+  add('review-completion', 'Cập nhật nhận xét', reviewCompletionState,
+    { note: reviewCompletionState?.note, confirmedSent: reviewCompletionState?.confirmedSent },
+    reviewCompletionState?.cycleId)
+  add('finance', 'Sổ quỹ Thu chi', cashflowFormState,
+    { values: cashflowFormState?.values, attachmentMode: cashflowFormState?.attachmentDraft?.mode,
+      attachmentName: cashflowFormState?.attachmentDraft?.fileName },
+    cashflowFormState?.transactionId)
+  add('finance-category', 'Sổ quỹ Thu chi', cashflowCategoryFormState,
+    cashflowCategoryFormState?.values, cashflowCategoryFormState?.categoryId)
+  add('cashbook-settings', 'Sổ quỹ Thu chi', cashbookSettingsFormState,
+    cashbookSettingsFormState?.values, cashbookSettingsFormState?.centerId)
+  add('cashbook-reconciliation', 'Sổ quỹ Thu chi', cashbookReconciliationFormState,
+    cashbookReconciliationFormState?.values, cashbookReconciliationFormState?.date)
+  add('inventory-item', 'Kho hàng', inventoryFormState, inventoryFormState?.values,
+    `${inventoryFormState?.mode}:${inventoryFormState?.itemId || ''}`)
+  add('inventory-movement', 'Kho hàng', inventoryMovementFormState,
+    inventoryMovementFormState?.values, inventoryMovementFormState?.values?.itemId)
+  add('inventory-request', 'Kho hàng', inventoryRequestFormState,
+    inventoryRequestFormState?.values, inventoryRequestFormState?.requestId)
+  add('inventory-status', 'Kho hàng', inventoryRequestStatusFormState,
+    inventoryRequestStatusFormState?.values, inventoryRequestStatusFormState?.requestId)
+  if (isInventoryCycleCountPanelOpen && selectedInventoryCycleCountId) {
+    add('inventory-count', 'Kho hàng', true, {
+      observed: inventoryCycleCountObservedByLineId,
+      explanations: inventoryCycleCountExplanationByLineId,
+    }, selectedInventoryCycleCountId)
+  }
+  if (isInventoryCycleCountPanelOpen) {
+    add('inventory-count-due-date', 'Kho hàng', true,
+      inventoryCycleCountDueDate, getCurrentResolvedCenterId())
+  }
+  add('settings-profile', 'Cài đặt cơ sở', settingsCenterProfileFormState,
+    settingsCenterProfileFormState?.values, getCurrentResolvedCenterId())
+  add('settings-package', 'Cài đặt cơ sở', settingsTuitionPackageFormState,
+    settingsTuitionPackageFormState?.values, settingsTuitionPackageFormState?.packageId)
+  add('settings-class-session', 'Cài đặt cơ sở', settingsClassSessionFormState,
+    settingsClassSessionFormState?.values, settingsClassSessionFormState?.classSessionId)
+  add('staff', 'Nhân sự', staffFormState, staffFormState?.values, staffFormState?.staffId)
+  add('staff-department', 'Nhân sự', staffDepartmentFormState,
+    staffDepartmentFormState?.values, staffDepartmentFormState?.departmentId)
+  for (const [windowId, state] of staffAdministrativeProfileWindowStates) {
+    add(`staff-profile:${windowId}`, 'Nhân sự', state, state?.values, windowId)
+  }
+  for (const [windowId, state] of staffDocumentWindowStates) {
+    add(`staff-document:${windowId}`, 'Nhân sự', state, state?.values, windowId)
+  }
+  add('student-care-notes', 'Học viên', careNoteDrafts, careNoteDrafts)
+  return drafts
+}
+
+function getCenterWritesInFlight() {
+  const writes = []
+  const check = (condition, label) => { if (condition) writes.push(label) }
+  check(f4bConversionState?.isSaving || c53CrmSharedTruthState.isSaving, 'Khách hàng')
+  check(studentFormState?.isSaving || teacherFormState?.isSaving, 'Học viên / giáo viên')
+  check(tuitionOperatorState.panel?.busy || c54FinanceSharedTruthState.isSaving
+    || v24PackageCycleCapabilityState.isSaving || f5bReceiptCapabilityState.isSaving, 'Học phí / Thu chi')
+  check(scheduleFormState?.isSaving || scheduleAdminAttendanceState?.saveState === 'saving'
+    || c57CalendarNotesSharedTruthState.isSaving, 'Thời khóa biểu / nhận xét')
+  check(c56InventorySharedTruthState.isSaving || v27aInventoryCycleCountCapabilityState.isSaving, 'Kho hàng')
+  check(v21CenterSettingsCapabilityState.isSaving, 'Cài đặt cơ sở')
+  check(isStaffSaving || isStaffDepartmentSaving || isStaffAdministrativeProfileSaving
+    || savingStaffDocumentWindowIds.size > 0 || uploadingStaffDocumentWindowIds.size > 0
+    || savingStaffAdministrativeGovernanceWindowIds.size > 0, 'Nhân sự')
+  check(reviewCompletionState?.saving, 'Cập nhật nhận xét')
+  check(Boolean(cloudUploadingTransactionId), 'Tệp giao dịch')
+  return writes
+}
+
+function closeCenterBoundWorkspacesForSwitch() {
+  openWindows.filter((item) => item.type === 'staff-administrative-profile')
+    .forEach((item) => clearStaffDocumentAttachmentRuntime(item.id))
+  openWindows = []
+  pendingWindowFocusAfterRender = null
+  lastKnownPreservedScrollPositions.clear()
+  isStartMenuOpen = false
+  isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
+  isCenterProfilePopoverOpen = false
+  reviewCompletionState = null
+  a3TeacherDialogState = null
+  staffDocumentAttachmentViewerState = null
+}
+
 function resetTransientStateForCenterSwitch() {
+  f4bConversionOperationId += 1
+  centerSwitchDraftTracker.reset()
+  reviewCompletionState = null
   studentTuitionDetailRouteRunId += 1
   customerTuitionHandoffRunId += 1
   const studentWindowTypes = ['student-detail', 'student-care-notes', 'student-learning']
@@ -8213,6 +8360,7 @@ function renderRequiredCredentialChange() {
 }
 
 function render() {
+  centerSwitchDraftTracker.observe(getCenterBoundDrafts())
   if (shouldDeferRenderForTextEditing()) {
     deferRenderUntilTextEditingEnds()
     return
@@ -10281,32 +10429,31 @@ async function handleInternalOpenCenter(centerId) {
     return
   }
 
-  const switchSyncId = ++cloudUserSyncId
-  const hasOpenFinanceWindow = openWindows.some((item) =>
-    !item.type && ['nhom-tai-chinh', 'so-quy', 'thu-chi'].includes(item.moduleId))
-  const selectedFinanceView = financeWorkspaceView
-  const selectedCashbookDate = cashbookSelectedDate
-  const selectedCashflowFilters = { ...cashflowFilters }
+  if (normalizedCenterId === getCurrentResolvedCenterId()) {
+    window.location.hash = ''
+    render()
+    return
+  }
+  const writesInFlight = getCenterWritesInFlight()
+  if (writesInFlight.length) {
+    window.alert(`Đang lưu dữ liệu ${[...new Set(writesInFlight)].join(', ')} ở cơ sở hiện tại. Vui lòng chờ lưu xong rồi đổi cơ sở.`)
+    return
+  }
+  const dirtyDrafts = centerSwitchDraftTracker.dirty(getCenterBoundDrafts())
+  if (dirtyDrafts.length) {
+    const workspaces = [...new Set(dirtyDrafts.map((draft) => draft.label))].join(', ')
+    if (!window.confirm(`Thay đổi chưa lưu trong ${workspaces} sẽ bị bỏ khi đổi cơ sở. Bạn có muốn tiếp tục?`)) return
+  }
 
+  const switchSyncId = ++cloudUserSyncId
   internalCenterSwitchState = createInternalCenterSwitchState({
     status: 'switching',
     centerId: normalizedCenterId,
   })
+  closeCenterBoundWorkspacesForSwitch()
   resetCloudRuntimeStateForOwnerCenterSwitch()
   setCurrentStorageCenterId(normalizedCenterId)
   reloadLocalDataForResolvedCenter()
-  if (hasOpenFinanceWindow) {
-    financeWorkspaceView = selectedFinanceView
-    cashbookSelectedDate = selectedCashbookDate
-    cashflowFilters = selectedCashflowFilters
-    c54FinanceSharedTruthState = {
-      ...c54FinanceSharedTruthState,
-      centerId: normalizedCenterId,
-      isLoading: true,
-      message: 'Đang tải dữ liệu Thu chi cho cơ sở này...',
-      messageTone: '',
-    }
-  }
   cloudStatus = {
     ...cloudStatus,
     centerId: normalizedCenterId,
@@ -10343,32 +10490,7 @@ async function handleInternalOpenCenter(centerId) {
     return
   }
 
-  if (openWindows.some((item) => item.moduleId === 'bang-diem-danh' && !item.type)) {
-    await refreshModuleAuthoritativeUpstreams('bang-diem-danh', { reason: 'center-switch' })
-  }
-  if (cloudUserSyncId !== switchSyncId) return
-
-  if (openWindows.some((item) => item.moduleId === 'bao-cao' && !item.type)) {
-    await refreshModuleAuthoritativeUpstreams('bao-cao', { reason: 'center-switch' })
-  }
-  if (cloudUserSyncId !== switchSyncId) return
-
-  if (hasOpenFinanceWindow) {
-    await refreshModuleAuthoritativeUpstreams('nhom-tai-chinh', { reason: 'center-switch' })
-  }
-  if (cloudUserSyncId !== switchSyncId) return
-
-  // A center switch clears the Tuition window's read snapshot. Its open window
-  // must start a new-center read; notification reads use a separate snapshot.
-  if (openWindows.some((item) => item.moduleId === 'hoc-phi')) {
-    void refreshModuleAuthoritativeUpstreams('hoc-phi', { reason: 'center-switch' })
-  }
-
-  if (openWindows.some((item) => item.moduleId === 'khach-hang-tu-van' && !item.type)) {
-    await refreshModuleAuthoritativeUpstreams('khach-hang-tu-van', { reason: 'center-switch' })
-  } else {
-    await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
-  }
+  await refreshParentStudentLinksSharedTruth({ reason: 'capability-probe' })
   await refreshInventoryAuthoritativeTruth({ reason: 'capability-probe', silent: true })
   await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
   await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
@@ -10381,9 +10503,6 @@ async function handleInternalOpenCenter(centerId) {
   await startClassSessionRealtimeSubscription(switchSyncId)
   await startScheduleSessionRealtimeSubscription(switchSyncId)
   if (cloudUserSyncId !== switchSyncId) return
-  if (openWindows.some((item) => item.moduleId === 'thoi-khoa-bieu' && !item.type)) {
-    await refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'center-switch' })
-  }
   queueNotificationAttentionRefresh('center-switch')
 }
 
@@ -13435,7 +13554,7 @@ function getTaskbarWindowGroups(windowItems = []) {
 }
 
 function renderSystemOverlay() {
-  if (!isNotificationCenterOpen && !staffDocumentAttachmentViewerState) {
+  if (!isNotificationCenterOpen && !staffDocumentAttachmentViewerState && !reviewCompletionState) {
     return '<div class="system-overlay-root" id="system-overlay-root"></div>'
   }
 
@@ -13443,8 +13562,34 @@ function renderSystemOverlay() {
     <div class="system-overlay-root active" id="system-overlay-root">
       ${isNotificationCenterOpen ? renderNotificationCenterHotfix(getUnreadNotificationCount()) : ''}
       ${renderStaffDocumentAttachmentViewer()}
+      ${renderReviewCompletionWorkflow()}
     </div>
   `
+}
+
+function renderReviewCompletionWorkflow() {
+  const state = reviewCompletionState
+  if (!state) return ''
+  return `<section class="attendance-review-workflow" role="dialog" aria-modal="true"
+      aria-label="Cập nhật nhận xét học viên" tabindex="-1">
+    <div class="attendance-review-workflow-card">
+      <header><h3>Cập nhật nhận xét</h3>
+        <button type="button" data-attendance-review-close ${state.saving ? 'disabled' : ''} aria-label="Đóng">×</button></header>
+      <p><strong>${escapeHtml(state.studentName)}</strong> · Kỳ ${escapeHtml(state.cycleNumber)}</p>
+      <p>Ghi nội dung nhận xét đã gửi cho phụ huynh. Hệ thống lưu vào ghi chú chăm sóc dùng chung của đúng cơ sở.</p>
+      <label><span>Nội dung nhận xét</span>
+        <textarea data-attendance-review-note rows="5" maxlength="8000" ${state.saving || state.committed ? 'disabled' : ''}>${escapeHtml(state.note)}</textarea></label>
+      <label class="attendance-review-workflow-confirm"><input type="checkbox" data-attendance-review-confirm
+        ${state.confirmedSent ? 'checked' : ''} ${state.saving || state.committed ? 'disabled' : ''}>
+        Tôi xác nhận đã gửi nhận xét này cho phụ huynh.</label>
+      ${state.error ? `<p role="alert">${escapeHtml(state.error)}</p>` : ''}
+      <footer><button type="button" data-attendance-review-close ${state.saving ? 'disabled' : ''}>Đóng</button>
+        ${state.committed
+          ? '<button type="button" data-attendance-review-verify>Kiểm tra lại nhắc việc</button>'
+          : `<button type="button" data-attendance-review-complete ${state.saving ? 'disabled' : ''}>
+            ${state.saving ? 'Đang lưu...' : 'Lưu nhận xét đã gửi'}</button>`}</footer>
+    </div>
+  </section>`
 }
 
 function renderStaffDocumentAttachmentViewer() {
@@ -17697,10 +17842,21 @@ async function saveF4bConversion() {
     ? projectedStudents.find((student) => student.id === state.values.studentId && !student.isDeleted)
     : null
   const idempotencyKey = state.idempotencyKey || createC53CrmIdempotencyKey()
-  f4bConversionState = { ...state, idempotencyKey, isSaving: true, errors: {} }
+  const operationId = ++f4bConversionOperationId
+  const switchGeneration = cloudUserSyncId
+  const accountId = cloudStatus.user?.id
+  const isCurrentConversion = () => operationId === f4bConversionOperationId
+    && switchGeneration === cloudUserSyncId
+    && centerContext.centerId === getCurrentCanonicalCenterContext().centerId
+    && accountId === cloudStatus.user?.id
+    && f4bConversionState?.operationId === operationId
+    && f4bConversionState?.contactId === state.contactId
+    && f4bConversionState?.idempotencyKey === idempotencyKey
+  f4bConversionState = { ...state, idempotencyKey, operationId, isSaving: true, errors: {} }
   render()
 
   const readiness = await checkCloudDbReadiness(centerContext.centerId)
+  if (!isCurrentConversion()) return
   if (!readiness.ok || readiness.centerId !== getCurrentCanonicalCenterContext().centerId) {
     f4bConversionState = {
       ...state,
@@ -17726,6 +17882,7 @@ async function saveF4bConversion() {
     guardianOccupation: state.values.guardianOccupation,
     idempotencyKey,
   })
+  if (!isCurrentConversion()) return
   if (!result.ok) {
     f4bConversionState = {
       ...state,
@@ -17743,6 +17900,7 @@ async function saveF4bConversion() {
     refreshC53CrmSharedTruth({ reason: 'f4b-conversion', silent: true }),
     refreshParentStudentLinksSharedTruth({ reason: 'f4b-conversion' }),
   ])
+  if (!isCurrentConversion()) return
   const refreshFailed = [studentRefresh, crmRefresh, linkRefresh].some((item) => !item?.ok)
   f4bConversionState = {
     ...resultState,
@@ -19221,6 +19379,8 @@ async function refreshTuitionNotices({ reason = 'manual-refresh', silent = true 
 
 async function exportTuitionReceiptById(receiptId, button = null) {
   if (!receiptId || f5bReceiptPdfExportsInFlight.has(receiptId)) return false
+  const outputCenterId = getCurrentResolvedCenterId()
+  const outputGeneration = cloudUserSyncId
   const pdfViewer = window.open('', '_blank')
   if (!pdfViewer) {
     window.alert('Trình duyệt đang chặn cửa sổ PDF. Hãy cho phép mở cửa sổ mới và thử lại.')
@@ -19240,10 +19400,16 @@ async function exportTuitionReceiptById(receiptId, button = null) {
     let receipt = tuitionOperatorSnapshot.receipts.find((item) => item.id === receiptId)
     if (!receipt) {
       await refreshTuitionOperatorSnapshot()
+      if (outputGeneration !== cloudUserSyncId || outputCenterId !== getCurrentResolvedCenterId()) {
+        throw new Error('Cơ sở đã thay đổi.')
+      }
       receipt = tuitionOperatorSnapshot.receipts.find((item) => item.id === receiptId)
     }
     if (!receipt) throw new Error('Chưa tải được Phiếu Thu. Vui lòng làm mới và in lại.')
     const result = await generateTuitionReceiptPdf(receipt)
+    if (outputGeneration !== cloudUserSyncId || outputCenterId !== getCurrentResolvedCenterId()) {
+      throw new Error('Cơ sở đã thay đổi.')
+    }
     const objectUrl = URL.createObjectURL(result.blob)
     pdfViewer.location.replace(objectUrl)
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000)
@@ -26084,22 +26250,6 @@ function bindEvents() {
         openModuleWindowFromChildInteraction('hoc-phi')
         return
       }
-      if (signal === 'REVIEW_UPDATE_DUE') {
-        const monthKey = reminder.triggerDate.slice(0, 7)
-        const existingNote = attendanceAdvisoryNotes.find((note) =>
-          note.studentId === reminder.studentId && note.monthKey === monthKey,
-        )
-        const result = await writeC57CalendarNotesCommand(buildC57UpsertAdvisoryNoteCommand({
-          ...existingNote,
-          studentId: reminder.studentId,
-          monthKey,
-          careStatus: 'sentComment',
-          note: existingNote?.note || '',
-        }), { reason: 'attendance-review-updated' })
-        if (result.ok) {
-          await refreshV28AAttendanceOperations({ reason: 'review-completed', silent: true })
-        }
-      }
     })
   })
 
@@ -26218,6 +26368,31 @@ function bindEvents() {
       attendanceBoardDetailState = null
       render()
     })
+  })
+
+  document.querySelector('[data-attendance-review-workflow-open]')?.addEventListener('click', () => {
+    void openReviewCompletionFromBoard()
+  })
+  document.querySelector('[data-attendance-review-note]')?.addEventListener('input', (event) => {
+    if (!reviewCompletionState || reviewCompletionState.saving || reviewCompletionState.committed) return
+    reviewCompletionState = { ...reviewCompletionState, note: event.currentTarget.value, error: '' }
+  })
+  document.querySelector('[data-attendance-review-confirm]')?.addEventListener('change', (event) => {
+    if (!reviewCompletionState || reviewCompletionState.saving || reviewCompletionState.committed) return
+    reviewCompletionState = { ...reviewCompletionState, confirmedSent: event.currentTarget.checked, error: '' }
+  })
+  document.querySelectorAll('[data-attendance-review-close]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (reviewCompletionState?.saving) return
+      reviewCompletionState = null
+      render()
+    })
+  })
+  document.querySelector('[data-attendance-review-complete]')?.addEventListener('click', () => {
+    void completeAttendanceReview()
+  })
+  document.querySelector('[data-attendance-review-verify]')?.addEventListener('click', () => {
+    void verifyReviewCompletion()
   })
 
   document.querySelectorAll('[data-attendance-occurrence-detail]').forEach(button => {
@@ -31226,6 +31401,8 @@ function bindEvents() {
           window.alert('Không tìm thấy hồ sơ học viên đã lưu để xuất PDF.')
           return
         }
+        const outputCenterId = getCurrentResolvedCenterId()
+        const outputGeneration = cloudUserSyncId
 
         const pdfViewer = window.open('', '_blank')
         if (!pdfViewer) {
@@ -31244,6 +31421,9 @@ function bindEvents() {
           pdfViewer.document.title = 'Đang tạo PDF'
           pdfViewer.document.body.textContent = 'Đang tạo Phiếu thông tin học viên…'
           const result = await generateStudentIntakeAdminPdf(student)
+          if (outputGeneration !== cloudUserSyncId || outputCenterId !== getCurrentResolvedCenterId()) {
+            throw new Error('Cơ sở đã thay đổi. Vui lòng mở lại học viên tại cơ sở hiện tại.')
+          }
           const objectUrl = URL.createObjectURL(result.blob)
           pdfViewer.location.replace(objectUrl)
           window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000)
@@ -32273,6 +32453,164 @@ function markNotificationRead(notificationId) {
   render()
 }
 
+function getCurrentReviewReminder(centerId, studentId, cycleId, triggerDate = '') {
+  return v28aAttendanceReminders.find((reminder) =>
+    reminder.centerId === centerId
+      && reminder.studentId === studentId
+      && reminder.cycleId === cycleId
+      && reminder.signal === 'REVIEW_UPDATE_DUE'
+      && (!triggerDate || reminder.triggerDate === triggerDate)) || null
+}
+
+async function refreshReviewWorkflowSource(refresh, reason, stillCurrent) {
+  let result = await refresh({ reason, silent: true })
+  if (!result?.ok && result?.outcome_code === 'CENTER_CONTEXT_CHANGED' && stillCurrent()) {
+    result = await refresh({ reason: `${reason}-retry`, silent: true })
+  }
+  return result
+}
+
+async function openReviewCompletionFromBoard() {
+  const route = attendanceBoardDetailState?.notificationReview
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const accountId = cloudStatus.user?.id
+  const generation = cloudUserSyncId
+  if (!route || route.centerId !== centerId) return
+  const stillCurrent = () => generation === cloudUserSyncId
+    && centerId === getCurrentCanonicalCenterContext().centerId
+    && accountId === cloudStatus.user?.id
+    && attendanceBoardDetailState?.notificationReview === route
+  const reviewRead = await refreshReviewWorkflowSource(
+    refreshV28AAttendanceOperations, 'review-workflow-open', stillCurrent)
+  if (!stillCurrent()) return
+  if (!reviewRead.ok) {
+    window.alert('Chưa tải được nhắc việc mới nhất. Vui lòng thử lại.')
+    return
+  }
+  const notesRead = await refreshReviewWorkflowSource(
+    refreshC57CalendarNotesSharedTruth, 'review-workflow-open', stillCurrent)
+  if (!stillCurrent()) return
+  if (!notesRead.ok) {
+    window.alert('Chưa tải được ghi chú chăm sóc mới nhất. Vui lòng thử lại.')
+    return
+  }
+  const reminder = getCurrentReviewReminder(centerId, route.studentId, route.cycleId)
+  const student = getStudentsWithCanonicalProjections().find((item) => item.id === route.studentId)
+  if (!reminder || !student) {
+    window.alert('Việc này đã được xử lý hoặc không còn cần xử lý.')
+    attendanceBoardDetailState = null
+    queueNotificationAttentionRefresh('review-target-changed')
+    render()
+    return
+  }
+  const monthKey = reminder.triggerDate.slice(0, 7)
+  const existingNote = attendanceAdvisoryNotes.find((note) =>
+    note.studentId === route.studentId && note.monthKey === monthKey)
+  attendanceBoardFilters = attendanceBoardDetailState.previousFilters || attendanceBoardFilters
+  attendanceBoardDetailState = null
+  reviewCompletionState = {
+    centerId, accountId, generation,
+    studentId: route.studentId, cycleId: route.cycleId,
+    studentName: student.fullName, cycleNumber: String(reminder.cycleNumber),
+    triggerDate: reminder.triggerDate, note: existingNote?.note || '',
+    confirmedSent: false, saving: false, committed: false, error: '',
+  }
+  render()
+  document.querySelector('[data-attendance-review-note]')?.focus()
+}
+
+function isCurrentReviewCompletion(state) {
+  return reviewCompletionState === state
+    && state.centerId === getCurrentCanonicalCenterContext().centerId
+    && state.accountId === cloudStatus.user?.id
+    && state.generation === cloudUserSyncId
+}
+
+async function verifyReviewCompletion() {
+  const state = reviewCompletionState
+  if (!state?.committed || !isCurrentReviewCompletion(state)) return
+  const result = await refreshReviewWorkflowSource(
+    refreshV28AAttendanceOperations, 'review-completed', () => isCurrentReviewCompletion(state))
+  if (!isCurrentReviewCompletion(state)) return
+  if (!result.ok) {
+    reviewCompletionState = { ...state, error: 'Đã lưu nhận xét, nhưng chưa kiểm tra lại được nhắc việc. Vui lòng thử lại.' }
+    render()
+    return
+  }
+  if (getCurrentReviewReminder(state.centerId, state.studentId, state.cycleId, state.triggerDate)) {
+    reviewCompletionState = { ...state, error: 'Đã lưu nhận xét, nhưng nhắc việc vẫn còn. Vui lòng kiểm tra lại trước khi tiếp tục.' }
+    render()
+    return
+  }
+  await refreshNotificationAuthoritativeUpstreams('review-completed')
+  if (!isCurrentReviewCompletion(state)) return
+  reviewCompletionState = null
+  render()
+}
+
+async function completeAttendanceReview() {
+  const state = reviewCompletionState
+  if (!state || state.saving || state.committed || !isCurrentReviewCompletion(state)) return
+  const note = String(state.note || '').trim()
+  if (!note || !state.confirmedSent) {
+    reviewCompletionState = { ...state,
+      error: 'Nhập nội dung nhận xét và xác nhận đã gửi cho phụ huynh trước khi lưu.' }
+    render()
+    return
+  }
+  const savingState = { ...state, note, saving: true, error: '' }
+  reviewCompletionState = savingState
+  render()
+  const reminderRead = await refreshReviewWorkflowSource(
+    refreshV28AAttendanceOperations, 'review-completion-check', () => isCurrentReviewCompletion(savingState))
+  if (!isCurrentReviewCompletion(savingState)) return
+  if (!reminderRead.ok) {
+    reviewCompletionState = { ...savingState, saving: false, error: 'Chưa kiểm tra được nhắc việc hiện tại. Nội dung bạn nhập vẫn được giữ.' }
+    render()
+    return
+  }
+  const reminder = getCurrentReviewReminder(state.centerId, state.studentId, state.cycleId, state.triggerDate)
+  const student = getStudentsWithCanonicalProjections().find((item) => item.id === state.studentId)
+  if (!reminder || !student) {
+    reviewCompletionState = { ...savingState, saving: false, error: 'Việc này đã được xử lý hoặc không còn cần xử lý.' }
+    queueNotificationAttentionRefresh('review-target-changed')
+    render()
+    return
+  }
+  const notesRead = await refreshReviewWorkflowSource(
+    refreshC57CalendarNotesSharedTruth, 'review-completion-check', () => isCurrentReviewCompletion(savingState))
+  if (!isCurrentReviewCompletion(savingState)) return
+  if (!notesRead.ok) {
+    reviewCompletionState = { ...savingState, saving: false, error: 'Chưa kiểm tra được ghi chú hiện tại. Nội dung bạn nhập vẫn được giữ.' }
+    render()
+    return
+  }
+  const monthKey = state.triggerDate.slice(0, 7)
+  const existingNote = attendanceAdvisoryNotes.find((item) =>
+    item.studentId === state.studentId && item.monthKey === monthKey)
+  let command
+  try {
+    command = buildC57UpsertAdvisoryNoteCommand({ ...existingNote,
+      studentId: state.studentId, monthKey, careStatus: 'sentComment', note })
+  } catch (error) {
+    reviewCompletionState = { ...savingState, saving: false, error: String(error?.message || error) }
+    render()
+    return
+  }
+  const result = await writeC57CalendarNotesCommand(command, { reason: 'attendance-review-completed' })
+  if (!isCurrentReviewCompletion(savingState)) return
+  if (!result.ok && !result.committed) {
+    reviewCompletionState = { ...savingState, saving: false,
+      error: result.error || 'Chưa lưu được nhận xét. Nội dung bạn nhập vẫn được giữ.' }
+    render()
+    return
+  }
+  reviewCompletionState = { ...savingState, saving: false, committed: true,
+    error: result.ok ? '' : 'Đã lưu nhận xét, nhưng chưa tải lại được ghi chú. Hãy kiểm tra lại nhắc việc.' }
+  render()
+  await verifyReviewCompletion()
+}
+
 async function openNotificationSourceModule(notificationId) {
   const notification = notifications.find((item) => item.id === notificationId)
 
@@ -32390,14 +32728,9 @@ async function openNotificationSourceModule(notificationId) {
   }
   if (notification.sourceModule === 'kho-hang' && notification.meta?.cycleCountId) {
     const cycleCountId = String(notification.meta.cycleCountId)
-    // Refresh before selecting: opening an Inventory window can otherwise
-    // replace the count panel while its upstreams are still loading.
-    openModuleWindow('kho-hang', { refresh: false })
     let result = await refreshModuleAuthoritativeUpstreams('kho-hang', {
       reason: 'notification-exact-route',
     })
-    // A just-opened Inventory window may finish its own refresh after this
-    // route starts. Retry only when that same-center refresh superseded ours.
     if (!result.ok && result.outcome_code === 'CENTER_CONTEXT_CHANGED'
       && centerId === getCurrentCanonicalCenterContext().centerId
       && accountId === cloudStatus.user?.id) {
@@ -32407,13 +32740,15 @@ async function openNotificationSourceModule(notificationId) {
     }
     if (!result.ok || centerId !== getCurrentCanonicalCenterContext().centerId
       || accountId !== cloudStatus.user?.id) return
-    if (inventoryCycleCounts.some((count) => count.id === cycleCountId)) {
-      isInventoryCycleCountPanelOpen = true
-      selectedInventoryCycleCountId = cycleCountId
-      inventoryCycleCountObservedByLineId = {}
-      inventoryCycleCountExplanationByLineId = {}
-      render()
-    }
+    const currentCandidate = resolveCurrentInventoryDueNotification(notification, inventoryCycleCounts, centerId)
+    if (!currentCandidate) return changed()
+    isNotificationCenterOpen = false
+    openModuleWindow('kho-hang', { refresh: false })
+    isInventoryCycleCountPanelOpen = true
+    selectedInventoryCycleCountId = cycleCountId
+    inventoryCycleCountObservedByLineId = {}
+    inventoryCycleCountExplanationByLineId = {}
+    render()
     return
   } else if (notification.sourceModule === 'kho-hang' && notification.entityLabel) {
     inventoryRequestFilters = {

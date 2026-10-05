@@ -69,7 +69,8 @@ export function renderCanonicalAttendanceLedgerModule({ students = [], classSess
         <dl>${field('Học viên', notificationReview.studentName)}${field('Kỳ học', `Kỳ ${notificationReview.cycleNumber}`)}
           ${field('Ngày nhắc', dateLabel(notificationReview.triggerDate))}</dl>
         <p>Kiểm tra đúng học viên và kỳ học trước khi cập nhật nhận xét.</p>
-        <footer><button type="button" data-attendance-detail-close>Đóng chi tiết</button></footer>
+        <footer><button type="button" data-attendance-detail-close>Đóng chi tiết</button>
+          <button type="button" data-attendance-review-workflow-open>Mở cập nhật nhận xét</button></footer>
       </section></div>` : ''}
   </section>`
 }

@@ -20947,6 +20947,61 @@ h3 {
   pointer-events: none;
 }
 
+.attendance-review-workflow {
+  position: fixed;
+  z-index: 2147483007;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(7, 18, 35, 0.64);
+  pointer-events: auto;
+}
+
+.attendance-review-workflow-card {
+  display: grid;
+  gap: 14px;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border-radius: 12px;
+  background: #fff;
+  color: #17243a;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+}
+
+.attendance-review-workflow-card header,
+.attendance-review-workflow-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.attendance-review-workflow-card h3,
+.attendance-review-workflow-card p { margin: 0; }
+.attendance-review-workflow-card label { display: grid; gap: 7px; }
+.attendance-review-workflow-card textarea { width: 100%; box-sizing: border-box; }
+.attendance-review-workflow-card .attendance-review-workflow-confirm {
+  display: flex;
+  align-items: flex-start;
+}
+.attendance-review-workflow-card [role='alert'] { color: #a62929; }
+.attendance-review-workflow-card footer { justify-content: flex-end; }
+
+:root[data-ui-theme='dark'] .attendance-review-workflow-card {
+  background: #172235;
+  color: #f0f5fb;
+  border: 1px solid #53657d;
+}
+:root[data-ui-theme='dark'] .attendance-review-workflow-card textarea {
+  background: #0d1727;
+  color: #f0f5fb;
+  border: 1px solid #6c7c92;
+}
+:root[data-ui-theme='dark'] .attendance-review-workflow-card [role='alert'] { color: #ffb2a8; }
+
 .staff-document-attachment-viewer {
   position: fixed;
   z-index: 2147483006;
