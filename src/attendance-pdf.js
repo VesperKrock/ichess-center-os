@@ -5,7 +5,7 @@ export const ATTENDANCE_PDF_PAGE = Object.freeze({ width: 841.8898, height: 595.
 const clean = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
 const shortDate = value => `${value.slice(8, 10)}/${value.slice(5, 7)}`
 const fullDate = value => `${shortDate(value)}/${value.slice(0, 4)}`
-const marks = Object.freeze({ present: '✓', absent: 'V', makeup: 'B', unmarked: '?', future: '·', cancelled: '', notExpected: '—' })
+const marks = Object.freeze({ present: '✓', absent: 'V', makeup: 'B', historicalTrial: 'T', unmarked: '?', future: '·', cancelled: '', notExpected: '—' })
 const fontAssets = ['Tinos-Regular.ttf', 'Tinos-Bold.ttf', 'Tinos-Italic.ttf']
 const fontsInFlight = new WeakMap()
 const weekday = date => ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][new Date(`${date}T12:00:00Z`).getUTCDay()]
@@ -135,6 +135,8 @@ export function planAttendancePdfPages(projection, measure) {
     ].flatMap(item => wrap(item.value, columnWidth - 4, measure, item.size, item.style).map(value => ({ ...item, value }))))
     const headerHeight = Math.max(32, ...columnHeaders.map(lines => 8 + lines.reduce((height, line) => height + line.size + 3, 0)))
     const legend = ['Có mặt · V Vắng · B Học bù · ? Chưa điểm danh · · Chưa diễn ra',
+      ...(projection.rows.some(row => row.cells.slice(columnStart,columnEnd).some(cell => cell.state === 'historicalTrial'))
+        ? ['T Học thử (lịch sử).'] : []),
       ...(columns.some(column => column.cancelled) ? ['Cột gạch chéo: Đã hủy.'] : []),
       ...(projection.rows.some(row => row.cells.slice(columnStart,columnEnd).some(cell => cell.state === 'notExpected')) ? ['— Không thuộc danh sách buổi học.'] : []),
     ].flatMap(line => wrap(line, width - 12, measure, 9))

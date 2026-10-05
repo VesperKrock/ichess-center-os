@@ -13,7 +13,7 @@ const recurring=day=>({id:`recurring-${day}`,cloudVersion:1,scheduleType:'recurr
 const schedules=[recurring('tuesday'),recurring('thursday')]
 const fact=(id,date,values={})=>({center_id:'test',schedule_session_local_id:id,class_session_local_id:'class-a',schedule_type:'recurring',occurrence_date:date,lifecycle_state:'PLANNED',planned_start_time:'17:30:00',planned_end_time:'18:30:00',roster_student_ids:['student-a'],planned_teacher_id:'historical',planned_teacher_name:'Historical teacher',...values})
 const visible=getVisibleScheduleSessions(schedules,'2026-09-28',classSessions)
-assert.equal(visible.find(row=>row.dayOfWeek==='tuesday').id,'recurring-thursday','Reproduce the actual Schedule slot alias before Board integration')
+assert.equal(visible.find(row=>row.dayOfWeek==='tuesday').id,'recurring-tuesday','Schedule keeps the Tuesday assignment identity')
 const input={students:[{id:'student-a',fullName:'Student'}],classSessions,scheduleSessions:schedules,plannedOccurrences:visible,
   occurrences:[fact('recurring-tuesday','2026-09-29'),fact('recurring-thursday','2026-10-01')],
   filters:{fromDate:'2026-09-01',toDate:'2026-10-10'},now:new Date('2026-09-28T05:00:00Z')}
@@ -43,7 +43,7 @@ assert(separate.columns.some(column=>column.scheduleSessionId==='different-same-
 const oneOff={id:'future-oneoff',scheduleType:'oneOff',occurrenceDate:'2026-09-29',date:'2026-09-29',classSessionId:'class-a',startTime:'17:30',endTime:'18:30',studentIds:['student-a']}
 assert.equal(buildCanonicalAttendanceLedger({...input,plannedOccurrences:[...visible,oneOff]}).columns.length,3,'A real one-off is not a recurring slot alias even with matching labels/times')
 const single=buildCanonicalAttendanceLedger({...input,scheduleSessions:[schedules[0]],plannedOccurrences:getVisibleScheduleSessions([schedules[0]],'2026-09-28',classSessions),occurrences:[]})
-assert.deepEqual(single.columns.map(column=>column.key),['recurring-tuesday|2026-09-29','recurring-tuesday|2026-10-01'],'One real multi-weekday assignment retains its identity on both dates')
+assert.deepEqual(single.columns.map(column=>column.key),['recurring-tuesday|2026-09-29','schedule-slot-class-a-thursday|2026-10-01'],'An unassigned Thursday remains its own class slot')
 
 const fixture=ledgerFixture()
 fixture.students[1].fullName=fixture.students[0].fullName

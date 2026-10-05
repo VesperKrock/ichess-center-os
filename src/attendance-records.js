@@ -222,6 +222,8 @@ export function normalizeStoredAttendanceRecord(record) {
 
     status,
     attendanceStatus,
+    absenceReason: typeof record.absenceReason === 'string'
+      ? normalizeNullableText(record.absenceReason) : null,
     makeupForAttendanceLocalId: normalizeNullableText(record.makeupForAttendanceLocalId),
     counted,
 
@@ -266,130 +268,6 @@ export function createInitialBaselineAttendanceRecord(input = {}) {
     attendanceStatus: input?.attendanceStatus || input?.status || 'present',
     status: input?.status || input?.attendanceStatus || 'present',
   })
-}
-
-export function createAdminAttendanceRecord(input = {}) {
-  const attendanceStatus = normalizeRequiredText(input?.attendanceStatus || input?.status || 'present')
-  const counted = typeof input?.counted === 'boolean'
-    ? input.counted
-    : COUNTED_ATTENDANCE_STATUSES.has(attendanceStatus)
-  const creditValue = counted ? normalizeCreditValue(input?.creditValue) : 0
-
-  return normalizeStoredAttendanceRecord({
-    ...cloneJsonSafe(input),
-    id: input?.id || createAdminAttendanceRecordId(input),
-    source: 'admin',
-    submittedByRole: input?.submittedByRole || 'admin',
-    attendanceStatus,
-    status: input?.status || attendanceStatus,
-    counted,
-    creditNumber: input?.creditNumber ?? null,
-    creditLabel: input?.creditLabel ?? '',
-    creditValue,
-  })
-}
-
-export function upsertAdminAttendanceRecords({
-  records = [],
-  inputs = [],
-  byName = null,
-  at = new Date().toISOString(),
-} = {}) {
-  const existingRecords = normalizeStoredAttendanceRecords(records)
-  const adminInputs = Array.isArray(inputs) ? inputs : []
-  const savedRecords = adminInputs
-    .map((input) => {
-      const existingRecord = existingRecords.find((record) =>
-        isSameAdminAttendanceRecord(record, input),
-      )
-      return createAdminAttendanceRecord({
-        ...cloneJsonSafe(input),
-        id: existingRecord?.id || createAdminAttendanceRecordId(input),
-        createdAt: existingRecord?.createdAt || input?.createdAt || at,
-        createdBy: existingRecord?.createdBy || input?.createdBy || byName,
-        cloudVersion: existingRecord?.cloudVersion || 0,
-        cloudUpdatedAt: existingRecord?.cloudUpdatedAt || null,
-        cloudDeletedAt: existingRecord?.cloudDeletedAt || null,
-        updatedAt: at,
-        updatedBy: byName,
-      })
-    })
-    .filter(Boolean)
-
-  const savedKeySet = new Set(savedRecords.map((record) => getAdminAttendanceRecordMatchKey(record)))
-  const nextRecords = [
-    ...savedRecords,
-    ...existingRecords.filter((record) =>
-      record.source !== 'admin' || !savedKeySet.has(getAdminAttendanceRecordMatchKey(record)),
-    ),
-  ]
-
-  return {
-    records: normalizeStoredAttendanceRecords(nextRecords),
-    savedRecords,
-  }
-}
-
-export function createTeacherAttendanceRecord(input = {}) {
-  const attendanceStatus = normalizeTeacherStoredAttendanceStatus(input?.attendanceStatus || input?.status || 'present')
-  const counted = typeof input?.counted === 'boolean'
-    ? input.counted
-    : COUNTED_ATTENDANCE_STATUSES.has(attendanceStatus)
-  const creditValue = counted ? normalizeCreditValue(input?.creditValue) : 0
-
-  return normalizeStoredAttendanceRecord({
-    ...cloneJsonSafe(input),
-    id: input?.id || createTeacherAttendanceRecordId(input),
-    source: 'teacher',
-    submittedByRole: input?.submittedByRole || 'teacher',
-    attendanceStatus,
-    status: input?.status || attendanceStatus,
-    counted,
-    creditNumber: input?.creditNumber ?? null,
-    creditLabel: input?.creditLabel ?? '',
-    creditValue,
-  })
-}
-
-export function upsertTeacherAttendanceRecords({
-  records = [],
-  inputs = [],
-  byName = null,
-  at = new Date().toISOString(),
-} = {}) {
-  const existingRecords = normalizeStoredAttendanceRecords(records)
-  const teacherInputs = Array.isArray(inputs) ? inputs : []
-  const savedRecords = teacherInputs
-    .map((input) => {
-      const existingRecord = existingRecords.find((record) =>
-        isSameTeacherAttendanceRecord(record, input),
-      )
-      return createTeacherAttendanceRecord({
-        ...cloneJsonSafe(input),
-        id: existingRecord?.id || createTeacherAttendanceRecordId(input),
-        createdAt: existingRecord?.createdAt || input?.createdAt || at,
-        createdBy: existingRecord?.createdBy || input?.createdBy || byName,
-        cloudVersion: existingRecord?.cloudVersion || 0,
-        cloudUpdatedAt: existingRecord?.cloudUpdatedAt || null,
-        cloudDeletedAt: existingRecord?.cloudDeletedAt || null,
-        updatedAt: at,
-        updatedBy: byName,
-      })
-    })
-    .filter(Boolean)
-
-  const savedKeySet = new Set(savedRecords.map((record) => getTeacherAttendanceRecordMatchKey(record)))
-  const nextRecords = [
-    ...savedRecords,
-    ...existingRecords.filter((record) =>
-      record.source !== 'teacher' || !savedKeySet.has(getTeacherAttendanceRecordMatchKey(record)),
-    ),
-  ]
-
-  return {
-    records: normalizeStoredAttendanceRecords(nextRecords),
-    savedRecords,
-  }
 }
 
 export function canEditAttendanceBaseline(state = {}) {
@@ -1138,85 +1016,6 @@ function createInitialBaselineRecordId(input = {}) {
     input?.studentId || 'student',
     input?.date || input?.occurrenceDate || 'date',
   ].map(slugifyIdPart).join('-')
-}
-
-function createAdminAttendanceRecordId(input = {}) {
-  return [
-    'admin-attendance',
-    input?.studentId || 'student',
-    input?.date || input?.occurrenceDate || 'date',
-    getAdminAttendanceSessionKey(input),
-  ].map(slugifyIdPart).join('-')
-}
-
-function isSameAdminAttendanceRecord(record, input = {}) {
-  return record?.source === 'admin' &&
-    record.studentId === normalizeRequiredText(input?.studentId) &&
-    record.date === normalizeRequiredText(input?.date || input?.occurrenceDate) &&
-    getAdminAttendanceSessionKey(record) === getAdminAttendanceSessionKey(input)
-}
-
-function getAdminAttendanceRecordMatchKey(record = {}) {
-  return [
-    normalizeRequiredText(record.studentId),
-    normalizeRequiredText(record.date || record.occurrenceDate),
-    getAdminAttendanceSessionKey(record),
-    'admin',
-  ].join(':')
-}
-
-function getAdminAttendanceSessionKey(record = {}) {
-  return normalizeRequiredText(
-    record.sessionId ||
-      record.scheduleSessionId ||
-      record.classSessionId ||
-      'session',
-  )
-}
-
-function createTeacherAttendanceRecordId(input = {}) {
-  return [
-    'teacher-attendance',
-    input?.studentId || 'student',
-    input?.date || input?.occurrenceDate || 'date',
-    getTeacherAttendanceSessionKey(input),
-  ].map(slugifyIdPart).join('-')
-}
-
-function isSameTeacherAttendanceRecord(record, input = {}) {
-  return record?.source === 'teacher' &&
-    record.studentId === normalizeRequiredText(input?.studentId) &&
-    record.date === normalizeRequiredText(input?.date || input?.occurrenceDate) &&
-    getTeacherAttendanceSessionKey(record) === getTeacherAttendanceSessionKey(input)
-}
-
-function getTeacherAttendanceRecordMatchKey(record = {}) {
-  return [
-    normalizeRequiredText(record.studentId),
-    normalizeRequiredText(record.date || record.occurrenceDate),
-    getTeacherAttendanceSessionKey(record),
-    'teacher',
-  ].join(':')
-}
-
-function getTeacherAttendanceSessionKey(record = {}) {
-  return normalizeRequiredText(
-    record.sessionId ||
-      record.scheduleSessionId ||
-      record.classSessionId ||
-      'session',
-  )
-}
-
-function normalizeTeacherStoredAttendanceStatus(status) {
-  const rawStatus = normalizeRequiredText(status)
-  if (rawStatus === 'excusedAbsent') {
-    return 'excused'
-  }
-  if (rawStatus === 'unexcusedAbsent') {
-    return 'absent'
-  }
-  return rawStatus || 'present'
 }
 
 function getAttendanceCreditNumbersFromRecord(record) {

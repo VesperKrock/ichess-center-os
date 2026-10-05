@@ -270,7 +270,7 @@ const boardArgs = {
 }
 const boardHtml = renderAttendanceBoardModule(boardArgs)
 for (const expected of [
-  'data-attendance-read-only',
+  'attendance-ledger',
   'data-attendance-ledger-state="present"',
   'data-attendance-ledger-state="absent"',
   'data-attendance-ledger-state="makeup"',

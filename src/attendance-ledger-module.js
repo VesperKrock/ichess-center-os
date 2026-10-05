@@ -39,11 +39,11 @@ export function renderCanonicalAttendanceLedgerModule({ students = [], classSess
   ].map(([id, name]) => `<option value="${html(id)}" ${selectedId === id ? 'selected' : ''}>${html(name)}</option>`).join('')
   const message = selected.error || (!ready ? context.status === 'loading'
     ? 'Đang tải các buổi học…' : 'Chưa tải được dữ liệu điểm danh. Vui lòng bấm Làm mới.' : '')
-  return `<section class="attendance-board-module attendance-ledger" aria-label="Bảng điểm danh" data-attendance-read-only>
+  return `<section class="attendance-board-module attendance-ledger" aria-label="Bảng điểm danh">
     <header class="attendance-board-heading">
       <div class="attendance-board-heading-intro"><span>BẢNG ĐIỂM DANH</span>
-        <div class="attendance-board-heading-copy"><h3>Bảng điểm danh</h3><p>Theo dõi buổi học · Chỉ xem</p></div>
-      </div><div class="attendance-ledger-actions"><span class="attendance-ledger-readonly">Chỉnh điểm danh tại Thời khóa biểu</span>
+        <div class="attendance-board-heading-copy"><h3>Bảng điểm danh</h3><p>Theo dõi buổi học</p></div>
+      </div><div class="attendance-ledger-actions">
         <button type="button" data-attendance-export-pdf ${exportReady ? '' : 'disabled'}>In / Xuất PDF</button></div>
     </header>
     <div class="attendance-board-toolbar" aria-label="Bộ lọc bảng điểm danh">

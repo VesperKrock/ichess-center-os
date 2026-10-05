@@ -4,7 +4,6 @@ export const AUTHORITATIVE_ATTENDANCE_TUITION_CONTRACT_VERSION = 1
 export const AUTHORITATIVE_ATTENDANCE_TUITION_SOURCE_VERSION =
   'c5.2-authoritative-attendance-tuition-v1'
 export const AUTHORITATIVE_ATTENDANCE_TUITION_ENTITY_TYPES = Object.freeze([
-  'attendance_record',
   'attendance_baseline_state',
   'session_report',
   'tuition_record_package',
@@ -94,6 +93,10 @@ export async function mutateAuthoritativeAttendanceTuitionEntities({
 } = {}) {
   const normalizedCenterId = String(centerId || '').trim()
   const normalizedMutations = Array.isArray(mutations) ? mutations : []
+
+  if (normalizedMutations.some((mutation) => String(mutation?.entityType || '').trim() === 'attendance_record')) {
+    return { ok: false, outcome_code: 'ATTENDANCE_TYPED_COMMAND_REQUIRED', error: 'Điểm danh phải được lưu từ Bảng điểm danh.' }
+  }
 
   if (!supabase || typeof supabase.rpc !== 'function') {
     return {
@@ -195,6 +198,7 @@ export function getAuthoritativeAttendanceTuitionOutcomeMessage(outcomeCode) {
     CENTER_ACCESS_DENIED: 'Tài khoản không còn quyền tại cơ sở này.',
     WRITE_ROLE_REQUIRED: 'Tài khoản hiện tại chỉ được xem, không được lưu thay đổi này.',
     INVALID_ENTITY_TYPE: 'Loại dữ liệu cần lưu không hợp lệ.',
+    ATTENDANCE_TYPED_COMMAND_REQUIRED: 'Điểm danh phải được lưu từ Bảng điểm danh.',
     INVALID_LOCAL_ID: 'Mã dữ liệu không hợp lệ.',
     INVALID_IDEMPOTENCY_KEY: 'Không tạo được khóa chống gửi trùng.',
     INVALID_COMMAND: 'Yêu cầu lưu không hợp lệ.',

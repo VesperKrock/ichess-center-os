@@ -50,6 +50,7 @@
 .attendance-ledger-mark.is-present { color: var(--attendance-success); }
 .attendance-ledger-mark.is-absent { color: var(--attendance-danger); background: var(--attendance-danger-bg); }
 .attendance-ledger-mark.is-makeup { color: var(--attendance-warning); background: var(--attendance-warning-bg); }
+.attendance-ledger-mark.is-historicalTrial { color: var(--attendance-muted); border: 1px solid var(--attendance-line); }
 .attendance-ledger-mark.is-unmarked { color: var(--attendance-muted); border: 1px dashed var(--attendance-line); }
 .attendance-ledger-mark.is-future { color: var(--attendance-muted); }
 .attendance-ledger-mark.is-cancelled { color: var(--attendance-muted); border: 1px solid var(--attendance-line); }

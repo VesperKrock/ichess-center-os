@@ -217,18 +217,6 @@ import {
   pullC56InventorySharedTruth,
 } from './cloud-authoritative-inventory.js'
 import {
-  V23_ATTENDANCE_CAPABILITY_STATUS,
-  V23_ATTENDANCE_CONTRACT,
-  createV23AttendanceCapabilityState,
-  getV23AttendanceOutcomeMessage,
-  isV23AttendanceBackendUnavailable,
-  isV23AttendanceCapabilityReady,
-  mutateV23OccurrenceAttendance,
-  pullV23AttendanceCapability,
-  pullA4EligibleMissedOccurrences,
-  selectCurrentV23OccurrenceAttendanceRecord,
-} from './cloud-authoritative-occurrence-attendance.js'
-import {
   PARENT_FIRST_CAPABILITY_STATUS,
   createParentFirstCapabilityState,
   createParentStudentLink,
@@ -1070,8 +1058,7 @@ let scheduleCalendarItemState = null
 let scheduleCalendarTagState = null
 let scheduleCalendarFilters = { itemType: 'all', tagId: 'all' }
 let scheduleReportState = null
-let scheduleAdminAttendanceState = null
-let sessionReportAttendanceState = null
+let sessionReportGuestState = null
 let sessionReportLearningState = null
 let sessionReportLearningFormState = null
 let sessionReportExtraState = null
@@ -1121,10 +1108,6 @@ const v21CenterSettingsRetryCommands = new Map()
 let v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState()
 let v22StudentEnrollmentSets = []
 let v22StudentEnrollmentSyncRunId = 0
-let v23AttendanceCapabilityState = createV23AttendanceCapabilityState()
-let v23AttendanceCapabilityRunId = 0
-let v23AttendanceWriteRunId = 0
-const v23AttendanceRetryCommands = new Map()
 let v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState()
 let v24PackageCycleStudentStates = []
 let v24PackageCycleCatalog = []
@@ -2350,10 +2333,6 @@ function resetV22StudentEnrollmentRuntimeForAccessBoundary(centerId = '') {
 }
 
 function resetV23AttendanceRuntimeForAccessBoundary(centerId = '') {
-  v23AttendanceCapabilityRunId += 1
-  v23AttendanceWriteRunId += 1
-  v23AttendanceRetryCommands.clear()
-  v23AttendanceCapabilityState = createV23AttendanceCapabilityState({ centerId })
   attendanceRecords = []
   attendanceBaselineState = normalizeAttendanceBaselineState()
   sessionReports = []
@@ -2361,7 +2340,6 @@ function resetV23AttendanceRuntimeForAccessBoundary(centerId = '') {
   attendanceBaselineDraftRecords = null
   attendanceBaselineDraftBaseRecords = null
   attendanceBaselineDraftState = null
-  scheduleAdminAttendanceState = null
   attendanceLedgerReadRunId += 1
   attendanceLedgerContext = { status: 'idle', centerId, occurrences: [], assignments: [] }
   attendanceBoardDetailState = null
@@ -2521,13 +2499,8 @@ function getCenterBoundDrafts() {
     sessionReportLearningFormState?.values, sessionReportLearningFormState?.sessionId)
   add('session-guest', 'Thời khóa biểu', sessionReportGuestFormState,
     sessionReportGuestFormState?.values, scheduleReportState?.sessionId)
-  add('session-attendance', 'Thời khóa biểu', sessionReportAttendanceState,
-    sessionReportAttendanceState, scheduleReportState?.sessionId)
-  add('schedule-attendance', 'Thời khóa biểu', scheduleAdminAttendanceState,
-    scheduleAdminAttendanceState?.rows?.map((row) => ({
-      studentId: row.studentId, attendanceStatus: row.attendanceStatus,
-      makeupForAttendanceLocalId: row.makeupForAttendanceLocalId, note: row.note, dirty: row.dirty,
-    })), `${scheduleAdminAttendanceState?.sessionId}:${scheduleAdminAttendanceState?.occurrenceDate}`)
+  add('session-attendance', 'Thời khóa biểu', sessionReportGuestState,
+    sessionReportGuestState, scheduleReportState?.sessionId)
   add('attendance-baseline', 'Bảng điểm danh', attendanceBaselineDraftRecords,
     attendanceBaselineDraftRecords, attendanceBaselineDraftState?.centerId)
   add('attendance-note', 'Bảng điểm danh', attendanceCellNoteFormState,
@@ -2592,7 +2565,7 @@ function getCenterWritesInFlight() {
   check(studentFormState?.isSaving || teacherFormState?.isSaving, 'Học viên / giáo viên')
   check(tuitionOperatorState.panel?.busy || c54FinanceSharedTruthState.isSaving
     || v24PackageCycleCapabilityState.isSaving || f5bReceiptCapabilityState.isSaving, 'Học phí / Thu chi')
-  check(scheduleFormState?.isSaving || scheduleAdminAttendanceState?.saveState === 'saving'
+  check(scheduleFormState?.isSaving
     || c57CalendarNotesSharedTruthState.isSaving, 'Thời khóa biểu / nhận xét')
   check(c56InventorySharedTruthState.isSaving || v27aInventoryCycleCountCapabilityState.isSaving, 'Kho hàng')
   check(v21CenterSettingsCapabilityState.isSaving, 'Cài đặt cơ sở')
@@ -2716,8 +2689,7 @@ function resetTransientStateForCenterSwitch() {
   scheduleCalendarTagState = null
   scheduleCalendarFilters = { itemType: 'all', tagId: 'all' }
   scheduleReportState = null
-  scheduleAdminAttendanceState = null
-  sessionReportAttendanceState = null
+  sessionReportGuestState = null
   sessionReportLearningState = null
   sessionReportLearningFormState = null
   sessionReportExtraState = null
@@ -10495,7 +10467,6 @@ async function handleInternalOpenCenter(centerId) {
   await refreshInventoryAuthoritativeTruth({ reason: 'capability-probe', silent: true })
   await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
   await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
-  await refreshV23AttendanceCapability({ silent: true })
   await refreshV24PackageCycles({ reason: 'capability-probe', silent: true })
   await loadCenterMemberProfiles(switchSyncId)
   await loadCurrentMonthCloudAttachments(switchSyncId)
@@ -11386,139 +11357,6 @@ function hasInitialBaselineAttendanceRecord(records, studentId, date) {
   )
 }
 
-function createScheduleAdminAttendanceState(occurrence, records = attendanceRecords) {
-  const existingRecords = Array.isArray(records) ? records : []
-  const rows = getScheduleAdminStudentIds(occurrence).map((studentId) => {
-    const selectedRecord = selectCurrentV23OccurrenceAttendanceRecord(
-      existingRecords,
-      occurrence,
-      studentId,
-    )
-    const existingRecord = selectedRecord?.attendanceAuthority === V23_ATTENDANCE_CONTRACT
-      ? selectedRecord : null
-    const missedRecord = existingRecord?.makeupForAttendanceLocalId
-      ? existingRecords.find((record) =>
-        record?.attendanceAuthority === V23_ATTENDANCE_CONTRACT
-        && (record.authorityLocalId || record.id) === existingRecord.makeupForAttendanceLocalId)
-      : null
-
-    return {
-      studentId,
-      attendanceStatus: existingRecord?.attendanceStatus || '',
-      originalStatus: existingRecord?.attendanceStatus || '',
-      makeupForAttendanceLocalId: existingRecord?.makeupForAttendanceLocalId || '',
-      originalMakeupForAttendanceLocalId: existingRecord?.makeupForAttendanceLocalId || '',
-      currentMakeupTarget: existingRecord?.makeupForAttendanceLocalId ? {
-        attendance_local_id: existingRecord.makeupForAttendanceLocalId,
-        occurrence_date: missedRecord?.date || '',
-        teacher_name: missedRecord?.teacherName || '',
-      } : null,
-      makeupCandidates: [],
-      candidateState: 'idle',
-      dirty: false,
-      note: existingRecord?.note || '',
-    }
-  })
-
-  return {
-    draftId: crypto.randomUUID(),
-    sessionId: occurrence?.id || null,
-    occurrenceDate: occurrence?.occurrenceDate || occurrence?.date || '',
-    baseRecords: cloneC52OperationalCommandValue(existingRecords),
-    rows,
-    error: '',
-    saveState: '',
-    needsReload: false,
-  }
-}
-
-async function loadScheduleMakeupCandidates(studentId) {
-  const state = scheduleAdminAttendanceState
-  if (!state || !state.rows.some((row) => row.studentId === studentId && row.attendanceStatus === 'makeup')) return
-  updateScheduleAdminAttendanceRow(studentId, { candidateState: 'loading' }, true)
-  render()
-  const result = await pullA4EligibleMissedOccurrences({
-    supabase: getSupabaseClient(),
-    centerId: getCurrentCanonicalCenterContext().centerId,
-    studentId,
-    makeupDate: state.occurrenceDate,
-  })
-  if (scheduleAdminAttendanceState?.draftId !== state.draftId
-      || scheduleAdminAttendanceState?.sessionId !== state.sessionId
-      || scheduleAdminAttendanceState?.occurrenceDate !== state.occurrenceDate
-      || !scheduleAdminAttendanceState.rows.some((row) => row.studentId === studentId && row.attendanceStatus === 'makeup')) return
-  const currentRow = scheduleAdminAttendanceState.rows.find((row) => row.studentId === studentId)
-  const selected = currentRow?.makeupForAttendanceLocalId || ''
-  const selectedStillValid = selected === currentRow?.originalMakeupForAttendanceLocalId
-    || result.candidates?.some((item) => item.attendance_local_id === selected)
-  updateScheduleAdminAttendanceRow(studentId, {
-    candidateState: result.ok ? 'ready' : 'failed',
-    makeupCandidates: result.ok ? result.candidates : [],
-    makeupForAttendanceLocalId: result.ok && selected && !selectedStillValid ? '' : selected,
-  }, true)
-  render()
-}
-
-function getScheduleAdminAttendanceRecords(occurrence, records = attendanceRecords) {
-  return (Array.isArray(records) ? records : [])
-    .filter((record) =>
-      record?.source === 'admin' &&
-      String(record.date || '') === String(occurrence?.occurrenceDate || occurrence?.date || '') &&
-      getScheduleAdminAttendanceSessionKey(record) === String(occurrence?.id || '').trim(),
-    )
-}
-
-function getScheduleTeacherAttendanceRecords(occurrence, records = attendanceRecords) {
-  return (Array.isArray(records) ? records : [])
-    .filter((record) =>
-      record?.source === 'teacher' &&
-      String(record.date || '') === String(occurrence?.occurrenceDate || occurrence?.date || '') &&
-      getScheduleAdminAttendanceSessionKey(record) === String(occurrence?.id || '').trim(),
-    )
-}
-
-function getScheduleAdminStudentIds(occurrence) {
-  return (Array.isArray(occurrence?.studentIds) ? occurrence.studentIds : [])
-    .map((studentId) => String(studentId || '').trim())
-    .filter(Boolean)
-}
-
-function getScheduleAdminAttendanceSessionKey(record = {}) {
-  return String(
-    record.sessionId ||
-      record.scheduleSessionId ||
-      record.classSessionId ||
-      '',
-  ).trim()
-}
-
-function updateScheduleAdminAttendanceRow(studentId, patch = {}, preserveFeedback = false) {
-  if (!scheduleAdminAttendanceState) {
-    return
-  }
-
-  scheduleAdminAttendanceState = {
-    ...scheduleAdminAttendanceState,
-    rows: scheduleAdminAttendanceState.rows.map((row) =>
-      row.studentId === studentId ? { ...row, ...patch } : row,
-    ),
-    error: preserveFeedback ? scheduleAdminAttendanceState.error : '',
-    saveState: preserveFeedback ? scheduleAdminAttendanceState.saveState : '',
-  }
-}
-
-function getScheduleAdminAttendanceOccurrence() {
-  if (!scheduleReportState) {
-    return null
-  }
-
-  return getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
-    (item) =>
-      item.id === scheduleReportState.sessionId &&
-      item.occurrenceDate === scheduleReportState.occurrenceDate,
-  ) || null
-}
-
 async function openCanonicalScheduleOccurrence(scheduleId, date, centerId) {
   const findCard = () => [...document.querySelectorAll('[data-schedule-action="open-edit"]')].find(item =>
     item.dataset.scheduleSessionId === scheduleId && item.dataset.scheduleOccurrenceDate === date)
@@ -11539,87 +11377,6 @@ async function openCanonicalScheduleOccurrence(scheduleId, date, centerId) {
   }
   card?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   card?.click()
-}
-
-function buildScheduleAdminAttendanceInputs(occurrence, rows = []) {
-  return rows
-    .filter((row) => row.dirty && row.attendanceStatus)
-    .map((row) => {
-      return {
-        studentId: row.studentId,
-        date: occurrence.occurrenceDate,
-        classSessionId: occurrence.classSessionId || null,
-        scheduleSessionId: occurrence.id,
-        sessionId: occurrence.id,
-        teacherId: occurrence.teacherId || null,
-        teacherName: getScheduleAdminTeacherName(occurrence),
-        status: row.attendanceStatus,
-        attendanceStatus: row.attendanceStatus,
-        makeupForAttendanceLocalId: row.attendanceStatus === 'makeup'
-          ? row.makeupForAttendanceLocalId || '' : '',
-        counted: false,
-        countsTowardTuition: false,
-        creditNumber: null,
-        creditLabel: '',
-        creditValue: 0,
-        source: 'admin',
-        submittedByRole: 'admin',
-        note: row.note || '',
-        raw: {
-          adminAttendance: {
-            sessionTitle: occurrence.title || '',
-            occurrenceDate: occurrence.occurrenceDate,
-          },
-        },
-      }
-    })
-}
-
-function buildScheduleTeacherAttendanceInputs(occurrence, rows = [], savedReport = null) {
-  return rows.map((row, index) => {
-    const attendanceStatus = normalizeScheduleTeacherAttendanceStatus(row.attendanceStatus)
-    return {
-      studentId: row.studentId,
-      date: occurrence.occurrenceDate,
-      classSessionId: occurrence.classSessionId || null,
-      scheduleSessionId: occurrence.id,
-      sessionId: occurrence.id,
-      teacherId: occurrence.teacherId || null,
-      teacherName: getScheduleAdminTeacherName(occurrence),
-      sourceReportId: savedReport?.id || null,
-      sourceAttendanceIndex: index,
-      sourceCreditIndex: 0,
-      status: attendanceStatus,
-      attendanceStatus,
-      counted: false,
-      countsTowardTuition: false,
-      creditNumber: null,
-      creditLabel: '',
-      creditValue: 0,
-      source: 'teacher',
-      submittedByRole: 'teacher',
-      note: row.note || '',
-      raw: {
-        report: savedReport ? { id: savedReport.id, sessionId: savedReport.sessionId } : null,
-        attendanceItem: {
-          studentId: row.studentId,
-          attendanceStatus,
-          note: row.note || '',
-        },
-      },
-    }
-  })
-}
-
-function normalizeScheduleTeacherAttendanceStatus(status) {
-  const rawStatus = String(status || '').trim()
-  if (rawStatus === 'excusedAbsent') {
-    return 'excused'
-  }
-  if (rawStatus === 'unexcusedAbsent') {
-    return 'absent'
-  }
-  return rawStatus || 'present'
 }
 
 function getScheduleDaysFromSettingsClassSession(classSession) {
@@ -11659,10 +11416,6 @@ function getScheduleDaysFromSettingsClassSession(classSession) {
 
 function getScheduleSettingsClassSessionLabel(classSession) {
   return String(classSession?.displayLabel || classSession?.name || classSession?.daysLabel || 'Ca học').trim()
-}
-
-function getScheduleAdminTeacherName(occurrence) {
-  return String(occurrence?.teacherName || '').trim() || null
 }
 
 function getAttendanceBaselineDraftRecords() {
@@ -12732,7 +12485,7 @@ function renderWindowBody(windowItem) {
       scheduleFormState,
       scheduleReportState,
       attendanceAvailable ? sessionReports : [],
-      sessionReportAttendanceState,
+      sessionReportGuestState,
       sessionReportLearningState,
       sessionReportLearningFormState,
       sessionReportExtraState,
@@ -12741,7 +12494,7 @@ function renderWindowBody(windowItem) {
       [],
       students,
       scheduleWeekStartDate,
-      scheduleAdminAttendanceState,
+      null,
       {
         attendanceRecords,
         calendarNotesAvailable,
@@ -12761,11 +12514,6 @@ function renderWindowBody(windowItem) {
           v22StudentEnrollmentCapabilityState,
           getCurrentCanonicalCenterContext().centerId,
         ),
-        occurrenceAttendanceReady: isV23AttendanceCapabilityReady(
-          v23AttendanceCapabilityState,
-          getCurrentCanonicalCenterContext().centerId,
-        ),
-        occurrenceAttendanceStatus: v23AttendanceCapabilityState.status,
         a3TeacherContext: getCurrentA3TeacherContext(),
         a3TeacherReady: getCurrentA3TeacherContext() === a3TeacherContext,
         a3TeacherStatus: a3TeacherContext.status,
@@ -14362,9 +14110,6 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
   }))
   if (moduleId === 'hoc-vien' || moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh' || moduleId === 'bao-cao') {
     await refreshV22StudentEnrollments({ reason: `${moduleId}:${reason}`, silent: true })
-  }
-  if (moduleId === 'thoi-khoa-bieu' || moduleId === 'bang-diem-danh') {
-    await refreshV23AttendanceCapability({ silent: true })
   }
   if (moduleId === 'thoi-khoa-bieu' || moduleId === 'cai-dat-co-so') {
     await Promise.all([
@@ -16354,7 +16099,6 @@ async function syncCloudUser(user, { force = false, reason = '' } = {}) {
     await refreshInventoryAuthoritativeTruth({ reason: 'capability-probe', silent: true })
     await refreshV21CenterSettings({ reason: 'capability-probe', silent: true })
     await refreshV22StudentEnrollments({ reason: 'capability-probe', silent: true })
-    await refreshV23AttendanceCapability({ silent: true })
     await refreshV24PackageCycles({ reason: 'capability-probe', silent: true })
     await refreshV26TeacherRegistry({ reason: 'capability-probe', silent: true })
     await loadCenterMemberProfiles(syncId)
@@ -19188,47 +18932,6 @@ async function refreshV22StudentEnrollments({ reason = 'manual-refresh', silent 
   return result
 }
 
-async function refreshV23AttendanceCapability({ silent = true } = {}) {
-  const centerContext = getCurrentCanonicalCenterContext()
-  const centerId = centerContext.centerId
-  const runId = ++v23AttendanceCapabilityRunId
-  if (!centerContext.ok) {
-    resetV23AttendanceRuntimeForAccessBoundary('')
-    return { ok: false, outcome_code: 'INVALID_CENTER' }
-  }
-  v23AttendanceCapabilityState = createV23AttendanceCapabilityState({
-    centerId,
-    status: V23_ATTENDANCE_CAPABILITY_STATUS.LOADING,
-    message: '',
-  })
-  if (!silent) render()
-  const result = await pullV23AttendanceCapability({ supabase: getSupabaseClient(), centerId })
-  if (runId !== v23AttendanceCapabilityRunId
-    || centerId !== getCurrentCanonicalCenterContext().centerId) {
-    return { ok: false, outcome_code: 'CENTER_CONTEXT_CHANGED' }
-  }
-  if (!result.ok) {
-    const unavailable = result.unavailable || isV23AttendanceBackendUnavailable(result)
-      || result.outcome_code === 'BACKEND_NOT_DEPLOYED'
-    v23AttendanceCapabilityState = createV23AttendanceCapabilityState({
-      centerId,
-      status: unavailable
-        ? V23_ATTENDANCE_CAPABILITY_STATUS.UNAVAILABLE
-        : V23_ATTENDANCE_CAPABILITY_STATUS.FAILED,
-      message: unavailable ? '' : result.error || getV23AttendanceOutcomeMessage(result.outcome_code),
-    })
-    if (!silent) render()
-    return result
-  }
-  v23AttendanceCapabilityState = createV23AttendanceCapabilityState({
-    centerId,
-    status: V23_ATTENDANCE_CAPABILITY_STATUS.READY,
-    message: '',
-  })
-  if (!silent) render()
-  return result
-}
-
 async function refreshV24PackageCycles({ reason = 'manual-refresh', silent = true } = {}) {
   const centerContext = getCurrentCanonicalCenterContext()
   const centerId = centerContext.centerId
@@ -20594,12 +20297,10 @@ async function writeC52AttendanceSessionReportThroughCloud({
   idempotencyKey,
   reason = 'c5-2-authoritative-save',
 } = {}) {
-  const isAttendanceBoardAction = String(reason).startsWith('baseline-')
-    || String(reason).startsWith('attendance-board-')
-  if (isAttendanceBoardAction) {
-    return { ok: false, outcome_code: 'READ_ONLY_LEDGER', error: 'Chỉnh điểm danh tại Thời khóa biểu.' }
+  if (attendanceRecords.length || replaceBaselineRecords || previousAttendanceRecords.length) {
+    return { ok: false, outcome_code: 'ATTENDANCE_TYPED_COMMAND_REQUIRED', error: 'Điểm danh phải được lưu từ Bảng điểm danh.' }
   }
-  const moduleId = isAttendanceBoardAction ? 'bang-diem-danh' : 'thoi-khoa-bieu'
+  const moduleId = 'thoi-khoa-bieu'
   const unavailableUpstreams = ['core', 'attendance']
     .filter((upstream) => !isModuleUpstreamCurrent(moduleId, upstream))
   if (unavailableUpstreams.length) {
@@ -20758,128 +20459,6 @@ async function writeC52AttendanceSessionReportThroughCloud({
   }
   render()
   return result
-}
-
-async function writeV23OccurrenceAttendanceThroughCloud({
-  occurrence,
-  attendanceInputs = [],
-  currentRecords = attendanceRecords,
-  sessionReport = null,
-  reason = 'v2-3-occurrence-attendance',
-} = {}) {
-  const centerId = getCurrentResolvedCenterId()
-  if (!isV23AttendanceCapabilityReady(v23AttendanceCapabilityState, centerId)) {
-    return {
-      ok: false,
-      outcome_code: 'BACKEND_NOT_DEPLOYED',
-      error: v23AttendanceCapabilityState.status === V23_ATTENDANCE_CAPABILITY_STATUS.FAILED
-        ? 'Điểm danh nhanh chưa tải được. Thông tin bạn nhập vẫn được giữ nguyên.'
-        : 'Điểm danh nhanh tại thời khóa biểu hiện chưa khả dụng.',
-    }
-  }
-  const unavailableUpstreams = ['core', 'attendance']
-    .filter((upstream) => !isModuleUpstreamCurrent('thoi-khoa-bieu', upstream))
-  if (unavailableUpstreams.length) {
-    return {
-      ok: false,
-      outcome_code: 'REQUIRED_REFRESH_UNAVAILABLE',
-      error: 'Dữ liệu cần thiết chưa được tải mới. Thông tin bạn nhập vẫn được giữ nguyên; vui lòng bấm Làm mới rồi thử lại.',
-    }
-  }
-  const access = canWriteC51AttendanceEntity(buildCurrentOnlineAccessState({
-    cloudReady: cloudDbState.readinessStatus === 'ready',
-  }))
-  if (!access.canWrite) {
-    return { ok: false, outcome_code: 'WRITE_ROLE_REQUIRED', error: access.message }
-  }
-
-  const fingerprint = createC52OperationalRetryFingerprint({
-    reason,
-    occurrence: {
-      id: occurrence?.id,
-      occurrenceDate: occurrence?.occurrenceDate,
-      classSessionId: occurrence?.classSessionId,
-    },
-    attendanceInputs,
-    sessionReport,
-  })
-  const retryScope = `${centerId}|${fingerprint}`
-  const pending = v23AttendanceRetryCommands.get(retryScope) || {
-    centerId,
-    occurrence: cloneC52OperationalCommandValue(occurrence),
-    attendanceInputs: cloneC52OperationalCommandValue(attendanceInputs),
-    currentRecords: cloneC52OperationalCommandValue(
-      currentRecords,
-    ),
-    sessionReport: cloneC52OperationalCommandValue(sessionReport),
-    idempotencyKey: createOperationalCommandIdempotencyKey(),
-  }
-  v23AttendanceRetryCommands.set(retryScope, pending)
-  const runId = ++v23AttendanceWriteRunId
-  const readiness = await checkCloudDbReadiness(centerId)
-  if (!readiness.ok) return readiness
-  if (runId !== v23AttendanceWriteRunId
-    || centerId !== getCurrentResolvedCenterId()
-    || readiness.centerId !== centerId) {
-    return {
-      ok: false,
-      outcome_code: 'CENTER_CONTEXT_CHANGED',
-      error: 'Cơ sở đã thay đổi; yêu cầu chưa được gửi. Thông tin bạn nhập vẫn được giữ nguyên.',
-    }
-  }
-
-  const result = await mutateV23OccurrenceAttendance({
-    supabase: readiness.supabase,
-    centerId,
-    occurrence: pending.occurrence,
-    attendanceInputs: pending.attendanceInputs,
-    currentRecords: pending.currentRecords,
-    sessionReport: pending.sessionReport,
-    idempotencyKey: pending.idempotencyKey,
-    userId: readiness.user?.id,
-  })
-  if (runId !== v23AttendanceWriteRunId || centerId !== getCurrentResolvedCenterId()) {
-    return {
-      ...result,
-      ok: false,
-      committed: Boolean(result.ok),
-      outcome_code: 'CENTER_CONTEXT_CHANGED',
-      error: result.ok
-        ? 'Điểm danh đã được lưu ở cơ sở trước nhưng màn hình hiện tại chưa được cập nhật.'
-        : 'Cơ sở đã thay đổi; màn hình hiện tại không áp dụng kết quả này.',
-    }
-  }
-  if (!result.ok) {
-    if (!['SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT', 'CONCURRENT_CONFLICT'].includes(result.outcome_code)) {
-      v23AttendanceRetryCommands.delete(retryScope)
-    }
-    return result
-  }
-
-  const mergeResult = projectC51AuthoritativeRecords({
-    attendanceRecords,
-    baselineState: attendanceBaselineState,
-    sessionReports,
-    cloudRecords: result.records,
-  })
-  applyC51AttendanceProjection(mergeResult)
-  v23AttendanceRetryCommands.delete(retryScope)
-  cloudDbState = {
-    ...cloudDbState,
-    readinessStatus: 'ready',
-    message: `Đã lưu điểm danh buổi học (${attendanceInputs.length} học viên).`,
-    messageTone: 'success',
-    lastUpdatedAt: new Date().toISOString(),
-  }
-  if (isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)) {
-    await refreshV24PackageCycles({ reason: 'attendance-reconciled', silent: true })
-  }
-  if (isV28AAttendanceOperationsCapabilityReady(v28aAttendanceOperationsCapabilityState, centerId)) {
-    await refreshV28AAttendanceOperations({ reason: 'attendance-reconciled', silent: true })
-  }
-  if (openWindows.some(item => item.moduleId === 'bang-diem-danh')) await refreshAttendanceLedgerContext()
-  queueNotificationAttentionRefresh('attendance-reconciled')
-  return { ...result, projection: mergeResult }
 }
 
 function createC52OperationalRetryFingerprint(value = {}) {
@@ -26216,19 +25795,6 @@ function bindEvents() {
     })
   })
 
-  document.querySelector('[data-attendance-baseline-manager-open]')?.addEventListener('click', () => {
-    isAttendanceBaselineManagerOpen = true
-    attendanceCellNoteContextState = null
-    render()
-  })
-
-  document.querySelectorAll('[data-attendance-baseline-manager-close]').forEach((button) => {
-    button.addEventListener('click', () => {
-      isAttendanceBaselineManagerOpen = false
-      render()
-    })
-  })
-
   document.querySelectorAll('[data-attendance-reminders-toggle]').forEach((button) => {
     button.addEventListener('click', () => {
       isAttendanceReminderPanelOpen = !isAttendanceReminderPanelOpen
@@ -26510,300 +26076,6 @@ function bindEvents() {
       attendanceBoardNoteFormState = null
       render()
     }
-  })
-
-  document.querySelector('[data-attendance-baseline-details]')?.addEventListener('toggle', (event) => {
-    isAttendanceBaselineDetailsOpen = Boolean(event.currentTarget.open)
-  })
-
-  document.querySelector('[data-attendance-baseline-action="start"]')?.addEventListener('click', async () => {
-    const nextState = startAttendanceBaselineDraft(attendanceBaselineState, {
-      byRole: 'admin',
-      byName: 'Admin cơ sở',
-      note: 'Bắt đầu nhập dữ liệu nền điểm danh.',
-    })
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      baselineState: nextState,
-      reason: 'baseline-start',
-    })
-    if (!result.ok) return
-    attendanceBaselineUndoSnapshot = null
-    render()
-  })
-
-  document.querySelectorAll('[data-attendance-baseline-cell-input]').forEach((input) => {
-    input.addEventListener('pointerdown', (event) => {
-      const activeInput = document.activeElement
-
-      if (
-        activeInput &&
-        activeInput !== input &&
-        activeInput.matches?.('[data-attendance-baseline-cell-input]')
-      ) {
-        const committed = commitAttendanceBaselineCellInput(activeInput, {
-          focusTarget: getBaselineInputFocusTarget(input),
-          shouldRender: false,
-        })
-
-        if (committed) {
-          activeInput.dataset.attendanceBaselineCommittedValue = activeInput.value
-        }
-      }
-    })
-
-    input.addEventListener('change', () => {
-      if (input.dataset.attendanceBaselineCommittedValue === input.value) {
-        delete input.dataset.attendanceBaselineCommittedValue
-        return
-      }
-
-      commitAttendanceBaselineCellInput(input)
-    })
-
-    input.addEventListener('keydown', (event) => {
-      const keyDirections = {
-        ArrowLeft: 'previous',
-        ArrowRight: 'next',
-        ArrowUp: 'up',
-        ArrowDown: 'down',
-        Enter: event.shiftKey ? 'up' : 'down',
-      }
-      const direction = event.key === 'Tab'
-        ? event.shiftKey ? 'previous' : 'next'
-        : keyDirections[event.key]
-
-      if (!direction) {
-        return
-      }
-
-      event.preventDefault()
-      const focusTarget = getAttendanceBaselineNavigationTarget(input, direction)
-      const committed = commitAttendanceBaselineCellInput(input, {
-        focusTarget,
-        shouldRender: false,
-      })
-
-      if (committed) {
-        input.dataset.attendanceBaselineCommittedValue = input.value
-        focusAttendanceBaselineCellTarget(focusTarget)
-      }
-    })
-  })
-
-  document.querySelector('[data-attendance-baseline-action="save"]')?.addEventListener('click', async () => {
-    if (!hasAttendanceBaselineDraftChanges()) {
-      return
-    }
-
-    const currentState = getAttendanceBaselineDraftState()
-    if (currentState.status === 'locked') {
-      window.alert('Dữ liệu nền đã khóa, cần mở khóa trước khi lưu thay đổi.')
-      render()
-      return
-    }
-
-    const draftRecords = getAttendanceBaselineDraftRecords()
-    const nextState = saveAttendanceBaselineDraftState(currentState, {
-      byRole: 'admin',
-      byName: 'Admin cơ sở',
-      note: 'Lưu thay đổi dữ liệu nền điểm danh.',
-    })
-    const previousAttendanceRecords = attendanceRecords
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      attendanceRecords: draftRecords.filter((record) => record.source === 'initialBaseline'),
-      baselineState: nextState,
-      previousAttendanceRecords,
-      replaceBaselineRecords: true,
-      reason: 'baseline-save',
-    })
-    if (!result.ok) return
-    clearAttendanceBaselineDraft()
-    attendanceBaselineUndoSnapshot = null
-    attendanceBoardDetailState = null
-    render()
-  })
-
-  document.querySelector('[data-attendance-baseline-action="cancel"]')?.addEventListener('click', () => {
-    if (!hasAttendanceBaselineDraftChanges()) {
-      return
-    }
-
-    if (!window.confirm('Hủy các thay đổi dữ liệu nền chưa lưu?')) {
-      return
-    }
-
-    clearAttendanceBaselineDraft()
-    attendanceBaselineUndoSnapshot = null
-    attendanceBoardDetailState = null
-    render()
-  })
-
-  document.querySelector('[data-attendance-baseline-action="clear"]')?.addEventListener('click', async () => {
-    const currentState = attendanceBaselineState
-
-    if (currentState.status === 'locked') {
-      window.alert('Dữ liệu nền đã khóa, cần mở khóa trước khi xóa dữ liệu nền đang nhập.')
-      render()
-      return
-    }
-
-    if (hasAttendanceBaselineDraftChanges()) {
-      const confirmedDraft = window.confirm(
-        'Bạn đang có thay đổi chưa lưu. Xóa dữ liệu nền sẽ hủy các thay đổi chưa lưu trong phạm vi này.',
-      )
-
-      if (!confirmedDraft) {
-        return
-      }
-    }
-
-    const confirmed = window.confirm(
-      'Bạn chắc chắn muốn xóa dữ liệu nền đang nhập trong tháng đang xem? Thao tác này chỉ xóa dữ liệu nền, không xóa dữ liệu điểm danh gốc/import.',
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    const storedRecords = attendanceRecords
-    const storedState = attendanceBaselineState
-    const clearResult = clearInitialBaselineAttendanceRecordsInMonth({
-      records: storedRecords,
-      state: storedState,
-      month: attendanceBoardFilters.month,
-      byRole: 'admin',
-      byName: 'Admin cơ sở',
-    })
-
-    if (clearResult.blocked) {
-      window.alert('Không thể xóa dữ liệu nền khi dữ liệu nền đang khóa.')
-      render()
-      return
-    }
-
-    const nextUndoSnapshot = {
-      type: 'clear',
-      records: storedRecords,
-      state: storedState,
-      draftRecords: attendanceBaselineDraftRecords,
-      draftBaseRecords: attendanceBaselineDraftBaseRecords,
-      draftState: attendanceBaselineDraftState,
-    }
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      attendanceRecords: clearResult.records.filter((record) => record.source === 'initialBaseline'),
-      baselineState: clearResult.state,
-      previousAttendanceRecords: storedRecords,
-      replaceBaselineRecords: true,
-      reason: 'baseline-clear',
-    })
-    if (!result.ok) return
-    attendanceBaselineUndoSnapshot = nextUndoSnapshot
-    clearAttendanceBaselineDraft()
-    attendanceBoardDetailState = null
-    render()
-  })
-
-  document.querySelector('[data-attendance-baseline-action="undo"]')?.addEventListener('click', async () => {
-    if (!attendanceBaselineUndoSnapshot) {
-      window.alert('Chưa có thao tác nào để hoàn tác.')
-      return
-    }
-
-    if (attendanceBaselineUndoSnapshot.type === 'draft') {
-      restoreAttendanceBaselineDraftUndoSnapshot(attendanceBaselineUndoSnapshot)
-    } else if (attendanceBaselineUndoSnapshot.type === 'clear') {
-      const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      const currentRecords = attendanceRecords
-      const result = await writeC52AttendanceSessionReportThroughCloud({
-        attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
-        baselineState: restored.state,
-        previousAttendanceRecords: currentRecords,
-        replaceBaselineRecords: true,
-        reason: 'baseline-undo-clear',
-      })
-      if (!result.ok) return
-      attendanceBaselineDraftRecords = Array.isArray(attendanceBaselineUndoSnapshot.draftRecords)
-        ? attendanceBaselineUndoSnapshot.draftRecords
-        : null
-      attendanceBaselineDraftBaseRecords = Array.isArray(attendanceBaselineUndoSnapshot.draftBaseRecords)
-        ? attendanceBaselineUndoSnapshot.draftBaseRecords
-        : null
-      attendanceBaselineDraftState = attendanceBaselineUndoSnapshot.draftState || null
-    } else {
-      const restored = restoreInitialBaselineEditSnapshot(attendanceBaselineUndoSnapshot)
-      const currentRecords = attendanceRecords
-      const result = await writeC52AttendanceSessionReportThroughCloud({
-        attendanceRecords: restored.records.filter((record) => record.source === 'initialBaseline'),
-        baselineState: restored.state,
-        previousAttendanceRecords: currentRecords,
-        replaceBaselineRecords: true,
-        reason: 'baseline-undo',
-      })
-      if (!result.ok) return
-    }
-
-    attendanceBaselineUndoSnapshot = null
-    attendanceBoardDetailState = null
-    render()
-  })
-
-  document.querySelector('[data-attendance-baseline-action="lock"]')?.addEventListener('click', async () => {
-    if (hasAttendanceBaselineDraftChanges()) {
-      window.alert('Bạn còn thay đổi dữ liệu nền chưa lưu. Vui lòng lưu hoặc hủy thay đổi trước khi chốt dữ liệu nền.')
-      return
-    }
-
-    const baselineRecords = attendanceRecords
-      .filter((record) => record.source === 'initialBaseline')
-    const confirmMessage = baselineRecords.length
-      ? 'Bạn chắc chắn muốn chốt dữ liệu nền điểm danh? Sau khi khóa, dữ liệu nền sẽ không được sửa tự do.'
-      : 'Hiện chưa có bản ghi dữ liệu nền nào. Bạn vẫn muốn khóa dữ liệu nền?'
-
-    if (!window.confirm(confirmMessage)) {
-      return
-    }
-
-    const nextState = lockAttendanceBaselineState(attendanceBaselineState, {
-      byRole: 'admin',
-      byName: 'Admin cơ sở',
-      note: baselineRecords.length
-        ? 'Chốt dữ liệu nền điểm danh.'
-        : 'Chốt dữ liệu nền khi chưa có bản ghi nền.',
-    })
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      baselineState: nextState,
-      reason: 'baseline-lock',
-    })
-    if (!result.ok) return
-    attendanceBaselineUndoSnapshot = null
-    render()
-  })
-
-  document.querySelector('[data-attendance-baseline-action="unlock"]')?.addEventListener('click', async () => {
-    const confirmed = window.confirm(
-      'Bạn chắc chắn muốn mở khóa dữ liệu điểm danh? Việc này có thể ảnh hưởng số buổi đã học, số buổi còn lại, học phí và bảng điểm danh.',
-    )
-
-    if (!confirmed) {
-      return
-    }
-
-    const reason = window.prompt('Lý do mở khóa', '') || ''
-    const unlockReason = reason.trim() || 'Mở khóa để chỉnh sửa dữ liệu nền.'
-    const nextState = unlockAttendanceBaselineState(attendanceBaselineState, {
-      byRole: 'admin',
-      byName: 'Admin cơ sở',
-      reason: unlockReason,
-      note: 'Mở khóa dữ liệu nền điểm danh.',
-    })
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      baselineState: nextState,
-      reason: 'baseline-unlock',
-    })
-    if (!result.ok) return
-    attendanceBaselineUndoSnapshot = null
-    clearAttendanceBaselineDraft()
-    render()
   })
 
   document.querySelectorAll('[data-settings-tab]').forEach((button) => {
@@ -28862,8 +28134,7 @@ function bindEvents() {
 
   const resetScheduleReportPanels = () => {
     scheduleReportState = null
-    scheduleAdminAttendanceState = null
-    sessionReportAttendanceState = null
+    sessionReportGuestState = null
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
@@ -29441,8 +28712,7 @@ function bindEvents() {
 
       if (occurrence?.isEmptyClassSessionSlot) {
         scheduleReportState = null
-        scheduleAdminAttendanceState = null
-        sessionReportAttendanceState = null
+        sessionReportGuestState = null
         sessionReportLearningState = null
         sessionReportLearningFormState = null
         sessionReportExtraState = null
@@ -29473,12 +28743,11 @@ function bindEvents() {
         scheduleReportState = {
           sessionId: session?.id || occurrence.id,
           occurrenceDate: occurrence.occurrenceDate,
-          mode: 'adminPlaceholder',
+          mode: 'teacherReport',
         }
-        sessionReportAttendanceState = null
-        scheduleAdminAttendanceState = createScheduleAdminAttendanceState(
+        sessionReportGuestState = createSessionReportDraft(
           occurrence,
-          attendanceRecords,
+          findSessionReport(sessionReports, occurrence.id, occurrence.occurrenceDate),
         )
         sessionReportLearningState = null
         sessionReportExtraState = null
@@ -29487,8 +28756,7 @@ function bindEvents() {
         sessionReportGuestFormState = null
       } else {
         scheduleReportState = null
-        scheduleAdminAttendanceState = null
-        sessionReportAttendanceState = null
+        sessionReportGuestState = null
         sessionReportLearningState = null
         sessionReportLearningFormState = null
         sessionReportExtraState = null
@@ -29498,10 +28766,6 @@ function bindEvents() {
       }
 
       render()
-      if (scheduleReportState?.mode === 'adminPlaceholder') {
-        scheduleAdminAttendanceState?.rows.filter((row) => row.attendanceStatus === 'makeup')
-          .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
-      }
     }
 
     card.addEventListener('click', openScheduleSession)
@@ -29511,13 +28775,6 @@ function bindEvents() {
         event.preventDefault()
         openScheduleSession()
       }
-    })
-  })
-
-  document.querySelectorAll('[data-a5-attendance-action="open"]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      button.closest('[data-schedule-action="open-edit"]')?.click()
     })
   })
 
@@ -30132,8 +29389,7 @@ function bindEvents() {
   document.querySelectorAll('[data-schedule-action="close-report"]').forEach((button) => {
     button.addEventListener('click', () => {
       scheduleReportState = null
-      scheduleAdminAttendanceState = null
-      sessionReportAttendanceState = null
+      sessionReportGuestState = null
       sessionReportLearningState = null
       sessionReportLearningFormState = null
       sessionReportExtraState = null
@@ -30153,8 +29409,7 @@ function bindEvents() {
     }
 
     scheduleReportState = null
-    scheduleAdminAttendanceState = null
-    sessionReportAttendanceState = null
+    sessionReportGuestState = null
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
@@ -30176,292 +29431,6 @@ function bindEvents() {
         event.stopPropagation()
       })
     })
-
-  document.querySelectorAll('[data-admin-attendance-status]').forEach((control) => {
-    const updateAdminAttendanceStatus = () => {
-      const studentId = control.dataset.adminAttendanceStudentId
-      const row = scheduleAdminAttendanceState?.rows.find((item) => item.studentId === studentId)
-      if (!row) return
-      updateScheduleAdminAttendanceRow(studentId, {
-        attendanceStatus: control.value,
-        makeupForAttendanceLocalId: control.value === 'makeup'
-          ? row.makeupForAttendanceLocalId || row.originalMakeupForAttendanceLocalId || '' : '',
-        dirty: true,
-      })
-      render()
-      if (control.value === 'makeup' && row.candidateState !== 'ready') {
-        void loadScheduleMakeupCandidates(studentId)
-      }
-    }
-
-    control.addEventListener(control.tagName === 'BUTTON' ? 'click' : 'change', updateAdminAttendanceStatus)
-  })
-
-  document.querySelectorAll('[data-admin-makeup-target]').forEach((control) => {
-    control.addEventListener('change', () => {
-      updateScheduleAdminAttendanceRow(control.dataset.adminAttendanceStudentId, {
-        makeupForAttendanceLocalId: control.value,
-        dirty: true,
-      })
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-admin-attendance-action]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      if (!scheduleAdminAttendanceState) {
-        return
-      }
-
-      const action = button.dataset.adminAttendanceAction
-
-      if (action === 'reload-candidates') {
-        void loadScheduleMakeupCandidates(button.dataset.adminAttendanceStudentId)
-        return
-      }
-      if (action === 'reload') {
-        const refreshed = await refreshModuleAuthoritativeUpstreams('thoi-khoa-bieu', { reason: 'attendance-conflict' })
-        if (!refreshed.ok) {
-          scheduleAdminAttendanceState = {
-            ...scheduleAdminAttendanceState,
-            error: 'Chưa tải được điểm danh mới nhất. Vui lòng thử lại.',
-          }
-          render()
-          return
-        }
-        const occurrence = getScheduleAdminAttendanceOccurrence()
-        if (!occurrence) {
-          scheduleAdminAttendanceState = null
-          scheduleReportState = null
-          render()
-          return
-        }
-        for (const [scope, command] of v23AttendanceRetryCommands) {
-          if (command.centerId === getCurrentResolvedCenterId()
-              && command.occurrence?.id === occurrence.id
-              && command.occurrence?.occurrenceDate === occurrence.occurrenceDate) {
-            v23AttendanceRetryCommands.delete(scope)
-          }
-        }
-        scheduleAdminAttendanceState = createScheduleAdminAttendanceState(occurrence, attendanceRecords)
-        render()
-        scheduleAdminAttendanceState.rows.filter((row) => row.attendanceStatus === 'makeup')
-          .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
-        return
-      }
-
-      if (action === 'save') {
-        if (scheduleAdminAttendanceState.saveState === 'saving' || scheduleAdminAttendanceState.needsReload) return
-        if (getCurrentA3TeacherContext() !== a3TeacherContext) {
-          scheduleAdminAttendanceState = {
-            ...scheduleAdminAttendanceState,
-            error: 'Chưa tải được giáo viên của buổi học. Vui lòng làm mới lịch.',
-          }
-          render()
-          return
-        }
-        const occurrence = getScheduleAdminAttendanceOccurrence()
-
-        if (!occurrence) {
-          scheduleAdminAttendanceState = {
-            ...scheduleAdminAttendanceState,
-            error: 'Không tìm thấy ca học để lưu điểm danh.',
-            saveState: '',
-          }
-          render()
-          return
-        }
-
-        if (occurrence.a2LifecycleState === 'CANCELLED' || occurrence.status === 'cancelled'
-            || (occurrence.a2LifecycleState !== 'HELD' && !isPastScheduleOccurrence(occurrence))) {
-          scheduleAdminAttendanceState = {
-            ...scheduleAdminAttendanceState,
-            error: 'Buổi học này chưa thể điểm danh. Vui lòng tải lại lịch.',
-          }
-          render()
-          return
-        }
-
-        const invalidMakeup = scheduleAdminAttendanceState.rows.find((row) => {
-          if (!row.dirty || row.attendanceStatus !== 'makeup') return false
-          if (!row.makeupForAttendanceLocalId || row.candidateState !== 'ready') return true
-          return row.makeupForAttendanceLocalId !== row.originalMakeupForAttendanceLocalId
-            && !row.makeupCandidates.some((item) => item.attendance_local_id === row.makeupForAttendanceLocalId)
-        })
-        if (invalidMakeup) {
-          scheduleAdminAttendanceState = {
-            ...scheduleAdminAttendanceState,
-            error: invalidMakeup.candidateState === 'ready'
-              ? 'Chọn một buổi vắng đủ điều kiện để học bù.'
-              : 'Chưa tải được buổi vắng đủ điều kiện. Vui lòng tải lại.',
-          }
-          render()
-          return
-        }
-
-        const inputs = buildScheduleAdminAttendanceInputs(
-          occurrence,
-          scheduleAdminAttendanceState.rows,
-        )
-
-        if (!inputs.length) {
-          scheduleAdminAttendanceState = {
-            ...scheduleAdminAttendanceState,
-            error: 'Chưa có trạng thái điểm danh để lưu.',
-            saveState: '',
-          }
-          render()
-          return
-        }
-
-        const draft = scheduleAdminAttendanceState
-        scheduleAdminAttendanceState = { ...draft, saveState: 'saving', error: '' }
-        render()
-
-        const result = await writeV23OccurrenceAttendanceThroughCloud({
-          occurrence,
-          attendanceInputs: inputs,
-          currentRecords: draft.baseRecords,
-          reason: 'admin-attendance-save-v2-3',
-        })
-        if (scheduleAdminAttendanceState?.draftId !== draft.draftId) return
-        if (!result.ok) {
-          const isAttendanceConflict = ['VERSION_CONFLICT', 'ATTENDANCE_VERSION_CONFLICT', 'CONCURRENT_CONFLICT', 'IDEMPOTENCY_CONFLICT'].includes(result.outcome_code)
-          scheduleAdminAttendanceState = {
-            ...scheduleAdminAttendanceState,
-            error: isAttendanceConflict
-              ? 'Dữ liệu vừa được thay đổi. Tải lại để xem bản mới nhất.'
-              : result.error || 'Chưa lưu được điểm danh. Thông tin bạn nhập vẫn được giữ nguyên.',
-            saveState: '',
-            needsReload: isAttendanceConflict,
-          }
-          render()
-          if (String(result.outcome_code || '').startsWith('MAKEUP_')) {
-            scheduleAdminAttendanceState.rows.filter((row) => row.dirty && row.attendanceStatus === 'makeup')
-              .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
-          }
-          return
-        }
-        const committedRecords = result.projection?.attendanceRecords
-          || attendanceRecords
-        await refreshA3TeacherContext()
-        if (scheduleAdminAttendanceState?.draftId !== draft.draftId) return
-        const committedOccurrence = getScheduleAdminAttendanceOccurrence() || occurrence
-        scheduleAdminAttendanceState = {
-          ...createScheduleAdminAttendanceState(committedOccurrence, committedRecords),
-          saveState: 'saved',
-        }
-        render()
-        scheduleAdminAttendanceState.rows.filter((row) => row.attendanceStatus === 'makeup')
-          .forEach((row) => { void loadScheduleMakeupCandidates(row.studentId) })
-      }
-    })
-  })
-
-  document.querySelectorAll('[data-session-report-attendance-status]').forEach((control) => {
-    control.addEventListener('change', () => {
-      sessionReportAttendanceState = updateSessionReportDraftAttendance(
-        sessionReportAttendanceState,
-        control.dataset.sessionReportStudentId,
-        'attendanceStatus',
-        control.value,
-      )
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-session-report-attendance-note]').forEach((control) => {
-    control.addEventListener('input', () => {
-      sessionReportAttendanceState = updateSessionReportDraftAttendance(
-        sessionReportAttendanceState,
-        control.dataset.sessionReportStudentId,
-        'note',
-        control.value,
-      )
-    })
-  })
-
-  document.querySelector('[data-schedule-action="save-attendance"]')?.addEventListener('click', async () => {
-    if (!scheduleReportState || !sessionReportAttendanceState) {
-      return
-    }
-
-    const occurrence = getScheduleAdminAttendanceOccurrence()
-    const storedAttendanceRecords = attendanceRecords
-    const adminAttendanceRecords = occurrence
-      ? getScheduleAdminAttendanceRecords(occurrence, storedAttendanceRecords)
-      : []
-
-    if (adminAttendanceRecords.length) {
-      sessionReportAttendanceState = {
-        ...sessionReportAttendanceState,
-        attendanceLockedByAdmin: true,
-        adminAttendanceCount: adminAttendanceRecords.length,
-        error: 'Admin cơ sở đã điểm danh ca này. Giáo viên có thể lưu nội dung báo cáo ca dạy.',
-        saveState: '',
-      }
-      render()
-      return
-    }
-
-    const error = validateSessionReportAttendance(sessionReportAttendanceState.attendance)
-
-    if (error) {
-      sessionReportAttendanceState = {
-        ...sessionReportAttendanceState,
-        error,
-        saveState: '',
-      }
-      render()
-      return
-    }
-
-    const existingReport = findSessionReport(
-      sessionReports,
-      scheduleReportState.sessionId,
-      scheduleReportState.occurrenceDate,
-    )
-    const savedReport = buildSessionReportFromAttendance(
-      sessionReportAttendanceState,
-      existingReport,
-    )
-    const teacherAttendanceInputs = occurrence
-      ? buildScheduleTeacherAttendanceInputs(
-          occurrence,
-          savedReport.attendance,
-          savedReport,
-        )
-      : []
-    const result = await writeV23OccurrenceAttendanceThroughCloud({
-      occurrence,
-      attendanceInputs: teacherAttendanceInputs,
-      sessionReport: savedReport,
-      reason: 'teacher-session-report-attendance-v2-3',
-    })
-    if (!result.ok) {
-      sessionReportAttendanceState = {
-        ...sessionReportAttendanceState,
-        error: result.error || 'Chưa lưu được báo cáo buổi học. Thông tin bạn nhập vẫn được giữ nguyên.',
-        saveState: '',
-      }
-      render()
-      return
-    }
-    const committedReport = findSessionReport(
-      sessionReports,
-      savedReport.sessionId,
-      savedReport.occurrenceDate,
-    ) || savedReport
-    sessionReportAttendanceState = {
-      ...sessionReportAttendanceState,
-      attendance: committedReport.attendance,
-      error: '',
-      saveState: 'saved',
-      attendanceLockedByAdmin: false,
-      adminAttendanceCount: 0,
-    }
-    render()
-  })
 
   document.querySelector('[data-session-guest-action="open-create"]')?.addEventListener('click', () => {
     sessionReportGuestFormState = createEmptyGuestParticipantFormState()
@@ -30508,7 +29477,7 @@ function bindEvents() {
   document.querySelector('[data-session-guest-form]')?.addEventListener('submit', async (event) => {
     event.preventDefault()
 
-    if (!scheduleReportState || !sessionReportAttendanceState || !sessionReportGuestFormState) {
+    if (!scheduleReportState || !sessionReportGuestState || !sessionReportGuestFormState) {
       return
     }
 
@@ -30536,10 +29505,10 @@ function bindEvents() {
     }
 
     const nextAttendanceState = {
-      ...sessionReportAttendanceState,
+      ...sessionReportGuestState,
       guestParticipants: [
         buildGuestParticipantFromForm(formValues),
-        ...(sessionReportAttendanceState.guestParticipants ?? []),
+        ...(sessionReportGuestState.guestParticipants ?? []),
       ],
       saveState: 'saved',
       error: '',
@@ -30556,15 +29525,15 @@ function bindEvents() {
       reason: 'session-report-guest-add',
     })
     if (!result.ok) {
-      sessionReportAttendanceState = {
-        ...sessionReportAttendanceState,
+      sessionReportGuestState = {
+        ...sessionReportGuestState,
         error: result.error || 'Chưa lưu được thông tin khách học. Thông tin bạn nhập vẫn được giữ nguyên.',
         saveState: '',
       }
       render()
       return
     }
-    sessionReportAttendanceState = {
+    sessionReportGuestState = {
       ...nextAttendanceState,
       guestParticipants: savedReport.guestParticipants,
     }
@@ -30574,13 +29543,13 @@ function bindEvents() {
 
   document.querySelectorAll('[data-session-guest-action="delete"]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!scheduleReportState || !sessionReportAttendanceState) {
+      if (!scheduleReportState || !sessionReportGuestState) {
         return
       }
 
       const nextAttendanceState = {
-        ...sessionReportAttendanceState,
-        guestParticipants: (sessionReportAttendanceState.guestParticipants ?? []).filter(
+        ...sessionReportGuestState,
+        guestParticipants: (sessionReportGuestState.guestParticipants ?? []).filter(
           (guest) => guest.id !== button.dataset.guestId,
         ),
         saveState: 'saved',
@@ -30598,15 +29567,15 @@ function bindEvents() {
         reason: 'session-report-guest-delete',
       })
       if (!result.ok) {
-        sessionReportAttendanceState = {
-          ...sessionReportAttendanceState,
+        sessionReportGuestState = {
+          ...sessionReportGuestState,
           error: result.error || 'Chưa lưu được thay đổi khách học. Thông tin bạn nhập vẫn được giữ nguyên.',
           saveState: '',
         }
         render()
         return
       }
-      sessionReportAttendanceState = {
+      sessionReportGuestState = {
         ...nextAttendanceState,
         guestParticipants: savedReport.guestParticipants,
       }
@@ -30955,7 +29924,7 @@ function bindEvents() {
   document.querySelectorAll('[data-schedule-action="cancel-form"]').forEach((button) => {
     button.addEventListener('click', () => {
       scheduleFormState = null
-      sessionReportAttendanceState = null
+      sessionReportGuestState = null
       sessionReportLearningState = null
       sessionReportLearningFormState = null
       sessionReportExtraState = null
@@ -31209,7 +30178,7 @@ function bindEvents() {
 
     scheduleFormState = null
     scheduleReportState = null
-    sessionReportAttendanceState = null
+    sessionReportGuestState = null
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
@@ -31276,7 +30245,7 @@ function bindEvents() {
 
     scheduleFormState = null
     scheduleReportState = null
-    sessionReportAttendanceState = null
+    sessionReportGuestState = null
     sessionReportLearningState = null
     sessionReportLearningFormState = null
     sessionReportExtraState = null
@@ -32681,8 +31650,7 @@ async function openNotificationSourceModule(notificationId) {
     if (route.moduleId === 'thoi-khoa-bieu') {
       scheduleFormState = null
       scheduleReportState = null
-      scheduleAdminAttendanceState = null
-      sessionReportAttendanceState = null
+      sessionReportGuestState = null
       sessionReportLearningState = null
       sessionReportLearningFormState = null
       sessionReportExtraState = null

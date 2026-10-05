@@ -9,6 +9,7 @@ export const ATTENDANCE_LEDGER_STATES = Object.freeze({
   present: { label: 'Có mặt', mark: '✓' },
   absent: { label: 'Vắng', mark: 'V' },
   makeup: { label: 'Học bù', mark: 'B' },
+  historicalTrial: { label: 'Học thử (lịch sử)', mark: 'T' },
   unmarked: { label: 'Chưa điểm danh', mark: '?' },
   future: { label: 'Chưa đến giờ học', mark: '◷' },
   cancelled: { label: 'Đã hủy', mark: '×' },
@@ -203,7 +204,8 @@ export function buildCanonicalAttendanceLedger({
       const state = !expected ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
         : isAttendanceLedgerOccurrenceFuture(occurrence, now) ? 'future'
           : rawStatus === 'makeup' ? 'makeup'
-            : ['present', 'trial'].includes(rawStatus) ? 'present'
+          : rawStatus === 'present' ? 'present'
+            : rawStatus === 'trial' ? 'historicalTrial'
               : ['absent', 'excused', 'excusedAbsent', 'unexcusedAbsent'].includes(rawStatus) ? 'absent' : 'unmarked'
       const target = state === 'makeup' ? recordByLocalId.get(text(record?.makeupForAttendanceLocalId)) : null
       const originalOccurrence = target && target.studentId === studentId

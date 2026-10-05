@@ -1,6 +1,5 @@
 import {
   ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE,
-  buildAttendanceRecordCloudEntity,
   createAttendanceRecordCloudLocalId,
   validateAttendanceRecordCloudPayload,
 } from './cloud-attendance-records.js'
@@ -17,7 +16,6 @@ import {
 import { normalizeStoredAttendanceRecords } from './attendance-records.js'
 import { buildOnlineAccessState, getOnlineAccessMessage } from './online-access-control.js'
 import {
-  getAuthoritativeAttendanceTuitionVersion,
   mutateAuthoritativeAttendanceTuitionEntities,
 } from './cloud-authoritative-attendance-tuition.js'
 
@@ -150,9 +148,12 @@ export async function upsertC51AttendanceSessionReportCloudEntities({
   const mutations = []
   const skipped = []
 
-  for (const record of Array.isArray(attendanceRecords) ? attendanceRecords : []) {
-    const result = buildAttendanceRecordCloudEntity({ centerId, record, userId })
-    pushBuildResult(mutations, skipped, result, record)
+  if ((Array.isArray(attendanceRecords) && attendanceRecords.length) || replaceBaselineRecords) {
+    return {
+      ok: false,
+      outcome_code: 'ATTENDANCE_TYPED_COMMAND_REQUIRED',
+      error: 'Điểm danh phải được lưu từ Bảng điểm danh.',
+    }
   }
 
   if (baselineState && typeof baselineState === 'object') {
@@ -163,28 +164,6 @@ export async function upsertC51AttendanceSessionReportCloudEntities({
   for (const report of Array.isArray(sessionReports) ? sessionReports : []) {
     const result = buildSessionReportCloudEntity({ centerId, report, userId })
     pushBuildResult(mutations, skipped, result, report)
-  }
-
-  if (replaceBaselineRecords) {
-    const desiredLocalIds = new Set(
-      (Array.isArray(attendanceRecords) ? attendanceRecords : [])
-        .filter((record) => record?.source === 'initialBaseline')
-        .map((record) => createAttendanceRecordCloudLocalId(record))
-        .filter(Boolean),
-    )
-
-    for (const previousRecord of Array.isArray(previousAttendanceRecords) ? previousAttendanceRecords : []) {
-      if (previousRecord?.source !== 'initialBaseline') continue
-      const localId = createAttendanceRecordCloudLocalId(previousRecord)
-      if (!localId || desiredLocalIds.has(localId)) continue
-      mutations.push({
-        entityType: ATTENDANCE_RECORD_CLOUD_ENTITY_TYPE,
-        localId,
-        entity: previousRecord,
-        expectedVersion: getAuthoritativeAttendanceTuitionVersion(previousRecord),
-        operation: 'DELETE',
-      })
-    }
   }
 
   if (skipped.length) {

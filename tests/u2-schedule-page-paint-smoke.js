@@ -115,7 +115,6 @@ for (const token of [
   'data-schedule-form-field="startTime"',
   'data-schedule-form-field="endTime"',
   'data-schedule-form-field="room"',
-  'data-schedule-form-field="teacherId"',
   'data-schedule-action="toggle-student-picker"',
   'data-schedule-action="cancel-form"',
   'data-schedule-action="save-form"',
@@ -163,29 +162,19 @@ for (const token of [
 ]) assert(labelsHtml.includes(token), `Missing Labels capability: ${token}`)
 
 const attendanceHtml = render({
-  reportState: { sessionId: 'qa-session', occurrenceDate: '2026-08-17', mode: 'adminPlaceholder' },
-  adminAttendanceState: {
-    rows: students.map((student) => ({ studentId: student.id, attendanceStatus: '', note: '' })),
-  },
+  reportState: { sessionId: 'qa-session', occurrenceDate: '2026-08-17', mode: 'teacherReport' },
 })
-for (const token of [
-  'schedule-admin-attendance-compact',
-  'data-schedule-action="close-report"',
-  'data-admin-attendance-action="mark-all-present"',
-  'data-admin-attendance-status',
-  'data-admin-attendance-note',
-  'data-schedule-report-role="gateway"',
-  'data-admin-attendance-action="clear"',
-  'data-admin-attendance-action="save"',
-  'schedule-admin-attendance-footer',
-]) assert(attendanceHtml.includes(token), `Missing Attendance capability: ${token}`)
-assert.equal((attendanceHtml.match(/data-admin-attendance-row=/g) || []).length, 50)
+for (const token of ['data-schedule-action="close-report"', 'session-report-guests',
+  'session-report-learning', 'session-report-extra-fields', 'session-report-trello']) {
+  assert(attendanceHtml.includes(token), `Missing report capability: ${token}`)
+}
+assert(!/data-admin-attendance|save-attendance|data-session-report-attendance/.test(attendanceHtml))
 
 const attendanceUnavailableHtml = render({
   reportState: { sessionId: 'qa-session', occurrenceDate: '2026-08-17', mode: 'adminPlaceholder' },
   attendanceAvailable: false,
 })
-assert(!attendanceUnavailableHtml.includes('schedule-admin-attendance-compact'))
+assert(!attendanceUnavailableHtml.includes('session-report-guests'))
 assert(attendanceUnavailableHtml.includes('role="status"'))
 
 assert(mainSource.includes("import './schedule-theme.css'"))
@@ -200,8 +189,6 @@ for (const binding of [
   "querySelectorAll('[data-schedule-action=\"open-edit\"]')",
   "querySelectorAll('[data-center-calendar-tag-action]')",
   "querySelectorAll('[data-schedule-form-field]')",
-  "querySelectorAll('[data-admin-attendance-status]')",
-  "querySelectorAll('[data-admin-attendance-action]')",
 ]) assert(mainSource.includes(binding), `Missing existing runtime binding: ${binding}`)
 
 assert(scheduleSource.includes("const attendanceAvailable = deadlineOptions.attendanceAvailable !== false"))
@@ -219,8 +206,6 @@ for (const token of [
   'overflow: visible;',
   '.schedule-calendar-form-grid',
   '.schedule-calendar-tag-manager-body',
-  '.schedule-admin-attendance-rows',
-  '.schedule-admin-attendance-footer',
   '--schedule-text-help:',
   '--schedule-text-placeholder:',
   '.module-authoritative-refresh-notice.is-fresh',

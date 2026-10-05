@@ -82,11 +82,6 @@ const guestParticipationTypes = [
   ['makeup', 'Học bù'],
 ]
 const VALID_GUEST_PARTICIPATION_TYPE_IDS = guestParticipationTypes.map(([type]) => type)
-const adminAttendanceStatuses = [
-  ['present', 'Có mặt'],
-  ['absent', 'Vắng'],
-  ['makeup', 'Học bù'],
-]
 
 export const emptyScheduleFormValues = {
   scheduleType: 'oneOff',
@@ -189,9 +184,6 @@ export function renderScheduleModule(
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
   const attendanceAvailable = deadlineOptions.attendanceAvailable !== false
-  const occurrenceAttendanceReady = deadlineOptions.occurrenceAttendanceReady === true
-  const attendanceActionReady = occurrenceAttendanceReady && deadlineOptions.a3TeacherReady === true
-  const occurrenceAttendanceStatus = deadlineOptions.occurrenceAttendanceStatus || 'unavailable'
   const calendarNotesAvailable = deadlineOptions.calendarNotesAvailable !== false
   const centerCalendarItemState = calendarNotesAvailable
     ? deadlineOptions.centerCalendarItemState || null
@@ -315,7 +307,6 @@ export function renderScheduleModule(
                 centerCalendarTags,
                 deadlineOptions.a3TeacherReady && deadlineOptions.a3TeacherChoices?.length > 0,
                 deadlineOptions.attendanceRecords || [],
-                attendanceActionReady && attendanceAvailable,
               ),
             )
             .join('')}
@@ -359,8 +350,6 @@ export function renderScheduleModule(
               isReportExtraExpanded,
               guestParticipantFormState,
               adminAttendanceState,
-              attendanceActionReady,
-              occurrenceAttendanceStatus,
             )
           : reportState
             ? '<p class="schedule-form-warning" role="status">Chưa thể mở điểm danh hoặc báo cáo buổi học. Vui lòng bấm Làm mới rồi thử lại.</p>'
@@ -858,13 +847,8 @@ export function buildTrelloReportText({
   const attendance = normalizeReportAttendance(report?.attendance)
   const guestParticipants = normalizeReportGuestParticipants(report?.guestParticipants)
   const sessionStudentIds = normalizeIdArray(session?.studentIds)
-  const fallbackAttendance = sessionStudentIds.map((studentId) => ({
-    studentId,
-    attendanceStatus: 'present',
-    note: '',
-  }))
   const attendanceRows = [
-    ...(attendance.length ? attendance : fallbackAttendance),
+    ...attendance,
     ...guestParticipants.map((guest) => ({
       studentId: guest.id,
       displayName: guest.displayName,
@@ -873,13 +857,13 @@ export function buildTrelloReportText({
       isGuest: true,
     })),
   ]
-  const presentStatuses = new Set(['present', 'makeup', 'trial'])
+  const presentStatuses = new Set(['present', 'makeup'])
   const absentStatuses = new Set(['absent', 'excused', 'excusedAbsent', 'unexcusedAbsent'])
   const presentRows = attendanceRows.filter((item) => presentStatuses.has(item.attendanceStatus))
   const absentRows = attendanceRows.filter((item) => absentStatuses.has(item.attendanceStatus))
   const presentNames = presentRows.map((item) => formatAttendanceStudentName(item, studentLookup))
   const absentNames = absentRows.map((item) => getStudentDisplayName(studentLookup.get(item.studentId)))
-  const totalCount = attendanceRows.length
+  const totalCount = Math.max(sessionStudentIds.length, attendance.length) + guestParticipants.length
   const rosterText = presentNames.length ? presentNames.join(', ') : ''
   const absentText = absentNames.length ? ` Vắng: ${absentNames.join(', ')}` : ''
   const rosterSuffix = rosterText || absentText.trim()
@@ -1452,7 +1436,7 @@ function createCenterCalendarRuntimeTagId(label) {
   return `center-calendar-tag-${asciiSlug || 'tag'}-${Date.now()}-${suffix}`
 }
 
-function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = [], centerCalendarTags = [], teacherActionsReady = false, attendanceRecords = [], attendanceReady = false) {
+function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = [], centerCalendarTags = [], teacherActionsReady = false, attendanceRecords = []) {
   const calendarCountLabel = centerCalendarItems.length
     ? ` · ${centerCalendarItems.length} hoạt động`
     : ''
@@ -1467,7 +1451,7 @@ function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMa
         ${
           sessions.length || centerCalendarItems.length
             ? [
-                ...sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady, attendanceRecords, attendanceReady)),
+                ...sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady, attendanceRecords)),
                 ...centerCalendarItems.map((item) => renderCenterCalendarItemCard(item, centerCalendarTags)),
               ].join('')
             : '<div class="schedule-empty-day">Chưa có lịch</div>'
@@ -1884,7 +1868,7 @@ export function getA5ScheduleAttendanceCardState(session = {}, records = [], now
   return { kind: 'complete', label: 'Đã điểm danh', marked: marked.length }
 }
 
-function renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady = false, attendanceRecords = [], attendanceReady = false) {
+function renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady = false, attendanceRecords = []) {
   const teacherLabel = getSessionTeacherLabel(session)
   const studentSummary = getStudentSummary(session.studentIds, studentLookup)
   const conflicts = conflictMap.get(session.id)
@@ -1913,8 +1897,6 @@ function renderSessionCard(session, teacherLookup, studentLookup, conflictMap, t
       <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
       ${!isEmptySlot ? `<div class="a5-card-attendance">
         <span class="is-${escapeAttribute(attendanceState.kind)}">${escapeHtml(attendanceState.label)}</span>
-        ${attendanceReady && !['future', 'cancelled'].includes(attendanceState.kind)
-          ? `<button type="button" data-a5-attendance-action="open" data-schedule-id="${escapeAttribute(session.id)}" data-occurrence-date="${escapeAttribute(session.occurrenceDate || '')}">${attendanceState.marked ? 'Xem / Sửa điểm danh' : 'Điểm danh'}</button>` : ''}
       </div>` : ''}
       ${renderScheduleRosterSource(session)}
       ${teacherActionsReady && (session.classSessionId || !isEmptySlot) ? `<div class="schedule-teacher-actions">
@@ -2706,8 +2688,6 @@ function renderScheduleReportPanel(
   isReportExtraExpanded = false,
   guestParticipantFormState = null,
   adminAttendanceState = null,
-  occurrenceAttendanceReady = false,
-  occurrenceAttendanceStatus = 'unavailable',
 ) {
   const session = (Array.isArray(visibleSessions) ? visibleSessions : []).find(
     (item) =>
@@ -2724,12 +2704,6 @@ function renderScheduleReportPanel(
   const teacherLabel = getSessionTeacherLabel(session)
   const reportMode = reportState.mode || 'teacherReport'
   const existingReport = findSessionReport(sessionReports, session.id, session.occurrenceDate)
-
-  if (reportMode === 'adminPlaceholder') {
-    return renderScheduleAdminAttendanceForm(
-      session, teacherLabel, studentLookup, adminAttendanceState, existingReport, occurrenceAttendanceReady,
-    )
-  }
 
   const activeDraft =
     reportAttendanceState?.sessionId === session.id &&
@@ -2782,7 +2756,7 @@ function renderScheduleReportPanel(
 
       <div class="schedule-report-body">
         <div class="schedule-report-column is-left" data-report-scroll-region="left">
-          ${renderSessionReportAttendance(session, studentLookup, activeDraft, guestParticipantFormState)}
+          ${renderSessionReportGuestParticipants(activeDraft, guestParticipantFormState)}
         </div>
 
         <div class="schedule-report-column is-middle" data-report-scroll-region="middle">
@@ -2799,289 +2773,17 @@ function renderScheduleReportPanel(
   `
 }
 
-function renderScheduleAdminAttendanceForm(
-  session,
-  teacherLabel,
-  studentLookup,
-  adminAttendanceState = null,
-  teacherReport = null,
-  occurrenceAttendanceReady = false,
-) {
-  const studentIds = normalizeIdArray(session.studentIds)
-  const rowsByStudentId = new Map(
-    (Array.isArray(adminAttendanceState?.rows) ? adminAttendanceState.rows : [])
-      .map((row) => [String(row.studentId || ''), row]),
-  )
-  const studentRows = studentIds.map((studentId) => ({
-    studentId,
-    student: studentLookup.get(studentId),
-    row: rowsByStudentId.get(studentId) || {
-      studentId,
-      attendanceStatus: '',
-      note: '',
-    },
-  }))
-  const summary = getAdminAttendanceSummary(studentRows)
-  const isSaving = adminAttendanceState?.saveState === 'saving'
-  const statusMessage = adminAttendanceState?.error
-    ? `<p class="session-report-save-state error">${escapeHtml(adminAttendanceState.error)}</p>`
-    : adminAttendanceState?.saveState === 'saved'
-      ? '<p class="session-report-save-state" role="status">Đã lưu điểm danh.</p>'
-      : ''
-
+function renderSessionReportGuestParticipants(draft, guestFormState = null) {
+  const guests = normalizeReportGuestParticipants(draft?.guestParticipants)
   return `
-    <div class="schedule-form-backdrop" aria-hidden="true"></div>
-    <section class="schedule-report-panel schedule-admin-attendance-panel schedule-admin-attendance-compact" aria-label="Điểm danh">
-      <div class="schedule-report-header">
-        <div class="schedule-report-compact-title">
-          <strong>Điểm danh</strong>
-          <span>${escapeHtml(getScheduleSessionTitleForDisplay(session, 'Buổi học'))} · ${escapeHtml(formatReportDate(session.occurrenceDate))} · ${escapeHtml(formatSessionTime(session))}</span>
-          <span>Giáo viên: ${escapeHtml(teacherLabel.name)} · ${escapeHtml(session.room || 'Chưa rõ phòng')}</span>
-        </div>
-        <div class="schedule-report-header-actions">
-          <button type="button" data-schedule-action="close-report" ${isSaving ? 'disabled' : ''}>Đóng</button>
-        </div>
-      </div>
-
-      <div class="schedule-admin-attendance-body">
-        ${statusMessage}
-        <div class="schedule-admin-attendance-summary" aria-label="Tổng quan điểm danh">
-          <span>Đã chọn: ${studentRows.length - summary.empty}/${studentRows.length}</span>
-          <span>Có mặt: ${summary.present}</span>
-          <span>Vắng: ${summary.absent}</span>
-          <span>Học bù: ${summary.makeup}</span>
-          <span>Chưa chọn: ${summary.empty}</span>
-        </div>
-        ${
-          studentRows.length
-            ? `<div class="schedule-admin-attendance-rows">${studentRows
-                .map(({ studentId, student, row }) => renderAdminAttendanceStudentRow(studentId, student, row, isSaving))
-                .join('')}</div>`
-            : '<p class="schedule-report-empty">Ca học này chưa có học viên.</p>'
-        }
-      </div>
-      <footer class="schedule-admin-attendance-footer">
-        <div class="schedule-admin-attendance-actions">
-          ${adminAttendanceState?.needsReload ? '<button type="button" class="is-secondary" data-admin-attendance-action="reload">Tải lại</button>' : ''}
-          <button type="button" class="is-primary" data-admin-attendance-action="save" ${occurrenceAttendanceReady && adminAttendanceState?.saveState !== 'saving' && !adminAttendanceState?.needsReload ? '' : 'disabled aria-disabled="true"'}>Lưu điểm danh</button>
-        </div>
-      </footer>
-    </section>
-  `
-}
-
-function renderAdminAttendanceStudentRow(studentId, student, row = {}, isSaving = false) {
-  const studentName = student?.fullName || student?.name || 'Học viên'
-  const studentMeta = [student?.level, student?.parentName].filter(Boolean).join(' · ')
-  const status = String(row.attendanceStatus || '')
-  const currentTarget = row.currentMakeupTarget || null
-  const candidates = Array.isArray(row.makeupCandidates) ? row.makeupCandidates : []
-  const choices = currentTarget && !candidates.some((item) => item.attendance_local_id === currentTarget.attendance_local_id)
-    ? [currentTarget, ...candidates] : candidates
-
-  return `
-    <div class="schedule-admin-attendance-row" data-admin-attendance-row="${escapeAttribute(studentId)}">
-      <div class="session-report-student-name">
-        <strong>${escapeHtml(studentName)}</strong>
-        <span>${escapeHtml(getAttendanceStatusLabel(status) || 'Chưa chọn')}${studentMeta ? ` · ${escapeHtml(studentMeta)}` : ''}</span>
-      </div>
-      <div class="schedule-admin-attendance-choice-group" role="group" aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}">
-        ${adminAttendanceStatuses
-          .map(([value, label]) => `
-            <button
-              type="button"
-              class="${status === value ? 'is-selected' : ''}"
-              value="${escapeAttribute(value)}"
-              data-admin-attendance-status
-              data-admin-attendance-student-id="${escapeAttribute(studentId)}"
-              aria-pressed="${status === value ? 'true' : 'false'}"
-              ${isSaving ? 'disabled' : ''}
-            >${escapeHtml(label)}</button>
-          `)
-          .join('')}
-      </div>
-      ${status === 'makeup' ? `<div class="a5-makeup-choice">
-        <label for="a5-makeup-${escapeAttribute(studentId)}">Học bù cho buổi nào?</label>
-        ${row.candidateState === 'loading' ? '<span>Đang tìm buổi vắng…</span>' : ''}
-        ${row.candidateState === 'failed' ? '<span role="alert">Chưa tải được buổi vắng. Bấm Tải lại.</span>' : ''}
-        ${row.candidateState === 'ready' && !choices.length ? '<span>Không có buổi vắng đủ điều kiện để học bù.</span>' : ''}
-        <select id="a5-makeup-${escapeAttribute(studentId)}" data-admin-makeup-target data-admin-attendance-student-id="${escapeAttribute(studentId)}" ${row.candidateState === 'loading' || isSaving ? 'disabled' : ''}>
-          <option value="">Chọn buổi vắng</option>
-          ${choices.map((item) => `<option value="${escapeAttribute(item.attendance_local_id)}" ${row.makeupForAttendanceLocalId === item.attendance_local_id ? 'selected' : ''}>${escapeHtml(formatA5MakeupCandidate(item))}</option>`).join('')}
-        </select>
-        ${row.candidateState === 'failed' ? `<button type="button" data-admin-attendance-action="reload-candidates" data-admin-attendance-student-id="${escapeAttribute(studentId)}">Tải lại</button>` : ''}
-      </div>` : ''}
-    </div>
-  `
-}
-
-function formatA5MakeupCandidate(item = {}) {
-  const parts = [item.occurrence_date ? formatReportDate(item.occurrence_date) : 'Buổi vắng đã chọn']
-  if (item.start_time) parts.push(String(item.start_time).slice(0, 5))
-  if (item.teacher_name) parts.push(item.teacher_name)
-  return parts.join(' · ')
-}
-
-function getTeacherReportReceivedLabel(report) {
-  const updatedAt = report?.updatedAt || report?.createdAt || report?.submittedAt || ''
-
-  if (!updatedAt) {
-    return 'Đã nhận báo cáo giáo viên.'
-  }
-
-  const dateLabel = formatReportDate(String(updatedAt).slice(0, 10) || updatedAt)
-  return `Đã nhận báo cáo giáo viên · ${dateLabel}`
-}
-
-function getAdminAttendanceSummary(studentRows = []) {
-  return studentRows.reduce((summary, { row }) => {
-    const status = String(row?.attendanceStatus || '')
-    if (Object.prototype.hasOwnProperty.call(summary, status)) {
-      summary[status] += 1
-    } else {
-      summary.empty += 1
-    }
-    return summary
-  }, {
-    present: 0,
-    absent: 0,
-    excused: 0,
-    makeup: 0,
-    trial: 0,
-    empty: 0,
-  })
-}
-
-function renderSessionReportAttendance(session, studentLookup, draft, guestFormState = null) {
-  const attendance = normalizeReportAttendance(draft?.attendance)
-  const guestParticipants = normalizeReportGuestParticipants(draft?.guestParticipants)
-  const isLockedByAdmin = Boolean(draft?.attendanceLockedByAdmin)
-  const presentRows = [
-    ...attendance.filter((item) => ['present', 'makeup', 'trial'].includes(item.attendanceStatus)),
-    ...guestParticipants,
-  ]
-
-  if (!attendance.length && !guestParticipants.length) {
-    return `
-      <section class="schedule-report-section session-report-attendance">
-        <div class="session-report-section-heading">
-          <h5>Điểm danh giáo viên</h5>
-          <button type="button" data-session-guest-action="open-create" ${isLockedByAdmin ? 'disabled' : ''}>+ Học viên tạm</button>
-        </div>
-        ${renderTeacherAttendanceLockNotice(draft)}
-        ${guestFormState ? renderGuestParticipantForm(guestFormState) : ''}
-        <p class="schedule-report-empty">Chưa có học viên trong buổi học.</p>
-      </section>
-    `
-  }
-
-  const presentCount = presentRows.length
-  const absentCount = attendance.filter((item) =>
-    ['absent', 'excused'].includes(item.attendanceStatus),
-  ).length
-  const makeupCount =
-    attendance.filter((item) => item.attendanceStatus === 'makeup').length +
-    guestParticipants.filter((guest) => guest.participationType === 'makeup').length
-  const trialCount =
-    attendance.filter((item) => item.attendanceStatus === 'trial').length +
-    guestParticipants.filter((guest) => guest.participationType === 'trial').length
-  const totalCount = attendance.length + guestParticipants.length
-
-  return `
-    <section class="schedule-report-section session-report-attendance">
+    <section class="schedule-report-section session-report-guests">
       <div class="session-report-section-heading">
-        <h5>Điểm danh giáo viên</h5>
-        <div>
-          <button type="button" data-session-guest-action="open-create" ${isLockedByAdmin ? 'disabled' : ''}>+ Học viên tạm</button>
-          <button type="button" data-schedule-action="save-attendance" ${isLockedByAdmin ? 'disabled' : ''}>Lưu điểm danh</button>
-        </div>
-      </div>
-
-      ${renderTeacherAttendanceLockNotice(draft)}
-
-      <div class="session-report-summary" aria-label="Tổng quan điểm danh">
-        <span>Sĩ số: ${presentCount}/${totalCount}</span>
-        <span>Vắng: ${absentCount}</span>
-        <span>Học bù: ${makeupCount}</span>
-        <span>Học thử: ${trialCount}</span>
+        <h5>H?c vi?n t?m trong b?o c?o</h5>
+        <button type="button" data-session-guest-action="open-create">+ H?c vi?n t?m</button>
       </div>
       ${guestFormState ? renderGuestParticipantForm(guestFormState) : ''}
-
-      ${
-        draft?.error
-          ? `<p class="session-report-save-state error">${escapeHtml(draft.error)}</p>`
-          : ''
-      }
-      ${
-        draft?.saveState === 'saved'
-          ? '<p class="session-report-save-state">Đã lưu điểm danh.</p>'
-          : ''
-      }
-
-      <div class="session-report-student-rows">
-        ${attendance
-          .map((item) => renderAttendanceRow(item, studentLookup.get(item.studentId), { disabled: isLockedByAdmin }))
-          .join('')}
-        ${guestParticipants.map((guest) => renderGuestParticipantRow(guest)).join('')}
-      </div>
+      ${guests.length ? guests.map(renderGuestParticipantRow).join('') : '<p class="schedule-report-empty">Ch?a c? h?c vi?n t?m.</p>'}
     </section>
-  `
-}
-
-function renderTeacherAttendanceLockNotice(draft = {}) {
-  if (!draft.attendanceLockedByAdmin) {
-    return ''
-  }
-
-  return `
-    <div class="session-report-admin-lock-notice" role="status">
-      <strong>Admin cơ sở đã điểm danh ca này.</strong>
-      <span>Phần điểm danh đã được Admin cơ sở ghi nhận. Giáo viên có thể bổ sung nội dung ca dạy và báo cáo.</span>
-    </div>
-  `
-}
-
-function renderAttendanceRow(attendanceItem, student, options = {}) {
-  const studentName = getAuthoritativeStudentName(student?.fullName || student?.name || 'Học viên không tìm thấy')
-  const studentMeta = [
-    student?.level,
-    student?.parentName,
-    student?.phone,
-  ].filter(Boolean).join(' · ')
-
-  return `
-    <div class="session-report-student-row">
-      <div class="session-report-student-name">
-        <strong>${escapeHtml(studentName)}</strong>
-        ${studentMeta ? `<span>${escapeHtml(studentMeta)}</span>` : ''}
-      </div>
-      <select
-        class="session-report-attendance-status"
-        data-session-report-attendance-status
-        data-session-report-student-id="${escapeAttribute(attendanceItem.studentId)}"
-        aria-label="Trạng thái điểm danh của ${escapeAttribute(studentName)}"
-        ${options.disabled ? 'disabled' : ''}
-      >
-        ${attendanceStatuses
-          .map(
-            ([status, label]) =>
-              `<option value="${escapeAttribute(status)}" ${
-                attendanceItem.attendanceStatus === status ? 'selected' : ''
-              }>${escapeHtml(label)}</option>`,
-          )
-          .join('')}
-      </select>
-      <input
-        class="session-report-attendance-note"
-        type="text"
-        data-session-report-attendance-note
-        data-session-report-student-id="${escapeAttribute(attendanceItem.studentId)}"
-        value="${escapeAttribute(attendanceItem.note)}"
-        maxlength="140"
-        aria-label="Ghi chú điểm danh của ${escapeAttribute(studentName)}"
-        ${options.disabled ? 'disabled' : ''}
-      />
-    </div>
   `
 }
 
