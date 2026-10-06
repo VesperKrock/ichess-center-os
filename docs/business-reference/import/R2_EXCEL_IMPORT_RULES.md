@@ -4,6 +4,8 @@
 
 Workbook nguồn: `iChess_R2_Simple_2Tabs.xlsx`.
 
+Workbook này là artifact do ChatGPT tạo, user giữ ngoài repo/workspace; task documentation không cần file để hoàn thiện policy và không stage workbook. Không tự tạo hoặc invent thêm columns ngoài policy đã cung cấp. R3A khi thực sự normalize dữ liệu vẫn phải nhận/mở file thật và kiểm tra theo mục 1.
+
 Frozen core được đối chiếu: `6708ef8615c2a02bca1fac30a98924172d9ad649` — `fix: harden center switching before final freeze`.
 
 **Mọi task R3/import phải đọc toàn bộ file này trước khi normalize Excel và đọc lại trước khi ghi Supabase.** Import plan phải ghi path và Git revision của policy đã dùng. Đây là source of truth cho bố cục R2, interpretation, normalization, matching và approval gate; không dùng prompt cũ/sample data/importer có sẵn để bỏ qua contract.
@@ -412,21 +414,18 @@ and marked for import.
 
 Then match Student schedule against the normalized Ca catalog.
 
-If exactly one matching Ca exists:
+Lịch học định kỳ của Student phải normalize trước, rồi đối chiếu **cả Ca khai trong workbook và Ca hiện có trên server đúng target**. Không chỉ tìm trong một catalog rồi tạo trùng Ca ở catalog còn lại.
 
-READY.
+| Kết quả đối chiếu | R3A: không mutation | R3B: sau approval đúng plan |
+| --- | --- | --- |
+| Có exact Ca hiện có trên server, resolve duy nhất | `REUSE_CA`; map Student về Ca đó, kể cả workbook cũng khai cùng definition. | Reuse, không tạo duplicate; enrollment/assignment riêng theo approved intent. |
+| Khớp Ca khai trong workbook nhưng chưa có trên server, lịch đủ rõ | `PROPOSE_CREATE_CA`; gom các Student cùng confirmed Ca candidate để không propose duplicate. | Chỉ tạo Ca sau user approval của definition/plan đó; resolve ID rồi mới chạy dependencies. |
+| Chưa có Ca khớp trong cả hai catalog, nhưng lịch đủ rõ | `PROPOSE_CREATE_CA` với definition suy từ schedule facts rõ; ghi mọi required fact còn thiếu và phạm vi cần duyệt. Đây chỉ là đề xuất, không tự thêm dòng/cột/sheet vào workbook. | Chỉ tạo khi user duyệt proposal và current required facts/capability đã đủ; không mutation trong R3A. |
+| Ca/lịch/matching ambiguous hoặc dữ liệu mâu thuẫn | `QUESTION`; giữ raw/candidates, không đoán hoặc chọn candidate đầu. | Operation phụ thuộc chưa chạy cho tới khi resolve và plan được duyệt. |
 
-If no Ca matches:
+`PROPOSE_CREATE_CA` không là business write, không automatic approval và không bypass current Ca/Schedule validators. Lịch đủ rõ có weekday/timeband và đủ căn cứ phân biệt candidate; nếu thiếu room để gán operational Schedule thì Ca proposal vẫn được review, nhưng bước assignment phụ thuộc giữ HOLD, không bịa room.
 
-QUESTION or planned Ca creation according to the approved settings import plan.
-
-If multiple Ca match ambiguously:
-
-QUESTION.
-
-Never choose the first candidate arbitrarily.
-
-Catalog matching gồm server records đúng target được reuse và settings candidates trong plan, sau example/exclusion guards. Dòng bị skip không đóng góp catalog mới; một record server độc lập đã được xác nhận đúng vẫn có thể reuse. Match bằng weekday membership + timeband + đúng center + room/teacher/alias khi cần, không tên đơn độc. Trùng giờ nhưng khác room/teacher vẫn có thể ambiguous.
+Catalog matching gồm server records đúng target được reuse và settings candidates trong plan, sau example/exclusion guards. Dòng bị skip không đóng góp catalog mới; một record server độc lập đã được xác nhận đúng vẫn có thể reuse. Exact Ca phải resolve duy nhất theo definition/scope thực, không tên đơn độc; Student dùng đúng weekday subset trong Ca. Room/alias/teacher facts đã biết có thể giúp phân biệt nhiều candidates trùng giờ, nhưng blank teacher không làm Ca không exact hoặc là lý do tạo Ca mới. Assignment teacher khác là intent riêng, không tự duplicate Ca để đổi teacher.
 
 Student mới lịch blank → Schedule SKIP_NOT_SETUP; existing Student lịch blank → giữ lịch server. Lịch có phần rõ/phần mơ hồ được giữ nguyên raw và phân loại theo phần; chỉ plan phần được duyệt, không âm thầm discard phần còn lại.
 
@@ -504,11 +503,13 @@ Teacher may be blank.
 
 Do not create fake teacher.
 
+**Teacher là optional. Blank teacher không block Ca hoặc Student import**, không HOLD hai domain đó và không clear A3 assignment đã có. Nếu Teacher được cung cấp và resolve duy nhất về registry/center assignment hợp lệ, R3A plan **current A3 teacher assignment sau khi Ca tồn tại**; R3B chỉ thực hiện đúng approved intent. Không ghi legacy `instructorName`. Nếu teacher chưa resolve/ambiguous, QUESTION/HOLD teacher assignment riêng; phần Ca/Student đủ điều kiện vẫn có thể nằm trong plan được duyệt, không mất teacher fact trong evidence.
+
 Ca mới qua current Settings builder có 1–2 weekday, một timeband chung và active/inactive rõ (`Đang dùng/Đã ngưng`); không tự default active. Tên lưu được sinh từ ngày/giờ, tên sổ là alias. Existing Ca thật >2 days giữ authority, không rebuild cap 2 làm mất ngày.
 
 Room thật required khi gán/chỉnh operational Schedule slot; bare Ca có thể chưa gán. Không bịa Phòng 1. Ca sinh planning slots không là persisted Schedule/Attendance; dùng current assign/edit flow, resolve lineage/identity, không manual-create recurring bị chặn/persist virtual IDs/duplicate master mỗi ngày.
 
-Teacher thật cần registry/center assignment đúng và A3 dated assignment theo quyền hiện hành; không legacy instructorName write vào Ca mới hoặc tạo account từ tên. Today/future theo current guard, không backdate teacher history. Missing room/teacher authority chỉ HOLD bước phụ thuộc.
+Teacher thật cần registry/center assignment đúng và A3 dated assignment theo quyền hiện hành; không legacy instructorName write vào Ca mới hoặc tạo account từ tên. Today/future theo current guard, không backdate teacher history. Missing room chỉ HOLD operational Schedule assignment cần room; teacher fact/authority unresolved chỉ HOLD teacher assignment, không Ca/Student vì blank teacher.
 
 ---
 
