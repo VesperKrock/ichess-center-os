@@ -254,7 +254,10 @@ export function renderSettingsModule(
   options = {},
 ) {
   const activeFilters = { ...initialSettingsFilters, ...filters }
-  const activeTab = settingsTabOptions.some((tab) => tab.id === options.activeTab)
+  const visibleTabs = options.auditAccess === true
+    ? [...settingsTabOptions, { id: 'audit-log', label: 'Nhật ký thay đổi' }]
+    : settingsTabOptions
+  const activeTab = visibleTabs.some((tab) => tab.id === options.activeTab)
     ? options.activeTab
     : 'class-sessions'
   const centerSettingsState = options.centerSettingsState ?? {}
@@ -286,7 +289,7 @@ export function renderSettingsModule(
       </div>
 
       <div class="settings-tabs" aria-label="Nhóm cài đặt">
-        ${settingsTabOptions
+        ${visibleTabs
           .map((tab) => `
             <button
               type="button"
@@ -299,6 +302,7 @@ export function renderSettingsModule(
           .join('')}
       </div>
 
+      ${activeTab === 'audit-log' && options.auditAccess === true ? options.auditBody || '' : ''}
       ${activeTab === 'center-info' ? renderCenterInfoPanel(centerInfo, cloudDbPanelState, {
         centerSettingsState,
         centerProfileFormState: options.centerProfileFormState,

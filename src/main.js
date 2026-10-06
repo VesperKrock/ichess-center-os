@@ -617,6 +617,9 @@ import {
   validateSettingsTuitionPackageForm,
 } from './settings-module.js'
 import './settings-v2-8p2-theme.css'
+import { isOwnerAuditContext, renderOwnerAttendanceAudit } from './owner-attendance-audit.js'
+import { createOwnerAttendanceAuditController } from './owner-attendance-audit-controller.js'
+import './owner-attendance-audit-theme.css'
 import {
   STAFF_ADMINISTRATIVE_POLICY_STALE_MESSAGE,
   STAFF_ADMINISTRATIVE_REQUEST_STALE_MESSAGE,
@@ -1105,6 +1108,7 @@ let attendanceCellNoteFormState = null
 let studentFormState = null
 let settingsFilters = { ...initialSettingsFilters }
 let settingsActiveTab = 'class-sessions'
+let ownerAttendanceAuditController = null
 let settingsClassSessionFormState = null
 let settingsCenterProfileFormState = null
 let settingsTuitionPackageFormState = null
@@ -1699,6 +1703,29 @@ function getReportChecklistController() {
     onChange: render,
   })
   return reportChecklistController
+}
+
+function getOwnerAttendanceAuditContext() {
+  return { ...getCurrentCanonicalCenterContext(), accountId: cloudStatus.user?.id || '',
+    membershipStatus: String(cloudStatus.membership?.status || '').toLowerCase() }
+}
+
+function getOwnerAttendanceAuditController() {
+  if (!ownerAttendanceAuditController) ownerAttendanceAuditController = createOwnerAttendanceAuditController({
+    getContext: getOwnerAttendanceAuditContext, getSupabase: getSupabaseClient, onChange: render,
+  })
+  return ownerAttendanceAuditController
+}
+
+function getOwnerAttendanceAuditProjection(state) {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const coreReady = isModuleUpstreamCurrent('cai-dat-co-so', 'core')
+  const scope = items => coreReady ? items.map(item => ({ ...item, centerId })) : []
+  return { centerId, profile: state.profile, students: scope(getStudentsWithCanonicalProjections()),
+    teachers: scope(teachers), classSessions: scope(classSessions), scheduleSessions: scope(scheduleSessions),
+    staffMembers: isModuleUpstreamCurrent('nhan-vien', 'staff-hr')
+      ? staffMembers.filter(item => item.centerId === centerId) : [],
+  }
 }
 
 function getCurrentReportAttendanceContext() {
@@ -2797,6 +2824,7 @@ function resetTransientStateForCenterSwitch() {
   parentConsultations = []
   settingsFilters = { ...initialSettingsFilters }
   settingsActiveTab = 'class-sessions'
+  ownerAttendanceAuditController?.reset()
   settingsClassSessionFormState = null
   tuitionOperatorState.filters = { ...initialTuitionFilters }
   cashflowFilters = { ...initialCashflowFilters }
@@ -8615,6 +8643,8 @@ function shouldDeferRenderForTextEditing() {
 
   const activeElement = document.activeElement
 
+  if (activeElement?.matches?.('[data-owner-audit-filter], [data-owner-audit-date]')) return false
+
   // Checklist controls display persisted state, so a focused checkbox/date/select
   // must not defer the completion or read response until focus leaves the field.
   if (activeElement?.matches?.('[data-checklist-item], [data-checklist-date-picker], [data-checklist-template-picker]')) {
@@ -8791,6 +8821,7 @@ function getStableElementSelector(element) {
     'data-attendance-board-filter',
     'data-attendance-baseline-cell-input',
     'data-report-filter',
+    'data-owner-audit-filter',
     'data-staff-filter',
     'data-staff-form-field',
     'data-staff-lifecycle-field',
@@ -12889,6 +12920,9 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'cai-dat-co-so') {
     const centerInfo = getCurrentCanonicalCenterContext()
+    const auditAccess = isOwnerAuditContext(getOwnerAttendanceAuditContext())
+    const auditState = auditAccess && settingsActiveTab === 'audit-log'
+      ? getOwnerAttendanceAuditController().getState() : null
     const teacherAssignments = a3TeacherContext.status === 'ready'
       && a3TeacherContext.centerId === centerInfo.centerId
       ? a3TeacherContext.assignments : []
@@ -12904,6 +12938,8 @@ function renderWindowBody(windowItem) {
       getSettingsCloudDbPanelState(),
       {
         activeTab: settingsActiveTab,
+        auditAccess,
+        auditBody: auditState ? renderOwnerAttendanceAudit(auditState, getOwnerAttendanceAuditProjection(auditState), auditAccess) : '',
         classSessionDeletePolicies: getCurrentClassSessionDeletePolicyMap(),
         tuitionPackages: v21TuitionPackages,
         centerProfileFormState: settingsCenterProfileFormState,
@@ -14321,6 +14357,9 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, result)
     if (reportWorkspaceMode === 'checklist') await getReportChecklistController().load()
   }
+
+  if (moduleId === 'cai-dat-co-so' && settingsActiveTab === 'audit-log'
+    && isOwnerAuditContext(getOwnerAttendanceAuditContext())) await getOwnerAttendanceAuditController().load()
 
   const latestContext = getCurrentCanonicalCenterContext()
   const currentState = moduleRefreshStates.get(moduleId)
@@ -26420,12 +26459,53 @@ function bindEvents() {
 
   document.querySelectorAll('[data-settings-tab]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (button.dataset.settingsTab === 'audit-log' && !isOwnerAuditContext(getOwnerAttendanceAuditContext())) return
       settingsActiveTab = button.dataset.settingsTab || 'class-sessions'
       settingsClassSessionFormState = null
       settingsCenterProfileFormState = null
       settingsTuitionPackageFormState = null
       render()
+      if (settingsActiveTab === 'audit-log') void getOwnerAttendanceAuditController().open()
     })
+  })
+
+  document.querySelectorAll('[data-owner-audit-filter]').forEach(control => {
+    control.addEventListener(control.dataset.ownerAuditFilter === 'query' ? 'input' : 'change', () => {
+      getOwnerAttendanceAuditController().setFilter(control.dataset.ownerAuditFilter, control.value)
+    })
+  })
+  document.querySelectorAll('[data-owner-audit-expand]').forEach(button => button.addEventListener('click', () => {
+    getOwnerAttendanceAuditController().expand(button.dataset.ownerAuditExpand)
+  }))
+  document.querySelector('[data-owner-audit-refresh]')?.addEventListener('click', () => { void getOwnerAttendanceAuditController().load() })
+  document.querySelector('[data-owner-audit-more]')?.addEventListener('click', () => { void getOwnerAttendanceAuditController().more() })
+  document.querySelectorAll('[data-owner-audit-scope]').forEach(button => button.addEventListener('click', () => {
+    getOwnerAttendanceAuditController().selectScope(button.dataset.ownerAuditScope)
+  }))
+  document.querySelectorAll('[data-owner-audit-step]').forEach(button => button.addEventListener('click', () => {
+    getOwnerAttendanceAuditController().step(Number(button.dataset.ownerAuditStep))
+  }))
+  document.querySelector('[data-owner-audit-date]')?.addEventListener('change', event => {
+    getOwnerAttendanceAuditController().selectDate(event.target.value)
+  })
+  document.querySelector('[data-owner-audit-export-menu]')?.addEventListener('click', event => {
+    event.preventDefault()
+    getOwnerAttendanceAuditController().toggleExportMenu()
+  })
+  document.querySelector('[data-owner-audit-export]')?.addEventListener('click', async () => {
+    const controller = getOwnerAttendanceAuditController()
+    const context = getOwnerAttendanceAuditContext()
+    if (!isOwnerAuditContext(context)) return
+    const result = await controller.exportPdf({
+      projection: getOwnerAttendanceAuditProjection(controller.getState()), centerName: context.centerName,
+    })
+    const latest = getOwnerAttendanceAuditContext()
+    if (!result.ok || !isOwnerAuditContext(latest) || latest.centerId !== context.centerId || latest.accountId !== context.accountId) return
+    const url = URL.createObjectURL(result.blob)
+    const link = document.createElement('a')
+    link.href = url; link.download = result.fileName
+    document.body.appendChild(link); link.click(); link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 300_000)
   })
 
   document.querySelector('[data-settings-center-action="open-edit"]')?.addEventListener('click', () => {
