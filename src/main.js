@@ -542,6 +542,9 @@ import {
   renderReportModule,
 } from './report-module.js'
 import './report-theme.css'
+import './report-checklist-theme.css'
+import { renderReportWorkspace, renderDailyChecklist, shiftChecklistDate, getChecklistToday } from './report-daily-checklist.js'
+import { createReportChecklistController } from './report-checklist-controller.js'
 import {
   buildCenterCalendarItemFromForm,
   buildCenterCalendarTagFromForm,
@@ -1199,6 +1202,8 @@ let inventoryCycleCountDueDate = new Date().toISOString().slice(0, 10)
 let inventoryCycleCountObservedByLineId = {}
 let inventoryCycleCountExplanationByLineId = {}
 let reportState = createInitialReportState()
+let reportWorkspaceMode = 'overview'
+let reportChecklistController = null
 let reportAttendanceContext = { status: 'idle', centerId: '', occurrences: [], assignments: [] }
 let reportAttendanceReadRunId = 0
 let reportPdfSnapshot = null
@@ -1684,6 +1689,16 @@ function getReportAttendanceRange() {
   const end = new Date(`${fromDate}T12:00:00Z`)
   end.setUTCDate(end.getUTCDate() + 6)
   return { fromDate, toDate: end.toISOString().slice(0, 10) }
+}
+
+function getReportChecklistController() {
+  if (!reportChecklistController) reportChecklistController = createReportChecklistController({
+    getContext: () => ({ centerId: getCurrentCanonicalCenterContext().centerId, accountId: cloudStatus.user?.id || '' }),
+    getSupabase: getSupabaseClient,
+    canWrite: () => getCurrentCanonicalCenterContext().ok && buildCurrentOnlineAccessState({ cloudReady: true }).canWrite,
+    onChange: render,
+  })
+  return reportChecklistController
 }
 
 function getCurrentReportAttendanceContext() {
@@ -2867,6 +2882,8 @@ function resetTransientStateForCenterSwitch() {
   }
   reportTransactionDrilldownState = null
   reportTransactionDrilldownToken += 1
+  reportChecklistController?.reset()
+  reportWorkspaceMode = 'overview'
   reportState = {
     ...createInitialReportState(),
     viewMode: reportState.viewMode,
@@ -8598,6 +8615,12 @@ function shouldDeferRenderForTextEditing() {
 
   const activeElement = document.activeElement
 
+  // Checklist controls display persisted state, so a focused checkbox/date/select
+  // must not defer the completion or read response until focus leaves the field.
+  if (activeElement?.matches?.('[data-checklist-item], [data-checklist-date-picker], [data-checklist-template-picker]')) {
+    return false
+  }
+
   if (isNativeSelectElement(activeElement)) {
     return !shouldAllowNativeSelectChangeRender()
   }
@@ -12828,6 +12851,11 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'bao-cao') {
+    if (reportWorkspaceMode === 'checklist') return renderReportWorkspace({ mode: 'checklist',
+      body: renderDailyChecklist(getReportChecklistController().getState(), {
+        canWrite: getCurrentCanonicalCenterContext().ok && buildCurrentOnlineAccessState({ cloudReady: true }).canWrite,
+      }),
+    })
     const centerInfo = getCurrentCanonicalCenterContext()
     const ledgerContext = getCurrentReportAttendanceContext()
     const attendanceAvailable = ['core', 'attendance'].every(upstream => isModuleUpstreamCurrent('bao-cao', upstream))
@@ -12842,7 +12870,7 @@ function renderWindowBody(windowItem) {
     }) : null
     const exportReady = ['core', 'finance'].every(upstream => isModuleUpstreamCurrent('bao-cao', upstream))
       && (reportState.viewMode === 'day' || attendanceAvailable)
-    return renderReportModule({
+    return renderReportWorkspace({ mode: 'overview', body: renderReportModule({
       viewMode: reportState.viewMode,
       filters: reportState.filters,
       draft: reportState.draft,
@@ -12856,7 +12884,7 @@ function renderWindowBody(windowItem) {
       },
       sourceTransactionsState: reportTransactionDrilldownState,
       centerInfo,
-    })
+    }) })
   }
 
   if (moduleItem.id === 'cai-dat-co-so') {
@@ -14291,6 +14319,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     const result = { upstream: 'attendance-ledger', ...ledgerResult }
     results.push(result)
     recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, result)
+    if (reportWorkspaceMode === 'checklist') await getReportChecklistController().load()
   }
 
   const latestContext = getCurrentCanonicalCenterContext()
@@ -23860,6 +23889,36 @@ function bindEvents() {
       }
     })
   })
+
+  document.querySelectorAll('button[data-report-workspace-mode]').forEach(button => {
+    button.addEventListener('click', () => {
+      reportWorkspaceMode = button.dataset.reportWorkspaceMode === 'checklist' ? 'checklist' : 'overview'
+      render()
+      if (reportWorkspaceMode === 'checklist') void getReportChecklistController().load()
+    })
+  })
+  document.querySelectorAll('[data-checklist-item]').forEach(input => input.addEventListener('change', () => {
+    const desired = input.checked
+    input.checked = getReportChecklistController().getState().items.some(item => item.item_key === input.dataset.checklistItem && item.completed)
+    void getReportChecklistController().setCompleted(input.dataset.checklistItem, desired)
+  }))
+  document.querySelectorAll('[data-checklist-expand]').forEach(button => button.addEventListener('click', () => {
+    getReportChecklistController().expand(button.dataset.checklistExpand)
+  }))
+  document.querySelectorAll('[data-checklist-day-step]').forEach(button => button.addEventListener('click', () => {
+    const controller = getReportChecklistController()
+    void controller.select({ businessDate: shiftChecklistDate(controller.getState().businessDate, Number(button.dataset.checklistDayStep)) })
+  }))
+  document.querySelector('[data-checklist-today]')?.addEventListener('click', () => {
+    void getReportChecklistController().select({ businessDate: getChecklistToday() })
+  })
+  document.querySelector('[data-checklist-date-picker]')?.addEventListener('change', event => {
+    void getReportChecklistController().select({ businessDate: event.target.value })
+  })
+  document.querySelector('[data-checklist-template-picker]')?.addEventListener('change', event => {
+    void getReportChecklistController().select({ templateKey: event.target.value })
+  })
+  document.querySelector('[data-checklist-refresh]')?.addEventListener('click', () => { void getReportChecklistController().load() })
 
   document.querySelectorAll('[data-report-filter]').forEach((control) => {
     control.addEventListener('input', () => applyReportPeriodControl(control))
