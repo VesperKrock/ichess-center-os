@@ -6,7 +6,7 @@ export const notificationSourceLabels = {
   'khach-hang-tu-van': 'Phụ huynh / Tư vấn',
   'kho-hang': 'Kho hàng',
   'giao-vien': 'Giáo viên',
-  'thoi-khoa-bieu': 'Thời khóa biểu',
+  'thoi-khoa-bieu': 'Lịch làm việc tuần',
   'thu-chi': 'Thu chi',
   'so-quy': 'Sổ quỹ',
   'cai-dat-co-so': 'Cài đặt cơ sở',
@@ -514,6 +514,8 @@ export function getNotificationProvider(notification = {}) {
   const key = String(notification.dedupeKey || '')
   const meta = notification.meta || {}
   if (key.startsWith('attention:') && meta.centerId) {
+    if (meta.signal === 'attendance-overdue' && meta.classSessionId && meta.month
+      && key === `attention:${meta.centerId}:${meta.classSessionId}:${meta.month}:attendance-overdue`) return 'attendance-overdue'
     if (meta.signal === 'attendance-incomplete' && meta.sessionId && meta.occurrenceDate
       && key === `attention:${meta.centerId}:${meta.sessionId}|${meta.occurrenceDate}:attendance-incomplete`) return 'attendance-attention'
     if (meta.studentId && meta.cycleId

@@ -1,8 +1,57 @@
-import { buildCanonicalAttendanceLedger, isAttendanceLedgerOccurrenceFuture } from './attendance-ledger.js'
+import { buildCanonicalAttendanceLedger, getAttendanceLedgerMonthRange, isAttendanceLedgerOccurrenceFuture } from './attendance-ledger.js'
 import { normalizeTuitionCyclePresentation } from './tuition-module.js'
 
 const text = value => String(value ?? '').trim()
-const operationalSignals = new Set(['attendance-incomplete', 'tuition-n2', 'payment-check', 'bcht-due', 'REVIEW_UPDATE_DUE'])
+const operationalSignals = new Set(['attendance-incomplete', 'attendance-overdue', 'tuition-n2', 'payment-check', 'bcht-due', 'REVIEW_UPDATE_DUE'])
+
+export function getNotificationAttendanceMonthRange(now = new Date()) {
+  const month = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now).slice(0, 7)
+  return { ...getAttendanceLedgerMonthRange(month), classSessionId: 'all', teacherId: 'all', query: '' }
+}
+
+// Reuse the board's full-month projection, including one-occurrence makeup
+// participants. Never infer absence from a report, draft or notification cache.
+export function buildOverdueAttendanceCandidates(source = {}, { centerId, now = new Date() } = {}) {
+  const range = getNotificationAttendanceMonthRange(now)
+  if (!centerId || source.status !== 'ready' || source.centerId !== centerId
+    || source.fromDate !== range.fromDate || source.toDate !== range.toDate) return []
+  const inCenter = item => !(item.centerId || item.center_id) || (item.centerId || item.center_id) === centerId
+  const classSessions = (source.classSessions || []).filter(inCenter)
+  return [...new Map(classSessions.map(item => [item.id, item])).values()].flatMap(ca => {
+    const model = buildCanonicalAttendanceLedger({
+      students: (source.students || []).filter(inCenter), classSessions,
+      scheduleSessions: (source.scheduleSessions || []).filter(inCenter),
+      occurrences: (source.occurrences || []).filter(fact => fact.center_id === centerId),
+      plannedOccurrences: (source.plannedOccurrences || []).filter(inCenter),
+      makeupBookings: (source.makeupBookings || []).filter(booking => booking.center_id === centerId),
+      attendanceRecords: (source.attendanceRecords || []).filter(inCenter),
+      filters: { ...range, classSessionId: ca.id }, monthlyProjection: true, now,
+    })
+    const count = model.overdueUnmarkedCount
+    if (!count) return []
+    const month = range.fromDate.slice(0, 7)
+    const name = text(ca.displayLabel || ca.name) || 'Chưa rõ'
+    return [{
+      dedupeKey: `attention:${centerId}:${ca.id}:${month}:attendance-overdue`,
+      sourceModule: 'bang-diem-danh', sourceLabel: 'Bảng điểm danh', type: 'attendance-operation', severity: 'warning',
+      title: `Ca ${name} còn ${count} ô quá ngày chưa điểm danh.`,
+      message: `Tháng ${Number(month.slice(5))}/${month.slice(0, 4)}`,
+      entityId: ca.id, entityType: 'classSession', entityLabel: name,
+      createdAt: `${range.fromDate}T00:00:00+07:00`, updatedAt: now.toISOString(),
+      meta: { centerId, providerId: 'attendance-overdue', operational: true, signal: 'attendance-overdue',
+        classSessionId: ca.id, month, overdueUnmarkedCount: count, actionLabel: 'Mở bảng điểm danh' },
+    }]
+  })
+}
+
+// Overdue conditions and their viewed flags exist only in this runtime.
+export function getPersistableNotificationItems(items = []) {
+  return items.filter(item => item.meta?.providerId !== 'attendance-overdue')
+}
+
+export function getAttendanceReminderFilters(route) {
+  return { ...getAttendanceLedgerMonthRange(route.month), classSessionId: route.classSessionId, teacherId: 'all', query: '' }
+}
 
 export function getNotificationAttentionRange(now = new Date()) {
   const toDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(now)
@@ -117,7 +166,16 @@ export function isOperationalNotification(item) {
 
 export function getNotificationRoute(item, centerId) {
   const meta = item?.meta || {}
-  if (!operationalSignals.has(meta.signal) || meta.centerId !== centerId) return null
+  if (meta.centerId !== centerId) return null
+  if (item.sourceModule === 'thoi-khoa-bieu' && meta.signal === 'today-one-off'
+    && meta.sessionId && /^\d{4}-\d{2}-\d{2}$/.test(meta.occurrenceDate)) {
+    return { moduleId: 'thoi-khoa-bieu', sessionId: meta.sessionId, occurrenceDate: meta.occurrenceDate }
+  }
+  if (!operationalSignals.has(meta.signal)) return null
+  if (meta.signal === 'attendance-overdue' && meta.classSessionId && /^\d{4}-\d{2}$/.test(meta.month)
+    && getAttendanceLedgerMonthRange(meta.month).fromDate === `${meta.month}-01`) {
+    return { moduleId: 'bang-diem-danh', classSessionId: meta.classSessionId, month: meta.month }
+  }
   if (meta.signal === 'attendance-incomplete' && meta.sessionId && /^\d{4}-\d{2}-\d{2}$/.test(meta.occurrenceDate)) {
     return { moduleId: 'thoi-khoa-bieu', sessionId: meta.sessionId, occurrenceDate: meta.occurrenceDate }
   }

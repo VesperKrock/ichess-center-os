@@ -217,12 +217,13 @@ for (const provider of [
   'buildStudentBirthdayNotificationCandidates',
   'buildV24TuitionNotificationCandidates',
   'buildScheduleAttentionNotificationCandidates',
-  'buildMissingSessionReportNotificationCandidates',
+  'buildOverdueAttendanceCandidates',
   'buildInventoryDueNotificationCandidates',
 ]) {
   assert(syncSource.includes(provider), `Missing current provider ${provider}.`)
 }
 assert(syncSource.includes('getVisibleScheduleSessions'))
+assert(!syncSource.includes('buildMissingSessionReportNotificationCandidates'), 'N6 retires reminders for the removed Schedule session-report surface.')
 assert(syncSource.includes('isV24PackageCycleCapabilityReady'))
 assert(syncSource.includes('isC56InventoryCapabilityReady'))
 assert(!syncSource.includes('buildParentFollowupNotificationCandidates'))

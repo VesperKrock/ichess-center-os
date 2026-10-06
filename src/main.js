@@ -464,7 +464,6 @@ import {
 } from './modules.js'
 import {
   buildInventoryDueNotificationCandidates,
-  buildMissingSessionReportNotificationCandidates,
   buildScheduleAttentionNotificationCandidates,
   buildStudentBirthdayNotificationCandidates,
   buildStudentBirthdayMonthNotificationCandidates,
@@ -481,8 +480,9 @@ import {
   upsertNotificationCandidates,
 } from './notification-center.js'
 import {
-  buildIncompleteAttendanceCandidates, buildTuitionN2Candidates, buildPaymentAttentionCandidates,
-  getNotificationAttentionRange, getNotificationRoute, normalizeCachedOperationalNotification,
+  buildOverdueAttendanceCandidates, buildTuitionN2Candidates, buildPaymentAttentionCandidates,
+  getNotificationAttentionRange, getNotificationAttendanceMonthRange, getNotificationRoute, normalizeCachedOperationalNotification,
+  getAttendanceReminderFilters, getPersistableNotificationItems,
   resolveCurrentNotificationTarget,
 } from './notification-operational-assistant.js'
 import { renderNotificationAssistantPanel } from './notification-assistant-panel.js'
@@ -14512,7 +14512,7 @@ function refreshNotificationAuthoritativeUpstreams(reason = 'notification-open')
 async function runNotificationAuthoritativeRefresh(reason) {
   const centerContext = getCurrentCanonicalCenterContext()
   const accountId = cloudStatus.user?.id || ''
-  const range = getNotificationAttentionRange()
+  const range = getNotificationAttendanceMonthRange()
   const upstreams = [
     'core',
     'attendance',
@@ -14574,7 +14574,7 @@ async function runNotificationAuthoritativeRefresh(reason) {
   if (attendanceResult.ok && coreResult.ok) {
     ledgerResult = await pullCanonicalAttendanceLedgerContext({
       supabase: getSupabaseClient(), centerId: centerContext.centerId, filters: range,
-      attendanceRecords: attendanceResult.projection.attendanceRecords,
+      attendanceRecords: attendanceResult.projection.attendanceRecords, includeMakeupBookings: true,
     })
   }
   if (refreshId !== notificationRefreshRunId || getCurrentCanonicalCenterContext().centerId !== centerContext.centerId
@@ -14583,8 +14583,10 @@ async function runNotificationAuthoritativeRefresh(reason) {
     ...ledgerResult, centerId: centerContext.centerId, status: ledgerResult.ok ? 'ready' : 'failed',
     attendanceRecords: attendanceResult.projection?.attendanceRecords || [],
     attendanceReadReady: attendanceResult.ok && coreResult.ok,
-    students: coreResult.data?.students || students, classSessions: coreResult.data?.classSessions || classSessions,
+    students: getStudentsWithCanonicalProjections(), classSessions: coreResult.data?.classSessions || classSessions,
     scheduleSessions: coreResult.data?.scheduleSessions || scheduleSessions,
+    plannedOccurrences: ledgerResult.ok
+      ? getAttendanceLedgerPlannedOccurrences({ ...ledgerResult, status: 'ready' }, range) : [],
   }
   if (!ledgerResult.ok) failures.push({ upstream: 'attendance-ledger', ok: false })
   // Each READY provider reconciles independently; a failed read is not an
@@ -23562,19 +23564,19 @@ function bindEvents() {
       .map((notification) => notification.id)
 
     notifications = markNotificationsReadByIds(notifications, visibleNotificationIds)
-    saveNotificationViewedState(notifications)
-    saveStoredNotifications(notifications)
+    saveNotificationViewedState(getPersistableNotificationItems(notifications))
+    saveStoredNotifications(getPersistableNotificationItems(notifications))
     render()
   })
 
   document.querySelector('[data-notification-action="clear-read"]')?.addEventListener('click', () => {
-    const readNotificationIds = notifications
+    const readNotificationIds = getPersistableNotificationItems(notifications)
       .filter((notification) => notification.read)
       .map((notification) => notification.id)
     deletedNotificationIds = Array.from(new Set([...deletedNotificationIds, ...readNotificationIds]))
     saveDeletedNotificationIds(deletedNotificationIds)
     notifications = notifications.filter((notification) => !notification.read)
-    saveStoredNotifications(notifications)
+    saveStoredNotifications(getPersistableNotificationItems(notifications))
     render()
   })
 
@@ -31123,7 +31125,8 @@ function syncAppNotifications(currentNotifications) {
   const operationsReady = operations.status === 'ready' && operations.centerId === centerId
   const tuitionReady = tuition.status === 'ready' && tuition.centerId === centerId
   const attendanceReady = attendance.status === 'ready' && attendance.centerId === centerId
-    && attendance.fromDate === range.fromDate && attendance.toDate === range.toDate
+    && attendance.fromDate === getNotificationAttendanceMonthRange(today).fromDate
+    && attendance.toDate === getNotificationAttendanceMonthRange(today).toDate
   const v24Ready = isV24PackageCycleCapabilityReady(v24PackageCycleCapabilityState, centerId)
   const inventoryReady = isC56InventoryCapabilityReady(c56InventoryCapabilityState, centerId)
     && isV27AInventoryCycleCountCapabilityReady(v27aInventoryCycleCountCapabilityState, centerId)
@@ -31145,14 +31148,15 @@ function syncAppNotifications(currentNotifications) {
         .filter(item => item.meta.signal === 'REVIEW_UPDATE_DUE') },
     { id: 'schedule-attention', ready: coreReady,
       candidates: buildScheduleAttentionNotificationCandidates(visibleCurrentWeekOccurrences, { centerId, today }) },
-    // Preserve the existing legacy Schedule/report family in All. It never
-    // supplies canonical attendance completeness or the operational view.
+    // Retire only the active reminder for N5's removed session-report surface.
+    // A fresh read reconciles its cached items without creating replacements.
     { id: 'session-reports', ready: coreReady && attendance.centerId === centerId && attendance.attendanceReadReady === true,
-      candidates: buildMissingSessionReportNotificationCandidates(visibleCurrentWeekOccurrences, sessionReports, { centerId, now: today }) },
+      candidates: [] },
     { id: 'inventory-due', ready: inventoryReady, operational: true,
       candidates: buildInventoryDueNotificationCandidates(inventoryCycleCounts, { centerId, today }) },
-    { id: 'attendance-attention', ready: attendanceReady, operational: true,
-      candidates: buildIncompleteAttendanceCandidates(attendance, { centerId, now: today }) },
+    { id: 'attendance-attention', ready: attendanceReady, candidates: [] },
+    { id: 'attendance-overdue', ready: attendanceReady, operational: true,
+      candidates: buildOverdueAttendanceCandidates(attendance, { centerId, now: today }) },
     { id: 'tuition-n2', ready: tuitionReady && operationsReady, operational: true,
       candidates: buildTuitionN2Candidates(tuition, operations, { centerId, now: today }) },
     { id: 'payment-attention', ready: tuitionReady && operationsReady, operational: true,
@@ -31168,7 +31172,7 @@ function syncAppNotifications(currentNotifications) {
   )
 
   if (JSON.stringify(nextNotifications) !== JSON.stringify(currentNotifications)) {
-    saveStoredNotifications(nextNotifications)
+    saveStoredNotifications(getPersistableNotificationItems(nextNotifications))
   }
 
   return nextNotifications
@@ -31182,8 +31186,8 @@ function markNotificationRead(notificationId) {
   }
 
   notifications = markNotificationReadById(notifications, notificationId)
-  saveNotificationViewedState(notifications)
-  saveStoredNotifications(notifications)
+  saveNotificationViewedState(getPersistableNotificationItems(notifications))
+  saveStoredNotifications(getPersistableNotificationItems(notifications))
   render()
 }
 
@@ -31365,6 +31369,18 @@ async function openNotificationSourceModule(notificationId) {
     void refreshNotificationAuthoritativeUpstreams('notification-target-changed')
   }
   if (['bcht-due', 'REVIEW_UPDATE_DUE'].includes(notification.meta?.signal) && !route) return
+  if (notification.meta?.signal === 'attendance-overdue') {
+    if (!route || !confirmAttendanceBoardNavigation()) return
+    attendanceBoardFilters = getAttendanceReminderFilters(route)
+    attendanceBoardDetailState = null
+    const result = await refreshModuleAuthoritativeUpstreams('bang-diem-danh', { reason: 'notification-exact-route' })
+    if (!routeStillCurrent()) return
+    if (!result.ok || getCurrentAttendanceLedgerContext().status !== 'ready') return unavailable()
+    if (!classSessions.some(ca => ca.id === route.classSessionId)) return changed()
+    isNotificationCenterOpen = false
+    openModuleWindowFromChildInteraction('bang-diem-danh', { refresh: false, preserveCurrentness: true })
+    return
+  }
   if (route?.moduleId === 'hoc-phi' && notification.meta?.signal === 'bcht-due') {
     const cycleRead = await refreshAuthoritativeUpstream('package-cycles', 'notification-bcht-route')
     if (!routeStillCurrent()) return
