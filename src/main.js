@@ -1058,6 +1058,7 @@ let attendanceBaselineDraftRecords = null
 let attendanceBaselineDraftBaseRecords = null
 let attendanceBaselineDraftState = null
 let pendingAttendanceBaselineCellFocus = null
+let schedulePlanDetailState = null
 let scheduleFormState = null
 let scheduleCalendarItemState = null
 let scheduleCalendarTagState = null
@@ -1914,6 +1915,12 @@ function getCloudAttachmentAccessContext() {
   }
 }
 
+function getCurrentScheduleCrmContacts() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  return isModuleUpstreamCurrent('thoi-khoa-bieu', 'crm') && c53CrmSharedTruthState.centerId === centerId
+    ? parentConsultations : []
+}
+
 function createCurrentSchedulePrintSnapshot() {
   const centerProfile = getTaskbarCenterProfileState()
   const centerId = getCurrentResolvedCenterId()
@@ -1928,6 +1935,7 @@ function createCurrentSchedulePrintSnapshot() {
     centerCalendarTags,
     teachers: [],
     teacherContext: getCurrentA3TeacherContext(),
+    crmContacts: getCurrentScheduleCrmContacts(),
     activityFilters: scheduleCalendarFilters,
     createdAt: new Date().toISOString(),
   })
@@ -2832,6 +2840,7 @@ function resetTransientStateForCenterSwitch() {
   resetV23AttendanceRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetV24PackageCycleRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   resetV26TeacherRegistryRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
+  schedulePlanDetailState = null
   scheduleFormState = null
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
@@ -12626,25 +12635,23 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'thoi-khoa-bieu') {
-    const attendanceAvailable = isModuleUpstreamCurrent('thoi-khoa-bieu', 'attendance')
     const calendarNotesAvailable = isModuleUpstreamCurrent('thoi-khoa-bieu', 'calendar-notes')
     return renderScheduleModule(
       scheduleSessions,
       scheduleFormState,
-      scheduleReportState,
-      attendanceAvailable ? sessionReports : [],
-      sessionReportGuestState,
-      sessionReportLearningState,
-      sessionReportLearningFormState,
-      sessionReportExtraState,
-      isSessionReportExtraExpanded,
-      sessionReportGuestFormState,
+      null, [], null, null, null, null, false, null,
       [],
       students,
       scheduleWeekStartDate,
       null,
       {
-        attendanceRecords,
+        centerId: getCurrentCanonicalCenterContext().centerId,
+        crmContacts: getCurrentScheduleCrmContacts(),
+        planDetail: schedulePlanDetailState?.centerId === getCurrentCanonicalCenterContext().centerId ? schedulePlanDetailState : null,
+        canEditSchedule: canWriteCoreCloudDb(CLOUD_ENTITY_TYPES.SCHEDULE_SESSION),
+        canEditCalendar: canWriteC57SharedTruth(buildCurrentOnlineAccessState({
+          cloudReady: cloudDbState.readinessStatus === 'ready',
+        })).canWrite,
         calendarNotesAvailable,
         centerCalendarFilters: scheduleCalendarFilters,
         centerCalendarItemState: scheduleCalendarItemState,
@@ -28403,8 +28410,13 @@ function bindEvents() {
 
   const canUseScheduleCalendarNotes = () =>
     isModuleUpstreamCurrent('thoi-khoa-bieu', 'calendar-notes')
+  const canEditScheduleCalendarNotes = () => canUseScheduleCalendarNotes()
+    && canWriteC57SharedTruth(buildCurrentOnlineAccessState({
+      cloudReady: cloudDbState.readinessStatus === 'ready',
+    })).canWrite
 
   const resetScheduleReportPanels = () => {
+    schedulePlanDetailState = null
     scheduleReportState = null
     sessionReportGuestState = null
     sessionReportLearningState = null
@@ -28897,6 +28909,7 @@ function bindEvents() {
   })
 
   document.querySelector('[data-schedule-action="open-create"]')?.addEventListener('click', () => {
+    if (!canWriteCoreCloudDb(CLOUD_ENTITY_TYPES.SCHEDULE_SESSION)) return
     scheduleFormState = createEmptyScheduleFormState()
     closeScheduleActivityPanels()
     resetScheduleReportPanels()
@@ -28904,7 +28917,7 @@ function bindEvents() {
   })
 
   document.querySelector('[data-center-calendar-action="open-create"]')?.addEventListener('click', () => {
-    if (!canUseScheduleCalendarNotes()) return
+    if (!canEditScheduleCalendarNotes()) return
 
     scheduleFormState = null
     scheduleCalendarTagState = null
@@ -28945,7 +28958,7 @@ function bindEvents() {
   document.querySelector('[data-center-calendar-tag-action="open-manager"]')?.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
-    if (!canUseScheduleCalendarNotes()) return
+    if (!canEditScheduleCalendarNotes()) return
 
     scheduleFormState = null
     scheduleCalendarItemState = null
@@ -28957,6 +28970,7 @@ function bindEvents() {
   document.querySelectorAll('[data-schedule-action="open-create-for-day"]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation()
+      if (!canWriteCoreCloudDb(CLOUD_ENTITY_TYPES.SCHEDULE_SESSION)) return
       scheduleFormState = createScheduleFormStateForDay(
         button.dataset.scheduleDayOfWeek,
         button.dataset.scheduleDate,
@@ -28967,92 +28981,101 @@ function bindEvents() {
     })
   })
 
+  // Weekly cards open planning facts only; no report/Attendance draft is created.
   document.querySelectorAll('[data-schedule-action="open-edit"]').forEach((card) => {
     const openScheduleSession = () => {
-      closeScheduleActivityPanels()
       const occurrenceDate = card.dataset.scheduleOccurrenceDate
       const occurrence = getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
-        (item) => item.id === card.dataset.scheduleSessionId && item.occurrenceDate === occurrenceDate,
-      )
-      const session = occurrence?.assignmentId
-        ? scheduleSessions.find((item) => item.id === occurrence.assignmentId)
-        : scheduleSessions.find((item) => item.id === card.dataset.scheduleSessionId)
-
-      if (!session && !occurrence?.isEmptyClassSessionSlot && !occurrence?.a3OccurrenceMaterialized) {
-        return
+        item => item.id === card.dataset.scheduleSessionId && item.occurrenceDate === occurrenceDate)
+      if (!occurrence) return
+      closeScheduleActivityPanels()
+      resetScheduleReportPanels()
+      scheduleFormState = null
+      schedulePlanDetailState = {
+        centerId: getCurrentCanonicalCenterContext().centerId,
+        sessionId: occurrence.id, occurrenceDate,
       }
-
-      if (occurrence?.isEmptyClassSessionSlot) {
-        scheduleReportState = null
-        sessionReportGuestState = null
-        sessionReportLearningState = null
-        sessionReportLearningFormState = null
-        sessionReportExtraState = null
-        isSessionReportExtraExpanded = false
-        sessionReportGuestFormState = null
-        scheduleFormState = {
-          ...createEmptyScheduleFormState(),
-          mode: 'assign',
-          values: {
-            ...createEmptyScheduleFormState().values,
-            scheduleType: 'recurring',
-            classSessionId: occurrence.classSessionId,
-            title: '',
-            dayOfWeek: occurrence.dayOfWeek,
-            startTime: occurrence.startTime,
-            endTime: occurrence.endTime,
-            room: occurrence.room || '',
-            level: occurrence.level || 'mixed',
-            status: occurrence.status || 'scheduled',
-            allowOpenRange: 'true',
-          },
-        }
-      } else if (occurrence
-          && occurrence.a2LifecycleState !== 'CANCELLED'
-          && occurrence.status !== 'cancelled'
-          && (occurrence.a2LifecycleState === 'HELD' || isPastScheduleOccurrence(occurrence))) {
-        scheduleFormState = null
-        scheduleReportState = {
-          sessionId: session?.id || occurrence.id,
-          occurrenceDate: occurrence.occurrenceDate,
-          mode: 'teacherReport',
-        }
-        sessionReportGuestState = createSessionReportDraft(
-          occurrence,
-          findSessionReport(sessionReports, occurrence.id, occurrence.occurrenceDate),
-        )
-        sessionReportLearningState = null
-        sessionReportExtraState = null
-        sessionReportLearningFormState = null
-        isSessionReportExtraExpanded = false
-        sessionReportGuestFormState = null
-      } else {
-        scheduleReportState = null
-        sessionReportGuestState = null
-        sessionReportLearningState = null
-        sessionReportLearningFormState = null
-        sessionReportExtraState = null
-        isSessionReportExtraExpanded = false
-        sessionReportGuestFormState = null
-        scheduleFormState = createEditScheduleFormState(session)
-      }
-
       render()
     }
-
     card.addEventListener('click', openScheduleSession)
-    card.addEventListener('keydown', (event) => {
-      if (event.target !== card) return
-      if (event.key === 'Enter' || event.key === ' ') {
+    card.addEventListener('keydown', event => {
+      if (event.target === card && (event.key === 'Enter' || event.key === ' ')) {
         event.preventDefault()
         openScheduleSession()
       }
     })
   })
 
+  document.querySelectorAll('[data-schedule-crm-appointment]').forEach(card => {
+    const openAppointment = () => {
+      if (!getCurrentScheduleCrmContacts().some(contact => contact.id === card.dataset.contactId
+        && contact.appointments?.some(item => item.id === card.dataset.scheduleCrmAppointment))) return
+      closeScheduleActivityPanels()
+      resetScheduleReportPanels()
+      scheduleFormState = null
+      schedulePlanDetailState = {kind: 'crm', centerId: getCurrentCanonicalCenterContext().centerId,
+        contactId: card.dataset.contactId, appointmentId: card.dataset.scheduleCrmAppointment}
+      render()
+    }
+    card.addEventListener('click', openAppointment)
+    card.addEventListener('keydown', event => {
+      if (event.target === card && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault()
+        openAppointment()
+      }
+    })
+  })
+
+  document.querySelectorAll('[data-schedule-plan-action]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const detail = schedulePlanDetailState
+      if (!detail || detail.centerId !== getCurrentCanonicalCenterContext().centerId) return
+      if (button.dataset.schedulePlanAction === 'close') {
+        schedulePlanDetailState = null
+        render()
+        return
+      }
+      if (button.dataset.schedulePlanAction === 'open-contact' && detail.kind === 'crm') {
+        const centerId = detail.centerId
+        schedulePlanDetailState = null
+        openModuleWindowFromChildInteraction('khach-hang-tu-van', {refresh: false})
+        const result = await refreshModuleAuthoritativeUpstreams('khach-hang-tu-van', {reason: 'weekly-planned-appointment'})
+        if (!result.ok || centerId !== getCurrentCanonicalCenterContext().centerId) return
+        const contact = parentConsultations.find(item => item.id === detail.contactId)
+        if (!contact) return
+        parentConsultationFormState = createEditParentContactFormState(contact)
+        render()
+        return
+      }
+      if (!canWriteCoreCloudDb(CLOUD_ENTITY_TYPES.SCHEDULE_SESSION)) return
+      const occurrence = getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(item =>
+        item.id === detail.sessionId && item.occurrenceDate === detail.occurrenceDate)
+      if (!occurrence) return
+      const session = scheduleSessions.find(item => item.id === (occurrence.assignmentId || occurrence.id))
+      if (occurrence.isEmptyClassSessionSlot) {
+        scheduleFormState = {
+          ...createEmptyScheduleFormState(), mode: 'assign',
+          values: {
+            ...createEmptyScheduleFormState().values,
+            scheduleType: 'recurring', classSessionId: occurrence.classSessionId,
+            dayOfWeek: occurrence.dayOfWeek, startTime: occurrence.startTime, endTime: occurrence.endTime,
+            room: occurrence.room || '', level: occurrence.level || 'mixed',
+            status: occurrence.status || 'scheduled', allowOpenRange: 'true',
+          },
+        }
+      } else if (session) {
+        scheduleFormState = createEditScheduleFormState(session)
+      } else return
+      schedulePlanDetailState = null
+      render()
+    })
+  })
+
   document.querySelectorAll('[data-a3-teacher-action]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation()
+      if (!canWriteCoreCloudDb(CLOUD_ENTITY_TYPES.SCHEDULE_SESSION)) return
+      schedulePlanDetailState = null
       const kind = button.dataset.a3TeacherAction
       const scheduleId = button.dataset.scheduleId || ''
       const occurrenceDate = button.dataset.occurrenceDate || ''
@@ -29656,541 +29679,6 @@ function bindEvents() {
         return
       }
     })
-  })
-
-  document.querySelectorAll('[data-schedule-action="close-report"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      scheduleReportState = null
-      sessionReportGuestState = null
-      sessionReportLearningState = null
-      sessionReportLearningFormState = null
-      sessionReportExtraState = null
-      isSessionReportExtraExpanded = false
-      sessionReportGuestFormState = null
-      render()
-    })
-  })
-
-  document.querySelector('[data-schedule-action="edit-from-report"]')?.addEventListener('click', (event) => {
-    const session = scheduleSessions.find(
-      (item) => item.id === event.currentTarget.dataset.scheduleSessionId,
-    )
-
-    if (!session) {
-      return
-    }
-
-    scheduleReportState = null
-    sessionReportGuestState = null
-    sessionReportLearningState = null
-    sessionReportLearningFormState = null
-    sessionReportExtraState = null
-    isSessionReportExtraExpanded = false
-    sessionReportGuestFormState = null
-    scheduleFormState = createEditScheduleFormState(session)
-    render()
-  })
-
-  document
-    .querySelectorAll(
-      '.schedule-report-panel button, .schedule-report-panel input, .schedule-report-panel select, .schedule-report-panel textarea, .schedule-report-panel label',
-    )
-    .forEach((control) => {
-      control.addEventListener('pointerdown', (event) => {
-        event.stopPropagation()
-      })
-      control.addEventListener('click', (event) => {
-        event.stopPropagation()
-      })
-    })
-
-  document.querySelector('[data-session-guest-action="open-create"]')?.addEventListener('click', () => {
-    sessionReportGuestFormState = createEmptyGuestParticipantFormState()
-    render()
-  })
-
-  document.querySelector('[data-session-guest-action="cancel-form"]')?.addEventListener('click', () => {
-    sessionReportGuestFormState = null
-    render()
-  })
-
-  document.querySelectorAll('[data-session-guest-field]').forEach((control) => {
-    control.addEventListener('input', () => {
-      if (!sessionReportGuestFormState) {
-        return
-      }
-
-      sessionReportGuestFormState = {
-        ...sessionReportGuestFormState,
-        values: {
-          ...sessionReportGuestFormState.values,
-          [control.dataset.sessionGuestField]: control.value,
-        },
-        errors: {},
-      }
-    })
-
-    control.addEventListener('change', () => {
-      if (!sessionReportGuestFormState) {
-        return
-      }
-
-      sessionReportGuestFormState = {
-        ...sessionReportGuestFormState,
-        values: {
-          ...sessionReportGuestFormState.values,
-          [control.dataset.sessionGuestField]: control.value,
-        },
-        errors: {},
-      }
-    })
-  })
-
-  document.querySelector('[data-session-guest-form]')?.addEventListener('submit', async (event) => {
-    event.preventDefault()
-
-    if (!scheduleReportState || !sessionReportGuestState || !sessionReportGuestFormState) {
-      return
-    }
-
-    const formValues = {
-      displayName:
-        document.querySelector('[data-session-guest-field="displayName"]')?.value ??
-        sessionReportGuestFormState.values.displayName,
-      participationType:
-        document.querySelector('[data-session-guest-field="participationType"]')?.value ??
-        sessionReportGuestFormState.values.participationType,
-      note:
-        document.querySelector('[data-session-guest-field="note"]')?.value ??
-        sessionReportGuestFormState.values.note,
-    }
-    const errors = validateGuestParticipantForm(formValues)
-
-    if (Object.keys(errors).length) {
-      sessionReportGuestFormState = {
-        ...sessionReportGuestFormState,
-        values: formValues,
-        errors,
-      }
-      render()
-      return
-    }
-
-    const nextAttendanceState = {
-      ...sessionReportGuestState,
-      guestParticipants: [
-        buildGuestParticipantFromForm(formValues),
-        ...(sessionReportGuestState.guestParticipants ?? []),
-      ],
-      saveState: 'saved',
-      error: '',
-    }
-    const existingReport = findSessionReport(
-      sessionReports,
-      scheduleReportState.sessionId,
-      scheduleReportState.occurrenceDate,
-    )
-    const savedReport = buildSessionReportFromAttendance(nextAttendanceState, existingReport)
-
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      sessionReports: [savedReport],
-      reason: 'session-report-guest-add',
-    })
-    if (!result.ok) {
-      sessionReportGuestState = {
-        ...sessionReportGuestState,
-        error: result.error || 'Chưa lưu được thông tin khách học. Thông tin bạn nhập vẫn được giữ nguyên.',
-        saveState: '',
-      }
-      render()
-      return
-    }
-    sessionReportGuestState = {
-      ...nextAttendanceState,
-      guestParticipants: savedReport.guestParticipants,
-    }
-    sessionReportGuestFormState = null
-    render()
-  })
-
-  document.querySelectorAll('[data-session-guest-action="delete"]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      if (!scheduleReportState || !sessionReportGuestState) {
-        return
-      }
-
-      const nextAttendanceState = {
-        ...sessionReportGuestState,
-        guestParticipants: (sessionReportGuestState.guestParticipants ?? []).filter(
-          (guest) => guest.id !== button.dataset.guestId,
-        ),
-        saveState: 'saved',
-        error: '',
-      }
-      const existingReport = findSessionReport(
-        sessionReports,
-        scheduleReportState.sessionId,
-        scheduleReportState.occurrenceDate,
-      )
-      const savedReport = buildSessionReportFromAttendance(nextAttendanceState, existingReport)
-
-      const result = await writeC52AttendanceSessionReportThroughCloud({
-        sessionReports: [savedReport],
-        reason: 'session-report-guest-delete',
-      })
-      if (!result.ok) {
-        sessionReportGuestState = {
-          ...sessionReportGuestState,
-          error: result.error || 'Chưa lưu được thay đổi khách học. Thông tin bạn nhập vẫn được giữ nguyên.',
-          saveState: '',
-        }
-        render()
-        return
-      }
-      sessionReportGuestState = {
-        ...nextAttendanceState,
-        guestParticipants: savedReport.guestParticipants,
-      }
-      sessionReportGuestFormState = null
-      render()
-    })
-  })
-
-  document.querySelector('[data-session-learning-action="open-create"]')?.addEventListener('click', () => {
-    if (sessionReportLearningFormState) {
-      return
-    }
-
-    sessionReportLearningFormState = createEmptyLearningGroupFormState()
-    sessionReportLearningState = {
-      ...sessionReportLearningState,
-      error: '',
-      saveState: '',
-    }
-    render()
-  })
-
-  document.querySelectorAll('[data-session-learning-action="open-edit"]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const group = sessionReportLearningState?.groups.find(
-        (item) => item.id === button.dataset.learningGroupId,
-      )
-
-      if (!group) {
-        return
-      }
-
-      sessionReportLearningFormState = createEditLearningGroupFormState(group)
-      sessionReportLearningState = {
-        ...sessionReportLearningState,
-        error: '',
-        saveState: '',
-      }
-      render()
-    })
-  })
-
-  document.querySelectorAll('[data-session-learning-action="delete"]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      if (!scheduleReportState || !sessionReportLearningState) {
-        return
-      }
-
-      const confirmed = window.confirm('Xóa nhóm nội dung học này?')
-
-      if (!confirmed) {
-        return
-      }
-
-      const nextLearningState = {
-        ...sessionReportLearningState,
-        groups: sessionReportLearningState.groups.filter(
-          (group) => group.id !== button.dataset.learningGroupId,
-        ),
-        error: '',
-        saveState: 'saved',
-      }
-      const existingReport = findSessionReport(
-        sessionReports,
-        scheduleReportState.sessionId,
-        scheduleReportState.occurrenceDate,
-      )
-      const savedReport = buildSessionReportFromLearningGroups(nextLearningState, existingReport)
-
-      const result = await writeC52AttendanceSessionReportThroughCloud({
-        sessionReports: [savedReport],
-        reason: 'session-report-learning-delete',
-      })
-      if (!result.ok) {
-        sessionReportLearningState = {
-          ...sessionReportLearningState,
-          error: result.error || 'Chưa lưu được nội dung buổi học. Thông tin bạn nhập vẫn được giữ nguyên.',
-          saveState: '',
-        }
-        render()
-        return
-      }
-      sessionReportLearningState = {
-        ...nextLearningState,
-        groups: savedReport.learningGroups,
-      }
-      sessionReportLearningFormState = null
-      render()
-    })
-  })
-
-  document.querySelector('[data-session-learning-action="cancel-form"]')?.addEventListener('click', () => {
-    sessionReportLearningFormState = null
-    render()
-  })
-
-  document.querySelectorAll('[data-session-learning-field]').forEach((control) => {
-    control.addEventListener('input', () => {
-      if (!sessionReportLearningFormState) {
-        return
-      }
-
-      sessionReportLearningFormState = {
-        ...sessionReportLearningFormState,
-        values: {
-          ...sessionReportLearningFormState.values,
-          [control.dataset.sessionLearningField]: control.value,
-        },
-        errors: {},
-      }
-    })
-  })
-
-  document.querySelectorAll('[data-session-learning-student]').forEach((control) => {
-    control.addEventListener('change', () => {
-      if (!sessionReportLearningFormState) {
-        return
-      }
-
-      const selectedStudentIds = Array.from(
-        document.querySelectorAll('[data-session-learning-student]:checked'),
-      ).map((checkbox) => checkbox.value)
-
-      sessionReportLearningFormState = {
-        ...sessionReportLearningFormState,
-        values: {
-          ...sessionReportLearningFormState.values,
-          studentIds: selectedStudentIds,
-        },
-        errors: {},
-      }
-      render()
-    })
-  })
-
-  document.querySelector('[data-session-learning-form]')?.addEventListener('submit', async (event) => {
-    event.preventDefault()
-
-    if (!scheduleReportState || !sessionReportLearningState || !sessionReportLearningFormState) {
-      return
-    }
-
-    const occurrence = getVisibleScheduleSessionsWithCurrentEnrollmentRosters().find(
-      (item) =>
-        item.id === scheduleReportState.sessionId &&
-        item.occurrenceDate === scheduleReportState.occurrenceDate,
-    )
-
-    if (!occurrence) {
-      return
-    }
-
-    const formValues = {
-      ...sessionReportLearningFormState.values,
-      title:
-        document.querySelector('[data-session-learning-field="title"]')?.value ??
-        sessionReportLearningFormState.values.title,
-      note:
-        document.querySelector('[data-session-learning-field="note"]')?.value ??
-        sessionReportLearningFormState.values.note,
-      contentText:
-        document.querySelector('[data-session-learning-field="contentText"]')?.value ??
-        sessionReportLearningFormState.values.contentText,
-      studentIds: Array.from(
-        document.querySelectorAll('[data-session-learning-student]:checked'),
-      ).map((checkbox) => checkbox.value),
-    }
-    const errors = validateLearningGroupForm(formValues)
-
-    if (Object.keys(errors).length) {
-      sessionReportLearningFormState = {
-        ...sessionReportLearningFormState,
-        values: formValues,
-        errors,
-      }
-      render()
-      return
-    }
-
-    const existingGroup = sessionReportLearningState.groups.find(
-      (group) => group.id === sessionReportLearningFormState.groupId,
-    )
-    const savedGroup = buildLearningGroupFromForm(
-      formValues,
-      existingGroup,
-      occurrence.studentIds,
-    )
-    const nextGroups =
-      sessionReportLearningFormState.mode === 'edit'
-        ? sessionReportLearningState.groups.map((group) =>
-            group.id === savedGroup.id ? savedGroup : group,
-          )
-        : [savedGroup, ...sessionReportLearningState.groups]
-    const nextLearningState = {
-      ...sessionReportLearningState,
-      groups: nextGroups,
-      error: '',
-      saveState: 'saved',
-    }
-    const existingReport = findSessionReport(
-      sessionReports,
-      scheduleReportState.sessionId,
-      scheduleReportState.occurrenceDate,
-    )
-    const savedReport = buildSessionReportFromLearningGroups(nextLearningState, existingReport)
-
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      sessionReports: [savedReport],
-      reason: 'session-report-learning-save',
-    })
-    if (!result.ok) {
-      sessionReportLearningState = {
-        ...sessionReportLearningState,
-        error: result.error || 'Chưa lưu được nội dung buổi học. Thông tin bạn nhập vẫn được giữ nguyên.',
-        saveState: '',
-      }
-      render()
-      return
-    }
-    sessionReportLearningState = {
-      ...nextLearningState,
-      groups: savedReport.learningGroups,
-    }
-    sessionReportLearningFormState = null
-    render()
-  })
-
-  document.querySelectorAll('[data-session-report-extra-field]').forEach((control) => {
-    control.addEventListener('input', () => {
-      sessionReportExtraState = updateSessionReportExtraState(
-        sessionReportExtraState,
-        control.dataset.sessionReportExtraField,
-        control.value,
-      )
-    })
-  })
-
-  document.querySelector('[data-session-report-action="toggle-extra"]')?.addEventListener('click', () => {
-    isSessionReportExtraExpanded = !isSessionReportExtraExpanded
-    render()
-  })
-
-  document.querySelector('[data-session-report-action="save-extra"]')?.addEventListener('click', async () => {
-    if (!scheduleReportState || !sessionReportExtraState) {
-      return
-    }
-
-    const formValues = {
-      teachingAssistantNotes:
-        document.querySelector('[data-session-report-extra-field="teachingAssistantNotes"]')?.value ??
-        sessionReportExtraState.values.teachingAssistantNotes,
-      classSituation:
-        document.querySelector('[data-session-report-extra-field="classSituation"]')?.value ??
-        sessionReportExtraState.values.classSituation,
-      suggestions:
-        document.querySelector('[data-session-report-extra-field="suggestions"]')?.value ??
-        sessionReportExtraState.values.suggestions,
-    }
-    const nextExtraState = {
-      ...sessionReportExtraState,
-      values: formValues,
-      saveState: 'saved',
-      copyState: '',
-      error: '',
-    }
-    const existingReport = findSessionReport(
-      sessionReports,
-      scheduleReportState.sessionId,
-      scheduleReportState.occurrenceDate,
-    )
-    const savedReport = buildSessionReportFromExtraInfo(nextExtraState, existingReport)
-
-    const result = await writeC52AttendanceSessionReportThroughCloud({
-      sessionReports: [savedReport],
-      reason: 'session-report-extra-save',
-    })
-    if (!result.ok) {
-      sessionReportExtraState = {
-        ...nextExtraState,
-        error: result.error || 'Chưa lưu được thông tin báo cáo. Thông tin bạn nhập vẫn được giữ nguyên.',
-        saveState: '',
-      }
-      render()
-      return
-    }
-    sessionReportExtraState = nextExtraState
-    render()
-  })
-
-  document.querySelector('[data-session-report-action="refresh-trello"]')?.addEventListener('click', () => {
-    const formValues = {
-      teachingAssistantNotes:
-        document.querySelector('[data-session-report-extra-field="teachingAssistantNotes"]')?.value ??
-        sessionReportExtraState?.values.teachingAssistantNotes ??
-        '',
-      classSituation:
-        document.querySelector('[data-session-report-extra-field="classSituation"]')?.value ??
-        sessionReportExtraState?.values.classSituation ??
-        '',
-      suggestions:
-        document.querySelector('[data-session-report-extra-field="suggestions"]')?.value ??
-        sessionReportExtraState?.values.suggestions ??
-        '',
-    }
-
-    sessionReportExtraState = {
-      ...(sessionReportExtraState ?? {}),
-      sessionId: scheduleReportState?.sessionId,
-      occurrenceDate: scheduleReportState?.occurrenceDate,
-      values: formValues,
-      saveState: '',
-      copyState: '',
-      error: '',
-    }
-    render()
-  })
-
-  document.querySelector('[data-session-report-action="copy-trello"]')?.addEventListener('click', async () => {
-    const reportText = document.querySelector('[data-session-report-trello-output]')?.value ?? ''
-
-    if (!sessionReportExtraState) {
-      return
-    }
-
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error('Clipboard API unavailable')
-      }
-
-      await navigator.clipboard.writeText(reportText)
-      sessionReportExtraState = {
-        ...sessionReportExtraState,
-        copyState: 'copied',
-        error: '',
-      }
-    } catch {
-      sessionReportExtraState = {
-        ...sessionReportExtraState,
-        copyState: 'failed',
-      }
-    }
-
-    render()
   })
 
   document.querySelectorAll('[data-schedule-action="cancel-form"]').forEach((button) => {

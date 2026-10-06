@@ -7,10 +7,11 @@ import {
   getCenterCalendarTagById,
 } from './center-calendar-data.js'
 import {
+  CENTER_CALENDAR_RECURRENCE_TIMEZONE,
   expandWeeklyCenterCalendarOccurrences,
   isWeeklyRecurringCenterCalendarItem,
 } from './center-calendar-recurrence.js'
-import { getVisibleScheduleSessions } from './schedule-module.js'
+import { getVisibleScheduleSessions, getSchedulePlannedAppointments } from './schedule-module.js'
 import { projectA3ScheduleSessions } from './cloud-authoritative-teacher-history.js'
 
 export const SCHEDULE_PRINT_FILTER_ALL = 'all'
@@ -37,6 +38,7 @@ export function createSchedulePrintSnapshot({
   classSessions = [],
   centerCalendarItems = [],
   centerCalendarTags = [],
+  crmContacts = [],
   teachers = [],
   teacherContext = null,
   activityFilters = {},
@@ -45,8 +47,8 @@ export function createSchedulePrintSnapshot({
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentWeekStartDate()
   const days = getWeekDays(normalizedWeekStart)
   const weekEndDate = addDays(normalizedWeekStart, 6)
-  const rangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
-  const rangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
+  const rangeStartAt = `${normalizedWeekStart}T00:00:00+07:00`
+  const rangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00+07:00`
   const visibleSessions = teacherContext
     ? projectA3ScheduleSessions(
         getVisibleScheduleSessions(sessions, normalizedWeekStart, classSessions),
@@ -59,7 +61,13 @@ export function createSchedulePrintSnapshot({
   const tagLookup = new Map((Array.isArray(centerCalendarTags) ? centerCalendarTags : []).map((tag) => [String(tag.id), tag]))
   const sessionEntries = visibleSessions.map((session) => createPrintSessionEntry(session, teacherLookup))
   const activityEntries = activities.map((item) => createPrintActivityEntry(item, tagLookup))
-  const entries = [...sessionEntries, ...activityEntries].sort(comparePrintEntries)
+  const appointmentEntries = getSchedulePlannedAppointments(crmContacts, normalizedWeekStart).map(item => ({
+    id: item.canonicalAppointmentId, sourceKind: 'activity', label: item.typeLabel, itemType: 'other',
+    title: item.title, date: item.date, timeLabel: item.timeLabel, room: item.location,
+    teacherName: '', isCancelled: item.status === 'cancelled' || item.status === 'rescheduled',
+    sortKey: `${item.date}-${item.time || '00:00'}-${item.title}`, color: '#64748b',
+  }))
+  const entries = [...sessionEntries, ...activityEntries, ...appointmentEntries].sort(comparePrintEntries)
   const groupedDays = days.map((day) => ({
     ...day,
     entries: entries.filter((entry) => entry.date === day.date),
@@ -119,10 +127,10 @@ export function renderSchedulePrintDocument(snapshot = null) {
   const totalCount = snapshot.entries?.length || 0
 
   return `
-    <section class="schedule-print-document" data-schedule-print-document aria-label="Thời khóa biểu tuần">
+    <section class="schedule-print-document" data-schedule-print-document aria-label="Lịch làm việc tuần">
       <header class="schedule-print-document-header">
         <div>
-          <p class="schedule-print-kicker">Thời khóa biểu tuần</p>
+          <p class="schedule-print-kicker">Lịch làm việc tuần</p>
           <h1>${escapeHtml(snapshot.centerName)}</h1>
           <p>${escapeHtml(snapshot.weekRangeLabel)} · ${escapeHtml(snapshot.timezone)}</p>
         </div>
@@ -407,11 +415,17 @@ function formatDisplayDate(value) {
 }
 
 function getDateFromIso(value) {
-  return String(value || '').slice(0, 10)
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: CENTER_CALENDAR_RECURRENCE_TIMEZONE }).format(date)
 }
 
 function getTimeFromIso(value) {
-  return String(value || '').slice(11, 16)
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: CENTER_CALENDAR_RECURRENCE_TIMEZONE, hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
+  }).format(date)
 }
 
 function normalizeDateString(value) {

@@ -1,4 +1,4 @@
-/* U2 — certified Schedule page paint. Runtime titlebar and taskbar remain untouched. */
+/* Schedule planning surface. Runtime titlebar and taskbar remain untouched. */
 
 .desktop-window.is-schedule-window > .window-body {
   display: flex;
@@ -138,6 +138,226 @@
 .desktop-window.is-schedule-window .schedule-module [aria-busy="true"] {
   cursor: not-allowed;
   opacity: 0.62;
+}
+
+/* Week planning: quiet overview, planning facts and actions behind detail. */
+.desktop-window.is-schedule-window .schedule-plan-subtitle {
+  margin: 4px 0 0;
+  color: var(--schedule-text-secondary);
+  font-size: 14px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-controls-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-week-controls {
+  display: flex;
+  border: 0;
+  gap: 6px;
+  background: transparent;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-week-controls button {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--schedule-border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: var(--schedule-surface);
+  font-size: 14px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan [data-schedule-week-action='today'] {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 205px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan [data-schedule-week-action='today'] span {
+  font-size: 11px;
+  color: var(--schedule-text-secondary);
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-week-label {
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-total {
+  margin-left: auto;
+  color: var(--schedule-text-secondary);
+  font-size: 13px;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-options {
+  position: relative;
+  color: var(--schedule-text-secondary);
+  font-size: 13px;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-options summary {
+  padding: 10px;
+  cursor: pointer;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-options > div {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  display: grid;
+  gap: 12px;
+  min-width: 270px;
+  padding: 16px;
+  border: 1px solid var(--schedule-border);
+  border-radius: 10px;
+  background: var(--schedule-surface);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 12%);
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-calendar-filters {
+  flex-wrap: wrap;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-day-header strong {
+  font-size: 15px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-day-column.is-today .schedule-day-header {
+  color: var(--schedule-blue);
+  background: var(--schedule-blue-soft);
+  box-shadow: inset 0 3px var(--schedule-blue);
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-session-card,
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-calendar-item {
+  min-height: 0;
+  padding: 12px 10px;
+  gap: 7px;
+  box-shadow: none;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-session-card h4,
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-calendar-item h4 {
+  font-size: 16px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-session-time {
+  font-size: 14px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-session-meta {
+  font-size: 13px;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-kind {
+  font-size: 12px;
+  color: var(--schedule-text-secondary);
+}
+
+.desktop-window.is-schedule-window .schedule-plan-kind.is-trial {
+  color: var(--schedule-blue);
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-session-card.is-cancelled {
+  border-left-color: var(--schedule-border-strong);
+  background: var(--schedule-surface-muted);
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-session-card.is-cancelled h4 {
+  text-decoration: line-through;
+  color: var(--schedule-text-secondary);
+}
+
+.desktop-window.is-schedule-window .schedule-plan-roster {
+  padding: 0 22px 16px;
+  font-size: 14px;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-roster summary {
+  cursor: pointer;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-roster li {
+  margin: 8px 0;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-detail {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.desktop-window.is-schedule-window .schedule-plan-detail-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-calendar-detail-list {
+  padding: 12px 22px;
+  margin: 0;
+  gap: 14px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-calendar-detail-list dt {
+  color: var(--schedule-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-calendar-detail-list dd {
+  color: var(--schedule-text);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-teacher-actions {
+  margin: 0 22px 16px;
+  gap: 8px;
+}
+
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-teacher-actions button {
+  padding: 7px 10px;
+  border: 1px solid var(--schedule-border-strong);
+  border-radius: 6px;
+  color: var(--schedule-text-secondary);
+  background: var(--schedule-surface);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+@media (max-width: 1000px) {
+  .desktop-window.is-schedule-window .schedule-week-plan .schedule-week-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .desktop-window.is-schedule-window .schedule-week-plan .schedule-day-column {
+    min-height: 230px;
+    border-bottom: 1px solid var(--schedule-border);
+  }
+}
+
+@media (max-width: 640px) {
+  .desktop-window.is-schedule-window .schedule-week-plan .schedule-week-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .desktop-window.is-schedule-window .schedule-week-plan .schedule-week-controls button {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .desktop-window.is-schedule-window .schedule-week-plan [data-schedule-week-action='today'] {
+    min-width: 150px;
+  }
 }
 
 /* Main page */
@@ -635,11 +855,11 @@
 
 .desktop-window.is-schedule-window .schedule-week-grid {
   display: grid;
-  width: max(100%, 1180px);
-  min-width: 1180px;
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
   height: max-content;
-  grid-template-columns: repeat(7, minmax(168px, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   align-items: stretch;
 }
 

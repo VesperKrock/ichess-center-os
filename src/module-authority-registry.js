@@ -18,9 +18,9 @@ export const MODULE_AUTHORITY_REGISTRY = Object.freeze([
   entry(
     'thoi-khoa-bieu',
     ['C5.1 Schedule/Class', 'C5.7 custom Calendar'],
-    ['C5.2 Attendance/Session Report', 'derived conflict/recurrence'],
+    ['A3 teacher assignments', 'C5.3 planned CRM appointments', 'derived conflict/recurrence'],
     ['core'],
-    ['attendance', 'calendar-notes'],
+    ['calendar-notes', 'crm'],
   ),
   entry(
     'hoc-phi',

@@ -52,8 +52,18 @@ const html = renderScheduleModule(
   },
 )
 assert.match(html, /Teacher C/)
-assert.match(html, /data-a3-teacher-action="class"/)
-assert.match(html, /data-a3-teacher-action="occurrence"/)
+assert.doesNotMatch(html, /data-a3-teacher-action=/)
+const detailHtml = renderScheduleModule(
+  [session], null, null, [], null, null, null, null, false, null,
+  [], [{ id: 'a3-student', fullName: 'A3 Student' }], '2026-09-21', null,
+  {
+    classSessions: [classSession], a3TeacherContext: { assignments, occurrences: [occurrence] },
+    a3TeacherReady: true, a3TeacherChoices: [{ id: 'teacher-c', displayName: 'Teacher C' }],
+    planDetail: { sessionId: 'a3-session', occurrenceDate: '2026-09-21' },
+  },
+)
+assert.match(detailHtml, /data-a3-teacher-action="class"/)
+assert.match(detailHtml, /data-a3-teacher-action="occurrence"/)
 assert.match(html, /Áp dụng từ ngày/)
 assert.match(html, /Lịch sử phụ trách lớp/)
 

@@ -5,9 +5,9 @@ import {
   scheduleStatuses,
   scheduleTypes,
 } from './schedule-data.js'
-import { buildScheduleDeadlineAlerts } from './schedule-deadline.js'
 import { deriveV22ScheduleRosters } from './student-recurring-enrollment.js'
 import { projectA3ScheduleSessions, resolveA3TeacherForDate } from './cloud-authoritative-teacher-history.js'
+import { parentAppointmentTypeLabels, parentAppointmentStatusLabels } from './parent-consultation-module.js'
 import {
   CENTER_CALENDAR_ITEM_TYPES,
   CENTER_CALENDAR_ITEM_TYPE_LABELS,
@@ -183,7 +183,9 @@ export function renderScheduleModule(
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate()
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
-  const attendanceAvailable = deadlineOptions.attendanceAvailable !== false
+  const canEditSchedule = deadlineOptions.canEditSchedule !== false
+  const canEditCalendar = deadlineOptions.canEditCalendar !== false
+  const planDetail = deadlineOptions.planDetail || null
   const calendarNotesAvailable = deadlineOptions.calendarNotesAvailable !== false
   const centerCalendarItemState = calendarNotesAvailable
     ? deadlineOptions.centerCalendarItemState || null
@@ -214,8 +216,10 @@ export function renderScheduleModule(
     enrollmentSets: deadlineOptions.recurringEnrollmentSets,
     capabilityReady: deadlineOptions.recurringRosterManaged === true,
   }), deadlineOptions.a3TeacherContext, { scheduleSessions: sessions, classSessions })
-  const weekRangeStartAt = `${normalizedWeekStart}T00:00:00.000Z`
-  const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00.000Z`
+  // Calendar timestamps are UTC; week/day boundaries belong to the existing
+  // Asia/Ho_Chi_Minh planning timezone, including work before 07:00.
+  const weekRangeStartAt = `${normalizedWeekStart}T00:00:00+07:00`
+  const weekRangeEndAt = `${addDays(normalizedWeekStart, 7)}T00:00:00+07:00`
   const weekCenterCalendarItems = calendarNotesAvailable
     ? getCenterCalendarItemsForDisplayRange(
         deadlineOptions.centerCalendarItems,
@@ -224,70 +228,50 @@ export function renderScheduleModule(
       )
     : []
   const visibleCenterCalendarItems = filterCenterCalendarItems(weekCenterCalendarItems, centerCalendarFilters)
-  const teacherLookup = new Map()
+  const appointments = getSchedulePlannedAppointments(deadlineOptions.crmContacts, normalizedWeekStart)
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
-  const stats = getScheduleStats(visibleSessions, conflictMap)
-  const scheduleDeadlineAlerts = attendanceAvailable
-    ? buildScheduleDeadlineAlerts({
-        sessions: visibleSessions,
-        attendanceRecords: deadlineOptions.attendanceRecords,
-        sessionReports,
-        teachers: [],
-        now: deadlineOptions.now,
-      })
-    : []
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' })
+    .format(deadlineOptions.now || new Date())
+  const detailSession = planDetail && visibleSessions.find(session =>
+    session.id === planDetail.sessionId && session.occurrenceDate === planDetail.occurrenceDate)
+  const detailAppointment = planDetail?.kind === 'crm' && appointments.find(item =>
+    item.contactId === planDetail.contactId && item.id === planDetail.appointmentId)
 
   return `
-    <section class="schedule-module ${formState || reportState || centerCalendarItemState || centerCalendarTagState || deadlineOptions.a3TeacherDialog ? 'form-open' : ''}" aria-label="Thời khóa biểu">
+    <section class="schedule-module schedule-week-plan ${formState || detailSession || detailAppointment || centerCalendarItemState || centerCalendarTagState || deadlineOptions.a3TeacherDialog ? 'form-open' : ''}" aria-label="Lịch làm việc tuần" data-schedule-center-id="${escapeAttribute(deadlineOptions.centerId || '')}">
       <div class="schedule-compact-header">
         <div class="schedule-page-header">
-          <h3>Thời khóa biểu</h3>
-          <div class="schedule-header-actions" aria-label="Thao tác thời khóa biểu">
+          <div><h3>Lịch làm việc tuần</h3><p class="schedule-plan-subtitle">Ca học và hoạt động của trung tâm</p></div>
+          <div class="schedule-header-actions" aria-label="Thao tác lịch tuần">
             <button class="schedule-print-button" type="button" data-schedule-print-action="print">In / Lưu PDF</button>
-            ${calendarNotesAvailable
-              ? '<button class="schedule-calendar-tag-manager-button" type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>'
-              : `<button class="schedule-calendar-tag-manager-button is-capability-unavailable" type="button" disabled aria-disabled="true" tabindex="-1" data-schedule-optional-capability="calendar-notes" data-capability-state="${escapeAttribute(calendarNotesAvailabilityStatus)}">Quản lý nhãn <span>${escapeHtml(calendarNotesAvailabilityLabel)}</span></button>`}
-            ${calendarNotesAvailable
+            ${canEditCalendar ? calendarNotesAvailable
               ? '<button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>'
-              : `<button class="schedule-calendar-add-button is-capability-unavailable" type="button" disabled aria-disabled="true" tabindex="-1" data-schedule-optional-capability="calendar-notes" data-capability-state="${escapeAttribute(calendarNotesAvailabilityStatus)}">+ Thêm hoạt động <span>${escapeHtml(calendarNotesAvailabilityLabel)}</span></button>`}
-            <button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>
-            ${renderScheduleAlertBellClean(scheduleDeadlineAlerts)}
+              : `<button class="schedule-calendar-add-button is-capability-unavailable" type="button" disabled aria-disabled="true" tabindex="-1" data-schedule-optional-capability="calendar-notes" data-capability-state="${escapeAttribute(calendarNotesAvailabilityStatus)}">+ Thêm hoạt động <span>${escapeHtml(calendarNotesAvailabilityLabel)}</span></button>` : ''}
+            ${canEditSchedule ? '<button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>' : ''}
           </div>
         </div>
 
         <div class="schedule-controls-bar">
           <div class="schedule-week-group" aria-label="Điều hướng tuần">
             <div class="schedule-week-controls">
-              <button type="button" data-schedule-week-action="previous" aria-label="Tuần trước">‹</button>
-              <button type="button" data-schedule-week-action="today">Tuần này</button>
-              <button type="button" data-schedule-week-action="next" aria-label="Tuần sau">›</button>
+              <button type="button" data-schedule-week-action="previous">‹ Tuần trước</button>
+              <button type="button" data-schedule-week-action="today"><span>${normalizedWeekStart === getCurrentScheduleWeekStartDate(deadlineOptions.now || new Date()) ? 'Tuần này' : 'Về tuần này'}</span><strong class="schedule-week-label">${escapeHtml(formatWeekRange(normalizedWeekStart))}</strong></button>
+              <button type="button" data-schedule-week-action="next">Tuần sau ›</button>
             </div>
-            <strong class="schedule-week-label">${escapeHtml(formatWeekRange(normalizedWeekStart))}</strong>
           </div>
           ${calendarNotesAvailable
-            ? renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)
+            ? `<details class="schedule-plan-options" ${centerCalendarFilters.itemType !== 'all' || centerCalendarFilters.tagId !== 'all' ? 'open' : ''}><summary>Lọc hoạt động</summary><div>${renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)}${canEditCalendar ? '<button type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>' : ''}</div></details>`
             : ''}
-          <div class="schedule-stats" aria-label="Tổng quan lịch tuần">
-            ${renderStatCard('Buổi trong tuần', stats.totalSessions)}
-            ${renderStatCard('Lịch cố định', stats.recurringSessions)}
-            ${renderStatCard('Buổi đột xuất', stats.oneOffSessions)}
-            ${renderStatCard('Cảnh báo', stats.conflictSessions)}
-          </div>
+          <span class="schedule-plan-total">${visibleSessions.filter(s => !s.isEmptyClassSessionSlot).length} buổi học · ${visibleCenterCalendarItems.length} hoạt động${appointments.length ? ` · ${appointments.length} lịch hẹn` : ''}</span>
         </div>
       </div>
-      ${renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState)}
+      ${!calendarNotesAvailable || ['warning', 'error'].includes(calendarNotesSharedTruthState.messageTone) || calendarNotesSharedTruthState.legacyMigrationRequired ? renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState) : ''}
       ${deadlineOptions.a3TeacherStatus === 'failed'
         ? '<p class="schedule-form-warning" role="status">Chưa tải được lịch sử giáo viên. Hãy làm mới trước khi đổi giáo viên.</p>'
         : deadlineOptions.a3TeacherStatus === 'loading'
           ? '<p class="schedule-form-warning" role="status">Đang tải lịch sử giáo viên…</p>'
           : ''}
-      ${attendanceAvailable
-        ? ''
-        : '<p class="schedule-form-warning" role="status">Điểm danh và báo cáo buổi học hiện chưa tải được. Lịch học vẫn có thể xem và cập nhật.</p>'}
-      ${calendarNotesAvailable
-        ? renderCenterCalendarLegend(centerCalendarTags, weekCenterCalendarItems)
-        : ''}
       ${
         weekCenterCalendarItems.length && !visibleCenterCalendarItems.length
           ? '<p class="schedule-calendar-filter-empty">Không có hoạt động phù hợp bộ lọc</p>'
@@ -300,19 +284,17 @@ export function renderScheduleModule(
               renderDayColumn(
                 day,
                 getSessionsByOccurrenceDate(visibleSessions, day.date),
-                teacherLookup,
-                studentLookup,
-                conflictMap,
                 getCenterCalendarItemsByDate(visibleCenterCalendarItems, day.date),
                 centerCalendarTags,
-                deadlineOptions.a3TeacherReady && deadlineOptions.a3TeacherChoices?.length > 0,
-                deadlineOptions.attendanceRecords || [],
+                canEditSchedule,
+                today,
+                appointments.filter(item => item.date === day.date),
               ),
             )
             .join('')}
         </div>
       </div>
-      ${formState ? renderScheduleForm(
+      ${canEditSchedule && formState ? renderScheduleForm(
         formState,
         [],
         students,
@@ -328,33 +310,18 @@ export function renderScheduleModule(
             || new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()),
         },
       ) : ''}
-      ${calendarNotesAvailable && centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags) : ''}
-      ${calendarNotesAvailable && centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
-      ${deadlineOptions.a3TeacherDialog ? renderA3TeacherDialog(
+      ${calendarNotesAvailable && centerCalendarItemState ? renderCenterCalendarItemState(centerCalendarItemState, centerCalendarTags, canEditCalendar) : ''}
+      ${canEditCalendar && calendarNotesAvailable && centerCalendarTagState ? renderCenterCalendarTagManager(centerCalendarTagState, centerCalendarTags, deadlineOptions.centerCalendarItems || []) : ''}
+      ${canEditSchedule && deadlineOptions.a3TeacherDialog ? renderA3TeacherDialog(
         deadlineOptions.a3TeacherDialog,
         deadlineOptions.a3TeacherChoices || [],
         deadlineOptions.a3TeacherContext?.assignments || [],
       ) : ''}
-      ${
-        reportState && attendanceAvailable
-          ? renderScheduleReportPanel(
-              reportState,
-              visibleSessions,
-              [],
-              students,
-              sessionReports,
-              reportAttendanceState,
-              reportLearningState,
-              learningGroupFormState,
-              reportExtraState,
-              isReportExtraExpanded,
-              guestParticipantFormState,
-              adminAttendanceState,
-            )
-          : reportState
-            ? '<p class="schedule-form-warning" role="status">Chưa thể mở điểm danh hoặc báo cáo buổi học. Vui lòng bấm Làm mới rồi thử lại.</p>'
-            : ''
-      }
+      ${detailSession ? renderSchedulePlanningDetail(detailSession, studentLookup, conflictMap, {
+        canEditSchedule,
+        teacherActionsReady: canEditSchedule && deadlineOptions.a3TeacherReady && deadlineOptions.a3TeacherChoices?.length > 0,
+      }) : ''}
+      ${detailAppointment ? renderScheduleAppointmentDetail(detailAppointment) : ''}
     </section>
   `
 }
@@ -1436,38 +1403,93 @@ function createCenterCalendarRuntimeTagId(label) {
   return `center-calendar-tag-${asciiSlug || 'tag'}-${Date.now()}-${suffix}`
 }
 
-function renderDayColumn(day, sessions, teacherLookup, studentLookup, conflictMap, centerCalendarItems = [], centerCalendarTags = [], teacherActionsReady = false, attendanceRecords = []) {
-  const calendarCountLabel = centerCalendarItems.length
-    ? ` · ${centerCalendarItems.length} hoạt động`
-    : ''
+function renderDayColumn(day, sessions, centerCalendarItems = [], centerCalendarTags = [], canEditSchedule = false, today = '', appointments = []) {
+  const items = [
+    ...sessions.map(session => ({time: session.startTime || '', html: renderSessionCard(session)})),
+    ...centerCalendarItems.map(item => ({time: item.allDay ? '' : formatTimeFromIsoDateTime(item.startAt), html: renderCenterCalendarItemCard(item, centerCalendarTags)})),
+    ...appointments.map(item => ({time: item.time || '', html: renderScheduleAppointmentCard(item)})),
+  ].sort((a, b) => a.time.localeCompare(b.time))
 
   return `
-    <section class="schedule-day-column" aria-label="${escapeAttribute(`${day.label} ${formatDisplayDate(day.date)}`)}">
+    <section class="schedule-day-column ${day.date === today ? 'is-today' : ''}" data-schedule-day-date="${escapeAttribute(day.date)}" aria-label="${escapeAttribute(`${day.label} ${formatDisplayDate(day.date)}`)}">
       <header class="schedule-day-header">
         <strong>${escapeHtml(day.label)}</strong>
-        <span>${escapeHtml(formatDisplayDate(day.date))} · ${sessions.length} buổi${calendarCountLabel}</span>
+        <span>${escapeHtml(formatDisplayDate(day.date))}${day.date === today ? ' · Hôm nay' : ''}</span>
       </header>
       <div class="schedule-day-sessions">
         ${
-          sessions.length || centerCalendarItems.length
-            ? [
-                ...sessions.map((session) => renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady, attendanceRecords)),
-                ...centerCalendarItems.map((item) => renderCenterCalendarItemCard(item, centerCalendarTags)),
-              ].join('')
-            : '<div class="schedule-empty-day">Chưa có lịch</div>'
+          items.length ? items.map(item => item.html).join('') : '<div class="schedule-empty-day">Chưa có lịch</div>'
         }
       </div>
-      <button
+      ${canEditSchedule ? `<button
         class="schedule-day-add-button"
         type="button"
         data-schedule-action="open-create-for-day"
         data-schedule-day-of-week="${escapeAttribute(day.id)}"
         data-schedule-date="${escapeAttribute(day.date)}"
       >
-        + Thêm thẻ
-      </button>
+        + Buổi học
+      </button>` : ''}
     </section>
   `
+}
+
+// Read-only view of existing canonical CRM appointments. No Schedule rows,
+// enrollment, Attendance, or synthetic appointment persistence is created.
+export function getSchedulePlannedAppointments(contacts = [], weekStartDate = getCurrentScheduleWeekStartDate()) {
+  const dates = new Set(getScheduleWeekDays(weekStartDate).map(day => day.date))
+  return (Array.isArray(contacts) ? contacts : []).flatMap(contact => {
+    if (!contact.canonicalCaseId || contact.isArchived) return []
+    return (Array.isArray(contact.appointments) ? contact.appointments : []).flatMap(appointment => {
+      if (!appointment.canonicalAppointmentId || !parentAppointmentTypeLabels[appointment.appointmentType]) return []
+      const instant = new Date(appointment.scheduledAt)
+      if (Number.isNaN(instant.getTime())) return []
+      const date = new Intl.DateTimeFormat('sv-SE', {timeZone: CENTER_CALENDAR_RECURRENCE_TIMEZONE}).format(instant)
+      if (!dates.has(date)) return []
+      // The existing trial-booking command stores a date-only intention at UTC
+      // midnight. That sentinel must not be presented as an actual 07:00 lesson.
+      const dateOnly = appointment.sourceType === 'trial-booking'
+        && instant.getUTCHours() === 0 && instant.getUTCMinutes() === 0 && instant.getUTCSeconds() === 0
+      const time = dateOnly ? '' : new Intl.DateTimeFormat('en-GB', {
+        timeZone: CENTER_CALENDAR_RECURRENCE_TIMEZONE, hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
+      }).format(instant)
+      return [{id: appointment.id, canonicalAppointmentId: appointment.canonicalAppointmentId,
+        contactId: contact.id, date, time, timeLabel: time || 'Chưa rõ giờ',
+        typeLabel: parentAppointmentTypeLabels[appointment.appointmentType],
+        title: contact.studentName || contact.leadStudentName || contact.parentName || 'Lịch hẹn',
+        parentName: contact.parentName || '', location: appointment.location || '', note: appointment.note || '',
+        status: appointment.status, statusLabel: parentAppointmentStatusLabels[appointment.status] || '',
+      }]
+    })
+  }).sort((a, b) => `${a.date}|${a.time}`.localeCompare(`${b.date}|${b.time}`))
+}
+
+function renderScheduleAppointmentCard(item) {
+  return `<article class="schedule-session-card is-crm-appointment ${item.status === 'cancelled' || item.status === 'rescheduled' ? 'is-cancelled' : ''}"
+    role="button" tabindex="0" data-schedule-crm-appointment="${escapeAttribute(item.id)}" data-contact-id="${escapeAttribute(item.contactId)}" data-schedule-occurrence-date="${escapeAttribute(item.date)}">
+    <time class="schedule-session-time">${escapeHtml(item.timeLabel)}</time>
+    <h4>${escapeHtml(item.title)}</h4><span class="schedule-plan-kind">${escapeHtml(item.typeLabel)}</span>
+    ${item.status !== 'scheduled' ? `<span class="schedule-plan-kind">${escapeHtml(item.statusLabel)}</span>` : ''}
+  </article>`
+}
+
+function renderScheduleAppointmentDetail(item) {
+  return `<div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-form-panel schedule-plan-detail" role="dialog" aria-modal="true" aria-label="Chi tiết lịch hẹn" data-schedule-appointment-detail>
+      <div class="schedule-form-header"><div><h4>${escapeHtml(item.title)}</h4><span>${escapeHtml(item.typeLabel)}</span></div>
+        <button type="button" data-schedule-plan-action="close" aria-label="Đóng">×</button></div>
+      <div class="schedule-plan-detail-body"><dl class="schedule-calendar-detail-list">
+        <div><dt>Ngày</dt><dd>${escapeHtml(formatDisplayDate(item.date))}</dd></div>
+        <div><dt>Giờ</dt><dd>${escapeHtml(item.timeLabel)}</dd></div>
+        <div><dt>Phụ huynh</dt><dd>${escapeHtml(item.parentName || 'Chưa rõ')}</dd></div>
+        <div><dt>Địa điểm</dt><dd>${escapeHtml(item.location || 'Chưa rõ')}</dd></div>
+        <div><dt>Trạng thái</dt><dd>${escapeHtml(item.statusLabel)}</dd></div>
+        ${item.note ? `<div><dt>Ghi chú</dt><dd>${escapeHtml(item.note)}</dd></div>` : ''}
+      </dl></div><div class="schedule-form-actions"><span></span><div>
+        <button type="button" data-schedule-plan-action="close">Đóng</button>
+        <button class="schedule-save-button" type="button" data-schedule-plan-action="open-contact">Mở Khách hàng</button>
+      </div></div>
+    </section>`
 }
 
 export function createEmptyCenterCalendarItemFormState(date = getCurrentScheduleWeekStartDate()) {
@@ -1676,8 +1698,8 @@ export function buildCenterCalendarItemFromForm(values = {}, existingItem = null
 }
 
 function getCenterCalendarItemsByDate(centerCalendarItems = [], date) {
-  const dayStartAt = `${date}T00:00:00.000Z`
-  const dayEndAt = `${addDays(date, 1)}T00:00:00.000Z`
+  const dayStartAt = `${date}T00:00:00+07:00`
+  const dayEndAt = `${addDays(date, 1)}T00:00:00+07:00`
 
   return getCenterCalendarItemsForRange(centerCalendarItems, dayStartAt, dayEndAt)
 }
@@ -1712,17 +1734,7 @@ function renderCenterCalendarItemCard(item, centerCalendarTags = []) {
   const preset = getCenterCalendarPresetByColorKey(item.colorKey, item.itemType)
   const color = item.customColor || preset.color
   const typeLabel = CENTER_CALENDAR_ITEM_TYPE_LABELS[item.itemType] || CENTER_CALENDAR_ITEM_TYPE_LABELS.other
-  const locationLabel = item.location || item.roomId || ''
   const cancelledLabel = item.isCancelled ? '<span class="schedule-calendar-item-status">Đã hủy</span>' : ''
-  const recurrenceLabel = item.isVirtualOccurrence ? '<span class="schedule-calendar-item-recurring">Lặp hàng tuần</span>' : ''
-  const tagMeta = getCenterCalendarItemTagMeta(item, centerCalendarTags)
-
-  const tagLabel = tagMeta
-    ? `<span class="schedule-calendar-item-tag ${tagMeta.tag.isActive ? '' : 'is-archived'}" title="${escapeAttribute(tagMeta.tag.isActive ? tagMeta.tag.label : `${tagMeta.tag.label} - nhãn đã lưu trữ`)}" style="--schedule-calendar-tag-color: ${escapeAttribute(tagMeta.color)};">${escapeHtml(tagMeta.tag.label)}</span>`
-    : ''
-  const description = item.description
-    ? `<p class="schedule-calendar-item-description">${escapeHtml(item.description)}</p>`
-    : ''
 
   return `
     <article
@@ -1734,16 +1746,12 @@ function renderCenterCalendarItemCard(item, centerCalendarTags = []) {
       style="--schedule-calendar-item-color: ${escapeAttribute(color)};"
       aria-label="${escapeAttribute(`${typeLabel}: ${item.title}`)}"
     >
+      <time class="schedule-session-time">${escapeHtml(formatCenterCalendarItemTime(item))}</time>
+      <h4>${escapeHtml(item.title)}</h4>
       <div class="schedule-calendar-item-header">
         <span class="schedule-calendar-item-type">${escapeHtml(typeLabel)}</span>
         ${cancelledLabel}
-        ${recurrenceLabel}
       </div>
-      <h4>${escapeHtml(item.title)}</h4>
-      <p class="schedule-calendar-item-time">${escapeHtml(formatCenterCalendarItemTime(item))}</p>
-      ${locationLabel ? `<p class="schedule-calendar-item-location">${escapeHtml(locationLabel)}</p>` : ''}
-      ${tagLabel}
-      ${description}
     </article>
   `
 }
@@ -1868,46 +1876,61 @@ export function getA5ScheduleAttendanceCardState(session = {}, records = [], now
   return { kind: 'complete', label: 'Đã điểm danh', marked: marked.length }
 }
 
-function renderSessionCard(session, teacherLookup, studentLookup, conflictMap, teacherActionsReady = false, attendanceRecords = []) {
-  const teacherLabel = getSessionTeacherLabel(session)
-  const studentSummary = getStudentSummary(session.studentIds, studentLookup)
-  const conflicts = conflictMap.get(session.id)
+function renderSessionCard(session) {
   const isEmptySlot = Boolean(session.isEmptyClassSessionSlot)
   const classSessionLabel = String(session.classSessionLabel || '').trim()
   const rawTitle = isEmptySlot
     ? classSessionLabel || 'Chưa gán thông tin'
     : String(session.title || session.groupName || classSessionLabel || 'Chưa gán thông tin')
   const title = repairScheduleDisplayText(rawTitle)
-  const meta = `${teacherLabel.name} · ${session.room || 'Chưa có phòng'}`
-  const attendanceState = getA5ScheduleAttendanceCardState(session, attendanceRecords)
+  const isCancelled = session.a2LifecycleState === 'CANCELLED' || session.status === 'cancelled'
 
   return `
     <article
-      class="schedule-session-card is-${escapeAttribute(session.scheduleType)} ${isEmptySlot ? 'is-empty-slot' : ''} ${conflicts ? 'has-conflict' : ''}"
+      class="schedule-session-card is-${escapeAttribute(session.scheduleType)} ${isEmptySlot ? 'is-empty-slot' : ''} ${isCancelled ? 'is-cancelled' : ''}"
       data-schedule-action="open-edit"
       data-schedule-session-id="${escapeAttribute(session.id)}"
       data-schedule-occurrence-date="${escapeAttribute(session.occurrenceDate ?? '')}"
+      role="button"
       tabindex="0"
     >
       <time class="schedule-session-time">${escapeHtml(formatSessionTime(session))}</time>
       <h4>${escapeHtml(title)}</h4>
-      <p class="schedule-session-meta">
-        ${escapeHtml(meta)}
-      </p>
-      <p class="schedule-session-students">${escapeHtml(studentSummary.countLabel)}</p>
-      ${!isEmptySlot ? `<div class="a5-card-attendance">
-        <span class="is-${escapeAttribute(attendanceState.kind)}">${escapeHtml(attendanceState.label)}</span>
-      </div>` : ''}
-      ${renderScheduleRosterSource(session)}
-      ${teacherActionsReady && (session.classSessionId || !isEmptySlot) ? `<div class="schedule-teacher-actions">
-        ${session.scheduleType === 'recurring' && session.classSessionId
-          ? `<button type="button" data-a3-teacher-action="class" data-class-id="${escapeAttribute(session.classSessionId)}" data-occurrence-date="${escapeAttribute(session.occurrenceDate || '')}">Đổi giáo viên</button>`
-          : ''}
-        ${!isEmptySlot ? `<button type="button" data-a3-teacher-action="occurrence" data-schedule-id="${escapeAttribute(session.id)}" data-occurrence-date="${escapeAttribute(session.occurrenceDate || '')}">Đổi giáo viên buổi này</button>` : ''}
-      </div>` : ''}
-      ${isEmptySlot ? '<span class="schedule-empty-slot-action">+ Thêm thông tin</span>' : ''}
+      <p class="schedule-session-meta">GV: ${escapeHtml(session.teacherName || 'Chưa rõ')}</p>
+      ${isCancelled ? '<span class="schedule-plan-kind">Đã hủy</span>' : isEmptySlot ? '<span class="schedule-plan-kind">Chưa xếp buổi học</span>' : session.occurrenceReason === 'trial' ? '<span class="schedule-plan-kind is-trial">Học thử</span>' : ''}
     </article>
   `
+}
+
+function renderSchedulePlanningDetail(session, studentLookup, conflictMap, options) {
+  const isCancelled = session.a2LifecycleState === 'CANCELLED' || session.status === 'cancelled'
+  const canEdit = options.canEditSchedule
+  const title = repairScheduleDisplayText(session.title || session.classSessionLabel || session.groupName || 'Buổi học')
+  const ids = normalizeIdArray(session.studentIds)
+  return `
+    <div class="schedule-form-backdrop" aria-hidden="true"></div>
+    <section class="schedule-form-panel schedule-plan-detail" role="dialog" aria-modal="true" aria-label="Chi tiết lịch" data-schedule-plan-detail>
+      <div class="schedule-form-header"><div><h4>${escapeHtml(title)}</h4><span>${session.occurrenceReason === 'trial' ? 'Học thử' : session.scheduleType === 'recurring' ? 'Ca học' : 'Buổi học'}</span></div>
+        <button type="button" data-schedule-plan-action="close" aria-label="Đóng">×</button></div>
+      <div class="schedule-plan-detail-body"><dl class="schedule-calendar-detail-list">
+        <div><dt>Ngày</dt><dd>${escapeHtml(formatDisplayDate(session.occurrenceDate))}</dd></div>
+        <div><dt>Giờ</dt><dd>${escapeHtml(formatSessionTime(session))}</dd></div>
+        <div><dt>Giáo viên</dt><dd>${escapeHtml(session.teacherName || 'Chưa rõ')}</dd></div>
+        <div><dt>Phòng</dt><dd>${escapeHtml(session.room || 'Chưa rõ')}</dd></div>
+        ${session.note ? `<div><dt>Ghi chú</dt><dd>${escapeHtml(session.note)}</dd></div>` : ''}
+        ${isCancelled ? '<div><dt>Trạng thái</dt><dd>Đã hủy</dd></div>' : session.isEmptyClassSessionSlot ? '<div><dt>Trạng thái</dt><dd>Chưa xếp buổi học</dd></div>' : ''}
+      </dl>
+      ${ids.length ? `<details class="schedule-plan-roster"><summary>${ids.length} học viên</summary><ul>${ids.map(id => `<li>${escapeHtml(studentLookup.get(id)?.fullName || 'Học viên chưa rõ')}</li>`).join('')}</ul></details>` : ''}
+      ${conflictMap.get(session.id) ? '<p class="schedule-form-warning">Có lịch trùng giờ hoặc phòng. Kiểm tra trước khi chỉnh sửa.</p>' : ''}
+      ${options.teacherActionsReady && !isCancelled ? `<div class="schedule-teacher-actions">
+        ${session.scheduleType === 'recurring' && session.classSessionId ? `<button type="button" data-a3-teacher-action="class" data-class-id="${escapeAttribute(session.classSessionId)}">Đổi giáo viên chính</button>` : ''}
+        ${!session.isEmptyClassSessionSlot ? `<button type="button" data-a3-teacher-action="occurrence" data-schedule-id="${escapeAttribute(session.id)}" data-occurrence-date="${escapeAttribute(session.occurrenceDate)}">Đổi giáo viên buổi này</button>` : ''}
+      </div>` : ''}
+      </div><div class="schedule-form-actions"><span></span><div>
+        <button type="button" data-schedule-plan-action="close">Đóng</button>
+        ${canEdit ? '<button class="schedule-save-button" type="button" data-schedule-plan-action="edit">Chỉnh sửa lịch</button>' : ''}
+      </div></div>
+    </section>`
 }
 
 function renderScheduleRosterSource(session = {}) {
@@ -2236,14 +2259,16 @@ function getScheduleOccurrenceReasonOptions(formState) {
   return options
 }
 
-function renderCenterCalendarItemState(state, centerCalendarTags = []) {
+function renderCenterCalendarItemState(state, centerCalendarTags = [], canWrite = true) {
   if (state.mode === 'occurrenceDetail') {
-    return renderCenterCalendarOccurrenceDetail(state.item, centerCalendarTags)
+    return renderCenterCalendarOccurrenceDetail(state.item, centerCalendarTags, canWrite)
   }
 
   if (state.mode === 'detail') {
-    return renderCenterCalendarItemDetail(state.item, centerCalendarTags)
+    return renderCenterCalendarItemDetail(state.item, centerCalendarTags, canWrite)
   }
+
+  if (!canWrite) return ''
 
   if (state.mode === 'delete') {
     return renderCenterCalendarItemDeleteConfirm(state.item)
@@ -2417,7 +2442,7 @@ function renderCenterCalendarItemForm(formState, centerCalendarTags = []) {
   `
 }
 
-function renderCenterCalendarOccurrenceDetail(item, centerCalendarTags = []) {
+function renderCenterCalendarOccurrenceDetail(item, centerCalendarTags = [], canWrite = true) {
   if (!item) {
     return ''
   }
@@ -2456,17 +2481,17 @@ function renderCenterCalendarOccurrenceDetail(item, centerCalendarTags = []) {
         ${item.isCancelled ? '<div><dt>Trạng thái</dt><dd>Đã hủy</dd></div>' : ''}
       </dl>
       <div class="schedule-form-actions">
-        <button class="schedule-danger-button" type="button" data-center-calendar-action="confirm-series-delete" data-center-calendar-master-id="${escapeAttribute(masterId)}" data-center-calendar-occurrence-date="${escapeAttribute(item.occurrenceDate || '')}">Xóa toàn bộ chuỗi</button>
+        ${canWrite ? `<button class="schedule-danger-button" type="button" data-center-calendar-action="confirm-series-delete" data-center-calendar-master-id="${escapeAttribute(masterId)}" data-center-calendar-occurrence-date="${escapeAttribute(item.occurrenceDate || '')}">Xóa toàn bộ chuỗi</button>` : ''}
         <div>
           <button type="button" data-center-calendar-action="close">Đóng</button>
-          <button class="schedule-save-button" type="button" data-center-calendar-action="edit-series" data-center-calendar-master-id="${escapeAttribute(masterId)}" data-center-calendar-occurrence-date="${escapeAttribute(item.occurrenceDate || '')}">Chỉnh sửa toàn bộ chuỗi</button>
+          ${canWrite ? `<button class="schedule-save-button" type="button" data-center-calendar-action="edit-series" data-center-calendar-master-id="${escapeAttribute(masterId)}" data-center-calendar-occurrence-date="${escapeAttribute(item.occurrenceDate || '')}">Chỉnh sửa toàn bộ chuỗi</button>` : ''}
         </div>
       </div>
     </section>
   `
 }
 
-function renderCenterCalendarItemDetail(item, centerCalendarTags = []) {
+function renderCenterCalendarItemDetail(item, centerCalendarTags = [], canWrite = true) {
   if (!item) {
     return ''
   }
@@ -2501,10 +2526,10 @@ function renderCenterCalendarItemDetail(item, centerCalendarTags = []) {
         ${item.isCancelled ? '<div><dt>Trạng thái</dt><dd>Đã hủy</dd></div>' : ''}
       </dl>
       <div class="schedule-form-actions">
-        <button class="schedule-danger-button" type="button" data-center-calendar-action="confirm-delete" data-center-calendar-item-id="${escapeAttribute(item.id)}">Xóa hoạt động</button>
+        ${canWrite ? `<button class="schedule-danger-button" type="button" data-center-calendar-action="confirm-delete" data-center-calendar-item-id="${escapeAttribute(item.id)}">Xóa hoạt động</button>` : ''}
         <div>
           <button type="button" data-center-calendar-action="close">Đóng</button>
-          <button class="schedule-save-button" type="button" data-center-calendar-action="edit" data-center-calendar-item-id="${escapeAttribute(item.id)}">Chỉnh sửa</button>
+          ${canWrite ? `<button class="schedule-save-button" type="button" data-center-calendar-action="edit" data-center-calendar-item-id="${escapeAttribute(item.id)}">Chỉnh sửa</button>` : ''}
         </div>
       </div>
     </section>

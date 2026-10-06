@@ -100,10 +100,9 @@ const optionalUnavailableHtml = render({ calendarNotesAvailable: false })
 assert(optionalUnavailableHtml.includes('data-schedule-action="open-create"'))
 assert(!optionalUnavailableHtml.includes('data-center-calendar-action="open-create"'))
 assert(!optionalUnavailableHtml.includes('data-center-calendar-tag-action="open-manager"'))
-assert.equal((optionalUnavailableHtml.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 2)
-assert.equal((optionalUnavailableHtml.match(/data-capability-state="unavailable"/g) || []).length, 2)
-assert.equal((optionalUnavailableHtml.match(/disabled aria-disabled="true" tabindex="-1"/g) || []).length, 2)
-assert(optionalUnavailableHtml.includes('Quản lý nhãn <span>Chưa khả dụng</span>'))
+assert.equal((optionalUnavailableHtml.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 1)
+assert.equal((optionalUnavailableHtml.match(/data-capability-state="unavailable"/g) || []).length, 1)
+assert.equal((optionalUnavailableHtml.match(/disabled aria-disabled="true" tabindex="-1"/g) || []).length, 1)
 assert(optionalUnavailableHtml.includes('+ Thêm hoạt động <span>Chưa khả dụng</span>'))
 assert(!optionalUnavailableHtml.includes('data-center-calendar-filter="itemType"'))
 
@@ -166,7 +165,7 @@ const attendanceHtml = render({
 })
 for (const token of ['data-schedule-action="close-report"', 'session-report-guests',
   'session-report-learning', 'session-report-extra-fields', 'session-report-trello']) {
-  assert(attendanceHtml.includes(token), `Missing report capability: ${token}`)
+  assert(!attendanceHtml.includes(token), `Retired Schedule report control returned: ${token}`)
 }
 assert(!/data-admin-attendance|save-attendance|data-session-report-attendance/.test(attendanceHtml))
 
@@ -175,7 +174,7 @@ const attendanceUnavailableHtml = render({
   attendanceAvailable: false,
 })
 assert(!attendanceUnavailableHtml.includes('session-report-guests'))
-assert(attendanceUnavailableHtml.includes('role="status"'))
+assert(attendanceUnavailableHtml.includes('Lịch làm việc tuần'))
 
 assert(mainSource.includes("import './schedule-theme.css'"))
 assert(mainSource.includes("isScheduleWindow ? 'is-schedule-window' : ''"))
@@ -191,9 +190,9 @@ for (const binding of [
   "querySelectorAll('[data-schedule-form-field]')",
 ]) assert(mainSource.includes(binding), `Missing existing runtime binding: ${binding}`)
 
-assert(scheduleSource.includes("const attendanceAvailable = deadlineOptions.attendanceAvailable !== false"))
+assert(scheduleSource.includes("const canEditSchedule = deadlineOptions.canEditSchedule !== false"))
 assert(scheduleSource.includes("const calendarNotesAvailable = deadlineOptions.calendarNotesAvailable !== false"))
-assert(scheduleSource.includes("reportState && attendanceAvailable"))
+assert(!scheduleSource.includes("reportState && attendanceAvailable"))
 
 for (const token of [
   '.desktop-window.is-schedule-window',

@@ -78,20 +78,19 @@ export const modules = [
   },
   {
     id: 'thoi-khoa-bieu',
-    name: 'Thời khóa biểu',
-    shortDescription: 'Xem lịch dạy, lịch làm và lịch trực của cơ sở.',
+    name: 'Lịch làm việc tuần',
+    shortDescription: 'Xem ca học, giáo viên và hoạt động của trung tâm trong tuần.',
     status: 'active',
     plannedFeatures: [
-      'Xem lịch dạy',
-      'Xem lịch làm/lịch trực',
-      'Lọc theo ngày/tuần',
-      'Lọc theo giáo viên/nhân viên',
+      'Xem lịch tuần',
+      'Xem ca học và giáo viên',
+      'Học thử và hoạt động trung tâm',
+      'In lịch tuần',
     ],
     plannedData: [
-      'Lịch theo ngày',
       'Lịch theo tuần',
       'Giáo viên theo ca học',
-      'Nhân viên trực',
+      'Buổi học và hoạt động đã lên lịch',
     ],
   },
   {

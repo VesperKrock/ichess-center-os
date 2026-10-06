@@ -25,10 +25,10 @@ function render(calendarNotesAvailable, calendarNotesSharedTruthState = {}) {
 
 function assertUnavailableControls(html, state, label) {
   assert(html.includes('data-schedule-action="open-create"'), 'Core Add Session must remain available.')
-  assert.equal((html.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 2)
-  assert.equal((html.match(new RegExp(`data-capability-state="${state}"`, 'g')) || []).length, 2)
-  assert.equal((html.match(/disabled aria-disabled="true" tabindex="-1"/g) || []).length, 2)
-  assert.equal((html.match(new RegExp(`<span>${label}<\\/span>`, 'g')) || []).length, 2)
+  assert.equal((html.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 1)
+  assert.equal((html.match(new RegExp(`data-capability-state="${state}"`, 'g')) || []).length, 1)
+  assert.equal((html.match(/disabled aria-disabled="true" tabindex="-1"/g) || []).length, 1)
+  assert.equal((html.match(new RegExp(`<span>${label}<\\/span>`, 'g')) || []).length, 1)
   assert(!html.includes('data-center-calendar-action="open-create"'))
   assert(!html.includes('data-center-calendar-tag-action="open-manager"'))
   assert(!html.includes('data-center-calendar-filter="itemType"'))
@@ -85,7 +85,8 @@ assert(eventBoundary.includes("querySelector('[data-center-calendar-action=\"ope
 assert(eventBoundary.includes("querySelector('[data-center-calendar-tag-action=\"open-manager\"]')"))
 assert(eventBoundary.includes("querySelectorAll('[data-center-calendar-tag-action]')"))
 assert(eventBoundary.includes("querySelectorAll('[data-center-calendar-action]')"))
-assert((eventBoundary.match(/if \(!canUseScheduleCalendarNotes\(\)\) return/g) || []).length >= 8)
+assert(eventBoundary.includes('const canEditScheduleCalendarNotes = () => canUseScheduleCalendarNotes()'))
+assert((eventBoundary.match(/if \(!canUseScheduleCalendarNotes\(\)\) return/g) || []).length >= 6)
 assert(eventBoundary.includes("outcome_code: 'SHARED_TRUTH_NOT_CURRENT'"))
 
 assert(scheduleCss.includes('.schedule-header-actions > button.is-capability-unavailable:disabled'))
