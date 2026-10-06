@@ -1,6 +1,10 @@
 import { ATTENDANCE_LEDGER_STATES, buildCanonicalAttendanceLedger, getAttendanceLedgerMonthRange } from './attendance-ledger.js'
 import { attendanceDraftCellKey, attendanceDraftCount, attendanceCellDraftValue, canEditAttendanceCell } from './attendance-board-editor.js'
 import { currentClassMainTeacher } from './cloud-makeup-bookings.js'
+import { bindAttendanceBoardToolbar } from './attendance-board-toolbar.js'
+
+let toolbarRenderId = 0
+const monthNames = ['Một', 'Hai', 'Ba', 'Tư', 'Năm', 'Sáu', 'Bảy', 'Tám', 'Chín', 'Mười', 'Mười Một', 'Mười Hai']
 
 const html = value => String(value ?? '').replace(/[&<>"']/g, char =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])
@@ -45,34 +49,46 @@ export function renderCanonicalAttendanceLedgerModule({ students = [], classSess
     ? 'Đang tải các buổi học…' : 'Chưa tải được dữ liệu điểm danh. Vui lòng bấm Làm mới.' : '')
   const dirtyCount = attendanceDraftCount(draft)
   const month = selected.fromDate.slice(0, 7)
-  const monthRange = getAttendanceLedgerMonthRange(month)
-  const periodLabel = selected.fromDate === monthRange.fromDate && selected.toDate === monthRange.toDate
-    ? `Tháng ${month.slice(5)}/${month.slice(0, 4)}` : `${dateLabel(selected.fromDate)} – ${dateLabel(selected.toDate)}`
+  const monthLabel = `Tháng ${monthNames[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`
   const selectedClass = classOptions.find(([id]) => id === selected.classSessionId)?.[1] || 'Tất cả ca học'
   const mainTeacher = currentClassMainTeacher(context.assignments, selected.classSessionId, availability.now)
   const times = [...new Set(model.columns.map(item => timeLabel(item)))]
   const writeReady = ready && availability.canWrite === true
-  return `<section class="attendance-board-module attendance-ledger" aria-label="Bảng điểm danh" data-attendance-overdue-unmarked-count="${model.overdueUnmarkedCount}">
+  const renderId = ++toolbarRenderId
+  const access = { canWrite: writeReady, saving: draft?.saving, uncertain: draft?.uncertain, now: availability.now }
+  // Attendance-only enhancement: keep the already-verified shared N5 runtime
+  // byte-identical. Bind after the app installs this exact rendered section.
+  if (typeof document !== 'undefined') queueMicrotask(() => bindAttendanceBoardToolbar(
+    document.querySelector(`[data-attendance-toolbar-render="${renderId}"]`), {
+      draft, model, exportReady,
+      exportContext: { centerName: availability.centerName, classLabel: selectedClass, mainTeacher,
+        teacherLabel: model.teacherOptions.find(item => item.id === selected.teacherId)?.name
+          || (selected.teacherId === 'all' ? 'Tất cả giáo viên' : 'Giáo viên đã chọn') },
+      renderCanonicalMatrix: () => renderMatrix(model, null, access),
+    }))
+  return `<section class="attendance-board-module attendance-ledger" aria-label="Bảng điểm danh" data-attendance-toolbar-render="${renderId}" data-attendance-overdue-unmarked-count="${model.overdueUnmarkedCount}">
     <header class="attendance-board-heading">
-      <div class="attendance-board-heading-intro"><span>BẢNG ĐIỂM DANH</span>
-        <div class="attendance-board-heading-copy"><h3>Bảng điểm danh</h3><p>${html(availability.centerName || '')} · ${html(periodLabel)}</p></div>
-      </div><div class="attendance-ledger-actions">
-        <span class="attendance-ledger-save-message ${draft?.error ? 'is-error' : ''}" role="status" aria-live="polite">${html(draft?.error || draft?.message || (dirtyCount ? `${dirtyCount} thay đổi` : ''))}</span>
-        ${availability.canWrite === true ? `<button type="button" class="attendance-ledger-save" data-attendance-save ${writeReady && dirtyCount && !draft?.saving ? '' : 'disabled'} ${draft?.saving ? 'aria-busy="true"' : ''}>${draft?.saving ? 'Đang lưu…' : 'Lưu điểm danh'}</button>` : '<span class="attendance-ledger-readonly">Chỉ xem</span>'}
-        <button type="button" data-attendance-export-pdf ${exportReady ? '' : 'disabled'}>In / Xuất PDF</button></div>
+      <div class="attendance-board-heading-copy"><h3>Bảng điểm danh</h3></div>
+      <p class="attendance-ledger-context"><span data-attendance-main-teacher>Giáo viên chính: ${html(mainTeacher)}</span>${times.length === 1 ? ` · ${html(times[0])}` : ''}</p>
     </header>
     <div class="attendance-board-toolbar" aria-label="Bộ lọc bảng điểm danh">
-      <div class="attendance-ledger-month-nav" aria-label="Chọn tháng điểm danh"><button type="button" data-attendance-month-step="-1">‹ Tháng trước</button>
-        <label><span>${html(`Tháng ${Number(month.slice(5))}/${month.slice(0,4)}`)}</span><input type="month" data-attendance-board-filter="month" value="${html(month)}" aria-label="Chọn tháng"></label>
-        <button type="button" data-attendance-month-step="1">Tháng sau ›</button></div>
-      <label><span>Ca học</span><select data-attendance-board-filter="classSessionId"><option value="all">Tất cả ca học</option>${options(classOptions, selected.classSessionId, 'Ca đã chọn')}</select></label>
-      <label><span>Giáo viên</span><select data-attendance-board-filter="teacherId"><option value="all">Tất cả giáo viên</option>${options(model.teacherOptions.map(item => [item.id, item.name]), selected.teacherId, 'Giáo viên đã chọn')}</select></label>
-      <label><span>Tìm học viên</span><input type="search" data-attendance-board-filter="query" value="${html(selected.query)}" placeholder="Tên, mã học viên, phụ huynh"></label>
+      <button type="button" data-attendance-month-step="-1">‹ Tháng trước</button>
+      <label class="attendance-ledger-month-control"><span>${html(monthLabel)}</span><input type="month" data-attendance-board-filter="month" value="${html(month)}" aria-label="${html(`Chọn tháng · ${monthLabel}`)}"></label>
+      <button type="button" data-attendance-month-step="1">Tháng sau ›</button>
+      <select data-attendance-board-filter="classSessionId" aria-label="Ca học"><option value="all">Tất cả ca học</option>${options(classOptions, selected.classSessionId, 'Ca đã chọn')}</select>
+      <select data-attendance-board-filter="teacherId" aria-label="Giáo viên"><option value="all">Tất cả giáo viên</option>${options(model.teacherOptions.map(item => [item.id, item.name]), selected.teacherId, 'Giáo viên đã chọn')}</select>
+      <label class="attendance-ledger-search"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input type="search" data-attendance-board-filter="query" value="${html(selected.query)}" placeholder="Tên, mã học viên, phụ huynh..." aria-label="Tìm tên, mã học viên, phụ huynh"></label>
+      ${availability.canWrite === true ? `<button type="button" class="attendance-ledger-save" data-attendance-save ${writeReady && dirtyCount && !draft?.saving ? '' : 'disabled'} ${draft?.saving ? 'aria-busy="true"' : ''}>${draft?.saving ? 'Đang lưu…' : 'Lưu điểm danh'}</button>
+      <button type="button" data-attendance-discard ${dirtyCount && !draft?.saving && !draft?.uncertain && !draft?.bookingAttempt ? '' : 'disabled'}>Hủy thay đổi</button>` : '<span class="attendance-ledger-readonly">Chỉ xem</span>'}
     </div>
-    <p class="attendance-ledger-context">${html(selectedClass)} · <span data-attendance-main-teacher>Giáo viên chính: ${html(mainTeacher)}</span>${times.length === 1 ? ` · ${html(times[0])}` : ''}</p>
+    <div class="attendance-ledger-meta">
     <div class="attendance-ledger-legend" aria-label="Chú giải điểm danh">${Object.entries(ATTENDANCE_LEDGER_STATES).filter(([state]) => ['present', 'absent', 'makeup', 'unmarked'].includes(state) || ['cancelled', 'historicalTrial'].includes(state) && model.rows.some(row => row.cells.some(cell => cell.state === state)))
       .map(([state, item]) => `<span><b class="attendance-ledger-mark is-${state}">${html(item.mark)}</b>${html(item.label)}</span>`).join('')}
-      <span>${model.rows.length} học viên · ${model.columns.length} buổi</span>
+    </div>
+    <span class="attendance-ledger-save-message ${draft?.error ? 'is-error' : ''}" role="status" aria-live="polite">${html(draft?.error || draft?.message || (dirtyCount ? `${dirtyCount} thay đổi` : ''))}</span>
+    <div class="attendance-ledger-export-count"><details class="attendance-ledger-export" data-attendance-export-menu><summary aria-label="In hoặc xuất bảng điểm danh" ${exportReady ? '' : 'aria-disabled="true"'}>In / Xuất <span aria-hidden="true">▾</span></summary>
+      <div class="attendance-ledger-export-options"><button type="button" data-attendance-export-pdf ${exportReady ? '' : 'disabled'}>In / Xuất PDF</button><button type="button" data-attendance-export-xlsx ${exportReady ? '' : 'disabled'}>Xuất Excel (.xlsx)</button></div></details>
+      <span>${model.rows.length} học viên · ${model.columns.length} buổi</span></div>
     </div>
     ${message ? `<p class="attendance-board-empty" role="status">${html(message)}</p>`
       : !model.columns.length ? '<p class="attendance-board-empty">Không có buổi học trong khoảng thời gian này.</p>'

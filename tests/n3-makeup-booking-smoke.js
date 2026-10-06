@@ -50,7 +50,7 @@ const opts={students:input.students,classSessions:input.classSessions,filters:{m
     makeupBookings:[booking],assignments:[{class_session_local_id:'class-b',effective_from:'2026-01-01',teacher_name:'Cô Chính'}]},
     attendanceRecords:input.attendanceRecords,now:input.now}}
 const html=renderCanonicalAttendanceLedgerModule({...opts,filters:{...opts.filters,classSessionId:'class-b'}})
-assert.match(html,/Tháng trước/);assert.match(html,/Tháng sau/);assert.match(html,/Tháng 9\/2026/)
+assert.match(html,/Tháng trước/);assert.match(html,/Tháng sau/);assert.match(html,/Tháng Chín 2026/)
 assert.doesNotMatch(html,/Từ ngày|Đến ngày|Khoảng ngày/)
 assert.match(html,/Giáo viên chính: Cô Chính/);assert.match(html,/attendance-ledger-makeup-context">Bù/)
 const detail=renderCanonicalAttendanceLedgerModule({...opts,detailState:{studentId:'student-b',scheduleSessionId:'second',dateKey:dest.occurrence_date}})

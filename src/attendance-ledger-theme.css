@@ -213,3 +213,92 @@
 .desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-progress small { font-size: 14px; line-height: 19px; }
 .attendance-ledger-sheet.is-dense-month .attendance-ledger-column strong { font-size: 13px; }
 .attendance-ledger-sheet.is-dense-month .attendance-ledger-column small { font-size: 11px; }
+
+/* Attendance chrome: one desktop operation row, one boundary per control. */
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-heading {
+  min-height: 34px; padding: 0; gap: 16px; justify-content: space-between;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-heading-copy h3 { margin: 0; font-size: 22px; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar {
+  grid-template-columns: auto 160px auto minmax(135px, .9fr) minmax(145px, .9fr) minmax(220px, 1.5fr) auto auto;
+  align-items: center; height: auto; min-height: 38px; flex: 0 0 auto;
+  gap: 8px; border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > button,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > select,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar input,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-month-control {
+  box-sizing: border-box; min-width: 0; width: 100%; height: 38px; min-height: 38px;
+  margin: 0; padding: 0 10px; border: 1px solid var(--attendance-line); border-radius: 7px;
+  color: var(--attendance-text); background: var(--attendance-panel); box-shadow: none;
+  font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > button { cursor: pointer; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > button:hover:not(:disabled),
+.attendance-ledger-export summary:hover:not([aria-disabled=true]) { background: var(--attendance-panel-soft); }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar .attendance-ledger-save {
+  color: #fff; background: var(--attendance-accent); border-color: var(--attendance-accent);
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar .attendance-ledger-save:hover:not(:disabled) { filter: brightness(.93); }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > button:disabled { opacity: .48; cursor: default; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > button:focus-visible,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > select:focus-visible,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar input:focus-visible,
+.attendance-ledger-export summary:focus-visible,
+.attendance-ledger-export-options button:focus-visible {
+  outline: 2px solid var(--attendance-accent); outline-offset: 2px;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar .attendance-ledger-month-control {
+  position: relative; display: flex; align-items: center; justify-content: center; gap: 0;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-month-control > span {
+  height: auto; font: inherit; line-height: normal; color: var(--attendance-text);
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-month-control input {
+  position: absolute; inset: 0; opacity: 0; border: 0; padding: 0; cursor: pointer;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-month-control:focus-within {
+  outline: 2px solid var(--attendance-accent); outline-offset: 2px;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar .attendance-ledger-search {
+  position: relative; display: block; min-width: 0; grid-column: auto;
+  margin: 0; border: 0; padding: 0; background: transparent; box-shadow: none;
+}
+.attendance-ledger-search svg { position: absolute; left: 10px; top: 11px; stroke: var(--attendance-muted); stroke-width: 1.8; fill: none; pointer-events: none; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-search input { padding-left: 32px; font-weight: 400; }
+.attendance-ledger-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
+.attendance-ledger-meta .attendance-ledger-legend > span:last-child { margin-left: 0; color: var(--attendance-secondary); }
+.attendance-ledger-meta .attendance-ledger-save-message { flex: 1 1 auto; min-width: 0; max-width: none; }
+.attendance-ledger-export-count { display: flex; align-items: center; gap: 12px; margin-left: auto; color: var(--attendance-muted); font-size: 13px; white-space: nowrap; }
+.attendance-ledger-export { position: relative; }
+.attendance-ledger-export summary {
+  display: flex; align-items: center; gap: 8px; list-style: none; cursor: pointer;
+  border: 1px solid var(--attendance-line); border-radius: 6px; padding: 5px 10px;
+  color: var(--attendance-secondary); background: var(--attendance-panel); font-size: 13px;
+}
+.attendance-ledger-export summary::-webkit-details-marker { display: none; }
+.attendance-ledger-export summary[aria-disabled=true] { opacity: .5; cursor: default; }
+.attendance-ledger-export-options {
+  position: absolute; right: 0; top: calc(100% + 5px); z-index: 30; display: grid; min-width: 190px;
+  padding: 5px; border: 1px solid var(--attendance-line); border-radius: 8px;
+  background: var(--attendance-panel); box-shadow: var(--attendance-shadow);
+}
+.attendance-ledger-export-options button {
+  display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 4px;
+  color: var(--attendance-text); background: transparent; font: inherit; font-size: 14px;
+  text-align: left; white-space: nowrap; cursor: pointer;
+}
+.attendance-ledger-export-options button:hover:not(:disabled) { background: var(--attendance-panel-soft); }
+.attendance-ledger-export-options button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 1200px) {
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar {
+    grid-template-columns: auto 160px auto minmax(140px, 1fr) minmax(145px, 1fr);
+  }
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar .attendance-ledger-search { grid-column: 1 / 4; }
+}
+@media (max-width: 760px) {
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar { grid-template-columns: auto minmax(140px, 1fr) auto; }
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar > select { grid-column: span 1; }
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar .attendance-ledger-search { grid-column: 1 / -1; }
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-heading { align-items: start; flex-wrap: wrap; gap: 5px; }
+}
