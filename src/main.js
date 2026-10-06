@@ -385,7 +385,7 @@ import {
 } from './cloud-tuition-record-package-bridge.js'
 import {
   prepareAuthoritativeCoreFormCommand,
-  runAuthoritativeCoreSave,
+  runAuthoritativeCoreSave as runAuthoritativeCoreSaveCommand,
 } from './core-save-recovery.js'
 import './finance-theme.css'
 import {
@@ -891,6 +891,7 @@ let nextWindowNumber = 1
 let topZIndex = 20
 const moduleRefreshRunIds = new Map()
 const authoritativeRefreshInFlight = new Map()
+const authoritativeCoreSavesInFlight = new Set()
 let notificationRefreshRunId = 0
 const moduleRefreshStates = new Map()
 let notificationRefreshState = createModuleRefreshState()
@@ -2685,6 +2686,10 @@ function getCenterBoundDrafts() {
     `${tuitionOperatorState.panel?.kind}:${tuitionOperatorState.panel?.studentId}:${tuitionOperatorState.panel?.cycleId || ''}`)
   add('schedule', 'Thời khóa biểu', scheduleFormState, scheduleFormState?.values,
     `${scheduleFormState?.mode}:${scheduleFormState?.sessionId || ''}`)
+  add('schedule-teacher', 'Lịch làm việc tuần', a3TeacherDialogState, {
+    teacherId: a3TeacherDialogState?.teacherId,
+    effectiveFrom: a3TeacherDialogState?.effectiveFrom,
+  }, `${a3TeacherDialogState?.kind}:${a3TeacherDialogState?.classId}:${a3TeacherDialogState?.scheduleId}:${a3TeacherDialogState?.occurrenceDate}`)
   add('calendar-item', 'Thời khóa biểu', scheduleCalendarItemState,
     scheduleCalendarItemState?.values, scheduleCalendarItemState?.id)
   add('calendar-tag', 'Thời khóa biểu', scheduleCalendarTagState,
@@ -2758,19 +2763,25 @@ function getCenterWritesInFlight() {
   const writes = []
   const check = (condition, label) => { if (condition) writes.push(label) }
   check(attendanceBoardDraft.saving || attendanceBoardDraft.bookingAttempt, 'Bảng điểm danh')
-  check(f4bConversionState?.isSaving || c53CrmSharedTruthState.isSaving, 'Khách hàng')
-  check(studentFormState?.isSaving || teacherFormState?.isSaving, 'Học viên / giáo viên')
+  check(f4bConversionState?.isSaving || c53CrmSharedTruthState.isSaving
+    || parentLinkReviewState?.isSaving || parentIdentityEditState?.isSaving, 'Khách hàng')
+  check(studentFormState?.isSaving || teacherFormState?.isSaving
+    || v22StudentEnrollmentCapabilityState.isSaving || v26TeacherRegistryCapabilityState.isSaving, 'Học viên / giáo viên')
   check(tuitionOperatorState.panel?.busy || c54FinanceSharedTruthState.isSaving
-    || v24PackageCycleCapabilityState.isSaving || f5bReceiptCapabilityState.isSaving, 'Học phí / Thu chi')
+    || cashflowFormState?.isSaving || v24PackageCycleCapabilityState.isSaving
+    || f5bReceiptCapabilityState.isSaving, 'Học phí / Thu chi')
   check(scheduleFormState?.isSaving
-    || c57CalendarNotesSharedTruthState.isSaving, 'Thời khóa biểu / nhận xét')
+    || a3TeacherDialogState?.isSaving || c57CalendarNotesSharedTruthState.isSaving, 'Lịch làm việc tuần / nhận xét')
   check(c56InventorySharedTruthState.isSaving || v27aInventoryCycleCountCapabilityState.isSaving, 'Kho hàng')
   check(v21CenterSettingsCapabilityState.isSaving, 'Cài đặt cơ sở')
   check(isStaffSaving || isStaffDepartmentSaving || isStaffAdministrativeProfileSaving
+    || isStaffAccountLinkSaving || isStaffLifecycleSaving || isTeacherStaffLinkSaving
     || savingStaffDocumentWindowIds.size > 0 || uploadingStaffDocumentWindowIds.size > 0
     || savingStaffAdministrativeGovernanceWindowIds.size > 0, 'Nhân sự')
   check(reviewCompletionState?.saving, 'Cập nhật nhận xét')
   check(Boolean(cloudUploadingTransactionId), 'Tệp giao dịch')
+  check(Boolean(reportChecklistController?.getState().savingKey), 'Checklist')
+  for (const pending of authoritativeCoreSavesInFlight) writes.push(pending.entityLabel)
   return writes
 }
 
@@ -16611,6 +16622,16 @@ function applyAuthoritativeCoreSaveUiResult(result) {
     window.alert(result.userMessage)
   }
   render()
+}
+
+async function runAuthoritativeCoreSave(options) {
+  const pending = { entityLabel: options.entityLabel }
+  authoritativeCoreSavesInFlight.add(pending)
+  try {
+    return await runAuthoritativeCoreSaveCommand(options)
+  } finally {
+    authoritativeCoreSavesInFlight.delete(pending)
+  }
 }
 
 async function commitAuthoritativeStudentCoreProjection(student, reason, idempotencyKey) {
