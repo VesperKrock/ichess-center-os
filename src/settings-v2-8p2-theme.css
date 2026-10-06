@@ -1271,3 +1271,25 @@
   .desktop-window.is-settings-window .settings-info-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .desktop-window.is-settings-window .settings-sample-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.desktop-window.is-settings-window .settings-class-session-table .settings-ca-action-cell {
+  width: 210px;
+  white-space: normal;
+}
+
+.desktop-window.is-settings-window .settings-class-session-delete-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--settings-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.desktop-window.is-settings-window .settings-class-session-form .settings-ca-teacher-hint {
+  color: var(--settings-muted);
+}
+
+.desktop-window.is-settings-window .settings-class-session-form-error {
+  color: var(--settings-danger, #e88989);
+}

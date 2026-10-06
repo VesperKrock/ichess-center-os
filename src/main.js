@@ -1456,7 +1456,19 @@ function getCurrentClassSessionDeletePolicyMap() {
     Object.entries(classSessionDeletePolicyOverrides)
       .filter(([classSessionId]) => activeIds.has(classSessionId)),
   )
-  return { ...projectedPolicies, ...authoritativeOverrides }
+  const policies = { ...projectedPolicies, ...authoritativeOverrides }
+  if (a3TeacherContext.status === 'ready'
+      && a3TeacherContext.centerId === getCurrentCanonicalCenterContext().centerId) {
+    for (const assignment of a3TeacherContext.assignments || []) {
+      const id = assignment.class_session_local_id
+      if (activeIds.has(id)) policies[id] = {
+        ...policies[id], ok: true, canDelete: false, referenced: true,
+        reason: 'CLASS_SESSION_REFERENCED',
+        message: 'Ca học đã có lịch sử giáo viên. Hãy dùng “Ngưng dùng” để giữ lịch sử.',
+      }
+    }
+  }
+  return policies
 }
 
 function getVisibleScheduleSessionsWithCurrentEnrollmentRosters(
@@ -12941,7 +12953,7 @@ function renderWindowBody(windowItem) {
     return renderSettingsModule(
       classSessions.map((item) => ({
         ...item,
-        instructorName: resolveA3TeacherForDate(teacherAssignments, item.id, today)?.teacher_name || '',
+        currentTeacherName: resolveA3TeacherForDate(teacherAssignments, item.id, today)?.teacher_name || '',
       })),
       getStudentsWithCanonicalProjections(),
       settingsFilters,
@@ -12952,6 +12964,7 @@ function renderWindowBody(windowItem) {
         auditAccess,
         auditBody: auditState ? renderOwnerAttendanceAudit(auditState, getOwnerAttendanceAuditProjection(auditState), auditAccess) : '',
         classSessionDeletePolicies: getCurrentClassSessionDeletePolicyMap(),
+        teacherOptions: getEligibleSettingsCaTeachers(),
         tuitionPackages: v21TuitionPackages,
         centerProfileFormState: settingsCenterProfileFormState,
         tuitionPackageFormState: settingsTuitionPackageFormState,
@@ -16710,6 +16723,84 @@ async function commitStudentProjection(student, reason, idempotencyKey) {
   }
 }
 
+function getEligibleSettingsCaTeachers() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!isV26TeacherRegistryCapabilityReady(v26TeacherRegistryCapabilityState, centerId)) return []
+  return (v26TeacherRegistryCapabilityState.assignedTeachers || []).filter(teacher => (
+    teacher.status === 'active' && teacher.assignment?.status === 'assigned'
+    && teacher.assignment.centerId === centerId
+  ))
+}
+
+async function saveSettingsClassSessionForm() {
+  if (!settingsClassSessionFormState || settingsClassSessionFormState.isSaving) return
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const form = settingsClassSessionFormState
+  const errors = validateSettingsClassSessionForm(form.values)
+  const teacherId = form.mode === 'create' ? String(form.values.teacherId || '') : ''
+  if (teacherId && !getEligibleSettingsCaTeachers().some(teacher => teacher.id === teacherId)) {
+    errors.teacherId = 'Giáo viên chưa sẵn sàng tại cơ sở này. Có thể để trống và phân công sau.'
+  }
+  const existingClassSession = form.classSessionId
+    ? classSessions.find(item => item.id === form.classSessionId) : null
+  if (form.mode === 'edit' && !existingClassSession) errors.form = 'Ca học không còn tồn tại. Hãy tải lại.'
+  if (Object.keys(errors).length) {
+    settingsClassSessionFormState = { ...form, errors }
+    render()
+    return
+  }
+  const command = prepareAuthoritativeCoreFormCommand({
+    formState: form, formValues: form.values, localIdPrefix: 'class',
+    createIdempotencyKey: createCoreCommandIdempotencyKey,
+  })
+  const savingForm = { ...command.formState, isSaving: true, errors: {} }
+  settingsClassSessionFormState = savingForm
+  const pending = { entityLabel: 'Ca học / Giáo viên' }
+  authoritativeCoreSavesInFlight.add(pending)
+  let committed = false
+  try {
+    render()
+    const built = buildSettingsClassSessionFromForm(savingForm.values, existingClassSession, classSessions)
+    const entity = existingClassSession ? built
+      : { ...built, id: command.commandLocalId, createdAt: command.commandCreatedAt }
+    const result = await commitClassSessionProjection(entity, 'class-session-save', command.commandIdempotencyKey)
+    committed = result.committed === true
+    if (getCurrentCanonicalCenterContext().centerId !== centerId) return
+    if (!result.ok) {
+      if (settingsClassSessionFormState === savingForm) settingsClassSessionFormState = {
+        ...savingForm, isSaving: false, errors: { form: result.error || 'Ca học chưa được lưu.' },
+      }
+      return
+    }
+    if (teacherId) {
+      const effectiveFrom = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
+      let assigned
+      try {
+        assigned = await changeA3ClassTeacher({ supabase: getSupabaseClient(), centerId,
+          classId: result.entity.id, teacherId, effectiveFrom, idempotencyKey: command.commandIdempotencyKey })
+      } catch { assigned = { ok: false } }
+      // Read back even after an uncertain network result. The Ca is already
+      // committed; never leave a create form that can create it again.
+      const refreshed = await refreshA3TeacherContext()
+      if (getCurrentCanonicalCenterContext().centerId !== centerId) return
+      const fact = refreshed?.ok
+        ? resolveA3TeacherForDate(refreshed.assignments, result.entity.id, effectiveFrom) : null
+      if (fact?.teacher_id !== teacherId) window.alert(assigned?.ok
+        ? 'Ca đã được tạo và gán giáo viên nhưng chưa tải lại được thông tin. Không cần tạo Ca lại.'
+        : 'Ca đã được tạo nhưng chưa gán được giáo viên. Có thể phân công sau tại Thời khóa biểu.')
+    }
+    if (settingsClassSessionFormState === savingForm) settingsClassSessionFormState = null
+  } catch {
+    if (settingsClassSessionFormState === savingForm) settingsClassSessionFormState = committed ? null : {
+      ...savingForm, isSaving: false, errors: { form: 'Ca học chưa được lưu. Hãy thử lại.' },
+    }
+    if (committed) window.alert('Ca đã được tạo nhưng chưa gán được giáo viên. Không cần tạo Ca lại; hãy tải lại và phân công tại Thời khóa biểu.')
+  } finally {
+    authoritativeCoreSavesInFlight.delete(pending)
+    render()
+  }
+}
+
 async function writeClassSessionThroughCloud(
   classSession,
   reason = 'class-session-save',
@@ -16784,7 +16875,7 @@ async function commitClassSessionDeletion(classSession, idempotencyKey) {
     ),
   })
   const uiResult = result.committed && result.refreshOk
-    ? { ...result, userMessage: 'Đã xóa vĩnh viễn ca học và xác nhận lại dữ liệu trung tâm.' }
+    ? { ...result, userMessage: 'Đã xóa ca học và xác nhận lại dữ liệu trung tâm.' }
     : result
   applyAuthoritativeCoreSaveUiResult(uiResult)
   return uiResult
@@ -26801,6 +26892,7 @@ function bindEvents() {
   document.querySelector('[data-settings-class-session-action="open-create"]')?.addEventListener(
     'click',
     () => {
+      if (settingsClassSessionFormState?.isSaving) return
       settingsActiveTab = 'class-sessions'
       settingsClassSessionFormState = createEmptySettingsClassSessionFormState()
       render()
@@ -26809,6 +26901,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-settings-class-session-action="open-edit"]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (settingsClassSessionFormState?.isSaving) return
       const classSession = classSessions.find(
         (item) => item.id === button.dataset.classSessionId,
       )
@@ -26887,7 +26980,7 @@ function bindEvents() {
 
       const label = preflight.classSession.displayLabel || preflight.classSession.name || classSessionId
       const confirmed = window.confirm(
-        `Xóa vĩnh viễn ca học “${label}”? Thao tác này không thể hoàn tác.`,
+        `Xóa Ca “${label}”? Chỉ nên xóa Ca chưa được sử dụng. Ca đã có học viên hoặc lịch sử sẽ được bảo vệ.`,
       )
       if (!confirmed) {
         render()
@@ -26918,6 +27011,7 @@ function bindEvents() {
 
   document.querySelectorAll('[data-settings-class-session-action="cancel-form"]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (settingsClassSessionFormState?.isSaving) return
       settingsClassSessionFormState = null
       render()
     })
@@ -26952,7 +27046,7 @@ function bindEvents() {
     const eventName = control.matches('select') ? 'change' : 'input'
 
     control.addEventListener(eventName, () => {
-      if (!settingsClassSessionFormState) {
+      if (!settingsClassSessionFormState || settingsClassSessionFormState.isSaving) {
         return
       }
 
@@ -26980,7 +27074,7 @@ function bindEvents() {
 
     checkbox.addEventListener('change', (event) => {
       event.stopPropagation()
-      if (!settingsClassSessionFormState) {
+      if (!settingsClassSessionFormState || settingsClassSessionFormState.isSaving) {
         return
       }
 
@@ -27018,65 +27112,7 @@ function bindEvents() {
 
   document.querySelector('[data-settings-class-session-action="save-form"]')?.addEventListener(
     'click',
-    async () => {
-      if (!settingsClassSessionFormState) {
-        return
-      }
-
-      const errors = validateSettingsClassSessionForm(settingsClassSessionFormState.values)
-
-      if (Object.keys(errors).length) {
-        settingsClassSessionFormState = {
-          ...settingsClassSessionFormState,
-          errors,
-        }
-        render()
-        return
-      }
-
-      const existingClassSession = settingsClassSessionFormState.classSessionId
-        ? classSessions.find(
-            (item) => item.id === settingsClassSessionFormState.classSessionId,
-          )
-        : null
-      const command = prepareAuthoritativeCoreFormCommand({
-        formState: settingsClassSessionFormState,
-        formValues: settingsClassSessionFormState.values,
-        localIdPrefix: 'class',
-        createIdempotencyKey: createCoreCommandIdempotencyKey,
-      })
-      const { commandIdempotencyKey, commandLocalId, commandCreatedAt } = command
-      settingsClassSessionFormState = command.formState
-      const builtClassSession = buildSettingsClassSessionFromForm(
-        settingsClassSessionFormState.values,
-        existingClassSession,
-        classSessions,
-      )
-      const nextClassSession = existingClassSession
-        ? builtClassSession
-        : { ...builtClassSession, id: commandLocalId, createdAt: commandCreatedAt }
-
-      const result = await commitClassSessionProjection(
-        nextClassSession,
-        'class-session-save',
-        commandIdempotencyKey,
-      )
-
-      if (!result.ok) {
-        settingsClassSessionFormState = {
-          ...settingsClassSessionFormState,
-          errors: {
-            ...settingsClassSessionFormState.errors,
-            form: result.error || 'Ca học chưa được lưu.',
-          },
-        }
-        render()
-        return
-      }
-
-      settingsClassSessionFormState = null
-      render()
-    },
+    saveSettingsClassSessionForm,
   )
 
   document.querySelectorAll('[data-parent-consultation-filter]').forEach((control) => {

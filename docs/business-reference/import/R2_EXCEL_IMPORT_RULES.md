@@ -336,19 +336,15 @@ For example:
 
 → 18:30–20:00
 
-But CodeX must not guess AM/PM.
+**iChess dùng 24-hour clock. Không hỏi AM/PM.**
 
-Example:
+`6:30`, `06:30`, `6h30`, `06h30`, `6g30`, `06g30` đều normalize thành `06:30`.
 
-T3 6:30
+`18:30`, `18h30`, `18g30` đều normalize thành `18:30`. `10h` → `10:00`; `10h30`, `10g30`, `10:30` → `10:30`.
 
-may mean morning or evening.
+`T3 6:30` có nghĩa thứ Ba lúc **06:30**, không ambiguity buổi sáng/tối và không được đổi thành 18:30. Không dùng Ca buổi tối trên server để reinterpret giờ nguồn.
 
-If target cannot be resolved uniquely:
-
-QUESTION
-
-Do not silently convert to 18:30.
+Chỉ QUESTION khi time không parse được an toàn: `25:00`, `18:75`, “chiều T3” không có clock time hoặc schedule text mâu thuẫn về cấu trúc. Matching có nhiều Ca vẫn QUESTION để resolve Ca; không tạo AM/PM semantics.
 
 ---
 
@@ -503,7 +499,7 @@ Teacher may be blank.
 
 Do not create fake teacher.
 
-**Teacher là optional. Blank teacher không block Ca hoặc Student import**, không HOLD hai domain đó và không clear A3 assignment đã có. Nếu Teacher được cung cấp và resolve duy nhất về registry/center assignment hợp lệ, R3A plan **current A3 teacher assignment sau khi Ca tồn tại**; R3B chỉ thực hiện đúng approved intent. Không ghi legacy `instructorName`. Nếu teacher chưa resolve/ambiguous, QUESTION/HOLD teacher assignment riêng; phần Ca/Student đủ điều kiện vẫn có thể nằm trong plan được duyệt, không mất teacher fact trong evidence.
+**Teacher là optional. Blank teacher không block Ca, Student hoặc recurring enrollment**, không HOLD các domain đó chỉ vì thiếu teacher và không clear A3 assignment đã có. Nếu Teacher được cung cấp và resolve duy nhất về registry/center assignment hợp lệ, R3A plan **current A3 teacher assignment sau khi Ca tồn tại**; R3B chỉ thực hiện đúng approved intent. Không ghi legacy `instructorName`. Nếu teacher chưa resolve/ambiguous, QUESTION/HOLD teacher assignment riêng; phần Ca/Student/enrollment đủ điều kiện vẫn có thể nằm trong plan được duyệt, không mất teacher fact trong evidence.
 
 Ca mới qua current Settings builder có 1–2 weekday, một timeband chung và active/inactive rõ (`Đang dùng/Đã ngưng`); không tự default active. Tên lưu được sinh từ ngày/giờ, tên sổ là alias. Existing Ca thật >2 days giữ authority, không rebuild cap 2 làm mất ngày.
 
@@ -748,7 +744,7 @@ Extra spaces/case/punctuation → normalize safely.
 
 Not allowed:
 
-6:30 → 18:30 without proof
+6:30 → 18:30 (luôn sai; canonical result là 06:30)
 
 blank level → Dolphin 1
 

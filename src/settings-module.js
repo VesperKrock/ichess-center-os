@@ -157,7 +157,7 @@ export function createEmptySettingsClassSessionFormState() {
       daysOfWeek: [],
       startTime: '',
       endTime: '',
-      instructorName: '',
+      teacherId: '',
       note: '',
       status: 'active',
     },
@@ -175,7 +175,6 @@ export function createEditSettingsClassSessionFormState(classSession) {
       daysOfWeek: normalizeClassSessionDaysOfWeek(classSession.daysOfWeek, classSession.daysLabel || classSession.dayLabel),
       startTime: classSession.startTime || '',
       endTime: classSession.endTime || '',
-      instructorName: classSession.instructorName || '',
       note: classSession.note || '',
       status: classSession.status === 'inactive' ? 'inactive' : 'active',
     },
@@ -207,8 +206,10 @@ export function validateSettingsClassSessionForm(values) {
     errors.endTime = 'Giờ kết thúc cần đúng dạng HH:mm.'
   }
 
-  if (String(values.instructorName ?? '').trim().length > 160) {
-    errors.instructorName = 'Tên giáo viên tối đa 160 ký tự.'
+  const startTime = normalizeSettingsClassSessionTime(values.startTime)
+  const endTime = normalizeSettingsClassSessionTime(values.endTime)
+  if (startTime && endTime && endTime <= startTime) {
+    errors.endTime = 'Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày.'
   }
 
   return errors
@@ -222,8 +223,8 @@ export function buildSettingsClassSessionFromForm(
   const now = new Date().toISOString()
   const daysOfWeek = normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel).slice(0, MAX_CLASS_SESSION_DAYS)
   const daysLabel = buildClassSessionDaysLabel(daysOfWeek) || String(values.daysLabel ?? '').trim()
-  const startTime = String(values.startTime ?? '').trim()
-  const endTime = String(values.endTime ?? '').trim()
+  const startTime = normalizeSettingsClassSessionTime(values.startTime)
+  const endTime = normalizeSettingsClassSessionTime(values.endTime)
   const displayLabel = buildClassSessionAutoName({ daysOfWeek, daysLabel, startTime, endTime })
   const name = displayLabel
 
@@ -236,7 +237,6 @@ export function buildSettingsClassSessionFromForm(
     dayLabel: daysLabel,
     startTime,
     endTime,
-    instructorName: String(values.instructorName ?? '').trim(),
     displayLabel,
     status: values.status === 'inactive' ? 'inactive' : 'active',
     note: String(values.note ?? '').trim(),
@@ -354,11 +354,11 @@ export function renderSettingsModule(
                 <th>Ca học / Lớp</th>
                 <th>Ngày học</th>
                 <th>Giờ học</th>
-                <th>Giáo viên mặc định</th>
+                <th>Giáo viên hiện tại</th>
                 <th>Số học viên</th>
                 <th>Trạng thái</th>
                 <th>Ghi chú</th>
-                <th>Thao tác</th>
+                <th class="settings-ca-action-cell">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -379,7 +379,7 @@ export function renderSettingsModule(
       </section>
       ` : ''}
 
-      ${formState ? renderSettingsClassSessionForm(formState) : ''}
+      ${formState ? renderSettingsClassSessionForm(formState, options.teacherOptions) : ''}
     </section>
   `
 }
@@ -690,7 +690,7 @@ export function getFilteredSettingsClassSessions(
           classSession.daysLabel,
           classSession.startTime,
           classSession.endTime,
-          classSession.instructorName,
+          classSession.currentTeacherName,
           classSession.note,
         ].some((value) => normalizeSearchText(value).includes(query))
 
@@ -732,7 +732,7 @@ function renderClassSessionRow(classSession, students = [], deletePolicy = null)
   const actionLabel = classSession.status === 'inactive' ? 'Kích hoạt lại' : 'Ngưng dùng'
   const canDelete = deletePolicy?.ok === true && deletePolicy.canDelete === true
   const deleteReason = canDelete
-    ? 'Xóa vĩnh viễn ca học chưa được sử dụng.'
+    ? 'Xóa ca học chưa được sử dụng.'
     : deletePolicy?.message || 'Chưa xác minh được lịch sử phụ thuộc; hãy dùng Ngưng dùng.'
 
   return `
@@ -744,8 +744,8 @@ function renderClassSessionRow(classSession, students = [], deletePolicy = null)
       </td>
       <td>${escapeHtml(classSession.daysLabel || '—')}</td>
       <td>${escapeHtml(formatClassSessionTimeRange(classSession))}</td>
-      <td>${classSession.instructorName
-        ? escapeHtml(classSession.instructorName)
+      <td>${classSession.currentTeacherName
+        ? escapeHtml(classSession.currentTeacherName)
         : '<span class="settings-instructor-unassigned">Chưa xếp giáo viên</span>'}</td>
       <td>${studentCount} học viên</td>
       <td>
@@ -754,7 +754,7 @@ function renderClassSessionRow(classSession, students = [], deletePolicy = null)
         </span>
       </td>
       <td title="${escapeAttribute(classSession.note || '')}">${escapeHtml(classSession.note || '—')}</td>
-      <td>
+      <td class="settings-ca-action-cell">
         <div class="settings-class-session-actions">
           <button type="button" data-settings-class-session-action="open-edit" data-class-session-id="${escapeAttribute(classSession.id)}">
             Sửa
@@ -938,7 +938,7 @@ function renderClassSessionAutoNamePreviewPrevious(autoName) {
   `
 }
 
-function renderSettingsClassSessionForm(formState) {
+function renderSettingsClassSessionForm(formState, teacherOptions = []) {
   const isEdit = formState.mode === 'edit'
   const title = isEdit ? 'Sửa ca học' : 'Thêm ca học'
   const values = formState.values ?? {}
@@ -950,20 +950,29 @@ function renderSettingsClassSessionForm(formState) {
       <section class="settings-class-session-form" role="dialog" aria-modal="true" aria-label="${title}">
         <div class="settings-form-header">
           <h4>${title}</h4>
-          <button type="button" data-settings-class-session-action="cancel-form" aria-label="Đóng form">×</button>
+          <button type="button" data-settings-class-session-action="cancel-form" aria-label="Đóng form" ${formState.isSaving ? 'disabled' : ''}>×</button>
         </div>
         <div class="settings-form-grid settings-class-session-form-grid">
           ${renderClassSessionAutoNamePreview(autoName)}
           ${renderDaysOfWeekField(values.daysOfWeek, errors.daysOfWeek)}
           ${renderClassSessionTimeFields(values, errors)}
-          <p class="settings-class-session-teacher-note span-full">Đổi giáo viên tại Thời khóa biểu và chọn ngày áp dụng.</p>
+          ${isEdit ? '<p class="settings-class-session-teacher-note span-full">Giáo viên hiện tại được giữ nguyên. Đổi giáo viên tại Thời khóa biểu và chọn ngày áp dụng.</p>' : `
+          <label class="span-full ${errors.teacherId ? 'has-error' : ''}">
+            <span>Giáo viên hiện tại (không bắt buộc)</span>
+            <select data-settings-class-session-field="teacherId" ${formState.isSaving ? 'disabled' : ''}>
+              ${renderOption('', 'Chưa xếp giáo viên', values.teacherId)}
+              ${(teacherOptions || []).map(teacher => renderOption(teacher.id, teacher.displayName || teacher.fullName, values.teacherId)).join('')}
+            </select>
+            ${errors.teacherId ? `<small>${escapeHtml(errors.teacherId)}</small>` : '<small class="settings-ca-teacher-hint">Có thể để trống và phân công sau tại Thời khóa biểu.</small>'}
+          </label>`}
           ${renderStatusField(values.status)}
           ${renderField('note', 'Ghi chú', values.note, errors.note)}
         </div>
+        ${errors.form ? `<p class="settings-class-session-form-error" role="alert">${escapeHtml(errors.form)}</p>` : ''}
         <div class="settings-form-actions">
-          <button type="button" data-settings-class-session-action="cancel-form">Hủy</button>
-          <button type="button" data-settings-class-session-action="save-form">
-            ${isEdit ? 'Lưu thay đổi' : 'Lưu ca học'}
+          <button type="button" data-settings-class-session-action="cancel-form" ${formState.isSaving ? 'disabled' : ''}>Hủy</button>
+          <button type="button" data-settings-class-session-action="save-form" ${formState.isSaving ? 'disabled' : ''}>
+            ${formState.isSaving ? 'Đang lưu…' : isEdit ? 'Lưu thay đổi' : 'Lưu ca học'}
           </button>
         </div>
       </section>
@@ -983,11 +992,11 @@ function renderClassSessionAutoNamePreview(autoName) {
 function renderClassSessionTimeFields(values = {}, errors = {}) {
   return `
     <div class="settings-class-session-time-column">
-      ${renderField('startTime', 'Giờ bắt đầu', values.startTime, errors.startTime, {
-        type: 'time',
+      ${renderField('startTime', 'Giờ bắt đầu (24h)', values.startTime, errors.startTime, {
+        placeholder: '06:30',
       })}
-      ${renderField('endTime', 'Giờ kết thúc', values.endTime, errors.endTime, {
-        type: 'time',
+      ${renderField('endTime', 'Giờ kết thúc (24h)', values.endTime, errors.endTime, {
+        placeholder: '08:00',
       })}
     </div>
   `
@@ -1114,8 +1123,8 @@ export function buildClassSessionAutoName(values = {}) {
       .map((day) => labelsByDay.get(day))
       .filter(Boolean)
       .join(' - ') || String(values.daysLabel || '').trim()
-  const startTime = normalizeDisplayTime(values.startTime)
-  const endTime = normalizeDisplayTime(values.endTime)
+  const startTime = normalizeSettingsClassSessionTime(values.startTime)
+  const endTime = normalizeSettingsClassSessionTime(values.endTime)
 
   if (!daysLabel || !startTime || !endTime) {
     return ''
@@ -1224,7 +1233,15 @@ function normalizeDisplayTime(value) {
 }
 
 function isValidTime(value) {
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value ?? ''))
+  return Boolean(normalizeSettingsClassSessionTime(value))
+}
+
+export function normalizeSettingsClassSessionTime(value) {
+  const match = String(value ?? '').trim().replace(/\s+/g, '').match(/^(\d{1,2})(?:(?:[:hg])(\d{2})|[hg])$/i)
+  if (!match) return ''
+  const hour = Number(match[1]), minute = Number(match[2] || 0)
+  return hour <= 23 && minute <= 59
+    ? `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` : ''
 }
 
 function renderOption(value, label, selectedValue) {
