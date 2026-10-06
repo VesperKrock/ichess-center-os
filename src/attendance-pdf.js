@@ -5,7 +5,7 @@ export const ATTENDANCE_PDF_PAGE = Object.freeze({ width: 841.8898, height: 595.
 const clean = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
 const shortDate = value => `${value.slice(8, 10)}/${value.slice(5, 7)}`
 const fullDate = value => `${shortDate(value)}/${value.slice(0, 4)}`
-const marks = Object.freeze({ present: '✓', absent: 'V', makeup: 'B', historicalTrial: 'T', unmarked: '?', future: '·', cancelled: '', notExpected: '—' })
+const marks = Object.freeze({ present: '✓', absent: 'V', makeup: 'B', historicalTrial: 'T', unmarked: '?', today: '', future: '·', cancelled: '', notExpected: '—' })
 const fontAssets = ['Tinos-Regular.ttf', 'Tinos-Bold.ttf', 'Tinos-Italic.ttf']
 const fontsInFlight = new WeakMap()
 const weekday = date => ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][new Date(`${date}T12:00:00Z`).getUTCDay()]
@@ -41,7 +41,7 @@ export function createAttendancePdfProjection(model, { centerName = '', captured
       throw new AttendancePdfValidationError('Ô điểm danh không khớp buổi học trên bảng. Vui lòng làm mới.')
     }
     return { studentId: row.student.id, name: clean(row.student.fullName) || 'Học viên lịch sử', level: clean(row.student.level),
-      cells: row.cells.map(cell => ({ key: cell.occurrence.key, state: cell.state, mark: marks[cell.state],
+      cells: row.cells.map(cell => ({ key: cell.occurrence.key, state: cell.state, mark: model.monthlyProjection && cell.state === 'future' ? '' : marks[cell.state],
         originalDate: cell.originalDate || '', originalOccurrence: cell.originalOccurrence ? { ...cell.originalOccurrence } : null })) }
   })
   const slotList = [...slots.values()].map(slot => ({ ...slot,

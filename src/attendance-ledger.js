@@ -11,6 +11,7 @@ export const ATTENDANCE_LEDGER_STATES = Object.freeze({
   makeup: { label: 'Học bù', mark: 'B' },
   historicalTrial: { label: 'Học thử (lịch sử)', mark: 'T' },
   unmarked: { label: 'Chưa điểm danh', mark: '?' },
+  today: { label: 'Chưa điểm danh hôm nay', mark: '' },
   future: { label: 'Chưa đến giờ học', mark: '◷' },
   cancelled: { label: 'Đã hủy', mark: '×' },
   notExpected: { label: 'Không thuộc danh sách buổi học', mark: '—' },
@@ -66,7 +67,7 @@ export function isAttendanceLedgerOccurrenceFuture(occurrence, now = new Date())
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).formatToParts(now).map(part => [part.type, part.value]))
   const today = `${parts.year}-${parts.month}-${parts.day}`
-  return occurrence.date > today || (occurrence.date === today && occurrence.lifecycleState !== 'HELD'
+  return occurrence.date > today || (!occurrence.dateReachedEditing && occurrence.date === today && occurrence.lifecycleState !== 'HELD'
     && (!occurrence.startTime || occurrence.startTime > `${parts.hour}:${parts.minute}`))
 }
 
@@ -126,8 +127,8 @@ function resolvePlannedClassSlotIdentity(session, scheduleSessions, occurrences)
 
 export function buildCanonicalAttendanceLedger({
   students = [], classSessions = [], scheduleSessions = [], occurrences = [], plannedOccurrences = [],
-  attendanceRecords = [], filters = {}, packageCycleStudentStates = [], packageCycleReady = false,
-  now = new Date(),
+  attendanceRecords = [], makeupBookings = [], filters = {}, packageCycleStudentStates = [], packageCycleReady = false,
+  now = new Date(), monthlyProjection = false,
 } = {}) {
   const normalized = normalizeAttendanceLedgerFilters(filters)
   const classById = new Map(classSessions.map(item => [text(item.id), item]))
@@ -161,14 +162,35 @@ export function buildCanonicalAttendanceLedger({
       materialized: false, isSubstitute: false, partialHistoricalRoster: true,
     })
   }
-  // Past rosters are exclusively A2 snapshots. A planned future is the same
-  // canonical Schedule occurrence projection used by A5; opening Board never resolves/writes one.
+  // Existing facts keep their frozen roster. The monthly board also includes
+  // unresolved past/current Schedule slots; N2 resolves only explicit saves.
   for (const planned of plannedOccurrences) {
-    const session = resolvePlannedClassSlotIdentity(planned, scheduleSessions, occurrences)
+    // Schedule already chooses the effective weekday assignment for monthly
+    // slots. Keep its exact ID, including when assignments change mid-month.
+    const session = monthlyProjection ? planned : resolvePlannedClassSlotIdentity(planned, scheduleSessions, occurrences)
     const occurrence = projectPlanned(session, classById)
-    if (!occurrenceByKey.has(occurrence.key) && isAttendanceLedgerOccurrenceFuture(occurrence, now)) {
+    if (!occurrenceByKey.has(occurrence.key) && (monthlyProjection || isAttendanceLedgerOccurrenceFuture(occurrence, now))) {
       occurrenceByKey.set(occurrence.key, occurrence)
     }
+  }
+  if (monthlyProjection) for (const occurrence of occurrenceByKey.values()) occurrence.dateReachedEditing = true
+  const today = new Intl.DateTimeFormat('sv-SE', {timeZone: 'Asia/Ho_Chi_Minh'}).format(now)
+  const bookingByDestination = new Map()
+  const bookingBySource = new Map()
+  for (const rawBooking of makeupBookings.filter(b => ['PLANNED', 'COMPLETED'].includes(b.state))) {
+    const booking = {...rawBooking, destinationClassLabel: classById.get(rawBooking.destination_class_local_id)?.displayLabel
+      || classById.get(rawBooking.destination_class_local_id)?.name || 'Ca học',
+      sourceClassLabel: classById.get(rawBooking.source_class_local_id)?.displayLabel
+        || classById.get(rawBooking.source_class_local_id)?.name || 'Ca học'}
+    const key = attendanceOccurrenceKey(booking.destination_schedule_local_id, booking.destination_date)
+    const occurrence = occurrenceByKey.get(key)
+    if (occurrence) {
+      // Additive participation only; the frozen regular roster stays separate.
+      occurrence.regularStudentIds ||= [...occurrence.studentIds]
+      if (!occurrence.studentIds.includes(booking.student_local_id)) occurrence.studentIds.push(booking.student_local_id)
+      bookingByDestination.set(`${key}|${booking.student_local_id}`, booking)
+    }
+    bookingBySource.set(booking.source_attendance_local_id, booking)
   }
   const inRange = [...occurrenceByKey.values()].filter(item => !normalized.error
     && item.date >= normalized.fromDate && item.date <= normalized.toDate)
@@ -201,7 +223,12 @@ export function buildCanonicalAttendanceLedger({
         { id: occurrence.scheduleSessionId, occurrenceDate: occurrence.date }, studentId,
       ) : null
       const rawStatus = text(record?.attendanceStatus || record?.status)
-      const state = !expected ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
+      const recordedState = rawStatus === 'makeup' ? 'makeup' : rawStatus === 'present' ? 'present'
+        : rawStatus === 'trial' ? 'historicalTrial'
+          : ['absent', 'excused', 'excusedAbsent', 'unexcusedAbsent'].includes(rawStatus) ? 'absent' : null
+      const state = monthlyProjection ? !expected ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
+        : recordedState || (occurrence.date > today ? 'future' : occurrence.date === today ? 'today' : 'unmarked')
+        : !expected ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
         : isAttendanceLedgerOccurrenceFuture(occurrence, now) ? 'future'
           : rawStatus === 'makeup' ? 'makeup'
           : rawStatus === 'present' ? 'present'
@@ -211,7 +238,16 @@ export function buildCanonicalAttendanceLedger({
       const originalOccurrence = target && target.studentId === studentId
         && ['absent', 'excused', 'excusedAbsent', 'unexcusedAbsent'].includes(target.attendanceStatus || target.status)
         ? occurrenceByKey.get(attendanceOccurrenceKey(target.scheduleSessionId, target.date)) || null : null
-      return { occurrence, record, state, ...ATTENDANCE_LEDGER_STATES[state], originalOccurrence,
+      const makeupBooking = bookingByDestination.get(`${occurrence.key}|${studentId}`) || null
+      const sourceBooking = bookingBySource.get(text(record?.authorityLocalId)) || null
+      const completedMakeup = record?.authorityLocalId && canonicalRecords.find(r => r.attendanceStatus === 'makeup'
+        && r.makeupForAttendanceLocalId === record?.authorityLocalId && r.studentId === studentId)
+      return { occurrence, record, state, ...ATTENDANCE_LEDGER_STATES[state], originalOccurrence, makeupBooking, sourceBooking,
+        ...(monthlyProjection && state === 'future' ? {mark: '', label: 'Chưa tới ngày học'} : {}),
+        unmarkedState: monthlyProjection && occurrence.date === today ? 'today' : 'unmarked',
+        isOverdueUnmarked: Boolean(monthlyProjection && expected && !record && state === 'unmarked' && occurrence.date < today),
+        makeupOnly: Boolean(makeupBooking && !occurrence.regularStudentIds.includes(studentId)),
+        completedMakeup,
         originalDate: originalOccurrence?.date || target?.date || '',
         isTrial: rawStatus === 'trial', isExcused: ['excused', 'excusedAbsent'].includes(rawStatus) }
     })
@@ -225,5 +261,12 @@ export function buildCanonicalAttendanceLedger({
   ].join(' ')).includes(searchText(normalized.query)))
     .sort((a, b) => text(a.student.fullName).localeCompare(text(b.student.fullName), 'vi')
       || text(a.student.studentCode).localeCompare(text(b.student.studentCode)) || text(a.student.id).localeCompare(text(b.student.id)))
-  return { filters: normalized, columns, rows, teacherOptions, occurrenceByKey }
+  const model = { filters: normalized, columns, rows, teacherOptions, occurrenceByKey, monthlyProjection }
+  return {...model, overdueUnmarkedCount: getAttendanceLedgerOverdueUnmarkedCount(model)}
+}
+
+// Read-only future N6 input: visible, participating, past, non-cancelled cells
+// with no canonical mark. A dirty overlay never changes this canonical count.
+export function getAttendanceLedgerOverdueUnmarkedCount(model) {
+  return (model?.rows || []).reduce((count, row) => count + row.cells.filter(cell => cell.isOverdueUnmarked === true).length, 0)
 }

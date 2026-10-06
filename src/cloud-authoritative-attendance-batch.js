@@ -65,6 +65,8 @@ export function normalizeAttendanceBatchError(error) {
     'a4_makeup_target_not_absent', 'a4_makeup_target_future',
     'a4_makeup_occurrence_not_held', 'a4_makeup_wrong_student',
     'a4_makeup_target_not_found', 'a4_compensated_absence_locked',
+    'n3_booked_absence_locked', 'n3_booking_destination_mismatch',
+    'a2_occurrence_not_held',
   ].find(item => message.includes(item))
     || (error?.code === '23505' && message.includes('center_cloud_entities_a4_makeup_target_unique')
       ? 'a4_makeup_already_compensated' : 'SERVER_COMMAND_FAILED')
@@ -81,6 +83,9 @@ export function normalizeAttendanceBatchError(error) {
     a4_makeup_wrong_student: 'Buổi vắng được chọn không thuộc học viên này.',
     a4_makeup_target_not_found: 'Không tìm thấy buổi Vắng gốc tại cơ sở này.',
     a4_compensated_absence_locked: 'Hãy bỏ hoặc đổi liên kết Học bù trước khi sửa buổi Vắng gốc.',
+    n3_booked_absence_locked: 'Hủy lịch học bù trước khi thay đổi buổi Vắng gốc.',
+    n3_booking_destination_mismatch: 'Lịch học bù đã đổi. Vui lòng làm mới rồi chọn đúng buổi.',
+    a2_occurrence_not_held: 'Buổi học chưa kết thúc. Các thay đổi vẫn được giữ để lưu sau.',
     SERVER_COMMAND_FAILED: 'Chưa thể xác nhận đã lưu điểm danh. Vui lòng tải lại trước khi thử lại.',
   }
   return { outcome_code: code.toUpperCase(), error: labels[code] }

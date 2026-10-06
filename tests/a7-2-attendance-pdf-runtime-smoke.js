@@ -106,7 +106,7 @@ const options={students:fixture.students,classSessions:fixture.classSessions,fil
 let captured,captureReady
 const html=renderAttendanceBoardModule({...options,onModel:(model,ready)=>{captured=model;captureReady=ready}})
 assert(captureReady)
-assert.deepEqual(captured,buildCanonicalAttendanceLedger({...fixture,scheduleSessions:[],plannedOccurrences:[]}))
+assert.deepEqual(captured,buildCanonicalAttendanceLedger({...fixture,scheduleSessions:[],plannedOccurrences:[],monthlyProjection:true}))
 const outside=await generateAttendancePdf(captured,{centerName:'KIỂM THỬ học bù ngoài kỳ'},{fetchImpl,includeLayoutProof:true})
 assert(outside.projection.rows.some(row=>row.cells.some(cell=>cell.originalOccurrence?.teacherName==='Thầy Lịch sử'&&cell.originalDate==='2026-08-24')))
 assert(outside.textRegions.some(region=>region.value.includes('24/08/2026 17:30 (Thầy Lịch sử)')))

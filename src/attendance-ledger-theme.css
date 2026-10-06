@@ -87,3 +87,129 @@
   .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-student { width: 210px; min-width: 210px; max-width: 210px; }
 }
+
+/* The operational sheet keeps identity, dates and progress in one quiet row. */
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-heading-copy h3 { font-size: 22px; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar {
+  grid-template-columns: minmax(325px, 1.4fr) minmax(170px, 1fr) minmax(145px, .8fr) minmax(180px, 1fr);
+  min-height: 68px; gap: 12px; padding: 10px 0;
+}
+.attendance-ledger-context { margin: 0; font-size: 12px; color: var(--attendance-secondary); }
+.attendance-ledger-save-message { max-width: 320px; font-size: 12px; color: var(--attendance-success); }
+.attendance-ledger-save-message.is-error { color: var(--attendance-danger); }
+.attendance-ledger-actions .attendance-ledger-save { color: #fff; background: var(--attendance-accent); border-color: var(--attendance-accent); }
+.attendance-ledger-period { position: relative; align-self: end; margin-bottom: 8px; font-size: 12px; color: var(--attendance-secondary); }
+.attendance-ledger-period summary { cursor: pointer; white-space: nowrap; }
+.attendance-ledger-period > div { position: absolute; right: 0; top: 24px; z-index: 20; display: grid; grid-template-columns: 140px 140px; gap: 12px; padding: 14px; border: 1px solid var(--attendance-line); border-radius: 8px; background: var(--attendance-panel); box-shadow: var(--attendance-shadow); }
+.desktop-window.is-attendance-window .attendance-ledger-sheet th,
+.desktop-window.is-attendance-window .attendance-ledger-sheet td { height: 42px; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead th { height: 64px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-index { position: sticky; left: 0; width: 38px; min-width: 38px; max-width: 38px; z-index: 2; background: var(--attendance-panel); text-align: center; color: var(--attendance-muted); font-size: 11px; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-student { left: 38px; width: 230px; min-width: 230px; max-width: 230px; padding: 5px 10px; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead .attendance-ledger-index { z-index: 5; background: var(--attendance-panel-soft); }
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-year,
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-package,
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-level { width: 72px; min-width: 72px; max-width: 72px; padding: 5px 6px; text-align: center; font-size: 11px; color: var(--attendance-secondary); overflow-wrap: anywhere; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-column,
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-cell { width: 54px; min-width: 54px; max-width: 54px; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-progress { position: sticky; right: 0; z-index: 2; width: 124px; min-width: 124px; max-width: 124px; background: var(--attendance-panel); box-shadow: -1px 0 var(--attendance-line); }
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead .attendance-ledger-progress { z-index: 4; background: var(--attendance-panel-soft); }
+.attendance-ledger-sheet td.attendance-ledger-progress strong { color: var(--attendance-text); font-size: 12px; font-weight: 600; }
+.attendance-ledger-progress small { display: block; margin-top: 2px; font-size: 11px; color: var(--attendance-muted); }
+.attendance-ledger-mark { background: transparent !important; border: 0 !important; border-radius: 0; font-size: 14px; }
+.attendance-ledger-cell button { position: relative; min-height: 42px; }
+.attendance-ledger-cell button:disabled { cursor: default; }
+.attendance-ledger-cell button:disabled:hover { background: transparent; }
+.attendance-ledger-cell.is-dirty button { background: var(--attendance-panel-subtle); }
+.attendance-ledger-cell.is-dirty button::after { content: ''; position: absolute; right: 3px; top: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--attendance-accent); }
+.attendance-ledger-cell.is-conflict button::after { background: var(--attendance-warning); }
+.attendance-ledger-editor { position: fixed; z-index: 20000; width: 320px; max-width: calc(100vw - 24px); max-height: min(460px, calc(100vh - 110px)); overflow: auto; padding: 14px; box-sizing: border-box; color: var(--attendance-text); background: var(--attendance-panel); border: 1px solid var(--attendance-line); border-radius: 10px; box-shadow: var(--attendance-shadow); }
+.attendance-ledger-editor header { display: flex; gap: 10px; justify-content: space-between; align-items: start; }
+.attendance-ledger-editor header strong { display: block; font-size: 13px; line-height: 18px; }
+.attendance-ledger-editor header small { display: block; margin-top: 3px; font-size: 11px; color: var(--attendance-muted); }
+.attendance-ledger-editor button { font: inherit; cursor: pointer; color: var(--attendance-text); background: var(--attendance-panel-soft); border: 1px solid var(--attendance-line); border-radius: 6px; }
+.attendance-ledger-editor header > button { flex: 0 0 26px; height: 26px; padding: 0; }
+.attendance-ledger-editor button:focus-visible,
+.attendance-ledger-editor input:focus-visible { outline: 2px solid var(--attendance-accent); outline-offset: 2px; }
+.attendance-ledger-status-picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0 10px; }
+.attendance-ledger-status-picker button { display: flex; flex-direction: column; gap: 5px; align-items: center; justify-content: center; min-height: 56px; padding: 6px 3px; }
+.attendance-ledger-status-picker b { font-size: 15px; }
+.attendance-ledger-status-picker span { font-size: 10px; white-space: nowrap; }
+.attendance-ledger-status-picker [aria-pressed=true] { border-color: var(--attendance-accent); background: var(--attendance-panel-subtle); }
+.attendance-ledger-reason { margin-top: 12px; }
+.attendance-ledger-reason label { display: block; margin-bottom: 6px; font-size: 12px; }
+.attendance-ledger-reason label small { color: var(--attendance-muted); }
+.attendance-ledger-reason input { box-sizing: border-box; width: 100%; height: 34px; padding: 6px 8px; font: inherit; font-size: 12px; color: var(--attendance-text); background: var(--attendance-panel-soft); border: 1px solid var(--attendance-line); border-radius: 6px; }
+.attendance-ledger-editor p { margin: 10px 0; font-size: 12px; line-height: 18px; }
+.attendance-ledger-reason p { color: var(--attendance-secondary); }
+.attendance-ledger-editor footer { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--attendance-line-soft); font-size: 10px; color: var(--attendance-muted); }
+.attendance-ledger-editor-error { color: var(--attendance-danger); }
+.attendance-ledger-makeup-picker { display: grid; gap: 6px; margin-top: 12px; font-size: 12px; }
+.attendance-ledger-makeup-picker button { text-align: left; padding: 8px; font-size: 12px; }
+.attendance-ledger-makeup-picker small { display: block; margin-top: 2px; color: var(--attendance-muted); }
+@media (max-width: 1100px) {
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar { grid-template-columns: minmax(325px, 1.4fr) minmax(160px, 1fr); }
+  .attendance-ledger .attendance-board-toolbar > label:last-of-type { grid-column: auto; }
+  .attendance-ledger-actions { flex-wrap: wrap; justify-content: end; gap: 7px; }
+  .attendance-ledger-save-message { max-width: 230px; }
+}
+@media (max-width: 760px) {
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-board-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .attendance-ledger .attendance-board-toolbar > label:last-of-type { grid-column: auto; }
+  .attendance-ledger-month-nav { grid-column: 1 / -1; justify-content: center; }
+  .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-student { width: 190px; min-width: 190px; max-width: 190px; }
+}
+.attendance-ledger-month-nav { display: flex; align-items: end; gap: 8px; }
+.attendance-ledger-month-nav > button { min-height: 34px; white-space: nowrap; padding: 5px 10px; border: 1px solid var(--attendance-line); border-radius: 6px; color: var(--attendance-text); background: var(--attendance-panel-soft); cursor: pointer; font: inherit; font-size: 12px; }
+.attendance-ledger-month-nav > button:focus-visible { outline: 2px solid var(--attendance-accent); outline-offset: 2px; }
+.attendance-ledger-makeup-context { font-size: 10px; font-weight: 500; color: var(--attendance-muted); margin-left: 5px; }
+.attendance-ledger-booking-detail { padding-top: 10px; }
+.attendance-ledger-booking-detail p { margin: 4px 0 10px; }
+.attendance-ledger-booking-actions { display: flex; gap: 8px; }
+.attendance-ledger-booking-actions button { padding: 6px 9px; font-size: 12px; }
+.attendance-ledger-makeup-picker { max-height: 260px; overflow-y: auto; }
+
+/* Full monthly sheet: identity stays readable, dates share the remaining width.
+   Dense calendars scroll only when their 40px date minimum cannot fit. */
+.desktop-window.is-attendance-window .attendance-ledger-sheet {
+  --attendance-name-width: clamp(190px, 17vw, 236px);
+  width: 100%; min-width: calc(336px + var(--attendance-name-width) + var(--attendance-date-columns) * 40px); max-width: none;
+  table-layout: fixed;
+}
+.attendance-grid-index { width: 36px; }
+.attendance-grid-student { width: var(--attendance-name-width); }
+.attendance-grid-year { width: 60px; }
+.attendance-grid-package { width: 68px; }
+.attendance-grid-level { width: 76px; }
+.attendance-grid-progress { width: 96px; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-index,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-student,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-year,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-package,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-level,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-column,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-cell,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-progress {
+  width: auto; min-width: 0; max-width: none;
+}
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-student { left: 36px; padding: 8px 10px; }
+.attendance-ledger-student strong { font-size: 19px; line-height: 24px; }
+.attendance-ledger-student small { font-size: 13px; line-height: 18px; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet th,
+.desktop-window.is-attendance-window .attendance-ledger-sheet td { height: 60px; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead th { height: 76px; font-size: 14px; line-height: 19px; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-index { font-size: 14px; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-year,
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-package { font-size: 15px; padding: 5px 4px; }
+.desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-level { font-size: 14px; padding: 5px 4px; }
+.attendance-ledger-column strong { font-size: 16px; line-height: 21px; }
+.attendance-ledger-column small { font-size: 12px; line-height: 16px; }
+.attendance-ledger-column button { padding: 3px 1px; }
+.attendance-ledger-mark { font-size: 22px; line-height: 27px; }
+.attendance-ledger-legend { font-size: 14px; }
+.attendance-ledger-legend .attendance-ledger-mark { font-size: 18px; }
+.attendance-ledger-context { font-size: 14px; line-height: 20px; }
+.attendance-ledger-sheet td.attendance-ledger-progress strong { font-size: 18px; line-height: 24px; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet .attendance-ledger-progress small { font-size: 14px; line-height: 19px; }
+.attendance-ledger-sheet.is-dense-month .attendance-ledger-column strong { font-size: 13px; }
+.attendance-ledger-sheet.is-dense-month .attendance-ledger-column small { font-size: 11px; }

@@ -1,10 +1,11 @@
 import { attendanceOccurrenceKey, getCanonicalLedgerAttendance, normalizeAttendanceLedgerFilters } from './attendance-ledger.js'
+import { pullMakeupBookingContext } from './cloud-makeup-bookings.js'
 
 const nextDate = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
 
 // A3 already exposes the A2 facts and actual-teacher snapshots. These are stable
 // read RPCs. Split longer ranges at the existing 63-day contract, never RESOLVE.
-export async function pullCanonicalAttendanceLedgerContext({ supabase, centerId, filters, attendanceRecords = [] } = {}) {
+export async function pullCanonicalAttendanceLedgerContext({ supabase, centerId, filters, attendanceRecords = [], includeMakeupBookings = false } = {}) {
   const range = normalizeAttendanceLedgerFilters(filters)
   if (!centerId || !supabase?.rpc || range.error) {
     return { ok: false, error: range.error || 'Chưa thể tải các buổi học.' }
@@ -53,6 +54,9 @@ export async function pullCanonicalAttendanceLedgerContext({ supabase, centerId,
     }
     assignments = context.assignments
   }
+  const makeup = includeMakeupBookings ? await pullMakeupBookingContext({supabase, centerId,
+    fromDate: range.fromDate, toDate: range.toDate}) : {ok: true, bookings: []}
+  if (!makeup.ok) return makeup
   return { ok: true, centerId, fromDate: range.fromDate, toDate: range.toDate,
-    assignments, occurrences: [...occurrences.values()] }
+    assignments, makeupBookings: makeup.bookings, occurrences: [...occurrences.values()] }
 }

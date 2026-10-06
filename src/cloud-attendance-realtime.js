@@ -16,6 +16,7 @@ import {
 import { normalizeStoredAttendanceRecords } from './attendance-records.js'
 import { buildOnlineAccessState, getOnlineAccessMessage } from './online-access-control.js'
 import {
+  getAuthoritativeAttendanceTuitionVersion,
   mutateAuthoritativeAttendanceTuitionEntities,
 } from './cloud-authoritative-attendance-tuition.js'
 

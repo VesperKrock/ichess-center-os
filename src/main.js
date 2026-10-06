@@ -13,7 +13,12 @@ import {
   renderAttendanceBoardModule,
 } from './attendance-board-module.js'
 import { pullCanonicalAttendanceLedgerContext } from './cloud-attendance-ledger.js'
-import { buildCanonicalAttendanceLedger, getCanonicalLedgerAttendance, normalizeAttendanceLedgerFilters } from './attendance-ledger.js'
+import { pullMakeupBookingContext, mutateMakeupBooking } from './cloud-makeup-bookings.js'
+import { createOperationalCommandIdempotencyKey as createMakeupBookingKey } from './cloud-authoritative-attendance-tuition.js'
+import { buildCanonicalAttendanceLedger, getCanonicalLedgerAttendance, normalizeAttendanceLedgerFilters, getAttendanceLedgerMonthRange } from './attendance-ledger.js'
+import { pullA4EligibleMissedOccurrences } from './cloud-authoritative-occurrence-attendance.js'
+import { createAttendanceBoardDraft, attendanceDraftCount, attendanceCellDraftValue, stageAttendanceCell,
+  reconcileAttendanceDraft, saveAttendanceBoardDraft } from './attendance-board-editor.js'
 import { buildV28AAttendanceNotificationCandidates } from './attendance-operational-reminders.js'
 import {
   buildUnifiedAttendanceRecords,
@@ -1082,6 +1087,7 @@ let notificationCalendarDate = getBirthdayLocalDateKey()
 let activeNotificationAccountId = ''
 let attendanceBoardFilters = { ...initialAttendanceBoardFilters }
 let attendanceBoardDetailState = null
+let attendanceBoardDraft = createAttendanceBoardDraft()
 let attendanceBoardPdfSnapshot = null
 let attendancePdfExportInFlight = false
 let attendanceLedgerContext = { status: 'idle', centerId: '', occurrences: [], assignments: [] }
@@ -1498,6 +1504,75 @@ function getCurrentAttendanceLedgerContext() {
     ? attendanceLedgerContext : { status: 'idle', occurrences: [], assignments: [] }
 }
 
+function getCurrentAttendanceBoardDraft() {
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (attendanceBoardDraft.centerId !== centerId) attendanceBoardDraft = createAttendanceBoardDraft(centerId)
+  return attendanceBoardDraft
+}
+
+function canWriteCurrentAttendanceBoard() {
+  return getCurrentCanonicalCenterContext().ok && canWriteC51AttendanceEntity(buildCurrentOnlineAccessState({
+    cloudReady: cloudDbState.readinessStatus === 'ready',
+  })).canWrite
+}
+
+function confirmAttendanceBoardNavigation() {
+  const draft = getCurrentAttendanceBoardDraft()
+  if (draft.saving) {
+    window.alert('Đang lưu điểm danh. Vui lòng chờ lưu xong.')
+    return false
+  }
+  if (draft.bookingAttempt) {
+    window.alert('Chưa xác nhận được lịch học bù. Vui lòng thử lại trước khi chuyển màn hình.')
+    return false
+  }
+  if (!attendanceDraftCount(draft)) return true
+  if (!window.confirm('Thay đổi điểm danh chưa lưu sẽ bị bỏ. Bạn có muốn tiếp tục?')) return false
+  attendanceBoardDraft = createAttendanceBoardDraft(draft.centerId)
+  attendanceBoardDetailState = null
+  return true
+}
+
+function getCurrentAttendanceEditorCell() {
+  const detail = attendanceBoardDetailState
+  const model = attendanceBoardPdfSnapshot?.centerId === getCurrentCanonicalCenterContext().centerId
+    ? attendanceBoardPdfSnapshot.model : null
+  const row = model?.rows.find(item => item.student.id === detail?.studentId)
+  const cell = row?.cells.find(item => item.occurrence.scheduleSessionId === detail?.scheduleSessionId
+    && item.occurrence.date === detail?.dateKey)
+  return cell ? { row, cell } : null
+}
+
+function positionAttendanceCellEditor() {
+  const editor = document.querySelector('[data-attendance-cell-editor]')
+  const detail = attendanceBoardDetailState
+  if (!editor || !detail?.studentId) return
+  const anchor = [...document.querySelectorAll('[data-attendance-cell-detail]')].find(button =>
+    button.dataset.studentId === detail.studentId && button.dataset.scheduleSessionId === detail.scheduleSessionId
+      && button.dataset.dateKey === detail.dateKey)
+  if (!anchor) return
+  const bounds = anchor.getBoundingClientRect()
+  const width = editor.offsetWidth, height = editor.offsetHeight
+  editor.style.left = `${Math.max(12, Math.min(innerWidth - width - 12, bounds.left + bounds.width / 2 - width / 2))}px`
+  editor.style.top = `${Math.max(12, bounds.bottom + height + 12 <= innerHeight ? bounds.bottom + 6 : bounds.top - height - 6)}px`
+}
+
+async function saveCurrentAttendanceBoard() {
+  const context = getCurrentCanonicalCenterContext()
+  const draft = getCurrentAttendanceBoardDraft()
+  if (getCurrentAttendanceLedgerContext().status !== 'ready') return
+  const result = await saveAttendanceBoardDraft(draft, {
+    supabase: getSupabaseClient(), centerId: context.centerId, canWrite: canWriteCurrentAttendanceBoard(),
+    onChange: () => { if (attendanceBoardDraft === draft) render() },
+  })
+  if (attendanceBoardDraft !== draft || getCurrentCanonicalCenterContext().centerId !== context.centerId) return
+  if (result.ok || result.outcome_code === 'N2_ATTENDANCE_VERSION_CONFLICT') {
+    if (result.ok) attendanceBoardDetailState = null
+    await refreshModuleAuthoritativeUpstreams('bang-diem-danh', { reason: 'attendance-board-save' })
+  }
+  render()
+}
+
 async function refreshAttendanceLedgerContext() {
   const centerId = getCurrentCanonicalCenterContext().centerId
   const range = normalizeAttendanceLedgerFilters(attendanceBoardFilters)
@@ -1505,7 +1580,7 @@ async function refreshAttendanceLedgerContext() {
   attendanceLedgerContext = { status: 'loading', centerId, ...range, occurrences: [], assignments: [] }
   render()
   const result = await pullCanonicalAttendanceLedgerContext({
-    supabase: getSupabaseClient(), centerId, filters: range, attendanceRecords,
+    supabase: getSupabaseClient(), centerId, filters: range, attendanceRecords, includeMakeupBookings: true,
   })
   const currentRange = normalizeAttendanceLedgerFilters(attendanceBoardFilters)
   if (runId !== attendanceLedgerReadRunId || centerId !== getCurrentCanonicalCenterContext().centerId
@@ -1514,6 +1589,74 @@ async function refreshAttendanceLedgerContext() {
     : { status: 'failed', centerId, ...range, occurrences: [], assignments: [], error: result.error }
   render()
   return result
+}
+
+async function chooseAttendanceMakeupDestination() {
+  const selected = getCurrentAttendanceEditorCell()
+  const draft = getCurrentAttendanceBoardDraft()
+  if (!selected || !canWriteCurrentAttendanceBoard() || draft.saving || draft.bookingAttempt) return
+  if (attendanceDraftCount(draft)) { window.alert('Lưu điểm danh trước khi xếp học bù.'); return }
+  const {row, cell} = selected
+  if (cell.state !== 'absent' || !cell.record?.authorityLocalId || cell.completedMakeup
+    || cell.sourceBooking?.state === 'COMPLETED') return
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  const detail = {...attendanceBoardDetailState, bookingPicking: true, bookingLoading: true, bookingError: ''}
+  attendanceBoardDetailState = detail
+  render()
+  const today = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date())
+  const end = new Date(`${today}T12:00:00Z`); end.setUTCDate(end.getUTCDate()+63)
+  const start = new Date(`${today}T12:00:00Z`); start.setUTCDate(start.getUTCDate()-62)
+  const result = await pullMakeupBookingContext({supabase:getSupabaseClient(),centerId,
+    fromDate:start.toISOString().slice(0,10),toDate:end.toISOString().slice(0,10)})
+  if (attendanceBoardDetailState !== detail || centerId !== getCurrentCanonicalCenterContext().centerId) return
+  const destinations = (result.destinations || []).filter(o => o.occurrence_date > cell.occurrence.date
+    && !(o.schedule_session_local_id === cell.sourceBooking?.destination_schedule_local_id
+      && o.occurrence_date === cell.sourceBooking?.destination_date)
+    && !getCanonicalLedgerAttendance(attendanceRecords).some(r => r.studentId === row.student.id
+      && r.scheduleSessionId === o.schedule_session_local_id && r.date === o.occurrence_date)
+    && !result.bookings.some(b => b.student_local_id === row.student.id
+      && b.destination_schedule_local_id === o.schedule_session_local_id && b.destination_date === o.occurrence_date))
+    .map(o => ({...o,classLabel:classSessions.find(c=>c.id===o.class_session_local_id)?.displayLabel
+      || classSessions.find(c=>c.id===o.class_session_local_id)?.name || 'Ca học'}))
+    .sort((a,b) => Number(a.occurrence_date < today)-Number(b.occurrence_date < today)
+      || (a.occurrence_date < today ? b.occurrence_date.localeCompare(a.occurrence_date) : a.occurrence_date.localeCompare(b.occurrence_date))
+      || String(a.planned_start_time).localeCompare(String(b.planned_start_time)))
+  attendanceBoardDetailState = {...detail,bookingLoading:false,bookingDestinations:destinations,
+    bookingError: result.ok ? '' : result.error}
+  render()
+  positionAttendanceCellEditor()
+}
+
+async function saveAttendanceMakeupBooking(operation, destination = null) {
+  const selected = getCurrentAttendanceEditorCell()
+  const draft = getCurrentAttendanceBoardDraft()
+  const centerId = getCurrentCanonicalCenterContext().centerId
+  if (!selected || !canWriteCurrentAttendanceBoard() || draft.saving || attendanceDraftCount(draft)) return
+  const {row,cell} = selected, booking = cell.sourceBooking
+  if (!draft.bookingAttempt) draft.bookingAttempt = {idempotencyKey:createMakeupBookingKey(),command:{
+    operation,studentId:row.student.id,sourceAttendanceLocalId:cell.record.authorityLocalId,
+    ...(booking ? {bookingId:booking.id,expectedVersion:Number(booking.version)} : {}),
+    ...(destination ? {destinationScheduleId:destination.schedule_session_local_id,destinationDate:destination.occurrence_date} : {}),
+  }}
+  const attempt = draft.bookingAttempt
+  if (attempt.command.sourceAttendanceLocalId !== cell.record?.authorityLocalId) return
+  draft.saving = true
+  attendanceBoardDetailState = {...attendanceBoardDetailState,bookingSaving:true,bookingError:''}
+  render()
+  const result = await mutateMakeupBooking({supabase:getSupabaseClient(),centerId,...attempt})
+  draft.saving = false
+  if (draft !== attendanceBoardDraft || centerId !== getCurrentCanonicalCenterContext().centerId) return
+  if (result.ok) {
+    draft.bookingAttempt = null
+    attendanceBoardDetailState = {...attendanceBoardDetailState,bookingPicking:false,bookingSaving:false,bookingError:'',bookingAttempt:null}
+    await refreshAttendanceLedgerContext()
+  } else {
+    if (!result.uncertain) draft.bookingAttempt = null
+    attendanceBoardDetailState = {...attendanceBoardDetailState,bookingSaving:false,bookingError:result.error,
+      bookingAttempt: result.uncertain ? attempt : null}
+  }
+  render()
+  positionAttendanceCellEditor()
 }
 
 function getAttendanceLedgerPlannedOccurrences(context, filters = attendanceBoardFilters) {
@@ -1558,7 +1701,7 @@ async function refreshReportAttendanceContext() {
   reportPdfSnapshot = null
   render()
   const result = await pullCanonicalAttendanceLedgerContext({
-    supabase: getSupabaseClient(), centerId, filters: range, attendanceRecords,
+    supabase: getSupabaseClient(), centerId, filters: range, attendanceRecords, includeMakeupBookings: true,
   })
   const currentRange = getReportAttendanceRange()
   if (runId !== reportAttendanceReadRunId || centerId !== getCurrentCanonicalCenterContext().centerId
@@ -2463,6 +2606,9 @@ function getCenterBoundDrafts() {
   const add = (key, label, state, value = state?.values, identity = '') => {
     if (state) drafts.push({ key, label, identity: String(identity), value })
   }
+  const attendanceDraft = getCurrentAttendanceBoardDraft()
+  add('attendance-board', 'Bảng điểm danh', attendanceDraft, attendanceDraft.changes, attendanceDraft.centerId)
+  if (attendanceDraft.bookingAttempt) add('makeup-booking', 'Lịch học bù', attendanceDraft, attendanceDraft.bookingAttempt, attendanceDraft.centerId)
   add('student', 'Học viên', studentFormState, studentFormState?.values,
     `${studentFormState?.mode}:${studentFormState?.studentId || ''}`)
   add('teacher', 'Giáo viên', teacherFormState, teacherFormState?.values,
@@ -2561,6 +2707,7 @@ function getCenterBoundDrafts() {
 function getCenterWritesInFlight() {
   const writes = []
   const check = (condition, label) => { if (condition) writes.push(label) }
+  check(attendanceBoardDraft.saving || attendanceBoardDraft.bookingAttempt, 'Bảng điểm danh')
   check(f4bConversionState?.isSaving || c53CrmSharedTruthState.isSaving, 'Khách hàng')
   check(studentFormState?.isSaving || teacherFormState?.isSaving, 'Học viên / giáo viên')
   check(tuitionOperatorState.panel?.busy || c54FinanceSharedTruthState.isSaving
@@ -2595,6 +2742,7 @@ function closeCenterBoundWorkspacesForSwitch() {
 function resetTransientStateForCenterSwitch() {
   f4bConversionOperationId += 1
   centerSwitchDraftTracker.reset()
+  attendanceBoardDraft = createAttendanceBoardDraft()
   reviewCompletionState = null
   studentTuitionDetailRouteRunId += 1
   customerTuitionHandoffRunId += 1
@@ -12680,6 +12828,7 @@ function renderWindowBody(windowItem) {
     const attendanceLedger = attendanceAvailable ? buildCanonicalAttendanceLedger({
       students: getStudentsWithCanonicalProjections(), classSessions, scheduleSessions,
       occurrences: ledgerContext.occurrences,
+      makeupBookings: ledgerContext.makeupBookings,
       plannedOccurrences: getAttendanceLedgerPlannedOccurrences(ledgerContext, getReportAttendanceRange()),
       attendanceRecords: getCanonicalLedgerAttendance(attendanceRecords),
       filters: { ...getReportAttendanceRange(), classSessionId: 'all', teacherId: 'all', query: '' },
@@ -12760,14 +12909,18 @@ function renderWindowBody(windowItem) {
       classSessions,
       filters: attendanceBoardFilters,
       detailState: attendanceBoardDetailState,
+      draft: getCurrentAttendanceBoardDraft(),
       notificationReview: currentReview && reviewStudent ? {
         studentName: reviewStudent.fullName, cycleNumber: currentReview.cycleNumber,
         triggerDate: currentReview.triggerDate,
       } : null,
       onModel: (model, ready) => {
         attendanceBoardPdfSnapshot = ready ? { model, centerId: ledgerContext.centerId } : null
+        if (ready) reconcileAttendanceDraft(getCurrentAttendanceBoardDraft(), getCanonicalLedgerAttendance(attendanceRecords))
       },
       availability: {
+        centerName: getCurrentCanonicalCenterContext().centerName,
+        canWrite: canWriteCurrentAttendanceBoard(),
         attendanceAvailable,
         tuitionAvailable,
         attendanceRecords: attendanceAvailable ? getCanonicalLedgerAttendance(attendanceRecords) : [],
@@ -13976,6 +14129,7 @@ function selectFinanceWorkspaceViewForModule(moduleId) {
 }
 
 function openModuleWindow(moduleId, { refresh = true, preserveCurrentness = false } = {}) {
+  if (moduleId !== 'bang-diem-danh' && !confirmAttendanceBoardNavigation()) return false
   selectFinanceWorkspaceViewForModule(moduleId)
   moduleId = getCanonicalFinanceModuleId(moduleId)
 
@@ -15389,6 +15543,7 @@ function bringWindowToFront(windowId) {
   if (!targetWindow) {
     return
   }
+  if (targetWindow.moduleId !== 'bang-diem-danh' && !confirmAttendanceBoardNavigation()) return
 
   const nextZIndex = ++topZIndex
 
@@ -15586,6 +15741,8 @@ async function handleTeacherFormSave(event = null) {
 }
 
 function minimizeWindow(windowId) {
+  if (openWindows.find(item => item.id === windowId)?.moduleId === 'bang-diem-danh'
+    && !confirmAttendanceBoardNavigation()) return
   openWindows = openWindows.map((windowItem) =>
     windowItem.id === windowId ? { ...windowItem, minimized: true } : windowItem,
   )
@@ -15626,6 +15783,7 @@ function toggleMaximizeWindow(windowId) {
 
 function closeWindow(windowId) {
   const closingWindow = openWindows.find((windowItem) => windowItem.id === windowId)
+  if (closingWindow?.moduleId === 'bang-diem-danh' && !confirmAttendanceBoardNavigation()) return
   if (closingWindow?.moduleId === 'bang-diem-danh') {
     attendanceBoardDetailState = null
     attendanceBoardNoteFormState = null
@@ -25754,6 +25912,16 @@ function bindEvents() {
     button.addEventListener('click', () => { void exportAttendanceBoardPdf(button) })
   })
 
+  document.querySelectorAll('[data-attendance-month-step]').forEach(button => {
+    button.addEventListener('click', () => {
+      const date = new Date(`${attendanceBoardFilters.fromDate.slice(0,7)}-01T12:00:00Z`)
+      date.setUTCMonth(date.getUTCMonth()+Number(button.dataset.attendanceMonthStep))
+      const control = document.querySelector('[data-attendance-board-filter="month"]')
+      if (!control) return
+      control.value = date.toISOString().slice(0,7)
+      control.dispatchEvent(new Event('change',{bubbles:true}))
+    })
+  })
   document.querySelectorAll('[data-attendance-board-filter]').forEach((control) => {
     const eventNames = ['month', 'date'].includes(control.type)
       ? ['input', 'change']
@@ -25763,23 +25931,31 @@ function bindEvents() {
       const filterName = control.dataset.attendanceBoardFilter
       const cursorPosition = 'selectionStart' in control ? control.selectionStart : null
 
-      if (attendanceBoardFilters[filterName] === control.value && !attendanceBoardDetailState) {
+      if (!control.value && ['month', 'fromDate', 'toDate'].includes(filterName)) return
+      if (attendanceBoardFilters[filterName] === control.value
+        && (filterName !== 'month' || attendanceBoardFilters.fromDate === `${control.value}-01`)) {
+        return
+      }
+      if (!confirmAttendanceBoardNavigation()) {
+        control.value = filterName === 'month' ? attendanceBoardFilters.fromDate.slice(0, 7) : attendanceBoardFilters[filterName]
         return
       }
 
       attendanceBoardFilters = {
         ...attendanceBoardFilters,
         [filterName]: control.value,
+        ...(filterName === 'month' ? getAttendanceLedgerMonthRange(control.value) : {}),
       }
       attendanceBoardDetailState = null
       render()
 
-      if (['fromDate', 'toDate'].includes(filterName)) void refreshAttendanceLedgerContext()
+      // Ca/teacher/search filter the already-read monthly facts locally.
+      if (filterName === 'month') void refreshAttendanceLedgerContext()
 
       const nextControl = document.querySelector(`[data-attendance-board-filter="${filterName}"]`)
       focusElementWithoutScrolling(nextControl)
 
-      if (cursorPosition !== null && 'setSelectionRange' in nextControl) {
+      if (cursorPosition !== null && nextControl && 'setSelectionRange' in nextControl) {
         nextControl.setSelectionRange(cursorPosition, cursorPosition)
       }
     }
@@ -25920,15 +26096,111 @@ function bindEvents() {
 
   document.querySelectorAll('[data-attendance-cell-detail]').forEach((button) => {
     button.addEventListener('click', () => {
+      if (getCurrentAttendanceBoardDraft().saving || getCurrentAttendanceBoardDraft().bookingAttempt) return
       attendanceBoardDetailState = {
         studentId: button.dataset.studentId || '',
         dateKey: button.dataset.dateKey || '',
         scheduleSessionId: button.dataset.scheduleSessionId || '',
       }
       render()
-      focusElementWithoutScrolling(document.querySelector('.attendance-ledger-detail'))
+      positionAttendanceCellEditor()
+      focusElementWithoutScrolling(document.querySelector('[data-attendance-cell-editor]'))
     })
   })
+
+  document.querySelector('[data-attendance-save]')?.addEventListener('click', () => { void saveCurrentAttendanceBoard() })
+  document.querySelector('[data-attendance-editor-close]')?.addEventListener('click', () => {
+    if (getCurrentAttendanceBoardDraft().saving || getCurrentAttendanceBoardDraft().bookingAttempt) return
+    const previous = attendanceBoardDetailState
+    attendanceBoardDetailState = null
+    render()
+    const button = [...document.querySelectorAll('[data-attendance-cell-detail]')].find(item =>
+      item.dataset.studentId === previous?.studentId && item.dataset.scheduleSessionId === previous?.scheduleSessionId
+        && item.dataset.dateKey === previous?.dateKey)
+    focusElementWithoutScrolling(button)
+  })
+  document.querySelectorAll('[data-attendance-edit-status]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const selected = getCurrentAttendanceEditorCell()
+      if (!selected) return
+      const { row, cell } = selected
+      const draft = getCurrentAttendanceBoardDraft()
+      const value = attendanceCellDraftValue(draft, row.student.id, cell)
+      const status = button.dataset.attendanceEditStatus
+      if (draft.bookingAttempt) return
+      if (status === 'makeup' && cell.makeupBooking) {
+        const changed = stageAttendanceCell(draft, {centerId:getCurrentCanonicalCenterContext().centerId,
+          studentId:row.student.id,cell,records:attendanceRecords,status:'makeup',
+          makeupTarget:cell.makeupBooking.source_attendance_local_id,canWrite:canWriteCurrentAttendanceBoard()})
+        if (changed) { attendanceBoardDetailState = null; render() }
+        return
+      }
+      if (status === 'makeup' && (value.status !== 'makeup' || !value.makeupTarget)) {
+        const detail = { ...attendanceBoardDetailState, makeupPicking: true, makeupLoading: true,
+          makeupCandidates: [], makeupError: '' }
+        attendanceBoardDetailState = detail
+        render()
+        const centerId = getCurrentCanonicalCenterContext().centerId
+        const result = await pullA4EligibleMissedOccurrences({ supabase: getSupabaseClient(), centerId,
+          studentId: row.student.id, makeupDate: cell.occurrence.date })
+        if (attendanceBoardDetailState !== detail || getCurrentCanonicalCenterContext().centerId !== centerId) return
+        attendanceBoardDetailState = { ...detail, makeupLoading: false,
+          makeupCandidates: result.ok ? result.candidates : [], makeupError: result.ok ? '' : result.error }
+        render()
+        focusElementWithoutScrolling(document.querySelector('[data-attendance-makeup-source]') || document.querySelector('[data-attendance-cell-editor]'))
+        return
+      }
+      const changed = stageAttendanceCell(draft, { centerId: getCurrentCanonicalCenterContext().centerId,
+        studentId: row.student.id, cell, records: attendanceRecords, status: status === 'unmarked' ? null : status,
+        reason: value.reason, makeupTarget: value.makeupTarget, canWrite: canWriteCurrentAttendanceBoard() })
+      if (!changed) return
+      attendanceBoardDetailState = status === 'absent' ? { ...attendanceBoardDetailState, makeupPicking: false } : null
+      render()
+      if (status === 'absent') focusElementWithoutScrolling(document.querySelector('[data-attendance-edit-reason]'))
+    })
+  })
+  document.querySelector('[data-attendance-edit-reason]')?.addEventListener('input', event => {
+    const selected = getCurrentAttendanceEditorCell()
+    if (!selected) return
+    stageAttendanceCell(getCurrentAttendanceBoardDraft(), { centerId: getCurrentCanonicalCenterContext().centerId,
+      studentId: selected.row.student.id, cell: selected.cell, records: attendanceRecords, status: 'absent',
+      reason: event.currentTarget.value, canWrite: canWriteCurrentAttendanceBoard() })
+    render()
+  })
+  document.querySelectorAll('[data-attendance-makeup-source]').forEach(button => {
+    button.addEventListener('click', () => {
+      const selected = getCurrentAttendanceEditorCell()
+      if (!selected || !attendanceBoardDetailState?.makeupCandidates?.some(candidate =>
+        candidate.attendance_local_id === button.dataset.attendanceMakeupSource)) return
+      const changed = stageAttendanceCell(getCurrentAttendanceBoardDraft(), {
+        centerId: getCurrentCanonicalCenterContext().centerId, studentId: selected.row.student.id, cell: selected.cell,
+        records: attendanceRecords, status: 'makeup', makeupTarget: button.dataset.attendanceMakeupSource,
+        canWrite: canWriteCurrentAttendanceBoard(),
+      })
+      if (changed) { attendanceBoardDetailState = null; render() }
+    })
+  })
+  document.querySelector('[data-attendance-cell-editor]')?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      document.querySelector('[data-attendance-editor-close]')?.click()
+    }
+  })
+  document.querySelector('[data-attendance-book-makeup]')?.addEventListener('click', () => { void chooseAttendanceMakeupDestination() })
+  document.querySelector('[data-attendance-cancel-makeup]')?.addEventListener('click', () => { void saveAttendanceMakeupBooking('CANCEL') })
+  document.querySelector('[data-attendance-book-retry]')?.addEventListener('click', () => { void saveAttendanceMakeupBooking() })
+  document.querySelectorAll('[data-attendance-book-destination]').forEach(button => {
+    button.addEventListener('click', () => {
+      const destination = attendanceBoardDetailState?.bookingDestinations?.find(o =>
+        `${o.schedule_session_local_id}|${o.occurrence_date}` === button.dataset.attendanceBookDestination)
+      if (!destination) return
+      void saveAttendanceMakeupBooking(getCurrentAttendanceEditorCell()?.cell.sourceBooking ? 'RESCHEDULE' : 'BOOK', destination)
+    })
+  })
+  document.querySelectorAll('.attendance-ledger-scroll').forEach(scroller => {
+    scroller.addEventListener('scroll', positionAttendanceCellEditor, { passive: true })
+  })
+  positionAttendanceCellEditor()
 
   document.querySelectorAll('[data-attendance-detail-close]').forEach((button) => {
     button.addEventListener('click', (event) => {
@@ -32261,6 +32533,19 @@ installTextEditingRenderProtection()
 applyUiTheme()
 render()
 initializeSupabaseAuth()
+
+document.addEventListener('click', event => {
+  if (!attendanceBoardDetailState?.studentId || !document.querySelector('[data-attendance-cell-editor]')) return
+  if (getCurrentAttendanceBoardDraft().saving || getCurrentAttendanceBoardDraft().bookingAttempt) return
+  if (event.target.closest('[data-attendance-cell-editor], [data-attendance-cell-detail]')) return
+  attendanceBoardDetailState = null
+  render()
+})
+window.addEventListener('beforeunload', event => {
+  if (!attendanceDraftCount(attendanceBoardDraft) && !attendanceBoardDraft.saving && !attendanceBoardDraft.bookingAttempt) return
+  event.preventDefault()
+  event.returnValue = ''
+})
 
 window.addEventListener('hashchange', () => {
   render()

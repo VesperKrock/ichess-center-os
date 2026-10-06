@@ -6,6 +6,7 @@ import {getVisibleScheduleSessions} from '../src/schedule-module.js'
 import {getModuleRefreshContract,evaluateModuleRefreshResults} from '../src/module-authority-registry.js'
 import {normalizeTuitionCyclePresentation} from '../src/tuition-module.js'
 import {renderAttendanceBoardModule} from '../src/attendance-board-module.js'
+import {createAttendanceBoardDraft,reconcileAttendanceDraft} from '../src/attendance-board-editor.js'
 import {ledgerFixture} from './a6-attendance-ledger-fixtures.js'
 
 const classSessions=[{id:'class-a',name:'Class',daysOfWeek:['tue','thu'],startTime:'17:30',endTime:'18:30',status:'active'}]
@@ -65,6 +66,7 @@ assert.match(main,/const tuitionAvailable = isModuleUpstreamCurrent\('bang-diem-
 const branch=main.slice(main.indexOf("  if (moduleItem.id === 'bang-diem-danh')"),main.indexOf('\n  return `',main.indexOf("  if (moduleItem.id === 'bang-diem-danh')")))
 let options
 const vm=createContext({moduleItem:{id:'bang-diem-danh'},isModuleUpstreamCurrent:(_,upstream)=>upstream!=='tuition',getCurrentAttendanceLedgerContext:()=>({status:'ready',occurrences:fixture.occurrences}),
+  getCurrentAttendanceBoardDraft:()=>createAttendanceBoardDraft('test'),canWriteCurrentAttendanceBoard:()=>false,reconcileAttendanceDraft,
   renderAttendanceBoardModule:input=>{options=input;return renderAttendanceBoardModule(input)},getStudentsWithCanonicalProjections:()=>fixture.students,classSessions:fixture.classSessions,attendanceBoardFilters:fixture.filters,attendanceBoardDetailState:null,
   attendanceRecords:fixture.attendanceRecords,getCanonicalLedgerAttendance:rows=>rows,getAttendanceLedgerPlannedOccurrences:()=>[],scheduleSessions:[],
   isV24PackageCycleCapabilityReady:()=>true,v24PackageCycleCapabilityState:{},getCurrentCanonicalCenterContext:()=>({centerId:'test'}),v24PackageCycleStudentStates:fixture.packageCycleStudentStates})
@@ -72,7 +74,7 @@ const rendered=runInContext(`(()=>{${branch}})()`,vm)
 assert(options.availability.tuitionAvailable);assert(options.availability.packageCycleReady)
 assert.equal(options.students[0].id,fixture.packageCycleStudentStates[0].studentId)
 assert.equal(options.availability.packageCycleStudentStates,fixture.packageCycleStudentStates)
-assert.match(rendered,/>5\/16<\/td>/,'Actual Board branch must render canonical cycle value despite failed unrelated generic Tuition read')
+assert.match(rendered,/<strong>5\/16<\/strong>/,'Actual Board branch must render canonical cycle value despite failed unrelated generic Tuition read')
 assert.doesNotMatch(rendered,/data-admin-attendance-status|Lưu điểm danh/)
 const refreshBranch=main.slice(main.indexOf("  if (moduleId === 'bang-diem-danh') {",main.indexOf('async function refreshModuleAuthoritativeUpstreams')),main.indexOf('\n  const latestContext',main.indexOf('async function refreshModuleAuthoritativeUpstreams')))
 assert.doesNotMatch(refreshBranch,/refreshV24PackageCycles/,'The cycle upstream owns its one refresh; do not race a second cycle read')
