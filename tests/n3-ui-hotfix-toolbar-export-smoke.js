@@ -21,7 +21,7 @@ assert(controls.every((item, i) => toolbar.indexOf(item) >= 0 && (!i || toolbar.
 assert(!toolbar.includes('data-attendance-export-'))
 assert(!toolbar.includes('<span>Ca học</span>') && !toolbar.includes('<span>Giáo viên</span>') && !toolbar.includes('<span>Tìm học viên</span>'))
 assert(!clean.includes('BẢNG ĐIỂM DANH')); assert(!clean.includes('Phòng kiểm thử · Tháng'))
-assert(clean.includes('Tháng Chín 2026')); assert(clean.includes('data-attendance-main-teacher'))
+assert(clean.includes('Tháng Chín 2026')); assert(!clean.includes('data-attendance-main-teacher'))
 assert.match(clean, /data-attendance-save disabled/); assert.match(clean, /data-attendance-discard disabled/)
 assert.match(clean, /data-attendance-export-menu[\s\S]*?In \/ Xuất PDF[\s\S]*?Xuất Excel \(\.xlsx\)/)
 assert(clean.indexOf('data-attendance-export-menu') > clean.indexOf('attendance-ledger-meta'))

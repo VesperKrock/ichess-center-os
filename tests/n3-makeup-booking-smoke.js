@@ -52,9 +52,10 @@ const opts={students:input.students,classSessions:input.classSessions,filters:{m
 const html=renderCanonicalAttendanceLedgerModule({...opts,filters:{...opts.filters,classSessionId:'class-b'}})
 assert.match(html,/Tháng trước/);assert.match(html,/Tháng sau/);assert.match(html,/Tháng Chín 2026/)
 assert.doesNotMatch(html,/Từ ngày|Đến ngày|Khoảng ngày/)
-assert.match(html,/Giáo viên chính: Cô Chính/);assert.match(html,/attendance-ledger-makeup-context">Bù/)
+assert.doesNotMatch(html,/Giáo viên chính:/);assert.match(html,/attendance-ledger-makeup-context">Bù/)
 const detail=renderCanonicalAttendanceLedgerModule({...opts,detailState:{studentId:'student-b',scheduleSessionId:'second',dateKey:dest.occurrence_date}})
-assert.match(detail,/Bù cho:/);assert.doesNotMatch(detail,/data-attendance-edit-status="present"/)
+assert.match(detail,/Bù cho:/);assert.match(detail,/data-attendance-edit-status="present"/)
+assert.doesNotMatch(detail,/data-attendance-edit-status="(?:absent|unmarked)"/)
 assert.equal(currentClassMainTeacher([], 'class-b',input.now),'Chưa rõ')
 assert.equal(currentClassMainTeacher([{class_session_local_id:'class-b',teacher_name:'Old',effective_from:'2026-01-01',effective_to:'2026-08-01'}], 'class-b',input.now),'Chưa rõ')
 const responses={bookings:[booking],destinations:[dest],ok:true,center_id:center}

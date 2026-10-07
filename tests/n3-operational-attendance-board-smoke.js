@@ -25,7 +25,7 @@ const resting=renderCanonicalAttendanceLedgerModule(options)
 for(const mark of ['✓','V','B','?'])assert(resting.includes(`>${mark}</span>`),`${mark} renders compactly`)
 assert(!/<th[^>]*>Lý do vắng/.test(resting))
 assert(resting.includes('còn 4')&&resting.includes('<strong>4/8</strong>'))
-assert(resting.indexOf('Tiến độ / còn lại')>resting.indexOf('data-attendance-occurrence-key'))
+assert(resting.indexOf('Số buổi còn lại')>resting.indexOf('data-attendance-occurrence-key'))
 assert(resting.includes('data-attendance-save disabled'))
 const endedCycle=renderCanonicalAttendanceLedgerModule({...options,availability:{...options.availability,
  packageCycleStudentStates:input.packageCycleStudentStates.map(state=>({...state,currentCycle:{...state.currentCycle,

@@ -173,15 +173,15 @@
    Dense calendars scroll only when their 40px date minimum cannot fit. */
 .desktop-window.is-attendance-window .attendance-ledger-sheet {
   --attendance-name-width: clamp(190px, 17vw, 236px);
-  width: 100%; min-width: calc(336px + var(--attendance-name-width) + var(--attendance-date-columns) * 40px); max-width: none;
+  width: 100%; min-width: calc(376px + var(--attendance-name-width) + var(--attendance-date-columns) * 40px); max-width: none;
   table-layout: fixed;
 }
 .attendance-grid-index { width: 36px; }
 .attendance-grid-student { width: var(--attendance-name-width); }
-.attendance-grid-year { width: 60px; }
+.attendance-grid-year { width: 80px; }
 .attendance-grid-package { width: 68px; }
 .attendance-grid-level { width: 76px; }
-.attendance-grid-progress { width: 96px; }
+.attendance-grid-progress { width: 116px; }
 .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-index,
 .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-student,
 .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-year,
@@ -202,6 +202,12 @@
 .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-year,
 .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-package { font-size: 15px; padding: 5px 4px; }
 .desktop-window.is-attendance-window .attendance-ledger .attendance-ledger-sheet .attendance-ledger-level { font-size: 14px; padding: 5px 4px; }
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead .attendance-ledger-year,
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead .attendance-ledger-package,
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead .attendance-ledger-level,
+.desktop-window.is-attendance-window .attendance-ledger-sheet thead .attendance-ledger-progress {
+  white-space: normal; overflow-wrap: normal; word-break: normal; line-height: 19px; padding: 5px 6px;
+}
 .attendance-ledger-column strong { font-size: 16px; line-height: 21px; }
 .attendance-ledger-column small { font-size: 12px; line-height: 16px; }
 .attendance-ledger-column button { padding: 3px 1px; }

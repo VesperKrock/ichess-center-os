@@ -14,7 +14,7 @@ export const ATTENDANCE_LEDGER_STATES = Object.freeze({
   today: { label: 'Chưa điểm danh hôm nay', mark: '' },
   future: { label: 'Chưa đến giờ học', mark: '◷' },
   cancelled: { label: 'Đã hủy', mark: '×' },
-  notExpected: { label: 'Không thuộc danh sách buổi học', mark: '—' },
+  notExpected: { label: 'Không thuộc lịch định kỳ', mark: '—' },
 })
 
 export function isAttendanceLedgerDate(value) {
@@ -173,7 +173,10 @@ export function buildCanonicalAttendanceLedger({
       occurrenceByKey.set(occurrence.key, occurrence)
     }
   }
-  if (monthlyProjection) for (const occurrence of occurrenceByKey.values()) occurrence.dateReachedEditing = true
+  if (monthlyProjection) for (const occurrence of occurrenceByKey.values()) {
+    occurrence.dateReachedEditing = true
+    occurrence.regularStudentIds = [...occurrence.studentIds]
+  }
   const today = new Intl.DateTimeFormat('sv-SE', {timeZone: 'Asia/Ho_Chi_Minh'}).format(now)
   const bookingByDestination = new Map()
   const bookingBySource = new Map()
@@ -218,7 +221,8 @@ export function buildCanonicalAttendanceLedger({
     const student = studentById.get(studentId) || { id: studentId, fullName: 'Học viên lịch sử' }
     const cells = columns.map(occurrence => {
       const expected = occurrence.studentIds.includes(studentId)
-      const record = expected ? selectCurrentV23OccurrenceAttendanceRecord(
+      const offRoster = monthlyProjection && !occurrence.regularStudentIds.includes(studentId)
+      const record = monthlyProjection || expected ? selectCurrentV23OccurrenceAttendanceRecord(
         recordsByOccurrence.get(occurrence.key) || [],
         { id: occurrence.scheduleSessionId, occurrenceDate: occurrence.date }, studentId,
       ) : null
@@ -226,8 +230,9 @@ export function buildCanonicalAttendanceLedger({
       const recordedState = rawStatus === 'makeup' ? 'makeup' : rawStatus === 'present' ? 'present'
         : rawStatus === 'trial' ? 'historicalTrial'
           : ['absent', 'excused', 'excusedAbsent', 'unexcusedAbsent'].includes(rawStatus) ? 'absent' : null
-      const state = monthlyProjection ? !expected ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
-        : recordedState || (occurrence.date > today ? 'future' : occurrence.date === today ? 'today' : 'unmarked')
+      const state = monthlyProjection ? occurrence.date > today ? 'future'
+        : !expected && !record ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
+          : recordedState || (offRoster ? 'notExpected' : occurrence.date === today ? 'today' : 'unmarked')
         : !expected ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
         : isAttendanceLedgerOccurrenceFuture(occurrence, now) ? 'future'
           : rawStatus === 'makeup' ? 'makeup'
@@ -243,8 +248,10 @@ export function buildCanonicalAttendanceLedger({
       const completedMakeup = record?.authorityLocalId && canonicalRecords.find(r => r.attendanceStatus === 'makeup'
         && r.makeupForAttendanceLocalId === record?.authorityLocalId && r.studentId === studentId)
       return { occurrence, record, state, ...ATTENDANCE_LEDGER_STATES[state], originalOccurrence, makeupBooking, sourceBooking,
+        offRoster,
         ...(monthlyProjection && state === 'future' ? {mark: '', label: 'Chưa tới ngày học'} : {}),
-        unmarkedState: monthlyProjection && occurrence.date === today ? 'today' : 'unmarked',
+        ...(monthlyProjection && state === 'today' ? {mark: '?', label: 'Chưa điểm danh'} : {}),
+        unmarkedState: offRoster ? 'notExpected' : monthlyProjection && occurrence.date === today ? 'today' : 'unmarked',
         isOverdueUnmarked: Boolean(monthlyProjection && expected && !record && state === 'unmarked' && occurrence.date < today),
         makeupOnly: Boolean(makeupBooking && !occurrence.regularStudentIds.includes(studentId)),
         completedMakeup,

@@ -2,6 +2,7 @@ import { getCanonicalLedgerAttendance, isAttendanceLedgerOccurrenceFuture } from
 import { getV23OccurrenceAttendanceRecords } from './cloud-authoritative-occurrence-attendance.js'
 import { mutateAttendanceBatch } from './cloud-authoritative-attendance-batch.js'
 import { createOperationalCommandIdempotencyKey } from './cloud-authoritative-attendance-tuition.js'
+import { ensureAttendanceBoardMakeupBookings, MAKEUP_PARTIAL_SAVE } from './attendance-board-makeup.js'
 
 const historical = new Set(['trial', 'excused', 'excusedAbsent', 'unexcusedAbsent'])
 export const attendanceDraftCellKey = (studentId, occurrence) => JSON.stringify([
@@ -14,7 +15,8 @@ export const attendanceDraftCount = draft => Object.keys(draft?.changes || {}).l
 
 export function canEditAttendanceCell(cell, { canWrite = false, saving = false, uncertain = false, now = new Date() } = {}) {
   return Boolean(canWrite && !saving && !uncertain && cell
-    && !['future', 'cancelled', 'notExpected'].includes(cell.state)
+    && !['future', 'cancelled'].includes(cell.state)
+    && (cell.state !== 'notExpected' || cell.offRoster)
     && cell.occurrence.lifecycleState !== 'CANCELLED'
     && !isAttendanceLedgerOccurrenceFuture(cell.occurrence, now)
     && !historical.has(cell.record?.attendanceStatus || cell.record?.status))
@@ -38,10 +40,15 @@ export function attendanceCellDraftValue(draft, studentId, cell) {
 }
 
 export function stageAttendanceCell(draft, { centerId, studentId, cell, records = [], status,
-  reason = null, makeupTarget = null, canWrite = false, now = new Date() } = {}) {
-  if (draft.centerId !== centerId || !canEditAttendanceCell(cell, { canWrite, saving: draft.saving, uncertain: draft.uncertain, now })) return false
+  reason = null, makeupTarget = null, makeupSource = null, canWrite = false, now = new Date() } = {}) {
+  if (draft.centerId !== centerId || draft.bookingAttempt
+    || !canEditAttendanceCell(cell, { canWrite, saving: draft.saving, uncertain: draft.uncertain, now })) return false
   if (![null, 'present', 'absent', 'makeup'].includes(status)) return false
-  if (cell.makeupOnly && (status !== null && status !== 'makeup'
+  if (cell.offRoster) {
+    if (status === 'absent' || status === null && valueOf(cell.record).status !== null) return false
+    if (status === 'makeup' && makeupTarget !== cell.makeupBooking?.source_attendance_local_id
+      && (!makeupSource || makeupSource.attendance_local_id !== makeupTarget)) return false
+  } else if (cell.makeupOnly && (status !== null && status !== 'makeup'
     || status === 'makeup' && makeupTarget !== cell.makeupBooking.source_attendance_local_id)) return false
   if ((cell.sourceBooking || cell.completedMakeup) && status !== 'absent') return false
   const normalizedReason = status === 'absent' ? String(reason || '').trim() || null : null
@@ -60,7 +67,8 @@ export function stageAttendanceCell(draft, { centerId, studentId, cell, records 
   const value = { status, reason: normalizedReason, makeupTarget: status === 'makeup' ? makeupTarget : null }
   if (same(base, value)) delete draft.changes[key]
   else draft.changes[key] = { studentId, scheduleSessionId: cell.occurrence.scheduleSessionId,
-    occurrenceDate: cell.occurrence.date, expectedRecords: versions, base, value, conflict: false }
+    occurrenceDate: cell.occurrence.date, expectedRecords: versions, base, value, conflict: false,
+    ...(cell.offRoster && status === 'makeup' ? {offRosterMakeup:true, makeupSource} : {}) }
   draft.message = ''; draft.error = ''; draft.attempt = null
   return true
 }
@@ -84,7 +92,8 @@ export function buildAttendanceDraftChanges(draft) {
   })
 }
 
-export async function saveAttendanceBoardDraft(draft, { supabase, centerId, canWrite = false, onChange = () => {} } = {}) {
+export async function saveAttendanceBoardDraft(draft, { supabase, centerId, canWrite = false, onChange = () => {},
+  isContextCurrent = () => true } = {}) {
   if (draft.saving || !canWrite || draft.centerId !== centerId || !attendanceDraftCount(draft)) return { ok: false }
   if (Object.values(draft.changes).some(change => change.conflict) && !draft.uncertain) {
     draft.error = 'Dữ liệu vừa được thay đổi. Vui lòng kiểm tra lại các ô đã sửa.'
@@ -96,7 +105,15 @@ export async function saveAttendanceBoardDraft(draft, { supabase, centerId, canW
     fingerprint, changes, idempotencyKey: createOperationalCommandIdempotencyKey(),
   }
   draft.saving = true; draft.error = ''; draft.message = ''; onChange()
-  const result = await mutateAttendanceBatch({ supabase, centerId, ...draft.attempt })
+  let booking, result
+  try {
+    booking = await ensureAttendanceBoardMakeupBookings(draft, {supabase, centerId, isContextCurrent})
+    result = !booking.ok ? { ...booking, outcome_code:'MAKEUP_BOOKING_NOT_READY' }
+      : !isContextCurrent() ? {ok:false, outcome_code:'CONTEXT_CHANGED', error:'Cơ sở đã thay đổi. Vui lòng làm mới.'}
+        : await mutateAttendanceBatch({ supabase, centerId, ...draft.attempt })
+  } catch {
+    result = {ok:false, outcome_code:'MAKEUP_BOOKING_NOT_READY', error:'Chưa xác nhận được lịch học bù. Vui lòng thử lưu lại.'}
+  }
   draft.saving = false
   if (result.ok) {
     draft.changes = {}; draft.attempt = null; draft.uncertain = false
@@ -107,11 +124,15 @@ export async function saveAttendanceBoardDraft(draft, { supabase, centerId, canW
       draft.attempt = null
       for (const change of Object.values(draft.changes)) change.conflict = true
     }
-    draft.uncertain = ['SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT'].includes(result.outcome_code)
+    if (result.outcome_code !== 'MAKEUP_BOOKING_NOT_READY') {
+      draft.uncertain = ['SERVER_COMMAND_FAILED', 'INVALID_SERVER_RESULT'].includes(result.outcome_code)
+    }
     draft.error = conflict ? 'Dữ liệu vừa được thay đổi. Vui lòng kiểm tra lại các ô đã sửa.'
       : draft.uncertain ? 'Chưa xác nhận được đã lưu. Bấm Lưu điểm danh để thử lại.'
         : result.error || 'Chưa lưu được điểm danh. Các thay đổi vẫn được giữ.'
+    if (booking?.bookingPrepared) draft.error = draft.uncertain
+      ? 'Lịch học bù đã được tạo; chưa xác nhận được điểm danh. Vui lòng thử lưu lại.' : MAKEUP_PARTIAL_SAVE
   }
   onChange()
-  return result
+  return {...result, makeupPreflight: Object.values(draft.changes).some(c => c.offRosterMakeup) || booking?.bookingPrepared}
 }
