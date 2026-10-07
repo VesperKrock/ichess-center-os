@@ -1610,7 +1610,7 @@ async function chooseAttendanceBoardMakeupSource() {
   render()
   const result = await pullAttendanceBoardMakeupSources({supabase:getSupabaseClient(), centerId,
     studentId:row.student.id, scheduleSessionId:cell.occurrence.scheduleSessionId,
-    occurrenceDate:cell.occurrence.date, draft})
+    occurrenceDate:cell.occurrence.date, occurrence:cell.occurrence, draft})
   if (attendanceBoardDetailState !== detail || attendanceBoardDraft !== draft
     || getCurrentCanonicalCenterContext().centerId !== centerId) return
   const source = result.booking

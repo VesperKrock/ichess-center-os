@@ -4,7 +4,7 @@ import { createOperationalCommandIdempotencyKey } from './cloud-authoritative-at
 
 export const NO_MAKEUP_SOURCE = 'Không có buổi Vắng hợp lệ để học bù.'
 export const SAVE_ABSENCE_FIRST = 'Hãy lưu buổi Vắng trước khi xếp Học bù.'
-export const MAKEUP_PARTIAL_SAVE = 'Lịch học bù đã được tạo nhưng điểm danh chưa lưu được. Vui lòng thử lưu lại.'
+export const MAKEUP_PARTIAL_SAVE = 'Lịch học bù đã được tạo nhưng điểm danh chưa lưu được. Hãy thử Lưu điểm danh lại.'
 const contextError = 'Cơ sở hoặc quyền thao tác đã thay đổi. Vui lòng làm mới.'
 const sameDestination = (booking, studentId, scheduleId, date) => booking.student_local_id === studentId
   && booking.destination_schedule_local_id === scheduleId && booking.destination_date === date
@@ -12,15 +12,48 @@ const sameDestination = (booking, studentId, scheduleId, date) => booking.studen
 // Eligibility comes from A4. N3 reads only narrow those candidates against
 // frozen source facts, active bookings and locally reserved source identities.
 export async function pullAttendanceBoardMakeupSources({ supabase, centerId, studentId,
-  scheduleSessionId, occurrenceDate, draft } = {}) {
+  scheduleSessionId, occurrenceDate, occurrence, draft, resolveDestination = false,
+  isContextCurrent = () => true } = {}) {
   const [sources, target] = await Promise.all([
     pullA4EligibleMissedOccurrences({ supabase, centerId, studentId, makeupDate: occurrenceDate }),
     pullMakeupBookingContext({ supabase, centerId, fromDate: occurrenceDate, toDate: occurrenceDate }),
   ])
   if (!sources.ok || !target.ok) return {ok:false, error:sources.error || target.error}
-  const destination = target.destinations.find(o => o.schedule_session_local_id === scheduleSessionId
+  let destination = target.destinations.find(o => o.schedule_session_local_id === scheduleSessionId
     && o.occurrence_date === occurrenceDate)
-  if (!destination) return {ok:false, error:'Buổi học chưa sẵn sàng để xếp học bù. Vui lòng làm mới.'}
+  if (!destination && resolveDestination) {
+    if (!isContextCurrent()) return {ok:false, error:contextError}
+    // N3 requires a frozen destination. A2's existing public RESOLVE is
+    // idempotent by occurrence identity and never enrolls the Student.
+    // Materialize only on Save, keeping source selection read-only.
+    let resolved
+    try {
+      resolved = await supabase.rpc('a2_manage_occurrence', {
+        p_center_id:centerId, p_schedule_session_id:scheduleSessionId,
+        p_occurrence_date:occurrenceDate, p_action:'RESOLVE',
+      })
+    } catch { return {ok:false, error:'Chưa xác nhận được buổi học bù. Hãy thử Lưu điểm danh lại.'} }
+    if (!isContextCurrent()) return {ok:false, error:contextError}
+    const fact = resolved.data?.occurrence
+    if (resolved.error || resolved.data?.ok !== true || resolved.data.center_id !== centerId
+      || fact?.center_id !== centerId || fact.schedule_session_local_id !== scheduleSessionId
+      || fact.occurrence_date !== occurrenceDate) {
+      return {ok:false, error:'Buổi học bù không còn hợp lệ hoặc bạn không có quyền thao tác.'}
+    }
+    if (fact.lifecycle_state === 'CANCELLED') return {ok:false, error:'Buổi học bù đã bị hủy.'}
+    const fresh = await pullMakeupBookingContext({supabase, centerId, fromDate:occurrenceDate, toDate:occurrenceDate})
+    if (!isContextCurrent()) return {ok:false, error:contextError}
+    if (!fresh.ok) return fresh
+    target.bookings = fresh.bookings
+    destination = fresh.destinations.find(o => o.schedule_session_local_id === scheduleSessionId
+      && o.occurrence_date === occurrenceDate)
+  }
+  // Monthly Board projects valid, not-yet-materialized Schedule slots. Roster
+  // membership and N3's persisted destination snapshot are separate facts.
+  const projected = !resolveDestination && occurrence?.materialized === false
+    && occurrence.scheduleSessionId === scheduleSessionId && occurrence.date === occurrenceDate
+    && ['PLANNED','HELD'].includes(occurrence.lifecycleState)
+  if (!destination && !projected) return {ok:false, error:'Buổi học bù không còn hợp lệ. Hãy chọn buổi khác.'}
   const booking = target.bookings.find(b => sameDestination(b, studentId, scheduleSessionId, occurrenceDate))
   const dates = [...new Set(sources.candidates.map(c => c.occurrence_date))]
   const reads = await Promise.all(dates.map(date => pullMakeupBookingContext({
@@ -52,7 +85,8 @@ export async function ensureAttendanceBoardMakeupBookings(draft, {supabase, cent
   for (const change of Object.values(draft.changes).filter(c => c.offRosterMakeup && c.value.status === 'makeup')) {
     if (!contextValid()) return {ok:false, bookingPrepared:prepared, error:contextError}
     const current = await pullAttendanceBoardMakeupSources({supabase, centerId, draft,
-      studentId:change.studentId, scheduleSessionId:change.scheduleSessionId, occurrenceDate:change.occurrenceDate})
+      studentId:change.studentId, scheduleSessionId:change.scheduleSessionId, occurrenceDate:change.occurrenceDate,
+      resolveDestination:true, isContextCurrent:contextValid})
     if (!contextValid()) return {ok:false, bookingPrepared:prepared, error:contextError}
     if (!current.ok) return {...current, bookingPrepared:prepared}
     const exact = current.booking?.source_attendance_local_id === change.value.makeupTarget ? current.booking : null
