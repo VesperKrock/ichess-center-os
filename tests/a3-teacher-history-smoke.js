@@ -60,6 +60,7 @@ const detailHtml = renderScheduleModule(
     classSessions: [classSession], a3TeacherContext: { assignments, occurrences: [occurrence] },
     a3TeacherReady: true, a3TeacherChoices: [{ id: 'teacher-c', displayName: 'Teacher C' }],
     planDetail: { sessionId: 'a3-session', occurrenceDate: '2026-09-21' },
+    viewMode: 'classes',
   },
 )
 assert.match(detailHtml, /data-a3-teacher-action="class"/)

@@ -11,7 +11,7 @@ import {
   expandWeeklyCenterCalendarOccurrences,
   isWeeklyRecurringCenterCalendarItem,
 } from './center-calendar-recurrence.js'
-import { getVisibleScheduleSessions, getSchedulePlannedAppointments } from './schedule-module.js'
+import { getVisibleScheduleSessions, getSchedulePlannedAppointments, normalizeScheduleViewMode } from './schedule-module.js'
 import { projectA3ScheduleSessions } from './cloud-authoritative-teacher-history.js'
 
 export const SCHEDULE_PRINT_FILTER_ALL = 'all'
@@ -42,6 +42,7 @@ export function createSchedulePrintSnapshot({
   teachers = [],
   teacherContext = null,
   activityFilters = {},
+  viewMode = '',
   createdAt = new Date().toISOString(),
 } = {}) {
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentWeekStartDate()
@@ -67,7 +68,12 @@ export function createSchedulePrintSnapshot({
     teacherName: '', isCancelled: item.status === 'cancelled' || item.status === 'rescheduled',
     sortKey: `${item.date}-${item.time || '00:00'}-${item.title}`, color: '#64748b',
   }))
-  const entries = [...sessionEntries, ...activityEntries, ...appointmentEntries].sort(comparePrintEntries)
+  // Keep unspecified snapshots compatible with existing non-UI consumers.
+  // Weekly Calendar always captures its selected tab, before print is opened.
+  const scope = viewMode ? normalizeScheduleViewMode(viewMode) : 'all'
+  const entries = (scope === 'classes' ? sessionEntries
+    : scope === 'activities' ? [...activityEntries, ...appointmentEntries]
+      : [...sessionEntries, ...activityEntries, ...appointmentEntries]).sort(comparePrintEntries)
   const groupedDays = days.map((day) => ({
     ...day,
     entries: entries.filter((entry) => entry.date === day.date),
@@ -83,7 +89,9 @@ export function createSchedulePrintSnapshot({
     createdAt,
     createdAtLabel: formatDateTime(createdAt),
     timezone: 'Asia/Ho_Chi_Minh',
+    viewMode: scope,
     activityFilters: normalizeActivityFilters(activityFilters),
+    activityFilterTagLabel: repairSchedulePrintDisplayText(tagLookup.get(activityFilters.tagId)?.label || ''),
     days: groupedDays,
     entries,
     legend: createSchedulePrintLegend(entries),
@@ -94,6 +102,8 @@ export function getSchedulePrintFilteredSnapshot(snapshot, filterMode = SCHEDULE
   const mode = filterMode === SCHEDULE_PRINT_FILTER_CURRENT ? SCHEDULE_PRINT_FILTER_CURRENT : SCHEDULE_PRINT_FILTER_ALL
   const filters = snapshot?.activityFilters || normalizeActivityFilters()
   const entries = (Array.isArray(snapshot?.entries) ? snapshot.entries : []).filter((entry) => {
+    if (snapshot?.viewMode === 'classes' && entry.sourceKind === 'activity'
+      || snapshot?.viewMode === 'activities' && entry.sourceKind !== 'activity') return false
     if (entry.sourceKind !== 'activity' || mode === SCHEDULE_PRINT_FILTER_ALL) {
       return true
     }
@@ -125,21 +135,29 @@ export function renderSchedulePrintDocument(snapshot = null) {
 
   const dayCount = snapshot.days?.length || 0
   const totalCount = snapshot.entries?.length || 0
+  const heading = snapshot.viewMode === 'activities' ? 'LỊCH HOẠT ĐỘNG TUẦN'
+    : snapshot.viewMode === 'classes' ? 'THỜI KHÓA BIỂU CA HỌC' : 'Lịch làm việc tuần'
+  const filterLabel = snapshot.viewMode === 'classes' ? ''
+    : snapshot.viewMode === 'activities' ? (snapshot.filterMode === SCHEDULE_PRINT_FILTER_CURRENT ? [
+      snapshot.activityFilters?.itemType !== 'all' ? CENTER_CALENDAR_ITEM_TYPE_LABELS[snapshot.activityFilters?.itemType] : '',
+      snapshot.activityFilters?.tagId === '__none__' ? 'Không gắn nhãn' : snapshot.activityFilters?.tagId !== 'all' ? snapshot.activityFilterTagLabel : '',
+    ].filter(Boolean).join(' · ') : '')
+      : snapshot.filterModeLabel || getSchedulePrintFilterLabel(snapshot.filterMode)
 
   return `
-    <section class="schedule-print-document" data-schedule-print-document aria-label="Lịch làm việc tuần">
+    <section class="schedule-print-document" data-schedule-print-document aria-label="${heading}">
       <header class="schedule-print-document-header">
         <div>
-          <p class="schedule-print-kicker">Lịch làm việc tuần</p>
+          <p class="schedule-print-kicker">${heading}</p>
           <h1>${escapeHtml(snapshot.centerName)}</h1>
           <p>${escapeHtml(snapshot.weekRangeLabel)} · ${escapeHtml(snapshot.timezone)}</p>
         </div>
         <div class="schedule-print-meta">
           <span>Thời điểm tạo: ${escapeHtml(snapshot.createdAtLabel)}</span>
-          <span>${escapeHtml(snapshot.filterModeLabel || getSchedulePrintFilterLabel(snapshot.filterMode))}</span>
+          ${filterLabel ? `<span>${escapeHtml(filterLabel)}</span>` : ''}
         </div>
       </header>
-      ${renderSchedulePrintLegend(snapshot.legend)}
+      ${renderSchedulePrintLegend(snapshot.legend, snapshot.viewMode)}
       ${
         totalCount
           ? `
@@ -159,7 +177,8 @@ export function getSchedulePrintDocumentTitle(snapshot = null) {
   }
 
   const centerSlug = slugify(snapshot.centerName || snapshot.centerId || 'center')
-  return `TKB-${centerSlug}-${snapshot.weekStartDate}_${snapshot.weekEndDate}`
+  const prefix = snapshot.viewMode === 'activities' ? 'Lich-hoat-dong' : snapshot.viewMode === 'classes' ? 'TKB-ca-hoc' : 'TKB'
+  return `${prefix}-${centerSlug}-${snapshot.weekStartDate}_${snapshot.weekEndDate}`
 }
 
 function getCenterCalendarItemsForPrintRange(centerCalendarItems = [], rangeStartAt, rangeEndAt) {
@@ -293,25 +312,25 @@ function renderSchedulePrintCard(entry) {
   `
 }
 
-function renderSchedulePrintLegend(legend = {}) {
+function renderSchedulePrintLegend(legend = {}, viewMode = 'all') {
   const typeItems = Array.isArray(legend.types) ? legend.types : []
   const tagItems = Array.isArray(legend.tags) ? legend.tags : []
 
   return `
     <aside class="schedule-print-legend" aria-label="Chú giải">
-      <div>
+      ${viewMode !== 'classes' ? `<div>
         <strong>Loại nội dung</strong>
         ${typeItems.map((item) => `<span style="--schedule-print-entry-color: ${escapeAttribute(item.color)};"><i></i>${escapeHtml(item.label)}</span>`).join('')}
-      </div>
-      <div>
+      </div>` : ''}
+      ${viewMode === 'all' || tagItems.length ? `<div>
         <strong>Nhãn</strong>
         ${tagItems.length ? tagItems.map((item) => `<span class="schedule-print-tag" style="--schedule-print-tag-color: ${escapeAttribute(item.color)};">${escapeHtml(item.label)}</span>`).join('') : '<em>Không có nhãn</em>'}
-      </div>
-      <div>
+      </div>` : ''}
+      ${viewMode === 'all' || legend.hasRecurring || legend.hasCancelled ? `<div>
         <strong>Ký hiệu</strong>
         ${legend.hasRecurring ? '<span>Lặp hàng tuần</span>' : ''}
         ${legend.hasCancelled ? '<span>Đã hủy</span>' : ''}
-      </div>
+      </div>` : ''}
     </aside>
   `
 }

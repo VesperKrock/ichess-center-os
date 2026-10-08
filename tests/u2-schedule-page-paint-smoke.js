@@ -67,6 +67,7 @@ function render(overrides = {}) {
     overrides.adminAttendanceState ?? null,
     {
       classSessions,
+      viewMode: overrides.viewMode || 'activities',
       attendanceAvailable: overrides.attendanceAvailable !== false,
       calendarNotesAvailable: overrides.calendarNotesAvailable !== false,
       centerCalendarItems: [],
@@ -80,24 +81,29 @@ function render(overrides = {}) {
   )
 }
 
-const mainHtml = render()
+const mainHtml = render({ viewMode: 'classes' })
+const activityOverviewHtml = render()
 for (const token of [
-  'schedule-page-header',
-  'data-schedule-print-action="print"',
   'data-center-calendar-tag-action="open-manager"',
   'data-center-calendar-action="open-create"',
+  'data-center-calendar-filter="itemType"',
+  'data-center-calendar-filter="tagId"',
+]) assert(activityOverviewHtml.includes(token), `Missing Activity runtime control: ${token}`)
+assert(!activityOverviewHtml.includes('data-schedule-action="open-create"'))
+assert(!mainHtml.includes('data-center-calendar-action="open-create"'))
+for (const token of [
+  'schedule-toolbar',
+  'data-schedule-print-action="print"',
   'data-schedule-action="open-create"',
   'data-schedule-week-action="previous"',
   'data-schedule-week-action="today"',
   'data-schedule-week-action="next"',
-  'data-center-calendar-filter="itemType"',
-  'data-center-calendar-filter="tagId"',
   'data-schedule-action="open-edit"',
   'data-schedule-action="open-create-for-day"',
 ]) assert(mainHtml.includes(token), `Missing Schedule runtime control: ${token}`)
 
 const optionalUnavailableHtml = render({ calendarNotesAvailable: false })
-assert(optionalUnavailableHtml.includes('data-schedule-action="open-create"'))
+assert(render({ viewMode: 'classes', calendarNotesAvailable: false }).includes('data-schedule-action="open-create"'))
 assert(!optionalUnavailableHtml.includes('data-center-calendar-action="open-create"'))
 assert(!optionalUnavailableHtml.includes('data-center-calendar-tag-action="open-manager"'))
 assert.equal((optionalUnavailableHtml.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 1)

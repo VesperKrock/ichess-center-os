@@ -8,12 +8,13 @@ const root = process.cwd()
 const mainSource = readFileSync(join(root, 'src/main.js'), 'utf8')
 const scheduleCss = readFileSync(join(root, 'src/schedule-theme.css'), 'utf8')
 
-function render(calendarNotesAvailable, calendarNotesSharedTruthState = {}) {
+function render(calendarNotesAvailable, calendarNotesSharedTruthState = {}, viewMode = 'activities') {
   return renderScheduleModule(
     [], null, null, [], null, null, null, null, false, null, [], [],
     '2026-08-24', null,
     {
       attendanceAvailable: true,
+      viewMode,
       calendarNotesAvailable,
       calendarNotesSharedTruthState,
       centerCalendarItems: [],
@@ -24,7 +25,8 @@ function render(calendarNotesAvailable, calendarNotesSharedTruthState = {}) {
 }
 
 function assertUnavailableControls(html, state, label) {
-  assert(html.includes('data-schedule-action="open-create"'), 'Core Add Session must remain available.')
+  assert(!html.includes('data-schedule-action="open-create"'), 'Activity tab must not expose class creation.')
+  assert(render(false, {}, 'classes').includes('data-schedule-action="open-create"'), 'Core Add Session remains available in the Ca tab.')
   assert.equal((html.match(/data-schedule-optional-capability="calendar-notes"/g) || []).length, 1)
   assert.equal((html.match(new RegExp(`data-capability-state="${state}"`, 'g')) || []).length, 1)
   assert.equal((html.match(/disabled aria-disabled="true" tabindex="-1"/g) || []).length, 1)

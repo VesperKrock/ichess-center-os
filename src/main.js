@@ -593,7 +593,7 @@ import {
   validateSessionReportAttendance,
 } from './schedule-module.js'
 import {
-  SCHEDULE_PRINT_FILTER_ALL,
+  SCHEDULE_PRINT_FILTER_CURRENT,
   createSchedulePrintSnapshot,
   getSchedulePrintDocumentTitle,
   getSchedulePrintFilteredSnapshot,
@@ -1079,6 +1079,7 @@ let sessionReportExtraState = null
 let isSessionReportExtraExpanded = false
 let sessionReportGuestFormState = null
 let scheduleWeekStartDate = getCurrentScheduleWeekStartDate()
+let scheduleViewMode = 'activities'
 let a3TeacherContext = { status: 'idle', centerId: '', fromDate: '', assignments: [], occurrences: [] }
 let a3TeacherReadRunId = 0
 let a3TeacherDialogState = null
@@ -2015,6 +2016,7 @@ function createCurrentSchedulePrintSnapshot() {
     centerId,
     centerName: centerProfile.centerName || centerId,
     weekStartDate: scheduleWeekStartDate,
+    viewMode: scheduleViewMode,
     sessions: scheduleSessions,
     classSessions,
     centerCalendarItems,
@@ -2030,15 +2032,20 @@ function createCurrentSchedulePrintSnapshot() {
 async function printCurrentScheduleWeek() {
   const centerId = getCurrentCanonicalCenterContext().centerId
   const weekStartDate = scheduleWeekStartDate
-  if (getCurrentA3TeacherContext() !== a3TeacherContext) {
+  const viewMode = scheduleViewMode
+  const filters = JSON.stringify(scheduleCalendarFilters)
+  if (viewMode === 'activities' && (!isModuleUpstreamCurrent('thoi-khoa-bieu', 'calendar-notes')
+      || c57CalendarNotesSharedTruthState.isLoading || c57CalendarNotesSharedTruthState.centerId !== centerId)) return
+  if (viewMode === 'classes' && getCurrentA3TeacherContext() !== a3TeacherContext) {
     await refreshA3TeacherContext()
   }
   if (centerId !== getCurrentCanonicalCenterContext().centerId
       || weekStartDate !== scheduleWeekStartDate
-      || getCurrentA3TeacherContext() !== a3TeacherContext) return
+      || viewMode !== scheduleViewMode || filters !== JSON.stringify(scheduleCalendarFilters)
+      || viewMode === 'classes' && getCurrentA3TeacherContext() !== a3TeacherContext) return
   const filteredSnapshot = getSchedulePrintFilteredSnapshot(
     createCurrentSchedulePrintSnapshot(),
-    SCHEDULE_PRINT_FILTER_ALL,
+    SCHEDULE_PRINT_FILTER_CURRENT,
   )
   const previousTitle = document.title
   const printRoot = document.createElement('div')
@@ -2939,6 +2946,7 @@ function resetTransientStateForCenterSwitch() {
   resetV26TeacherRegistryRuntimeForAccessBoundary(getCurrentCanonicalCenterContext().centerId)
   schedulePlanDetailState = null
   scheduleFormState = null
+  scheduleViewMode = 'activities'
   scheduleCalendarItemState = null
   scheduleCalendarTagState = null
   scheduleCalendarFilters = { itemType: 'all', tagId: 'all' }
@@ -11623,6 +11631,8 @@ function hasInitialBaselineAttendanceRecord(records, studentId, date) {
 }
 
 async function openCanonicalScheduleOccurrence(scheduleId, date, centerId) {
+  scheduleViewMode = 'classes'
+  render()
   const findCard = () => [...document.querySelectorAll('[data-schedule-action="open-edit"]')].find(item =>
     item.dataset.scheduleSessionId === scheduleId && item.dataset.scheduleOccurrenceDate === date)
   let card = findCard()
@@ -12744,6 +12754,8 @@ function renderWindowBody(windowItem) {
 
   if (moduleItem.id === 'thoi-khoa-bieu') {
     const calendarNotesAvailable = isModuleUpstreamCurrent('thoi-khoa-bieu', 'calendar-notes')
+      && !c57CalendarNotesSharedTruthState.isLoading
+      && c57CalendarNotesSharedTruthState.centerId === getCurrentCanonicalCenterContext().centerId
     return renderScheduleModule(
       scheduleSessions,
       scheduleFormState,
@@ -12755,6 +12767,7 @@ function renderWindowBody(windowItem) {
       {
         centerId: getCurrentCanonicalCenterContext().centerId,
         crmContacts: getCurrentScheduleCrmContacts(),
+        viewMode: scheduleViewMode,
         planDetail: schedulePlanDetailState?.centerId === getCurrentCanonicalCenterContext().centerId ? schedulePlanDetailState : null,
         canEditSchedule: canWriteCoreCloudDb(CLOUD_ENTITY_TYPES.SCHEDULE_SESSION),
         canEditCalendar: canWriteC57SharedTruth(buildCurrentOnlineAccessState({
@@ -28656,6 +28669,8 @@ function bindEvents() {
 
   const canUseScheduleCalendarNotes = () =>
     isModuleUpstreamCurrent('thoi-khoa-bieu', 'calendar-notes')
+      && !c57CalendarNotesSharedTruthState.isLoading
+      && c57CalendarNotesSharedTruthState.centerId === getCurrentCanonicalCenterContext().centerId
   const canEditScheduleCalendarNotes = () => canUseScheduleCalendarNotes()
     && canWriteC57SharedTruth(buildCurrentOnlineAccessState({
       cloudReady: cloudDbState.readinessStatus === 'ready',
@@ -29130,6 +29145,18 @@ function bindEvents() {
     }
     render()
   }
+
+  document.querySelectorAll('button[data-schedule-view-mode]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (scheduleFormState?.isSaving || c57CalendarNotesSharedTruthState.isSaving || a3TeacherDialogState?.isSaving) return
+      scheduleViewMode = button.dataset.scheduleViewMode === 'classes' ? 'classes' : 'activities'
+      scheduleFormState = null
+      closeScheduleActivityPanels()
+      resetScheduleReportPanels()
+      render()
+      document.querySelector(`button[data-schedule-view-mode="${scheduleViewMode}"]`)?.focus({preventScroll:true})
+    })
+  })
 
   document.querySelectorAll('[data-schedule-week-action]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -31668,6 +31695,7 @@ async function openNotificationSourceModule(notificationId) {
   isNotificationCenterOpen = false
   if (route) {
     if (route.moduleId === 'thoi-khoa-bieu') {
+      scheduleViewMode = 'classes'
       scheduleFormState = null
       scheduleReportState = null
       sessionReportGuestState = null
@@ -31714,6 +31742,7 @@ async function openNotificationSourceModule(notificationId) {
     }
   }
   if (notification.sourceModule === 'thoi-khoa-bieu' && notification.meta?.occurrenceDate) {
+    scheduleViewMode = 'classes'
     const occurrenceDate = String(notification.meta.occurrenceDate)
     if (/^\d{4}-\d{2}-\d{2}$/.test(occurrenceDate)) {
       scheduleWeekStartDate = getCurrentScheduleWeekStartDate(new Date(`${occurrenceDate}T12:00:00`))

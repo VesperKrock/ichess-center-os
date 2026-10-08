@@ -163,6 +163,10 @@ export function createEditScheduleFormState(session) {
   }
 }
 
+export function normalizeScheduleViewMode(mode) {
+  return mode === 'classes' ? 'classes' : 'activities'
+}
+
 export function renderScheduleModule(
   sessions = [],
   formState = null,
@@ -181,6 +185,8 @@ export function renderScheduleModule(
   deadlineOptions = {},
 ) {
   const normalizedWeekStart = normalizeDateString(weekStartDate) || getCurrentScheduleWeekStartDate()
+  const viewMode = normalizeScheduleViewMode(deadlineOptions.viewMode)
+  const showClasses = viewMode === 'classes'
   const weekDays = getScheduleWeekDays(normalizedWeekStart)
   const classSessions = Array.isArray(deadlineOptions.classSessions) ? deadlineOptions.classSessions : []
   const canEditSchedule = deadlineOptions.canEditSchedule !== false
@@ -228,31 +234,28 @@ export function renderScheduleModule(
       )
     : []
   const visibleCenterCalendarItems = filterCenterCalendarItems(weekCenterCalendarItems, centerCalendarFilters)
+  // CRM appointments are non-class planning activities in the existing print
+  // projection (other, untagged). Apply the same Activity filter in both views.
   const appointments = getSchedulePlannedAppointments(deadlineOptions.crmContacts, normalizedWeekStart)
+    .filter(() => (centerCalendarFilters.itemType === 'all' || centerCalendarFilters.itemType === 'other')
+      && (centerCalendarFilters.tagId === 'all' || centerCalendarFilters.tagId === '__none__'))
   const studentLookup = createLookup(students)
   const conflictMap = getScheduleConflicts(visibleSessions, students)
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' })
     .format(deadlineOptions.now || new Date())
-  const detailSession = planDetail && visibleSessions.find(session =>
+  const detailSession = showClasses && planDetail && visibleSessions.find(session =>
     session.id === planDetail.sessionId && session.occurrenceDate === planDetail.occurrenceDate)
-  const detailAppointment = planDetail?.kind === 'crm' && appointments.find(item =>
+  const detailAppointment = !showClasses && planDetail?.kind === 'crm' && appointments.find(item =>
     item.contactId === planDetail.contactId && item.id === planDetail.appointmentId)
 
   return `
-    <section class="schedule-module schedule-week-plan ${formState || detailSession || detailAppointment || centerCalendarItemState || centerCalendarTagState || deadlineOptions.a3TeacherDialog ? 'form-open' : ''}" aria-label="Lịch làm việc tuần" data-schedule-center-id="${escapeAttribute(deadlineOptions.centerId || '')}">
+    <section class="schedule-module schedule-week-plan ${formState || detailSession || detailAppointment || centerCalendarItemState || centerCalendarTagState || deadlineOptions.a3TeacherDialog ? 'form-open' : ''}" aria-label="Lịch làm việc tuần" data-schedule-view-mode="${viewMode}" data-schedule-center-id="${escapeAttribute(deadlineOptions.centerId || '')}">
       <div class="schedule-compact-header">
-        <div class="schedule-page-header">
-          <div><h3>Lịch làm việc tuần</h3><p class="schedule-plan-subtitle">Ca học và hoạt động của trung tâm</p></div>
-          <div class="schedule-header-actions" aria-label="Thao tác lịch tuần">
-            <button class="schedule-print-button" type="button" data-schedule-print-action="print">In / Lưu PDF</button>
-            ${canEditCalendar ? calendarNotesAvailable
-              ? '<button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>'
-              : `<button class="schedule-calendar-add-button is-capability-unavailable" type="button" disabled aria-disabled="true" tabindex="-1" data-schedule-optional-capability="calendar-notes" data-capability-state="${escapeAttribute(calendarNotesAvailabilityStatus)}">+ Thêm hoạt động <span>${escapeHtml(calendarNotesAvailabilityLabel)}</span></button>` : ''}
-            ${canEditSchedule ? '<button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>' : ''}
+        <div class="schedule-controls-bar schedule-toolbar" aria-label="Thao tác lịch tuần">
+          <div class="student-form-steps schedule-view-tabs" aria-label="Nội dung lịch tuần">
+            <button type="button" class="${!showClasses ? 'active' : ''}" data-schedule-view-mode="activities" aria-pressed="${!showClasses}">1. Hoạt động</button>
+            <button type="button" class="${showClasses ? 'active' : ''}" data-schedule-view-mode="classes" aria-pressed="${showClasses}">2. Ca học</button>
           </div>
-        </div>
-
-        <div class="schedule-controls-bar">
           <div class="schedule-week-group" aria-label="Điều hướng tuần">
             <div class="schedule-week-controls">
               <button type="button" data-schedule-week-action="previous">‹ Tuần trước</button>
@@ -260,20 +263,30 @@ export function renderScheduleModule(
               <button type="button" data-schedule-week-action="next">Tuần sau ›</button>
             </div>
           </div>
-          ${calendarNotesAvailable
+          ${!showClasses && calendarNotesAvailable
             ? `<details class="schedule-plan-options" ${centerCalendarFilters.itemType !== 'all' || centerCalendarFilters.tagId !== 'all' ? 'open' : ''}><summary>Lọc hoạt động</summary><div>${renderCenterCalendarFilterBar(centerCalendarFilters, centerCalendarTags, weekCenterCalendarItems)}${canEditCalendar ? '<button type="button" data-center-calendar-tag-action="open-manager">Quản lý nhãn</button>' : ''}</div></details>`
             : ''}
-          <span class="schedule-plan-total">${visibleSessions.filter(s => !s.isEmptyClassSessionSlot).length} buổi học · ${visibleCenterCalendarItems.length} hoạt động${appointments.length ? ` · ${appointments.length} lịch hẹn` : ''}</span>
+          <span class="schedule-plan-total">${showClasses
+            ? `${visibleSessions.filter(s => !s.isEmptyClassSessionSlot).length} buổi học`
+            : calendarNotesAvailable ? `${visibleCenterCalendarItems.length} hoạt động${appointments.length ? ` · ${appointments.length} lịch hẹn` : ''}`
+              : `${escapeHtml(calendarNotesAvailabilityLabel)} hoạt động`}</span>
+          <div class="schedule-header-actions">
+            <button class="schedule-print-button" type="button" data-schedule-print-action="print" ${!showClasses && !calendarNotesAvailable ? 'disabled' : ''}>In / Lưu PDF</button>
+            ${showClasses ? canEditSchedule ? '<button class="schedule-add-button" type="button" data-schedule-action="open-create">+ Thêm buổi học</button>' : ''
+              : canEditCalendar ? calendarNotesAvailable
+                ? '<button class="schedule-calendar-add-button" type="button" data-center-calendar-action="open-create">+ Thêm hoạt động</button>'
+                : `<button class="schedule-calendar-add-button is-capability-unavailable" type="button" disabled aria-disabled="true" tabindex="-1" data-schedule-optional-capability="calendar-notes" data-capability-state="${escapeAttribute(calendarNotesAvailabilityStatus)}">+ Thêm hoạt động <span>${escapeHtml(calendarNotesAvailabilityLabel)}</span></button>` : ''}
+          </div>
         </div>
       </div>
-      ${!calendarNotesAvailable || ['warning', 'error'].includes(calendarNotesSharedTruthState.messageTone) || calendarNotesSharedTruthState.legacyMigrationRequired ? renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState) : ''}
-      ${deadlineOptions.a3TeacherStatus === 'failed'
+      ${!showClasses && (!calendarNotesAvailable || ['warning', 'error'].includes(calendarNotesSharedTruthState.messageTone) || calendarNotesSharedTruthState.legacyMigrationRequired) ? renderCalendarNotesSharedTruthStatus(calendarNotesSharedTruthState) : ''}
+      ${showClasses && deadlineOptions.a3TeacherStatus === 'failed'
         ? '<p class="schedule-form-warning" role="status">Chưa tải được lịch sử giáo viên. Hãy làm mới trước khi đổi giáo viên.</p>'
-        : deadlineOptions.a3TeacherStatus === 'loading'
+        : showClasses && deadlineOptions.a3TeacherStatus === 'loading'
           ? '<p class="schedule-form-warning" role="status">Đang tải lịch sử giáo viên…</p>'
           : ''}
       ${
-        weekCenterCalendarItems.length && !visibleCenterCalendarItems.length
+        !showClasses && weekCenterCalendarItems.length && !visibleCenterCalendarItems.length
           ? '<p class="schedule-calendar-filter-empty">Không có hoạt động phù hợp bộ lọc</p>'
           : ''
       }
@@ -283,12 +296,13 @@ export function renderScheduleModule(
             .map((day) =>
               renderDayColumn(
                 day,
-                getSessionsByOccurrenceDate(visibleSessions, day.date),
-                getCenterCalendarItemsByDate(visibleCenterCalendarItems, day.date),
+                showClasses ? getSessionsByOccurrenceDate(visibleSessions, day.date) : [],
+                showClasses ? [] : getCenterCalendarItemsByDate(visibleCenterCalendarItems, day.date),
                 centerCalendarTags,
-                canEditSchedule,
+                showClasses && canEditSchedule,
                 today,
-                appointments.filter(item => item.date === day.date),
+                showClasses ? [] : appointments.filter(item => item.date === day.date),
+                showClasses ? 'Chưa có buổi học' : calendarNotesAvailable ? 'Chưa có hoạt động' : `${calendarNotesAvailabilityLabel} hoạt động`,
               ),
             )
             .join('')}
@@ -1403,7 +1417,7 @@ function createCenterCalendarRuntimeTagId(label) {
   return `center-calendar-tag-${asciiSlug || 'tag'}-${Date.now()}-${suffix}`
 }
 
-function renderDayColumn(day, sessions, centerCalendarItems = [], centerCalendarTags = [], canEditSchedule = false, today = '', appointments = []) {
+function renderDayColumn(day, sessions, centerCalendarItems = [], centerCalendarTags = [], canEditSchedule = false, today = '', appointments = [], emptyLabel = 'Chưa có lịch') {
   const items = [
     ...sessions.map(session => ({time: session.startTime || '', html: renderSessionCard(session)})),
     ...centerCalendarItems.map(item => ({time: item.allDay ? '' : formatTimeFromIsoDateTime(item.startAt), html: renderCenterCalendarItemCard(item, centerCalendarTags)})),
@@ -1418,7 +1432,7 @@ function renderDayColumn(day, sessions, centerCalendarItems = [], centerCalendar
       </header>
       <div class="schedule-day-sessions">
         ${
-          items.length ? items.map(item => item.html).join('') : '<div class="schedule-empty-day">Chưa có lịch</div>'
+          items.length ? items.map(item => item.html).join('') : `<div class="schedule-empty-day">${escapeHtml(emptyLabel)}</div>`
         }
       </div>
       ${canEditSchedule ? `<button

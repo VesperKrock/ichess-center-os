@@ -30,6 +30,7 @@ const html = renderScheduleModule(
   [assignment], null, null, [], null, null, null, null, false, null,
   [], [{ id: 'a2-smoke-student', fullName: 'A2 student' }],
   '2026-09-28', null, {
+    viewMode: 'classes',
     classSessions: [classSession],
     a3TeacherContext: { assignments: [{
       class_session_local_id: classSession.id,

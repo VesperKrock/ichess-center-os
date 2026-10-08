@@ -32,6 +32,7 @@ const render = (overrides={}) => renderScheduleModule(sessions,overrides.formSta
   {sessionId:'trial',occurrenceDate:'2026-10-07',mode:'teacherReport'},[],null,null,null,null,false,null,[],
   [{id:'s1',fullName:'Học viên riêng'}],overrides.week || '2026-10-05',null,{
     classSessions:classes, a3TeacherContext:teacherContext, centerId:'phongtrong_prod',
+    viewMode:'classes',
     centerCalendarItems:[activity], centerCalendarTags:[], canEditSchedule:true, canEditCalendar:true, now,
     ...overrides,
   })
@@ -43,8 +44,10 @@ assert(html.includes('is-today'))
 assert(html.includes('GV: GV Bình'))
 assert(html.includes('17:30-18:30'))
 assert(html.includes('Học thử An'))
-assert(html.includes('Đánh giá học viên'))
-assert(html.indexOf('Đánh giá học viên') < html.indexOf('Học thử An'), 'Mixed work sorts by time inside each day')
+assert(!html.includes('Đánh giá học viên'), 'F2 class scope excludes Activity')
+const activitiesHtml=render({viewMode:'activities'})
+assert(activitiesHtml.includes('Đánh giá học viên'))
+assert(!activitiesHtml.includes('Học thử An'), 'F2 Activity scope excludes scheduled sessions')
 assert(html.includes('is-cancelled'))
 assert(html.includes('Đã hủy'))
 assert(!html.includes('Ghi chú riêng'))
@@ -70,7 +73,7 @@ const boundaryItems = [
   {...activity,id:'sun',title:'Sunday late',startAt:'2026-10-11T16:00:00Z',endAt:'2026-10-11T16:30:00Z'},
   {...activity,id:'next',title:'Next Monday',startAt:'2026-10-11T17:00:00Z',endAt:'2026-10-11T18:00:00Z'},
 ]
-const boundaryHtml=render({centerCalendarItems:boundaryItems})
+const boundaryHtml=render({viewMode:'activities',centerCalendarItems:boundaryItems})
 const dayHtml=date=>boundaryHtml.split(`data-schedule-day-date="${date}"`)[1].split('</section>')[0]
 assert(dayHtml('2026-10-05').includes('Monday midnight'))
 assert(!dayHtml('2026-10-05').includes('Tuesday early'))
@@ -92,13 +95,13 @@ assert.equal(crmProjection.find(item=>item.id==='date-only').timeLabel,'Chưa r�
 assert.equal(crmProjection.find(item=>item.id==='timed').timeLabel,'18:00')
 assert.equal(getSchedulePlannedAppointments([{...crmContacts[0],canonicalCaseId:''}],'2026-10-05').length,0)
 assert.equal(getSchedulePlannedAppointments(crmContacts,'2026-10-12').length,0)
-const crmHtml=render({crmContacts})
+const crmHtml=render({viewMode:'activities',crmContacts})
 assert(crmHtml.includes('data-schedule-crm-appointment="date-only"'))
 assert(crmHtml.includes('Chưa rõ giờ'))
 assert(!crmHtml.includes('CRM private note'))
 assert(!crmHtml.includes('unverified-local'))
 assert.doesNotMatch(crmHtml,forbidden)
-const crmDetail=render({crmContacts,planDetail:{kind:'crm',contactId:'contact',appointmentId:'date-only'}})
+const crmDetail=render({viewMode:'activities',crmContacts,planDetail:{kind:'crm',contactId:'contact',appointmentId:'date-only'}})
 assert(crmDetail.includes('data-schedule-appointment-detail'))
 assert(crmDetail.includes('CRM private note'))
 assert(crmDetail.includes('data-schedule-plan-action="open-contact"'))

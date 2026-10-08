@@ -2196,3 +2196,123 @@
     min-height: 32px;
   }
 }
+
+/* F2: the Student step-button pattern on one weekly toolbar. */
+.desktop-window.is-schedule-window .schedule-week-plan .schedule-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.desktop-window.is-schedule-window .schedule-view-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 16px;
+  margin-top: 0;
+}
+
+.desktop-window.is-schedule-window .schedule-view-tabs button {
+  position: relative;
+  min-height: 34px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 0 6px;
+  color: var(--schedule-text-secondary);
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.desktop-window.is-schedule-window .schedule-view-tabs button.active {
+  color: var(--schedule-text);
+  font-weight: 600;
+}
+
+.desktop-window.is-schedule-window .schedule-view-tabs button.active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--schedule-primary);
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-week-group {
+  max-width: 100%;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-week-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: visible;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-week-controls button {
+  min-height: 34px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar [data-schedule-week-action='today'] {
+  min-width: 0;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-week-label {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-plan-options summary {
+  padding: 8px;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-plan-options > div {
+  width: min(510px, calc(100vw - 64px));
+  min-width: 0;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-calendar-filters {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-calendar-filters label {
+  flex-direction: column;
+  align-items: stretch;
+  padding-left: 0;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-calendar-filters label > span {
+  padding: 4px 10px 0;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-calendar-filters select {
+  width: 100%;
+  flex: 0 0 auto;
+  padding-left: 10px;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-calendar-filters button {
+  white-space: nowrap;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-plan-total {
+  white-space: nowrap;
+}
+
+.desktop-window.is-schedule-window .schedule-toolbar .schedule-header-actions {
+  gap: 8px;
+}
+
+@media print {
+  .schedule-print-document-header h1 {
+    color: #0f172a;
+  }
+}
