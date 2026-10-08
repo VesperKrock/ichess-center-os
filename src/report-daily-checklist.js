@@ -53,11 +53,8 @@ export const shiftChecklistDate = (date,days) => isAttendanceLedgerDate(date)
 export const createDailyChecklistState = (centerId='',now=new Date()) => ({centerId,businessDate:getChecklistToday(now),
   templateKey:DAILY_CHECKLIST_TEMPLATES[0].key,status:'idle',items:[],savingKey:'',error:'',expandedKeys:[]})
 
-export function renderReportWorkspace({mode='overview',body=''}) {
-  return `<div class="report-workspace" data-report-workspace-mode="${mode}">
-    <nav class="report-workspace-tabs" aria-label="Chọn nội dung Báo cáo">
-      ${[['overview','Tổng quan'],['checklist','Checklist']].map(([key,label])=>`<button type="button" data-report-workspace-mode="${key}" aria-pressed="${mode===key}" class="${mode===key?'is-active':''}">${label}</button>`).join('')}
-    </nav>${body}</div>`
+export function renderReportWorkspace({body=''}) {
+  return `<div class="report-workspace">${body}</div>`
 }
 
 export function renderDailyChecklist(state, {canWrite=false,now=new Date()}={}) {
@@ -65,19 +62,13 @@ export function renderDailyChecklist(state, {canWrite=false,now=new Date()}={}) 
   const ready=state.status==='ready',future=state.businessDate>today,locked=!ready||!canWrite||future||Boolean(state.savingKey)
   const items=new Map(state.items.map(item=>[item.item_key,item]))
   const count=template.items.filter(row=>items.get(row.key)?.completed===true).length
-  const dateLabel=state.businessDate.split('-').reverse().join('/')
   const loading=state.status==='loading'||state.status==='idle'
-  return `<section class="report-module report-daily-checklist" aria-label="Checklist công việc ngày" data-checklist-date="${escape(state.businessDate)}" data-checklist-template="${template.key}">
-    <header class="checklist-header"><div class="checklist-date-nav">
-      <button type="button" data-checklist-day-step="-1" ${state.savingKey?'disabled':''}>‹ Ngày trước</button>
-      <button type="button" data-checklist-today ${state.savingKey?'disabled':''}>${state.businessDate===today?'Hôm nay · '+dateLabel:'Hôm nay'}</button>
-      <button type="button" data-checklist-day-step="1" ${state.savingKey?'disabled':''}>Ngày sau ›</button>
-      <input type="date" aria-label="Ngày checklist" data-checklist-date-picker value="${escape(state.businessDate)}" ${state.savingKey?'disabled':''}>
-    </div><div class="checklist-tools"><select aria-label="Chọn checklist TVV" data-checklist-template-picker ${state.savingKey?'disabled':''}>
+  return `<section class="report-daily-card report-checklist-card report-daily-checklist" aria-label="Checklist công việc ngày" data-checklist-date="${escape(state.businessDate)}" data-checklist-template="${template.key}" aria-busy="${loading}">
+    <h5>Checklist công việc ngày</h5>
+    <header class="checklist-header"><select aria-label="Chọn checklist TVV" data-checklist-template-picker ${state.savingKey?'disabled':''}>
       ${DAILY_CHECKLIST_TEMPLATES.map(t=>`<option value="${t.key}" ${t.key===template.key?'selected':''}>${t.label}</option>`).join('')}
-    </select><button type="button" data-checklist-refresh ${loading||state.savingKey?'disabled':''}>Làm mới</button></div></header>
-    <div class="checklist-summary"><div><h3>Checklist ${template.label}</h3><p>${dateLabel}</p></div>
-      <span data-checklist-completion-count aria-live="polite">${ready?`${count}/${template.items.length} hoàn thành`:'Đang tải…'}</span></div>
+    </select><button type="button" data-checklist-refresh ${loading||state.savingKey?'disabled':''}>Làm mới</button></header>
+    <span class="checklist-summary" data-checklist-completion-count aria-live="polite">${ready?`${count}/${template.items.length} hoàn thành`:loading?'Đang tải…':'Chưa tải được checklist'}</span>
     ${state.error?`<p class="checklist-message" role="status">${escape(state.error)}</p>`:''}
     ${future?'<p class="checklist-message">Checklist ngày sắp tới chỉ để xem.</p>':''}
     <div class="checklist-rows" data-report-scroll-region="daily-checklist">

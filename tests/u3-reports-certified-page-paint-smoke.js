@@ -76,7 +76,7 @@ for (const token of [
   'Checklist công việc ngày',
   'report-field-helper',
   'data-report-draft-field="dailyTasks"',
-  'data-report-pending-task="diemDanh"',
+  'data-checklist-item="pt-01"',
   'data-report-drilldown-mode="day"',
 ]) assert(dayHtml.includes(token), `Day report missing ${token}`)
 

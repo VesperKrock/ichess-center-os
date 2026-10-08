@@ -544,7 +544,7 @@ import {
 } from './report-module.js'
 import './report-theme.css'
 import './report-checklist-theme.css'
-import { renderReportWorkspace, renderDailyChecklist, shiftChecklistDate, getChecklistToday } from './report-daily-checklist.js'
+import { renderReportWorkspace } from './report-daily-checklist.js'
 import { createReportChecklistController } from './report-checklist-controller.js'
 import {
   buildCenterCalendarItemFromForm,
@@ -1209,7 +1209,6 @@ let inventoryCycleCountDueDate = new Date().toISOString().slice(0, 10)
 let inventoryCycleCountObservedByLineId = {}
 let inventoryCycleCountExplanationByLineId = {}
 let reportState = createInitialReportState()
-let reportWorkspaceMode = 'overview'
 let reportChecklistController = null
 let reportAttendanceContext = { status: 'idle', centerId: '', occurrences: [], assignments: [] }
 let reportAttendanceReadRunId = 0
@@ -1742,7 +1741,8 @@ function getReportAttendanceRange() {
 
 function getReportChecklistController() {
   if (!reportChecklistController) reportChecklistController = createReportChecklistController({
-    getContext: () => ({ centerId: getCurrentCanonicalCenterContext().centerId, accountId: cloudStatus.user?.id || '' }),
+    getContext: () => ({ centerId: getCurrentCanonicalCenterContext().centerId, accountId: cloudStatus.user?.id || '',
+      businessDate: reportState.filters.reportDate }),
     getSupabase: getSupabaseClient,
     canWrite: () => getCurrentCanonicalCenterContext().ok && buildCurrentOnlineAccessState({ cloudReady: true }).canWrite,
     onChange: render,
@@ -1809,6 +1809,10 @@ function applyReportPeriodControl(control) {
     return false
   }
   const key = control.dataset.reportFilter
+  if (key === 'reportDate' && getReportChecklistController().getState().savingKey) {
+    control.value = reportState.filters.reportDate
+    return false
+  }
   const value = key === 'weekStartDate' ? getWeekStartDate(control.value) : control.value
   if (reportState.filters[key] === value && reportPdfSnapshot) return false
   reportState = {
@@ -1819,6 +1823,7 @@ function applyReportPeriodControl(control) {
   reportTransactionDrilldownState = null
   reportTransactionDrilldownToken += 1
   render()
+  if (key === 'reportDate') void getReportChecklistController().load()
   if (key === 'weekStartDate') void refreshReportAttendanceContext()
   return true
 }
@@ -2973,7 +2978,6 @@ function resetTransientStateForCenterSwitch() {
   reportTransactionDrilldownState = null
   reportTransactionDrilldownToken += 1
   reportChecklistController?.reset()
-  reportWorkspaceMode = 'overview'
   reportState = {
     ...createInitialReportState(),
     viewMode: reportState.viewMode,
@@ -8707,9 +8711,9 @@ function shouldDeferRenderForTextEditing() {
 
   if (activeElement?.matches?.('[data-owner-audit-filter], [data-owner-audit-date]')) return false
 
-  // Checklist controls display persisted state, so a focused checkbox/date/select
+  // Checklist controls display persisted state, so a focused checkbox/select
   // must not defer the completion or read response until focus leaves the field.
-  if (activeElement?.matches?.('[data-checklist-item], [data-checklist-date-picker], [data-checklist-template-picker]')) {
+  if (activeElement?.matches?.('[data-checklist-item], [data-checklist-template-picker]')) {
     return false
   }
 
@@ -12949,11 +12953,6 @@ function renderWindowBody(windowItem) {
   }
 
   if (moduleItem.id === 'bao-cao') {
-    if (reportWorkspaceMode === 'checklist') return renderReportWorkspace({ mode: 'checklist',
-      body: renderDailyChecklist(getReportChecklistController().getState(), {
-        canWrite: getCurrentCanonicalCenterContext().ok && buildCurrentOnlineAccessState({ cloudReady: true }).canWrite,
-      }),
-    })
     const centerInfo = getCurrentCanonicalCenterContext()
     const ledgerContext = getCurrentReportAttendanceContext()
     const attendanceAvailable = ['core', 'attendance'].every(upstream => isModuleUpstreamCurrent('bao-cao', upstream))
@@ -12968,10 +12967,12 @@ function renderWindowBody(windowItem) {
     }) : null
     const exportReady = ['core', 'finance'].every(upstream => isModuleUpstreamCurrent('bao-cao', upstream))
       && (reportState.viewMode === 'day' || attendanceAvailable)
-    return renderReportWorkspace({ mode: 'overview', body: renderReportModule({
+    return renderReportWorkspace({ body: renderReportModule({
       viewMode: reportState.viewMode,
       filters: reportState.filters,
       draft: reportState.draft,
+      checklistState: getReportChecklistController().getState(),
+      checklistCanWrite: centerInfo.ok && buildCurrentOnlineAccessState({ cloudReady: true }).canWrite,
       selectedBarDetail: reportState.selectedBarDetail,
       students,
       cashflowTransactions,
@@ -14423,7 +14424,7 @@ async function refreshModuleAuthoritativeUpstreams(moduleId, { reason = 'manual-
     const result = { upstream: 'attendance-ledger', ...ledgerResult }
     results.push(result)
     recordModuleUpstreamRefreshResult(moduleId, refreshId, centerContext.centerId, contextKey, result)
-    if (reportWorkspaceMode === 'checklist') await getReportChecklistController().load()
+    if (reportState.viewMode === 'day') await getReportChecklistController().load()
   }
 
   if (moduleId === 'cai-dat-co-so' && settingsActiveTab === 'audit-log'
@@ -24085,13 +24086,6 @@ function bindEvents() {
     })
   })
 
-  document.querySelectorAll('button[data-report-workspace-mode]').forEach(button => {
-    button.addEventListener('click', () => {
-      reportWorkspaceMode = button.dataset.reportWorkspaceMode === 'checklist' ? 'checklist' : 'overview'
-      render()
-      if (reportWorkspaceMode === 'checklist') void getReportChecklistController().load()
-    })
-  })
   document.querySelectorAll('[data-checklist-item]').forEach(input => input.addEventListener('change', () => {
     const desired = input.checked
     input.checked = getReportChecklistController().getState().items.some(item => item.item_key === input.dataset.checklistItem && item.completed)
@@ -24100,16 +24094,6 @@ function bindEvents() {
   document.querySelectorAll('[data-checklist-expand]').forEach(button => button.addEventListener('click', () => {
     getReportChecklistController().expand(button.dataset.checklistExpand)
   }))
-  document.querySelectorAll('[data-checklist-day-step]').forEach(button => button.addEventListener('click', () => {
-    const controller = getReportChecklistController()
-    void controller.select({ businessDate: shiftChecklistDate(controller.getState().businessDate, Number(button.dataset.checklistDayStep)) })
-  }))
-  document.querySelector('[data-checklist-today]')?.addEventListener('click', () => {
-    void getReportChecklistController().select({ businessDate: getChecklistToday() })
-  })
-  document.querySelector('[data-checklist-date-picker]')?.addEventListener('change', event => {
-    void getReportChecklistController().select({ businessDate: event.target.value })
-  })
   document.querySelector('[data-checklist-template-picker]')?.addEventListener('change', event => {
     void getReportChecklistController().select({ templateKey: event.target.value })
   })
@@ -24200,6 +24184,7 @@ function bindEvents() {
       reportTransactionDrilldownState = null
       reportTransactionDrilldownToken += 1
       render()
+      if (reportState.viewMode === 'day') void getReportChecklistController().load()
       if (reportState.viewMode === 'week' && getCurrentReportAttendanceContext().status !== 'ready') void refreshReportAttendanceContext()
       return
     }
@@ -24428,21 +24413,6 @@ function bindEvents() {
         draft: {
           ...reportState.draft,
           [control.dataset.reportDraftField]: control.value,
-        },
-      }
-    })
-  })
-
-  document.querySelectorAll('[data-report-pending-task]').forEach((control) => {
-    control.addEventListener('change', () => {
-      reportState = {
-        ...reportState,
-        draft: {
-          ...reportState.draft,
-          pendingTasks: {
-            ...(reportState.draft.pendingTasks || {}),
-            [control.dataset.reportPendingTask]: control.checked,
-          },
         },
       }
     })

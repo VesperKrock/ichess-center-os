@@ -9,6 +9,11 @@ export function createReportChecklistController({getContext,getSupabase,canWrite
     if(state.centerId!==context.centerId||accountId!==context.accountId){
       readId++;accountId=context.accountId;state=createDailyChecklistState(context.centerId)
     }
+    // Report owns the date. Invalidate the old projection before any render/read.
+    if(isAttendanceLedgerDate(context.businessDate)&&state.businessDate!==context.businessDate){
+      readId++;state={...state,businessDate:context.businessDate,status:'idle',items:[],
+        savingKey:'',expandedKeys:[],error:''}
+    }
     return state
   }
   const stillCurrent=(snapshot,actor)=>current()===snapshot&&accountId===actor

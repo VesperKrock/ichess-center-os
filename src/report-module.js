@@ -1,3 +1,5 @@
+import {createDailyChecklistState,renderDailyChecklist} from './report-daily-checklist.js'
+
 export const initialReportFilters = {
   reportDate: getTodayDate(),
   weekStartDate: getWeekStartDate(getTodayDate()),
@@ -50,6 +52,8 @@ export function renderReportModule({
   sourceTransactionsState = null,
   centerInfo = null,
   exportReady = true,
+  checklistState = null,
+  checklistCanWrite = false,
   onData = null,
 } = {}) {
   const activeFilters = normalizeReportFilters(filters)
@@ -62,6 +66,9 @@ export function renderReportModule({
   })
   const activeCenter = normalizeReportCenterInfo(centerInfo)
   const activeViewMode = viewMode === 'week' ? 'week' : 'day'
+  const checklistCenterId = String(centerInfo?.centerId || '')
+  const checklist = checklistState?.businessDate === activeFilters.reportDate && checklistState.centerId === checklistCenterId
+    ? checklistState : {...createDailyChecklistState(checklistCenterId),businessDate:activeFilters.reportDate}
   onData?.(reportData)
 
   return `
@@ -74,7 +81,7 @@ export function renderReportModule({
             <button type="button" class="${activeViewMode === 'week' ? 'is-active' : ''}" data-report-view-mode="week" aria-pressed="${activeViewMode === 'week'}">Tuần</button>
           </div>
         </div>
-        ${renderReportPeriodControl(activeViewMode, activeFilters, reportData)}
+        ${renderReportPeriodControl(activeViewMode, activeFilters, reportData, Boolean(checklist.savingKey))}
         <div class="report-actions">
           <button type="button" data-report-action="print" ${exportReady ? '' : 'disabled'}>In báo cáo</button>
           <button type="button" data-report-action="download" ${exportReady ? '' : 'disabled'}>Tải báo cáo</button>
@@ -82,14 +89,14 @@ export function renderReportModule({
       </header>
 
       <div class="report-grid" data-report-scroll-region="report-grid">
-        ${activeViewMode === 'day' ? renderDailyReport(reportData, activeDraft) : renderWeeklyReport(reportData, selectedBarDetail)}
+        ${activeViewMode === 'day' ? renderDailyReport(reportData, activeDraft, checklist, checklistCanWrite) : renderWeeklyReport(reportData, selectedBarDetail)}
       </div>
       ${renderReportSourceTransactionsModal(sourceTransactionsState)}
     </section>
   `
 }
 
-function renderReportPeriodControl(viewMode, filters, data) {
+function renderReportPeriodControl(viewMode, filters, data, checklistSaving = false) {
   if (viewMode === 'week') {
     return `
       <div class="report-week-period" aria-label="Điều hướng tuần báo cáo">
@@ -107,7 +114,7 @@ function renderReportPeriodControl(viewMode, filters, data) {
   return `
     <label class="report-day-control">
       <span>Ngày báo cáo</span>
-      <input type="date" value="${escapeAttribute(filters.reportDate)}" data-report-filter="reportDate" />
+      <input type="date" value="${escapeAttribute(filters.reportDate)}" data-report-filter="reportDate" ${checklistSaving ? 'disabled' : ''} />
     </label>
   `
 }
@@ -378,7 +385,7 @@ export function getReportDownloadFilename(reportDate = getTodayDate(), centerInf
   return `bao-cao-co-so-${slugifyFilenamePart(activeCenter.codeLabel)}-${String(reportDate || getTodayDate())}.txt`
 }
 
-function renderDailyReport(data, draft) {
+function renderDailyReport(data, draft, checklistState, checklistCanWrite) {
   return `
     <section class="report-panel report-daily-panel" aria-labelledby="daily-report-title">
       <h4 class="report-visually-hidden" id="daily-report-title">Báo cáo ngày</h4>
@@ -397,18 +404,7 @@ function renderDailyReport(data, draft) {
             ${renderReportTextarea('Ghi chú vận hành', 'operationNote', draft.operationNote, 'Nhập ghi chú bàn giao hoặc lưu ý nội bộ...', 'Ghi chú bàn giao hoặc lưu ý nội bộ')}
           </div>
         </section>
-        <section class="report-daily-card report-checklist-card" aria-labelledby="report-pending-tasks-title">
-          ${renderPendingTaskBox(draft)}
-          <label class="report-owner-field">
-            <span>Người phụ trách</span>
-            <input
-              type="text"
-              value="${escapeAttribute(draft.ownerName)}"
-              placeholder="Người phụ trách"
-              data-report-draft-field="ownerName"
-            />
-          </label>
-        </section>
+        ${renderDailyChecklist(checklistState, {canWrite:checklistCanWrite})}
       </div>
       ${renderReportSourceSection('day', data.dailyTransactions)}
     </section>
@@ -472,35 +468,6 @@ function renderWeeklyReport(data, selectedBarDetail = null) {
       </div>
       ${renderReportSourceSection('week', data.weeklyTransactions)}
     </section>
-  `
-}
-
-function renderPendingTaskBox(draft) {
-  const pendingTasks = draft.pendingTasks && typeof draft.pendingTasks === 'object' ? draft.pendingTasks : {}
-
-  return `
-    <div class="report-pending-tasks">
-      <div class="report-pending-tasks-heading">
-        <h5 id="report-pending-tasks-title">Checklist công việc ngày</h5>
-      </div>
-      <div class="report-pending-task-list">
-        ${reportPendingTaskItems
-          .map(
-            (item) => `
-              <label class="report-pending-task-item">
-                <input
-                  type="checkbox"
-                  ${pendingTasks[item.key] ? 'checked' : ''}
-                  data-report-pending-task="${escapeAttribute(item.key)}"
-                />
-                <span>${escapeHtml(item.label)}</span>
-              </label>
-            `,
-          )
-          .join('')}
-      </div>
-      ${renderReportTextarea('Công việc khác', 'otherPendingTasks', draft.otherPendingTasks, 'Công việc khác...')}
-    </div>
   `
 }
 

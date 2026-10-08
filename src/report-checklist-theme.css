@@ -1,41 +1,33 @@
 .desktop-window.is-report-window .report-workspace { display:flex; flex:1 1 auto; flex-direction:column; min-height:0; overflow:hidden; }
 .report-workspace > .report-module { flex:1 1 auto; min-height:0; height:auto; }
-.report-workspace-tabs { display:flex; gap:6px; flex:0 0 auto; padding:12px 22px 0; }
-.report-workspace-tabs button { border:1px solid #d1d5db; border-radius:7px; padding:8px 16px; background:#fff; color:#4b5563; font-family:inherit; font-size:14px; font-weight:600; line-height:20px; cursor:pointer; }
-.report-workspace-tabs button.is-active { background:#111827; border-color:#111827; color:#fff; }
-.desktop-window.is-report-window .report-daily-checklist { display:flex; flex-direction:column; gap:20px; padding:22px; color:var(--report-text); background:var(--report-canvas); }
-.checklist-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-.checklist-date-nav,.checklist-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.checklist-header button,.checklist-header input,.checklist-header select { min-height:38px; border:1px solid var(--report-border); border-radius:7px; padding:8px 12px; background:var(--report-surface); color:var(--report-text); font:inherit; font-size:14px; }
+.desktop-window.is-report-window .report-daily-checklist { display:flex; flex-direction:column; gap:12px; }
+.checklist-header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.checklist-header button,.checklist-header select { min-height:36px; min-width:0; border:1px solid var(--report-border); border-radius:7px; padding:7px 10px; background:var(--report-surface); color:var(--report-text); font:inherit; font-size:14px; }
 .checklist-header button { cursor:pointer; }
-.checklist-header select { min-width:180px; }
+.checklist-header select { flex:1 1 180px; padding-right:28px; }
 .checklist-header button:disabled { opacity:.55; cursor:default; }
-.checklist-summary { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-.desktop-window.is-report-window .checklist-summary h3 { margin:0 0 6px; color:var(--report-text); font-size:23px; line-height:30px; }
-.checklist-summary p { margin:0; color:var(--report-secondary); font-size:14px; }
-.checklist-summary > span { color:var(--report-secondary); font-size:16px; white-space:nowrap; }
-.checklist-rows { min-height:0; overflow:auto; border:1px solid var(--report-border); border-radius:10px; background:var(--report-surface); }
+.checklist-summary { color:var(--report-secondary); font-size:14px; }
+.checklist-rows { min-height:0; max-height:420px; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; border:1px solid var(--report-border); border-radius:8px; background:var(--report-surface); }
 .checklist-row + .checklist-row { border-top:1px solid var(--report-border); }
-.checklist-row-line { display:flex; align-items:center; gap:18px; padding:0 20px; min-height:62px; }
-.checklist-row-line > input { width:20px; height:20px; margin:0; flex:0 0 20px; accent-color:var(--report-positive); cursor:pointer; }
+.checklist-row-line { display:flex; align-items:center; gap:10px; padding:0 12px; min-height:56px; }
+.checklist-row-line > input { width:18px; height:18px; margin:0; flex:0 0 18px; accent-color:var(--report-positive); cursor:pointer; }
 .checklist-row-line > input:disabled { cursor:default; }
-.checklist-row-expand { display:flex; align-items:center; gap:22px; flex:1 1 auto; min-width:0; align-self:stretch; border:0; padding:16px 0; color:var(--report-text); background:transparent; text-align:left; cursor:pointer; }
-.checklist-timeline { flex:0 0 115px; font-size:15px; color:var(--report-secondary); font-variant-numeric:tabular-nums; }
-.checklist-row-expand strong { font-size:16px; font-weight:550; line-height:24px; }
+.checklist-row-expand { display:flex; align-items:center; gap:12px; flex:1 1 auto; min-width:0; align-self:stretch; border:0; padding:12px 0; color:var(--report-text); background:transparent; text-align:left; cursor:pointer; }
+.checklist-timeline { flex:0 0 94px; font-size:13px; color:var(--report-secondary); font-variant-numeric:tabular-nums; }
+.checklist-row-expand strong { min-width:0; overflow-wrap:anywhere; font-size:14px; font-weight:550; line-height:20px; }
 .checklist-chevron { margin-left:auto; color:var(--report-muted); }
 .checklist-row.is-completed .checklist-row-expand strong { color:var(--report-positive); }
-.checklist-row-detail { padding:0 46px 18px 58px; color:var(--report-secondary); font-size:14px; line-height:1.7; }
+.checklist-row-detail { padding:0 20px 14px 40px; color:var(--report-secondary); font-size:14px; line-height:1.7; overflow-wrap:anywhere; }
 .checklist-row-detail[hidden] { display:none; }
-.checklist-row-detail ul { margin:0; padding-left:22px; }
+.checklist-row-detail ul { margin:0; padding-left:18px; }
 .checklist-row-detail li + li { margin-top:6px; }
 .checklist-completed-by { margin:12px 0 0; font-size:13px; color:var(--report-muted); }
 .checklist-message { margin:0; color:var(--report-secondary); font-size:14px; }
-.checklist-saving { font-size:13px; color:var(--report-muted); }
-.report-workspace button:focus-visible,.report-daily-checklist input:focus-visible,.report-daily-checklist select:focus-visible { outline:2px solid #2563eb; outline-offset:3px; }
+.checklist-saving { flex:0 0 auto; font-size:13px; color:var(--report-muted); }
+.report-daily-checklist button:focus-visible,.report-daily-checklist input:focus-visible,.report-daily-checklist select:focus-visible { outline:2px solid var(--report-focus); outline-offset:3px; }
 @media (max-width:700px) {
-  .desktop-window.is-report-window .report-daily-checklist { padding:16px; gap:16px; }
-  .checklist-row-line { padding:0 12px; gap:12px; }
-  .checklist-row-expand { gap:12px; flex-wrap:wrap; }
+  .checklist-row-line { padding:0 10px; gap:10px; }
+  .checklist-row-expand { gap:8px; flex-wrap:wrap; }
   .checklist-timeline { flex-basis:100%; }
-  .checklist-row-detail { padding:0 18px 16px 42px; }
+  .checklist-row-detail { padding:0 18px 14px 38px; }
 }

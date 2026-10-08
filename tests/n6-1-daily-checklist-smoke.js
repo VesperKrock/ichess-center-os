@@ -84,7 +84,7 @@ const main=fs.readFileSync('src/main.js','utf8'),sql=fs.readFileSync('supabase/m
 const deferBody=main.split('function shouldDeferRenderForTextEditing() {')[1].split('\nfunction shouldAllowImmediateRenderForActiveElement')[0]
 const defer=new Function('document','shouldDelayTextEditingRenderFlushForAction','isNativeSelectElement',
  'shouldAllowNativeSelectChangeRender','shouldAllowImmediateRenderForActiveElement','isTextEditingElement',deferBody.slice(0,deferBody.lastIndexOf('}')))
-for(const attr of ['data-checklist-item','data-checklist-date-picker','data-checklist-template-picker']){
+for(const attr of ['data-checklist-item','data-checklist-template-picker']){
  const activeElement={matches:selectors=>selectors.includes(`[${attr}]`)}
  assert.equal(defer({activeElement},()=>false,()=>attr==='data-checklist-template-picker',()=>false,()=>false,()=>true),false,
   'Focused checklist controls immediately render authoritative replies')

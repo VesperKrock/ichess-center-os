@@ -69,16 +69,19 @@ const legacyExports = [buildReportDownloadText({ filters: day27Filters }),
 assert(legacyExports.every(output => !/authoritative|canonical|derived view|active center/i.test(output)),
   'Admin-facing Report text and print exports use business wording')
 const dayHtml = renderReportModule({ viewMode: 'day', filters: day27Filters })
-assert.equal((dayHtml.match(/data-report-pending-task=/g) || []).length, 7, 'Day checklist remains')
+assert.equal((dayHtml.match(/data-checklist-item=/g) || []).length, 5, 'Day uses canonical Part-time checklist')
 
 const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
-assert(main.includes("[data-report-filter]'))"), 'Focused Report date bypasses deferred rendering')
+assert(main.includes('[data-tu-filter], [data-report-filter],'), 'Focused Report date bypasses deferred rendering')
 assert(main.includes("control.addEventListener('change', () => applyReportPeriodControl(control))"))
 assert(main.includes('inputValue: periodControl?.value'), 'Export checks the live date control')
 assert(main.includes('getReportPdfSnapshotFingerprint(reportPdfSnapshot) !== exportedData'),
   'Late PDF generation cannot use changed Report data')
-assert(main.includes("refreshModuleAuthoritativeUpstreams('bao-cao', { reason: 'center-switch' })"),
-  'An open Reports window starts a full center-scoped refresh')
+const centerSwitch = main.slice(main.indexOf('async function handleInternalOpenCenter('), main.indexOf('function normalizeInternalCenters('))
+assert(centerSwitch.includes('closeCenterBoundWorkspacesForSwitch()') && centerSwitch.includes('resetCloudRuntimeStateForOwnerCenterSwitch()'),
+  'Center switch closes the old Report and resets its center-scoped state')
+assert(main.includes("refreshModuleAuthoritativeUpstreams(moduleId, { reason: 'module-open' })"),
+  'Reopening Report starts the current center-scoped refresh')
 assert(main.includes('viewMode: reportState.viewMode') && main.includes('filters: { ...reportState.filters }'),
   'Center switch retains the selected Report period while resetting the draft')
 console.log('M6_1_REPORTS_AUDIT_FIXES_SMOKE PASS')
