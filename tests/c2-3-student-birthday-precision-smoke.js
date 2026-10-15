@@ -28,12 +28,13 @@ const base = { ...createEmptyStudentFormState().values, fullName: 'QA Minh An', 
 const full = buildStudentFromForm({ ...base, birthDate: '2018-09-29' })
 const year = buildStudentFromForm({ ...base, birthYearOnly: true, birthYear: '2018' })
 const unknown = buildStudentFromForm(base)
-check('create full/year/unknown without a sentinel date or browser-only precision state', () => {
+check('create full/year and preserve legacy unknown without a sentinel date; new forms require birth information', () => {
   assert.equal(full.birthDate, '2018-09-29'); assert.equal(full.birthYear, '')
   assert.equal(year.birthDate, ''); assert.equal(year.birthYear, '2018')
   assert(!('birthYearOnly' in year)); assert(!('birthYearOnly' in full))
   assert.equal(unknown.birthDate, ''); assert.equal(unknown.birthYear, '')
-  for (const student of [full, year, unknown]) assert.deepEqual(validateStudentForm(createEditStudentFormState(student).values), {})
+  for (const student of [full, year]) assert.deepEqual(validateStudentForm(createEditStudentFormState(student).values), {})
+  assert(validateStudentForm(createEditStudentFormState(unknown).values).birthDate)
 })
 check('unchanged full DOB including real 01 January preserves exact date', () => {
   for (const date of ['2018-09-17', '2018-01-01', '2020-02-29']) {

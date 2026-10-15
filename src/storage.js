@@ -1,3 +1,4 @@
+import { normalizeTeacherDisplayName } from './class-session-teacher-display.js'
 ﻿import {
   getStaffAdministrativeProfileCollectionIssues,
   normalizeStaffAdministrativeProfiles,
@@ -1395,6 +1396,7 @@ export function normalizeClassSession(classSession, index = 0) {
     startTime,
     endTime,
     instructorName: String(classSession.instructorName || '').trim(),
+    teacherDisplayName: normalizeTeacherDisplayName(classSession.teacherDisplayName),
     displayLabel: String(classSession.displayLabel || generatedLabel || name || `Ca học ${index + 1}`).trim(),
     status: classSession.status === 'inactive' ? 'inactive' : 'active',
     note: String(classSession.note || ''),
@@ -1536,7 +1538,7 @@ export function normalizeStudentLevel(value) {
 
   return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
     ? STUDENT_LEVELS[legacyLevelNumber - 1]
-    : levelText || 'Dolphin 1'
+    : levelText
 }
 
 function normalizeStudentText(value) {

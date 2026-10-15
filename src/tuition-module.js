@@ -6,6 +6,14 @@ export const initialTuitionFilters = {
 }
 export const TUITION_PAYMENT_STALE_MESSAGE =
   'Thông tin học phí vừa được cập nhật. Vui lòng mở lại form thanh toán.'
+function initialBaselineNotice(p) {
+  const b = p.verifiedInitialBaseline
+  if (!b) return ''
+  const f = b.financialFacts, sourceMoney = value => value == null ? 'Chưa rõ' : money(value)
+  const discount = f.discountKind === 'UNKNOWN' ? 'Chưa rõ ưu đãi' : f.discountKind === 'EXPLICIT_NONE' ? 'Nguồn ghi không ưu đãi'
+    : `${f.percent}% · Giảm cố định ${money(f.fixedMinor)} · Voucher anh/chị/em ${money(f.siblingVoucherMinor)}`
+  return `<span>${b.baselineUsed} buổi tại mốc ${html(b.baselineCutoffDate)} · ${b.contributedSessions} buổi thực tế sau mốc. Chưa mở kỳ hoặc ghi nhận tiền.</span><details class="tuition-source-financial-facts"><summary>Thông tin tài chính nguồn · Chưa đối chiếu</summary><p>Giá niêm yết nguồn: ${html(sourceMoney(b.listedPriceMinor))}</p><p>Ưu đãi: ${html(discount)}</p><p>Phải thu theo nguồn: ${html(sourceMoney(f.sourceDueMinor))}</p><p>Đã thu theo nguồn: ${html(sourceMoney(f.collectedMinor))} · Còn lại theo nguồn: ${html(sourceMoney(f.remainingMinor))}</p><p>Thông tin lịch sử từ Excel; chưa tạo giao dịch hoặc Phiếu Thu trong iChess.</p></details>`
+}
 const text = (v) => String(v ?? '')
 const html = (v) =>
   text(v).replace(
@@ -215,6 +223,20 @@ export function normalizeTuitionCyclePresentation({
     }
   }
   const p = present(selected)
+  const baseline = !selected && !selectedCycleId && packageCycleReady ? packageCycleState?.verifiedInitialBaseline : null
+  if (baseline) {
+    const sourceLabels = { PAID_BEFORE_ICHESS: 'Nguồn: đã thanh toán trước iChess', UNPAID: 'Nguồn: chưa thanh toán', PARTIAL: 'Nguồn: thanh toán một phần', UNKNOWN: 'Nguồn: chưa rõ thanh toán' }
+    Object.assign(p, { verifiedInitialBaseline: baseline, financialPending: true, hasKnownPackage: true,
+      needsInitialSetup: false, noPackage: false, isPending: false, readFailed: false, unresolved: false,
+      totalSessions: baseline.totalSessions, usedSessions: baseline.usedSessions, remainingSessions: baseline.remainingSessions,
+      termLabel: 'Gói từ dữ liệu ban đầu · Chưa mở kỳ', progressLabel: `${baseline.usedSessions}/${baseline.totalSessions}`,
+      packageLabel: baseline.packageName, paymentLabel: `${sourceLabels[baseline.financialFacts.paymentState]} · Chờ đối chiếu tài chính`,
+      paymentTone: 'muted', isPaid: false, outstandingAmount: null, paymentOutstanding: null, debtSessions: 0,
+      canCollectPayment: false, canPrintTbhp: false, canPrintReceipt: false, canChangePackage: false,
+      canPrepareNext: false, canEndCycle: false, action: 'none', actionLabel: 'Chờ đối chiếu tài chính', reminderLabel: '',
+      amounts: { tuitionAmount: null, discountAmount: null, materialFee: null, paidAmount: null, remainingDebt: null },
+    })
+  }
   p.prepared =
     packageCycleState?.preparedNextCycle &&
     packageCycleState.preparedNextCycle.id !== selected?.id
@@ -334,7 +356,7 @@ const pkgOptions = (catalog, value = '') =>
     )
     .join('')}`
 function documents(p, id) {
-  return `<section class="tuition-detail-section tuition-simple-documents" aria-label="Tài liệu"><h5>Tài liệu</h5><div class="tuition-simple-document-actions"><article class="tuition-simple-document-card"><strong>Thông báo học phí</strong>${p.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, p.cycleId) : `<span>${html(p.needsInitialSetup ? 'Chưa thiết lập học phí' : p.noPackage ? 'Chưa có gói' : 'Không tải được học phí.')}</span>`}</article><article class="tuition-simple-document-card"><strong>Phiếu Thu</strong>${p.canPrintReceipt ? p.receipts.map((r) => `<span>${html(r.receiptNumber)}</span>${btn('In / Xuất Phiếu Thu', 'receipt', id, p.cycleId, `data-tu-receipt-id="${html(r.id)}"`)}`).join('') : `<span>${html(p.receiptUnavailableLabel)}</span>`}</article></div></section>`
+  return `<section class="tuition-detail-section tuition-simple-documents" aria-label="Tài liệu"><h5>Tài liệu</h5><div class="tuition-simple-document-actions"><article class="tuition-simple-document-card"><strong>Thông báo học phí</strong>${p.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, p.cycleId) : `<span>${html(p.financialPending ? 'Chờ đối chiếu tài chính trước khi lập thông báo' : p.needsInitialSetup ? 'Chưa thiết lập học phí' : p.noPackage ? 'Chưa có gói' : 'Không tải được học phí.')}</span>`}</article><article class="tuition-simple-document-card"><strong>Phiếu Thu</strong>${p.canPrintReceipt ? p.receipts.map((r) => `<span>${html(r.receiptNumber)}</span>${btn('In / Xuất Phiếu Thu', 'receipt', id, p.cycleId, `data-tu-receipt-id="${html(r.id)}"`)}`).join('') : `<span>${html(p.receiptUnavailableLabel)}</span>`}</article></div></section>`
 }
 function cycleCard(p, label = 'Kỳ hiện tại') {
   return `<section class="tuition-detail-section" aria-label="${html(label)}"><h5>${html(label)}</h5><div class="tuition-simple-cycle-card"><div><strong>${html(p.termLabel)} · ${html(p.progressLabel)}</strong><span>${html(p.packageLabel)}</span>${p.ended ? `<span>Đã học: ${p.usedSessions}/${p.totalSessions} · Hết hiệu lực: ${p.expiredSessions} buổi</span>` : p.hasKnownPackage ? `<span>Còn ${p.remainingSessions} buổi</span>` : ''}</div></div></section>`
@@ -354,11 +376,11 @@ function detail(context, row, panel) {
   const primary = t
     ? btn('Ghi nhận thanh toán', 'payment', id, t.cycleId)
     : p.action === 'none'
-      ? '<strong>Không cần xử lý</strong>'
+      ? `<strong>${html(p.actionLabel)}</strong>`
       : btn(p.actionLabel, p.action, id, p.cycleId)
   const packageControl = (action, label) =>
     `<details class="tuition-simple-package-change" data-tu-package-action><summary>${label}</summary><div class="tuition-cycle-panel tuition-cycle-package-selection"><select aria-label="${label}">${pkgOptions(context.catalog)}</select>${btn('Xác nhận', action, id, p.cycleId, panel.busy ? 'disabled' : '')}</div></details>`
-  return `${cycleCard(p, panel.cycleId ? 'Kỳ đã chọn' : 'Kỳ hiện tại')}${documents(p, id)}<section class="tuition-detail-section"><h5>Thanh toán</h5>${badge(p)}${p.cycle?.openingPaymentState === 'PAID_BEFORE_ICHESS' ? '<span>Đã thanh toán trước khi dùng iChess · Không có Phiếu Thu trong iChess</span>' : ''}${p.cycle?.openingContext === 'LEGACY_BEFORE_ICHESS' ? `<span>${p.cycle.baselineUsed} buổi trước khi dùng iChess · ${p.cycle.contributedSessions} buổi do iChess ghi nhận</span>` : ''}${p.debtSessions > 0 ? `<span>Đã học nợ ${p.debtSessions} buổi</span>` : ''}</section>${p.prepared ? `${cycleCard(p.prepared, 'Kỳ tiếp theo')}${badge(p.prepared)}${p.prepared.canPrintTbhp ? btn('In / Xuất TBHP kỳ tiếp theo', 'tbhp', id, p.prepared.cycleId) : ''}` : ''}<section class="tuition-detail-section tuition-simple-next-action"><h5>Việc cần làm</h5><div class="tuition-simple-primary-work">${primary}</div>${p.reminderLabel ? `<span>${html(p.reminderLabel)}</span>` : ''}${p.canChangePackage ? packageControl('change', 'Đổi gói trước buổi học đầu tiên') : ''}${p.canPrepareNext ? packageControl('prepare', 'Thanh toán sớm kỳ tiếp theo') : ''}${p.canEndCycle ? btn('Kết thúc kỳ', 'end', id, p.cycleId, `class="tuition-stop-secondary" ${panel.busy ? 'disabled' : ''}`) : ''}</section><section class="tuition-detail-section"><details class="tuition-simple-history"><summary>Xem lịch sử</summary>${p.history.length ? p.history.map((h) => `<article class="tuition-simple-history-cycle"><div><strong>${h.termLabel} · ${h.progressLabel}</strong><span>${html(h.packageLabel)}</span>${h.ended ? `<span>Đã học: ${h.usedSessions}/${h.totalSessions} · Hết hiệu lực: ${h.expiredSessions} buổi</span>` : ''}${badge(h)}</div><div>${btn('Chi tiết', 'detail', id, h.cycleId)}${h.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, h.cycleId) : ''}${h.canCollectPayment ? btn('Ghi nhận thanh toán', 'payment', id, h.cycleId) : ''}</div></article>`).join('') : '<span>Chưa có kỳ trước</span>'}</details></section>`
+  return `${cycleCard(p, panel.cycleId ? 'Kỳ đã chọn' : 'Kỳ hiện tại')}${documents(p, id)}<section class="tuition-detail-section"><h5>Thanh toán</h5>${badge(p)}${p.cycle?.openingPaymentState === 'PAID_BEFORE_ICHESS' ? '<span>Đã thanh toán trước khi dùng iChess · Không có Phiếu Thu trong iChess</span>' : ''}${p.cycle?.openingContext === 'LEGACY_BEFORE_ICHESS' ? `<span>${p.cycle.baselineUsed} buổi trước khi dùng iChess · ${p.cycle.contributedSessions} buổi do iChess ghi nhận</span>` : ''}${initialBaselineNotice(p)}${p.debtSessions > 0 ? `<span>Đã học nợ ${p.debtSessions} buổi</span>` : ''}</section>${p.prepared ? `${cycleCard(p.prepared, 'Kỳ tiếp theo')}${badge(p.prepared)}${p.prepared.canPrintTbhp ? btn('In / Xuất TBHP kỳ tiếp theo', 'tbhp', id, p.prepared.cycleId) : ''}` : ''}<section class="tuition-detail-section tuition-simple-next-action"><h5>Việc cần làm</h5><div class="tuition-simple-primary-work">${primary}</div>${p.reminderLabel ? `<span>${html(p.reminderLabel)}</span>` : ''}${p.canChangePackage ? packageControl('change', 'Đổi gói trước buổi học đầu tiên') : ''}${p.canPrepareNext ? packageControl('prepare', 'Thanh toán sớm kỳ tiếp theo') : ''}${p.canEndCycle ? btn('Kết thúc kỳ', 'end', id, p.cycleId, `class="tuition-stop-secondary" ${panel.busy ? 'disabled' : ''}`) : ''}</section><section class="tuition-detail-section"><details class="tuition-simple-history"><summary>Xem lịch sử</summary>${p.history.length ? p.history.map((h) => `<article class="tuition-simple-history-cycle"><div><strong>${h.termLabel} · ${h.progressLabel}</strong><span>${html(h.packageLabel)}</span>${h.ended ? `<span>Đã học: ${h.usedSessions}/${h.totalSessions} · Hết hiệu lực: ${h.expiredSessions} buổi</span>` : ''}${badge(h)}</div><div>${btn('Chi tiết', 'detail', id, h.cycleId)}${h.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, h.cycleId) : ''}${h.canCollectPayment ? btn('Ghi nhận thanh toán', 'payment', id, h.cycleId) : ''}</div></article>`).join('') : '<span>Chưa có kỳ trước</span>'}</details></section>`
 }
 function successNotice(state) {
   return state.success
@@ -384,6 +406,7 @@ function panel(context, state, rows) {
         .filter(
           (r) =>
             !r.presentation.cycle &&
+            !r.presentation.financialPending &&
             !r.presentation.isPending &&
             !r.presentation.readFailed,
         )
@@ -435,6 +458,7 @@ export function renderTuitionModule(context, state) {
           (f.status === 'debt' && r.presentation.outstandingAmount > 0) ||
           (f.status === 'no-package' && r.presentation.noPackage) ||
           (f.status === 'initial' && r.presentation.needsInitialSetup) ||
+          (f.status === 'financial-review' && r.presentation.financialPending) ||
           (f.status === 'reminder' && !!r.presentation.reminderLabel)) &&
         (f.package === 'all' || r.packageKind === f.package),
     )
@@ -444,7 +468,7 @@ export function renderTuitionModule(context, state) {
     const p = r.presentation,
       id = r.student.id,
       t = p.paymentTarget
-    return `<tr class="tuition-clickable-row" data-tuition-row-student-id="${html(id)}"><td><div class="tuition-student-cell"><strong>${html(r.student.fullName)}</strong><span>PH: ${html(r.student.parentName || 'Chưa cập nhật')}</span><small>${html(r.student.parentPhone || '')}</small></div></td><td><button class="tuition-simple-progress" type="button" data-tu-action="detail" data-tu-student-id="${html(id)}"><strong>${html(p.termLabel)}${p.noPackage || p.needsInitialSetup ? '' : ` · ${html(p.progressLabel)}`}</strong><span>${html(p.packageLabel)}</span></button></td><td>${badge(p)}</td><td><div class="tuition-simple-actions">${t ? btn('Ghi nhận thanh toán', 'payment', id, t.cycleId) : p.action === 'none' ? '<span>Không cần xử lý</span>' : p.action === 'loading' ? '<span>Đang tải học phí…</span>' : btn(p.actionLabel, p.action, id, p.cycleId)}${p.canPrintTbhp && p.action !== 'tbhp' ? btn('TBHP', 'tbhp', id, p.cycleId, 'class="tuition-document-action"') : ''}${btn('Chi tiết', 'detail', id, p.cycleId, 'class="tuition-detail-link"')}</div>${p.reminderLabel ? `<small>${html(p.reminderLabel)}</small>` : ''}</td></tr>`
+    return `<tr class="tuition-clickable-row" data-tuition-row-student-id="${html(id)}"><td><div class="tuition-student-cell"><strong>${html(r.student.fullName)}</strong><span>PH: ${html(r.student.parentName || 'Chưa cập nhật')}</span><small>${html(r.student.parentPhone || '')}</small></div></td><td><button class="tuition-simple-progress" type="button" data-tu-action="detail" data-tu-student-id="${html(id)}"><strong>${html(p.termLabel)}${p.noPackage || p.needsInitialSetup ? '' : ` · ${html(p.progressLabel)}`}</strong><span>${html(p.packageLabel)}</span></button></td><td>${badge(p)}</td><td><div class="tuition-simple-actions">${t ? btn('Ghi nhận thanh toán', 'payment', id, t.cycleId) : p.action === 'none' ? `<span>${html(p.actionLabel)}</span>` : p.action === 'loading' ? '<span>Đang tải học phí…</span>' : btn(p.actionLabel, p.action, id, p.cycleId)}${p.canPrintTbhp && p.action !== 'tbhp' ? btn('TBHP', 'tbhp', id, p.cycleId, 'class="tuition-document-action"') : ''}${btn('Chi tiết', 'detail', id, p.cycleId, 'class="tuition-detail-link"')}</div>${p.reminderLabel ? `<small>${html(p.reminderLabel)}</small>` : ''}</td></tr>`
   }
   return `<section class="tuition-module ${state.panel ? 'form-open' : ''}" data-tu-read-status="${html(context.readStatus)}" data-tuition-scroll-region="module"><div class="tuition-module-content" data-tuition-scroll-region="content">${failed ? `<p class="tuition-domain-notice is-warning" role="alert">Không tải được học phí. ${btn('Làm mới', 'refresh')}</p>` : pending ? '<p class="tuition-domain-notice is-loading" role="status">Đang tải học phí…</p>' : ''}${state.message ? `<p class="tuition-domain-notice" role="alert">${html(state.message)}</p>` : ''}<div class="tuition-overview"><div class="tuition-filter-row"><label><input type="search" data-tu-filter="query" value="${html(f.query)}" placeholder="Tìm tên học viên, phụ huynh, SĐT…" aria-label="Tìm học viên"></label><label><select data-tu-filter="status" aria-label="Trạng thái">${[
     ['all', 'Tất cả trạng thái'],
@@ -452,6 +476,7 @@ export function renderTuitionModule(context, state) {
     ['reminder', 'Sắp hết buổi'],
     ['no-package', 'Chưa có gói'],
     ['initial', 'Chưa thiết lập học phí'],
+    ['financial-review', 'Chờ đối chiếu tài chính'],
   ]
     .map(
       ([v, l]) =>
@@ -463,6 +488,8 @@ export function renderTuitionModule(context, state) {
     ['Tổng học viên', rows.length],
     ['Đã có gói', rows.filter((r) => r.presentation.hasKnownPackage).length],
     ['Chưa có gói', rows.filter((r) => r.presentation.noPackage).length],
+    ['Chờ đối chiếu tài chính', rows.filter((r) => r.presentation.financialPending).length],
+    ['Kỳ đã kích hoạt', rows.filter((r) => r.presentation.cycle?.lifecycleStatus === 'ACTIVE').length],
     [
       'Chưa thiết lập',
       rows.filter((r) => r.presentation.needsInitialSetup).length,

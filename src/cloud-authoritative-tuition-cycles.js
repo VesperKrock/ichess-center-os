@@ -1,3 +1,5 @@
+import { projectVerifiedInitialBaseline } from './excel-initial-baseline.js'
+export { buildV24ImportInitialBaselineCommand } from './excel-initial-baseline.js'
 export const V24_PACKAGE_CYCLE_CONTRACT = 'v2.4-package-cycle-v1'
 
 export const V24_PACKAGE_CYCLE_CAPABILITY_STATUS = Object.freeze({
@@ -316,7 +318,10 @@ function projectStudentCycleState(row = {}, centerId = '') {
   if (row.prepared_next_cycle != null && !preparedNextCycle) return null
   const cycles = row.cycles.map((cycle) => projectCycleHistory(cycle, centerId, studentId))
   if (cycles.some((cycle) => !cycle)) return null
-  return { centerId, studentId, readiness, initialSetupRequired: readiness === 'LEGACY_REVIEW_REQUIRED', currentCycle, preparedNextCycle, cycles }
+  let verifiedInitialBaseline = null
+  try { verifiedInitialBaseline = projectVerifiedInitialBaseline(row.initial_import_baseline) } catch { return null }
+  if (currentCycle && verifiedInitialBaseline) return null
+  return { centerId, studentId, readiness, initialSetupRequired: readiness === 'LEGACY_REVIEW_REQUIRED', currentCycle, preparedNextCycle, cycles, verifiedInitialBaseline }
 }
 
 function projectCycle(row = {}, centerId = '', studentId = '') {

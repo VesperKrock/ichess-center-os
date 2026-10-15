@@ -1,3 +1,4 @@
+import { normalizeTeacherDisplayName, validateTeacherDisplayName } from './class-session-teacher-display.js'
 export const initialSettingsFilters = {
   query: '',
   status: 'all',
@@ -157,7 +158,7 @@ export function createEmptySettingsClassSessionFormState() {
       daysOfWeek: [],
       startTime: '',
       endTime: '',
-      teacherId: '',
+      teacherDisplayName: '',
       note: '',
       status: 'active',
     },
@@ -175,6 +176,7 @@ export function createEditSettingsClassSessionFormState(classSession) {
       daysOfWeek: normalizeClassSessionDaysOfWeek(classSession.daysOfWeek, classSession.daysLabel || classSession.dayLabel),
       startTime: classSession.startTime || '',
       endTime: classSession.endTime || '',
+      teacherDisplayName: normalizeTeacherDisplayName(classSession.teacherDisplayName),
       note: classSession.note || '',
       status: classSession.status === 'inactive' ? 'inactive' : 'active',
     },
@@ -184,6 +186,8 @@ export function createEditSettingsClassSessionFormState(classSession) {
 
 export function validateSettingsClassSessionForm(values) {
   const errors = {}
+  const teacherError = validateTeacherDisplayName(values.teacherDisplayName)
+  if (teacherError) errors.teacherDisplayName = teacherError
   const selectedDays = normalizeClassSessionDaysOfWeek(values.daysOfWeek, values.daysLabel)
 
   if (!selectedDays.length) {
@@ -239,6 +243,7 @@ export function buildSettingsClassSessionFromForm(
     endTime,
     displayLabel,
     status: values.status === 'inactive' ? 'inactive' : 'active',
+    teacherDisplayName: normalizeTeacherDisplayName(values.teacherDisplayName),
     note: String(values.note ?? '').trim(),
     createdAt: existingClassSession?.createdAt || now,
     updatedAt: now,
@@ -354,7 +359,7 @@ export function renderSettingsModule(
                 <th>Ca học / Lớp</th>
                 <th>Ngày học</th>
                 <th>Giờ học</th>
-                <th>Giáo viên hiện tại</th>
+                <th>Giáo viên (tên hiển thị)</th>
                 <th>Số học viên</th>
                 <th>Trạng thái</th>
                 <th>Ghi chú</th>
@@ -690,7 +695,7 @@ export function getFilteredSettingsClassSessions(
           classSession.daysLabel,
           classSession.startTime,
           classSession.endTime,
-          classSession.currentTeacherName,
+          classSession.teacherDisplayName,
           classSession.note,
         ].some((value) => normalizeSearchText(value).includes(query))
 
@@ -744,9 +749,9 @@ function renderClassSessionRow(classSession, students = [], deletePolicy = null)
       </td>
       <td>${escapeHtml(classSession.daysLabel || '—')}</td>
       <td>${escapeHtml(formatClassSessionTimeRange(classSession))}</td>
-      <td>${classSession.currentTeacherName
-        ? escapeHtml(classSession.currentTeacherName)
-        : '<span class="settings-instructor-unassigned">Chưa xếp giáo viên</span>'}</td>
+      <td>${classSession.teacherDisplayName
+        ? escapeHtml(classSession.teacherDisplayName)
+        : '<span class="settings-instructor-unassigned">Chưa có tên hiển thị</span>'}</td>
       <td>${studentCount} học viên</td>
       <td>
         <span class="settings-status-badge ${classSession.status === 'inactive' ? 'inactive' : ''}">
@@ -956,15 +961,8 @@ function renderSettingsClassSessionForm(formState, teacherOptions = []) {
           ${renderClassSessionAutoNamePreview(autoName)}
           ${renderDaysOfWeekField(values.daysOfWeek, errors.daysOfWeek)}
           ${renderClassSessionTimeFields(values, errors)}
-          ${isEdit ? '<p class="settings-class-session-teacher-note span-full">Giáo viên hiện tại được giữ nguyên. Đổi giáo viên tại Thời khóa biểu và chọn ngày áp dụng.</p>' : `
-          <label class="span-full ${errors.teacherId ? 'has-error' : ''}">
-            <span>Giáo viên hiện tại (không bắt buộc)</span>
-            <select data-settings-class-session-field="teacherId" ${formState.isSaving ? 'disabled' : ''}>
-              ${renderOption('', 'Chưa xếp giáo viên', values.teacherId)}
-              ${(teacherOptions || []).map(teacher => renderOption(teacher.id, teacher.displayName || teacher.fullName, values.teacherId)).join('')}
-            </select>
-            ${errors.teacherId ? `<small>${escapeHtml(errors.teacherId)}</small>` : '<small class="settings-ca-teacher-hint">Có thể để trống và phân công sau tại Thời khóa biểu.</small>'}
-          </label>`}
+          ${renderField('teacherDisplayName', 'Tên giáo viên hiển thị (không bắt buộc)', values.teacherDisplayName, errors.teacherDisplayName)}
+          <small class="span-full">Tên hiển thị tại Ca học; không thay thế thông tin giáo viên thực tế của từng buổi học.</small>
           ${renderStatusField(values.status)}
           ${renderField('note', 'Ghi chú', values.note, errors.note)}
         </div>

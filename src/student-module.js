@@ -135,7 +135,7 @@ export const emptyStudentFormValues = {
   motherPhone: '',
   parentJob: '',
   parentArea: '',
-  level: 'Dolphin 1',
+  level: '',
   classSessionIds: [],
   recurringEnrollments: [],
   enrollmentVersion: 0,
@@ -150,8 +150,6 @@ export const emptyStudentFormValues = {
 
 const requiredFields = {
   fullName: 'Họ và tên học viên',
-  schoolName: 'Tên trường',
-  level: 'Cấp độ học',
 }
 
 const parentCareRequiredFields = ['fatherName', 'fatherPhone', 'motherName', 'motherPhone']
@@ -175,6 +173,7 @@ export function createEmptyStudentFormState(options = {}) {
 export function createEditStudentFormState(student) {
   return {
     mode: 'edit',
+    allowLegacyUnknownBirth: !student.birthDate && !student.birthYear,
     step: 1,
     studentId: student.id,
     values: {
@@ -243,8 +242,9 @@ export function renderStudentModule(
           <button class="student-add-button" type="button" data-student-action="open-create">
             <span aria-hidden="true">+</span> Thêm học viên
           </button>
-        </header>
-        <div class="student-overview" aria-label="Tìm kiếm, lọc và thống kê học viên">
+          <button class="student-secondary-button" type="button" data-student-action="open-excel-import">Nhập Excel · Audit → Import</button>
+          </header>
+          <div class="student-overview" aria-label="Tìm kiếm, lọc và thống kê học viên">
           <div class="student-filter-summary-row">
             <div class="student-filter-controls">
             <label class="student-search-field">
@@ -386,7 +386,7 @@ export function getVisibleStudents(students = sampleStudents) {
   return students.filter((student) => !student.isDeleted)
 }
 
-export function validateStudentForm(values, classSessions = []) {
+export function validateStudentForm(values, classSessions = [], context = {}) {
   const errors = Object.entries(requiredFields).reduce((currentErrors, [field, label]) => {
     if (!String(values[field] ?? '').trim()) {
       currentErrors[field] = `${label} là bắt buộc.`
@@ -395,10 +395,14 @@ export function validateStudentForm(values, classSessions = []) {
     return currentErrors
   }, {})
   Object.assign(errors, validateStudentBirthFields(values))
+  const birthFields = buildStudentBirthFields(values)
+  if (!context.allowLegacyUnknownBirth && !String(birthFields.birthDate ?? '').trim() && !String(birthFields.birthYear ?? '').trim()) {
+    errors[values.birthYearOnly ? 'birthYear' : 'birthDate'] = 'Cần nhập ít nhất năm sinh học viên.'
+  }
 
-  const fatherPhoneDigits = String(values.fatherPhone ?? '').replace(/\D/g, '')
-  const motherPhoneDigits = String(values.motherPhone ?? '').replace(/\D/g, '')
-  const legacyPhoneDigits = String(values.parentPhone ?? '').replace(/\D/g, '')
+  const fatherPhoneDigits = String(formatPhoneNumber(values.fatherPhone ?? '')).replace(/\D/g, '')
+  const motherPhoneDigits = String(formatPhoneNumber(values.motherPhone ?? '')).replace(/\D/g, '')
+  const legacyPhoneDigits = String(formatPhoneNumber(values.parentPhone ?? '')).replace(/\D/g, '')
   const fatherName = String(values.fatherName ?? '').trim()
   const motherName = String(values.motherName ?? '').trim()
   const legacyParentName = String(values.parentName ?? '').trim()
@@ -425,6 +429,9 @@ export function validateStudentForm(values, classSessions = []) {
 
   if (!hasFatherRoute && !hasMotherRoute && !hasLegacyRoute) {
     errors.motherPhone = 'Cần ít nhất một liên hệ đủ họ tên và SĐT ba hoặc mẹ.'
+  }
+  if (hasLegacyRoute && (legacyPhoneDigits || fatherPhoneDigits || motherPhoneDigits).length !== 10) {
+    errors.parentPhone = 'SĐT liên hệ cần đủ 10 chữ số.'
   }
 
   if (values.fatherPhone && fatherPhoneDigits.length !== 10) {
@@ -489,8 +496,8 @@ export function isStudentParentCareInfoIncomplete(values) {
   )
 }
 
-export function getStudentFormSaveDisabledReason(values, classSessions = []) {
-  const errors = validateStudentForm(values, classSessions)
+export function getStudentFormSaveDisabledReason(values, classSessions = [], context = {}) {
+  const errors = validateStudentForm(values, classSessions, context)
   const errorFields = Object.keys(errors)
 
   if (!errorFields.length) {
@@ -582,7 +589,7 @@ function renderStudentForm(
     ? enrollmentStatus === 'failed'
       ? 'Chưa tải được đăng ký lịch học; nội dung đang nhập vẫn được giữ nguyên.'
       : 'Đang kiểm tra đăng ký lịch học theo từng ngày.'
-    : getStudentFormSaveDisabledReason(formState.values, classSessions)
+    : getStudentFormSaveDisabledReason(formState.values, classSessions, { allowLegacyUnknownBirth: formState.allowLegacyUnknownBirth === true })
   const parentCareIncomplete = isStudentParentCareInfoIncomplete(formState.values)
 
   return `
@@ -634,7 +641,7 @@ function renderStudentForm(
                 ${renderFormSection('A. Thông tin học viên', [
                   renderField('fullName', 'Họ và tên học viên *', formState, 'text'),
                   renderField('homeName', 'Tên ở nhà', formState, 'text'),
-                  renderField('schoolName', 'Tên trường *', formState, 'text', {
+                  renderField('schoolName', 'Tên trường', formState, 'text', {
                     placeholder: 'Ví dụ: Sao Mai, Cao Thắng, Lê Quý Đôn',
                   }),
                   renderField('schoolGrade', 'Đang học lớp', formState, 'text', {
@@ -788,7 +795,7 @@ function renderSelectField(name, label, formState, options) {
 function renderStudentLevelField(formState) {
   return `
     <label class="${formState.errors.level ? 'has-error' : ''}">
-      <span>Cấp độ học *</span>
+      <span>Cấp độ học</span>
       <input
         type="text"
         list="student-level-options"
@@ -1129,7 +1136,7 @@ function renderStudentRow(student, classSessions = [], tuitionRows = []) {
       <td title="${escapeAttribute(parentDisplay)}">${escapeHtml(parentDisplay)}</td>
       <td class="student-phone">${formatPhoneNumber(contactPhone)}</td>
       <td><span class="student-status ${getStudentStatusToneClass(statusLabel)}">${escapeHtml(statusLabel)}</span></td>
-      <td>${escapeHtml(getLevelLabel(student.level))}</td>
+      <td>${escapeHtml(getLevelLabel(student.level) || '—')}</td>
       <td>${renderStudentClassSessionCell(student, classSessionLookup)}</td>
       <td class="student-next-action-cell" data-student-next-action="${nextAction.key}">
         ${renderStudentOverviewAction(student, nextAction, 'student-next-action-button') || `<span>${escapeHtml(nextAction.title)}</span>`}
@@ -1357,7 +1364,7 @@ export function getLevelLabel(level) {
 
   return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
     ? studentLevelOptions[legacyLevelNumber - 1]
-    : levelText || 'Dolphin 1'
+    : levelText
 }
 
 function getShortSchoolName(value) {
@@ -1457,7 +1464,8 @@ function formatBirthDate(student) {
 }
 
 function formatPhoneNumber(value) {
-  const digits = String(value).replace(/\D/g, '')
+  const rawDigits = String(value).replace(/\D/g, '')
+  const digits = /^84\d{9}$/.test(rawDigits) ? `0${rawDigits.slice(2)}` : rawDigits
 
   if (digits.length !== 10) {
     return value

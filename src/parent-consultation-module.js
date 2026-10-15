@@ -3,6 +3,7 @@ import {
   parentContactSources,
   parentContactTypes,
 } from './parent-consultation-data.js'
+import { aggregateStudentParentIdentities, canonicalParentPhone, normalizeParentFullName } from './parent-identity.js'
 
 export const initialParentConsultationFilters = {
   query: '',
@@ -880,8 +881,16 @@ export function updateParentAppointmentStatus(contact, appointmentId, status) {
 
 export function getFilteredParentConsultations(contacts, filters = initialParentConsultationFilters) {
   const normalizedQuery = normalizeText(filters.query)
+  // A matching secondary Case must remain searchable after identity grouping.
+  // Show the matched Case while keeping the identity's complete relationships.
+  const candidates = contacts.map(contact => {
+    if ((contact.consultationCases || []).length < 2) return contact
+    const cases = contact.consultationCases.map(({ consultationCases: _nested, ...item }) => ({ ...item, relatedStudents: contact.relatedStudents }))
+    const match = getFilteredParentConsultations(cases, filters)[0]
+    return match ? { ...contact, ...match, consultationCases: contact.consultationCases, relatedStudents: contact.relatedStudents } : null
+  }).filter(Boolean)
 
-  return contacts.filter((contact) => {
+  return candidates.filter((contact) => {
     const matchesQuery =
       !normalizedQuery ||
       [
@@ -998,7 +1007,7 @@ export function hasAuthoritativeStudentRelationship(contact = {}) {
     && students.some((student) => student?.id === link.studentId && !student.isDeleted))
 }
 
-export function mergeParentContactsWithStudents(contacts = [], students = [], links = []) {
+export function mergeParentContactsWithStudents(contacts = [], students = [], links = [], options = {}) {
   const activeStudents = (students ?? []).filter((student) => student && !student.isDeleted)
   const studentsById = new Map(activeStudents.map((student) => [student.id, student]))
   const activeLinks = (links ?? []).filter((link) => link?.linkStatus === 'ACTIVE')
@@ -1048,7 +1057,12 @@ export function mergeParentContactsWithStudents(contacts = [], students = [], li
   })
 
   const derivedContacts = buildDerivedParentContactsFromStudents(
-    activeStudents.filter((student) => !linkedStudentIds.has(student.id)),
+    activeStudents,
+    { ...options, isOccurrenceLinked: occurrence => activeLinks.some(link => link.studentId === occurrence.studentId
+      && (link.guardianRole === occurrence.guardianRole
+        || occurrence.guardianRole === 'UNSPECIFIED' && (link.isPrimaryContact || !canonicalParentPhone(occurrence.phone))
+        || link.contactIdentityAvailable && normalizeParentFullName(link.contactDisplayName) === normalizeParentFullName(occurrence.name)
+          && (link.contactPhones || []).some(phone => canonicalParentPhone(phone) === canonicalParentPhone(occurrence.phone)))) },
   )
 
   return [...exactContacts, ...derivedContacts].sort(
@@ -1064,30 +1078,49 @@ function getContactSortTime(contact = {}) {
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 
-export function buildDerivedParentContactsFromStudents(students = []) {
-  return (students ?? [])
-    .filter((student) => student && !student.isDeleted)
-    .map((student) => {
-      const parentName = getStudentParentName(student)
-      const phone = getStudentParentPhone(student)
+// Identity rows are read projections only. Every Case remains individually
+// addressable for history/actions; distinct canonical IDs are never merged.
+export function collapseParentIdentityRows(contacts = []) {
+  const groups = new Map()
+  for (const contact of contacts) {
+    const key = contact.canonicalContactId
+      ? `${contact.centerId || ''}|contact:${contact.canonicalContactId}` : `row:${contact.id}`
+    const members = groups.get(key) || []
+    members.push(contact)
+    groups.set(key, members)
+  }
+  return [...groups.values()].map(cases => ({
+    ...cases[0],
+    relatedStudents: [...new Map(cases.flatMap(c => c.relatedStudents || []).map(s => [s.id, s])).values()],
+    consultationCases: cases.filter(c => !c.isDerivedFromStudents),
+  }))
+}
+
+export function buildDerivedParentContactsFromStudents(students = [], options = {}) {
+  return aggregateStudentParentIdentities(students, options)
+    .map((identity) => {
+      const student = identity.relatedStudents[0]
+      const parentName = identity.name
+      const phone = identity.phone
 
       if (!parentName && !phone) {
         return null
       }
 
-      const groupKey = `student:${student.id}`
+      const groupKey = identity.id
       const studentName = student.fullName || student.name || ''
       return {
-        id: `student-parent-${String(student.id).replace(/[^a-z0-9_-]+/gi, '-')}`,
+        id: identity.id,
+        centerId: identity.centerId,
         groupKey,
         contactType: 'currentParent',
         customerStage: 'converted',
         parentName: parentName || 'Phụ huynh chưa có tên',
         phone,
-        secondaryPhone: getStudentSecondaryParentPhone(student, phone),
+        secondaryPhone: '',
         email: '',
         studentName,
-        studentNames: studentName,
+        studentNames: identity.relatedStudents.map(s => s.fullName || s.name || '').join(', '),
         studentId: student.id,
         leadStudentName: '',
         studentBirthYear: '',
@@ -1113,8 +1146,10 @@ export function buildDerivedParentContactsFromStudents(students = []) {
         linkedStudentIds: [],
         nextFollowUpAt: '',
         potentialLevel: '',
-        relatedStudents: [student],
-        studentCount: 1,
+        relatedStudents: identity.relatedStudents,
+        studentCount: identity.relatedStudents.length,
+        derivedParentOccurrences: identity.occurrences.map(({ student: _student, ...occurrence }) => occurrence),
+        identityStatus: identity.identityStatus,
         isDerivedFromStudents: true,
         requiresExplicitCrmLink: true,
         createdAt: student.createdAt || new Date().toISOString(),
@@ -1136,9 +1171,10 @@ export function renderParentConsultationModule(
   sharedTruthState = {},
   integrationState = {},
 ) {
-  const mergedContacts = mergeParentContactsWithStudents(contacts, students, integrationState.links)
-  const stats = getParentConsultationStats(mergedContacts)
-  const filteredContacts = getFilteredParentConsultations(mergedContacts, filters)
+  const mergedContacts = mergeParentContactsWithStudents(contacts, students, integrationState.links, { centerId: sharedTruthState.centerId })
+  const identityRows = collapseParentIdentityRows(mergedContacts)
+  const stats = getParentConsultationStats(identityRows)
+  const filteredContacts = getFilteredParentConsultations(identityRows, filters)
   const detailContact = detailContactId
     ? mergedContacts.find((contact) => contact.id === detailContactId)
     : null
@@ -1190,7 +1226,7 @@ export function renderParentConsultationModule(
         ${renderStatCard('Đã chuyển đổi', visibleStats.converted, 'is-success')}
       </div>
       ${body}
-      ${ready && detailContact ? renderParentContactDetailPanel(detailContact) : ''}
+      ${ready && detailContact ? renderParentContactDetailPanel({ ...detailContact, consultationCases: identityRows.find(row => row.id === detailContactId || row.consultationCases?.some(c => c.id === detailContactId))?.consultationCases || [] }) : ''}
       ${ready && formState ? renderParentContactForm(formState, students, sharedTruthState.eligibleConsultants) : ''}
       ${ready && noteHistoryContactId ? renderNoteHistoryModal(mergedContacts, noteHistoryContactId) : ''}
       ${ready && quickNoteState ? renderQuickNoteModal(mergedContacts, quickNoteState) : ''}
@@ -1297,7 +1333,9 @@ function renderContactRow(contact) {
         <div class="parent-contact-cell">
           <strong>${escapeHtml(contact.parentName || 'Chưa có tên')}</strong>
           <span>${escapeHtml(contact.phone || 'Chưa có số điện thoại')}</span>
-          <small>${escapeHtml(linkedStudentCount ? `${linkedStudentCount} học viên liên kết` : contact.secondaryPhone || contact.email || '')}</small>
+          <small>${escapeHtml(linkedStudentCount ? `${linkedStudentCount} học viên ${contact.isDerivedFromStudents ? 'từ hồ sơ' : 'liên kết'}` : contact.secondaryPhone || contact.email || '')}</small>
+          ${(contact.consultationCases || []).length > 1 ? `<small>${contact.consultationCases.length} hồ sơ tư vấn</small>` : ''}
+          ${contact.identityStatus === 'QUESTION' ? '<small>Cần đối chiếu tên và số liên hệ</small>' : ''}
         </div>
       </td>
       <td>
@@ -1346,6 +1384,7 @@ function renderParentContactDetailPanel(contact) {
   return `
     <div class="parent-note-modal-backdrop" role="presentation">
       <section class="parent-note-modal parent-contact-detail-panel" aria-label="Chi tiết liên hệ phụ huynh">
+        ${(contact.consultationCases || []).length > 1 ? `<section aria-label="Các hồ sơ tư vấn của danh tính này">${contact.consultationCases.map(c => `<button type="button" data-parent-contact-action="detail" data-contact-id="${escapeAttribute(c.id)}">Hồ sơ tư vấn · ${escapeHtml(parentConsultationStatusLabels[c.consultationStatus] || c.consultationStatus || 'Chưa rõ')}</button>`).join('')}</section>` : ''}
         <div class="parent-note-modal-header">
           <div>
             <h3>${escapeHtml(contact.parentName || 'Phụ huynh')}</h3>

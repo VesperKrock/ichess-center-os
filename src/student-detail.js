@@ -331,6 +331,12 @@ function renderStudentParentContactTile(student, customerId = '') {
 }
 
 function renderStudentCurrentPeriodTile(row) {
+  const verified = row?.presentation?.verifiedInitialBaseline
+  if (verified) return renderOverviewTile('Gói từ dữ liệu ban đầu', [
+    ['Gói học', verified.packageName],
+    ['Đã học / Tổng số', `${verified.usedSessions} / ${verified.totalSessions} buổi`],
+    ['Còn lại', `${verified.remainingSessions} buổi`],
+  ], '', 'student-period-summary-tile', '<p>Chờ đối chiếu tài chính · Chưa mở kỳ học phí.</p>')
   const cycle = row?.packageCycleState?.currentCycle
   const hasPeriod = Boolean(cycle || row?.tuition)
   const remainingSessions = cycle?.remainingSessions ?? row?.remainingSessions
@@ -343,6 +349,10 @@ function renderStudentCurrentPeriodTile(row) {
 }
 
 function renderStudentTuitionTile(student, row) {
+  if (row?.presentation?.financialPending) return renderOverviewTile('Học phí', [
+    ['Trạng thái nguồn', row.presentation.paymentLabel],
+    ['Đối chiếu', 'Chưa ghi nhận tiền hoặc Phiếu Thu trong iChess'],
+  ], '', 'student-tuition-summary-tile')
   const hasMoney = row?.financeAvailable && row?.amounts
   const nextPaid = row?.packageCycleState?.preparedNextCycle?.paymentStatus === 'PAID'
 
@@ -673,11 +683,11 @@ function getLevelLabel(level) {
 
   return legacyLevelNumber && legacyLevelNumber >= 1 && legacyLevelNumber <= 15
     ? studentLevelOptions[legacyLevelNumber - 1]
-    : levelText || 'Dolphin 1'
+    : levelText
 }
 
 function getEscapedLevelLabel(level) {
-  return escapeHtml(getLevelLabel(level))
+  return escapeHtml(getLevelLabel(level) || '—')
 }
 
 function formatAgeLabel(value) {

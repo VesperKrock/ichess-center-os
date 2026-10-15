@@ -6,6 +6,8 @@ import {
   validateReviewedAccountEmail,
 } from './account-lifecycle.js'
 import { renderAppAuthEntry } from './app-auth.js'
+import { createExcelImportUi } from './excel-import-ui.js'
+import './excel-import.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import {
@@ -1109,6 +1111,11 @@ let isAttendanceReminderPanelOpen = false
 let attendanceCellNoteContextState = null
 let attendanceCellNoteFormState = null
 let studentFormState = null
+const excelImportUi = createExcelImportUi({
+  getContext: () => ({ supabase: getSupabaseClient(), centerId: getCurrentCanonicalCenterContext().centerId, centerName: getCurrentCanonicalCenterContext().centerName }),
+  render: () => render(),
+  refresh: async () => { const centerId = getCurrentCanonicalCenterContext().centerId; await refreshStudentModuleCoreProjection(centerId); await refreshV22StudentEnrollments({ silent: true }); await refreshV21CenterSettings({ silent: true }); await refreshTuitionOperatorSnapshot(); render() },
+})
 let settingsFilters = { ...initialSettingsFilters }
 let settingsActiveTab = 'class-sessions'
 let ownerAttendanceAuditController = null
@@ -12696,7 +12703,7 @@ function renderWindowBody(windowItem) {
       [],
       classSessions,
       { enrollmentCapabilityStatus: v22StudentEnrollmentCapabilityState.status, ...getStudentOverviewOptions() },
-    )
+    ) + excelImportUi.view()
   }
 
   if (moduleItem.id === 'khach-hang-tu-van') {
@@ -16782,10 +16789,6 @@ async function saveSettingsClassSessionForm() {
   const centerId = getCurrentCanonicalCenterContext().centerId
   const form = settingsClassSessionFormState
   const errors = validateSettingsClassSessionForm(form.values)
-  const teacherId = form.mode === 'create' ? String(form.values.teacherId || '') : ''
-  if (teacherId && !getEligibleSettingsCaTeachers().some(teacher => teacher.id === teacherId)) {
-    errors.teacherId = 'Giáo viên chưa sẵn sàng tại cơ sở này. Có thể để trống và phân công sau.'
-  }
   const existingClassSession = form.classSessionId
     ? classSessions.find(item => item.id === form.classSessionId) : null
   if (form.mode === 'edit' && !existingClassSession) errors.form = 'Ca học không còn tồn tại. Hãy tải lại.'
@@ -16817,29 +16820,12 @@ async function saveSettingsClassSessionForm() {
       }
       return
     }
-    if (teacherId) {
-      const effectiveFrom = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date())
-      let assigned
-      try {
-        assigned = await changeA3ClassTeacher({ supabase: getSupabaseClient(), centerId,
-          classId: result.entity.id, teacherId, effectiveFrom, idempotencyKey: command.commandIdempotencyKey })
-      } catch { assigned = { ok: false } }
-      // Read back even after an uncertain network result. The Ca is already
-      // committed; never leave a create form that can create it again.
-      const refreshed = await refreshA3TeacherContext()
-      if (getCurrentCanonicalCenterContext().centerId !== centerId) return
-      const fact = refreshed?.ok
-        ? resolveA3TeacherForDate(refreshed.assignments, result.entity.id, effectiveFrom) : null
-      if (fact?.teacher_id !== teacherId) window.alert(assigned?.ok
-        ? 'Ca đã được tạo và gán giáo viên nhưng chưa tải lại được thông tin. Không cần tạo Ca lại.'
-        : 'Ca đã được tạo nhưng chưa gán được giáo viên. Có thể phân công sau tại Thời khóa biểu.')
-    }
     if (settingsClassSessionFormState === savingForm) settingsClassSessionFormState = null
   } catch {
     if (settingsClassSessionFormState === savingForm) settingsClassSessionFormState = committed ? null : {
       ...savingForm, isSaving: false, errors: { form: 'Ca học chưa được lưu. Hãy thử lại.' },
     }
-    if (committed) window.alert('Ca đã được tạo nhưng chưa gán được giáo viên. Không cần tạo Ca lại; hãy tải lại và phân công tại Thời khóa biểu.')
+    if (committed) window.alert('Ca đã lưu. Hãy tải lại để kiểm tra; không cần tạo Ca lần nữa.')
   } finally {
     authoritativeCoreSavesInFlight.delete(pending)
     render()
@@ -17593,6 +17579,7 @@ function getMergedParentConsultations() {
     parentConsultations,
     getStudentsWithCanonicalProjections(),
     parentStudentLinks,
+    { centerId: getCurrentCanonicalCenterContext().centerId },
   )
 }
 
@@ -23198,6 +23185,7 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
 }
 
 function bindEvents() {
+  excelImportUi.bind()
   bindStaffDocumentAttachmentViewer()
   bindStartMenuOutsidePointer()
   bindWindowOverflowOutsidePointer()
@@ -30780,7 +30768,7 @@ function bindEvents() {
       ),
     }
 
-    const errors = validateStudentForm(studentFormState.values, classSessions)
+    const errors = validateStudentForm(studentFormState.values, classSessions, { allowLegacyUnknownBirth: studentFormState.allowLegacyUnknownBirth === true })
 
     if (Object.keys(errors).length) {
       const firstErrorField = Object.keys(errors).find((field) => field !== 'form') || ''
