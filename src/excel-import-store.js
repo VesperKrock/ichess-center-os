@@ -1,5 +1,0 @@
-// Source workbooks/manifests contain protected identity data. Store only in
-// IndexedDB on this browser, scoped to authenticated actor + selected center.
-const open = () => new Promise((resolve, reject) => { const r = indexedDB.open('ichess-excel-intake-v1', 1); r.onupgradeneeded = () => r.result.createObjectStore('intake'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(Error('Không lưu được hồ sơ import trên trình duyệt.')) })
-export async function saveExcelIntake(key, value) { const db = await open(); try { await new Promise((resolve, reject) => { const t = db.transaction('intake', 'readwrite'); t.objectStore('intake').put(value, key); t.oncomplete = resolve; t.onerror = () => reject(Error('Không lưu được ledger; dừng trước mutation.')) }) } finally { db.close() } }
-export async function loadExcelIntake(key) { const db = await open(); try { return await new Promise((resolve, reject) => { const r = db.transaction('intake').objectStore('intake').get(key); r.onsuccess = () => resolve(r.result || null); r.onerror = () => reject(Error('Không đọc được ledger import.')) }) } finally { db.close() } }

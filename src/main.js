@@ -6,8 +6,6 @@ import {
   validateReviewedAccountEmail,
 } from './account-lifecycle.js'
 import { renderAppAuthEntry } from './app-auth.js'
-import { createExcelImportUi } from './excel-import-ui.js'
-import './excel-import.css'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import {
@@ -1111,11 +1109,6 @@ let isAttendanceReminderPanelOpen = false
 let attendanceCellNoteContextState = null
 let attendanceCellNoteFormState = null
 let studentFormState = null
-const excelImportUi = createExcelImportUi({
-  getContext: () => ({ supabase: getSupabaseClient(), centerId: getCurrentCanonicalCenterContext().centerId, centerName: getCurrentCanonicalCenterContext().centerName }),
-  render: () => render(),
-  refresh: async () => { const centerId = getCurrentCanonicalCenterContext().centerId; await refreshStudentModuleCoreProjection(centerId); await refreshV22StudentEnrollments({ silent: true }); await refreshV21CenterSettings({ silent: true }); await refreshTuitionOperatorSnapshot(); render() },
-})
 let settingsFilters = { ...initialSettingsFilters }
 let settingsActiveTab = 'class-sessions'
 let ownerAttendanceAuditController = null
@@ -12703,7 +12696,7 @@ function renderWindowBody(windowItem) {
       [],
       classSessions,
       { enrollmentCapabilityStatus: v22StudentEnrollmentCapabilityState.status, ...getStudentOverviewOptions() },
-    ) + excelImportUi.view()
+    )
   }
 
   if (moduleItem.id === 'khach-hang-tu-van') {
@@ -23185,7 +23178,6 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
 }
 
 function bindEvents() {
-  excelImportUi.bind()
   bindStaffDocumentAttachmentViewer()
   bindStartMenuOutsidePointer()
   bindWindowOverflowOutsidePointer()

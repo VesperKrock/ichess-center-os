@@ -1,6 +1,5 @@
 import {
-  getV22ClassSessionWeekdays,
-  normalizeV22Enrollments,
+  getStudentRecurringScheduleItems,
 } from './student-recurring-enrollment.js'
 import { buildV24TuitionNotificationCandidates } from './notification-center.js'
 import { getStudentStatusPresentation } from './student-status-presentation.js'
@@ -21,29 +20,20 @@ export function getStudentNextAction(student, classSessions = [], tuitionRow = n
       'Hồ sơ và lịch sử học tập vẫn được giữ nguyên.')
   }
 
-  const classIds = [...new Set(student.classSessionIds || [])]
-  const classes = new Map(classSessions.map((item) => [String(item.id), item]))
-  const active = classIds.map((id) => classes.get(String(id)))
-    .filter((item) => item && item.status !== 'inactive')
+  const schedule = getStudentRecurringScheduleItems(student, classSessions)
+  const active = schedule.filter((item) => item.status === 'active' || item.status === 'review')
   if (!active.length) {
     return action('assign-class', 'Chưa có ca học hiện tại',
-      classIds.length ? 'Ca học trước đây không còn hoạt động. Hãy chọn ca phù hợp.'
+      schedule.length ? 'Ca học trước đây không còn hoạt động. Hãy chọn ca phù hợp.'
         : 'Học viên đang theo học nhưng chưa có ca hoạt động.',
       'Gán ca học', 'edit', 'warning')
   }
-  if (active.length < classIds.length) {
+  if (active.length < schedule.length) {
     return action('review-class', 'Cần kiểm tra ca học',
       'Một ca học trước đây không còn hoạt động. Hãy kiểm tra lại ca của bé.',
       'Gán ca học', 'edit', 'warning')
   }
-  const enrollments = new Map(normalizeV22Enrollments(student.recurringEnrollments)
-    .map((item) => [item.classSessionId, item]))
-  const needsDays = active.some((item) => {
-    const enrollment = enrollments.get(String(item.id))
-    const days = getV22ClassSessionWeekdays(item)
-    return enrollment ? !enrollment.weekdays.some((day) => days.includes(day))
-      : student.useAuthoritativeEnrollment === true
-  })
+  const needsDays = active.some((item) => item.status === 'review')
   if (needsDays) {
     return action('choose-days', 'Cần chọn ngày học', 'Ca học đã có; hãy kiểm tra ngày học của bé.',
       'Chọn ngày học', 'edit', 'warning')
@@ -54,7 +44,10 @@ export function getStudentNextAction(student, classSessions = [], tuitionRow = n
   }
   const state = tuitionRow.packageCycleState
   const cycle = state?.currentCycle
-  if (!tuitionRow.tuition && !cycle && (tuitionRow.tuitionAvailable !== false
+  if (!cycle && (state?.verifiedInitialBaseline || tuitionRow.presentation?.verifiedInitialBaseline)) {
+    return action('none', 'Không cần xử lý', 'Đã có gói học và số buổi từ dữ liệu ban đầu. Chưa mở kỳ học phí.')
+  }
+  if (!tuitionRow.tuition && !cycle && (tuitionRow.presentation?.noPackage === true
     || state?.readiness === 'NO_TUITION_PACKAGE')) {
     return action('assign-package', 'Chưa có gói học', 'Chọn gói học trong Học phí.',
       'Gán gói học', 'tuition', 'warning')

@@ -55,6 +55,43 @@ export function normalizeV22Enrollments(enrollments = []) {
   return [...byClass.values()].sort((a, b) => a.classSessionId.localeCompare(b.classSessionId))
 }
 
+export function getStudentEnrollmentClassIds(student = {}) {
+  const enrollments = normalizeV22Enrollments(student.recurringEnrollments)
+  return enrollments.length || student.useAuthoritativeEnrollment === true
+    ? enrollments.map((entry) => entry.classSessionId)
+    : normalizeIds(student.classSessionIds)
+}
+
+// A Student's registered weekday subset owns this label, never the Ca's name.
+// Ambiguous legacy selections remain unresolved instead of adding weekdays.
+export function getStudentRecurringScheduleItems(student = {}, classSessions = []) {
+  const classes = new Map(classSessions.map((item) => [String(item.id), item]))
+  const enrollments = new Map(normalizeV22Enrollments(student.recurringEnrollments)
+    .map((entry) => [entry.classSessionId, entry]))
+  return getStudentEnrollmentClassIds(student).map((classSessionId) => {
+    const classSession = classes.get(classSessionId)
+    if (!classSession) return { classSessionId, weekdays: [], label: 'Chưa có ca học hiện tại', status: 'missing' }
+    const available = getV22ClassSessionWeekdays(classSession)
+    const enrollment = enrollments.get(classSessionId)
+    const selected = enrollment?.weekdays || (student.useAuthoritativeEnrollment !== true && available.length === 1 ? available : [])
+    const weekdays = selected.filter((day) => available.includes(day))
+    const time = [classSession.startTime, classSession.endTime].filter(Boolean).join(' - ')
+    const days = weekdays.map((day) => V22_WEEKDAY_LABELS[day]).join(' - ')
+    const status = classSession.status === 'inactive' ? 'inactive'
+      : !weekdays.length || weekdays.length !== selected.length ? 'review' : 'active'
+    return { classSessionId, classSession, weekdays,
+      label: [days || 'Cần chọn ngày', time].filter(Boolean).join(' '), status }
+  }).sort((a, b) => (V22_WEEKDAY_ORDER.indexOf(a.weekdays[0]) - V22_WEEKDAY_ORDER.indexOf(b.weekdays[0]))
+    || String(a.classSession?.startTime || '').localeCompare(String(b.classSession?.startTime || ''))
+    || a.classSessionId.localeCompare(b.classSessionId))
+}
+
+export function formatStudentRecurringSchedule(student, classSessions = []) {
+  return getStudentRecurringScheduleItems(student, classSessions)
+    .map((item) => `${item.label}${item.status === 'inactive' ? ' (Đã ngưng)' : ''}`).join('; ')
+    || 'Chưa có ca học hiện tại'
+}
+
 export function classifyLegacyStudentEnrollments(student = {}, classSessions = []) {
   const classLookup = new Map(
     (Array.isArray(classSessions) ? classSessions : [])

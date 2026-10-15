@@ -8,6 +8,8 @@ import {
 import { getStudentNextAction, renderStudentOverviewAction } from './student-overview.js'
 import {
   V22_WEEKDAY_LABELS,
+  getStudentEnrollmentClassIds,
+  getStudentRecurringScheduleItems,
   V22_WEEKDAY_ORDER,
   getV22ClassSessionWeekdays,
   normalizeV22Enrollments,
@@ -242,7 +244,6 @@ export function renderStudentModule(
           <button class="student-add-button" type="button" data-student-action="open-create">
             <span aria-hidden="true">+</span> Thêm học viên
           </button>
-          <button class="student-secondary-button" type="button" data-student-action="open-excel-import">Nhập Excel · Audit → Import</button>
           </header>
           <div class="student-overview" aria-label="Tìm kiếm, lọc và thống kê học viên">
           <div class="student-filter-summary-row">
@@ -370,7 +371,7 @@ export function getFilteredStudents(
       activeFilters.status === 'all' || getStudentStatusPresentation(student) === activeFilters.status
     const matchesLevel =
       activeFilters.level === 'all' || getLevelLabel(student.level) === activeFilters.level
-    const classSessionIds = normalizeClassSessionIds(student.classSessionIds)
+    const classSessionIds = getStudentEnrollmentClassIds(student)
     const matchesClassSession =
       activeFilters.classSessionId === 'all' ||
       (activeFilters.classSessionId === 'unassigned' && classSessionIds.length === 0) ||
@@ -1149,36 +1150,12 @@ function renderStudentRow(student, classSessions = [], tuitionRows = []) {
 }
 
 function renderStudentClassSessionCell(student, classSessionLookup = new Map()) {
-  const classSessionIds = normalizeClassSessionIds(student.classSessionIds)
-
-  if (!classSessionIds.length) {
-    return '<span class="student-class-session-unassigned">Chưa phân lớp</span>'
-  }
-
-  const classSessionItems = getStudentClassSessionItems(student, classSessionLookup)
-  const visibleItems = classSessionItems.slice(0, 2)
-  const hiddenCount = Math.max(0, classSessionItems.length - visibleItems.length)
-  const title = classSessionItems
-    .map((item) => `${item.label}${item.weekdayLabel ? ` · ${item.weekdayLabel}` : ''}${item.status === 'inactive' ? ' (Đã ngưng)' : item.status === 'review' ? ' (Cần chọn ngày)' : ''}`)
-    .join(', ')
-
-  return `
-    <div class="student-class-session-cell" title="${escapeAttribute(title)}">
-      ${visibleItems
-        .map(
-          (item) => `
-            <span class="student-class-session-badge ${item.status === 'inactive' ? 'inactive' : item.status === 'missing' ? 'missing' : item.status === 'review' ? 'review' : ''}">
-              ${escapeHtml(item.label)}
-              ${item.weekdayLabel ? `<small>${escapeHtml(item.weekdayLabel)}</small>` : ''}
-              ${item.status === 'inactive' ? '<em>Đã ngưng</em>' : ''}
-              ${item.status === 'review' ? '<em>Cần chọn ngày</em>' : ''}
-            </span>
-          `,
-        )
-        .join('')}
-      ${hiddenCount ? `<span class="student-class-session-more">+${hiddenCount} ca</span>` : ''}
-    </div>
-  `
+  const items = getStudentClassSessionItems(student, classSessionLookup)
+  if (!items.length) return '<span class="student-class-session-unassigned">Chưa phân lớp</span>'
+  const label = item => item.label + (item.status === 'inactive' ? ' (Đã ngưng)' : '')
+  return `<div class="student-class-session-cell" title="${escapeAttribute(items.map(label).join('; '))}">${items.map(item =>
+    `<span class="student-class-session-badge ${item.status === 'active' ? '' : item.status}">${escapeHtml(label(item))}</span>`
+  ).join('; ')}</div>`
 }
 
 function getStudentStatusToneClass(status) {
@@ -1237,32 +1214,7 @@ function getStudentClassSessionLabels(student, classSessionLookup = new Map()) {
 }
 
 function getStudentClassSessionItems(student, classSessionLookup = new Map()) {
-  const enrollmentLookup = new Map(
-    normalizeV22Enrollments(student.recurringEnrollments)
-      .map((entry) => [entry.classSessionId, entry]),
-  )
-  return normalizeClassSessionIds(student.classSessionIds).map((classSessionId) => {
-    const classSession = classSessionLookup.get(classSessionId)
-    const enrollment = enrollmentLookup.get(classSessionId)
-    const weekdayLabel = (enrollment?.weekdays || [])
-      .map((day) => V22_WEEKDAY_LABELS[day] || day)
-      .join(' · ')
-    return classSession
-      ? {
-          label: getClassSessionDisplayLabel(classSession),
-          status: classSession.status === 'inactive'
-            ? 'inactive'
-            : enrollment?.legacyReviewRequired && !enrollment.weekdays.length
-              ? 'review'
-              : 'active',
-          weekdayLabel,
-        }
-      : {
-          label: 'Chưa có ca học hiện tại',
-          status: 'missing',
-          weekdayLabel,
-        }
-  })
+  return getStudentRecurringScheduleItems(student, [...classSessionLookup.values()])
 }
 
 function getClassSessionDisplayLabel(classSession) {

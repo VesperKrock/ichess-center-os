@@ -8,6 +8,8 @@ import {
 } from './operator-date-format.js'
 import {
   V22_WEEKDAY_LABELS,
+  formatStudentRecurringSchedule,
+  getStudentEnrollmentClassIds,
   V22_WEEKDAY_ORDER,
   getV22ClassSessionWeekdays,
   normalizeV22Enrollments,
@@ -44,11 +46,13 @@ export function renderStudentDetail(student, _teachers = [], classSessions = [],
   const careNotes = getSortedCareNotes(student)
   const latestCareNote = careNotes[0]
   const activeClassSessions = classSessions.filter((item) => item.status !== 'inactive')
-  const activeStudent = { ...student, classSessionIds: (student.classSessionIds || [])
-    .filter((id) => activeClassSessions.some((item) => String(item.id) === String(id))) }
+  const activeStudent = { ...student, classSessionIds: getStudentEnrollmentClassIds(student)
+    .filter((id) => activeClassSessions.some((item) => String(item.id) === String(id))),
+    recurringEnrollments: normalizeV22Enrollments(student.recurringEnrollments).filter((e) => activeClassSessions.some((c) => String(c.id) === e.classSessionId)) }
   const inactiveClassSessions = classSessions.filter((item) => item.status === 'inactive')
-  const inactiveStudent = { ...student, classSessionIds: (student.classSessionIds || [])
-    .filter((id) => inactiveClassSessions.some((item) => String(item.id) === String(id))) }
+  const inactiveStudent = { ...student, classSessionIds: getStudentEnrollmentClassIds(student)
+    .filter((id) => inactiveClassSessions.some((item) => String(item.id) === String(id))),
+    recurringEnrollments: normalizeV22Enrollments(student.recurringEnrollments).filter((e) => inactiveClassSessions.some((c) => String(c.id) === e.classSessionId)) }
   const classSessionLabel = getStudentClassSessionLabel(activeStudent, activeClassSessions)
   const tuitionRow = options.tuitionRows?.find((row) => row.student.id === student.id) || null
   const nextAction = getStudentNextAction(student, classSessions, tuitionRow)
@@ -336,7 +340,7 @@ function renderStudentCurrentPeriodTile(row) {
     ['Gói học', verified.packageName],
     ['Đã học / Tổng số', `${verified.usedSessions} / ${verified.totalSessions} buổi`],
     ['Còn lại', `${verified.remainingSessions} buổi`],
-  ], '', 'student-period-summary-tile', '<p>Chờ đối chiếu tài chính · Chưa mở kỳ học phí.</p>')
+  ], '', 'student-period-summary-tile', '<p>Chưa mở kỳ</p>')
   const cycle = row?.packageCycleState?.currentCycle
   const hasPeriod = Boolean(cycle || row?.tuition)
   const remainingSessions = cycle?.remainingSessions ?? row?.remainingSessions
@@ -351,7 +355,7 @@ function renderStudentCurrentPeriodTile(row) {
 function renderStudentTuitionTile(student, row) {
   if (row?.presentation?.financialPending) return renderOverviewTile('Học phí', [
     ['Trạng thái nguồn', row.presentation.paymentLabel],
-    ['Đối chiếu', 'Chưa ghi nhận tiền hoặc Phiếu Thu trong iChess'],
+    ['Kỳ học phí', 'Chưa mở kỳ'],
   ], '', 'student-tuition-summary-tile')
   const hasMoney = row?.financeAvailable && row?.amounts
   const nextPaid = row?.packageCycleState?.preparedNextCycle?.paymentStatus === 'PAID'
@@ -445,50 +449,11 @@ function renderCareNoteHistory(student) {
 }
 
 function getStudentClassSessionLabel(student, classSessions = []) {
-  const classSessionIds = Array.isArray(student?.classSessionIds)
-    ? Array.from(new Set(student.classSessionIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
-    : []
-
-  if (!classSessionIds.length) {
-    return 'Chưa có ca học hiện tại'
-  }
-
-  const classSessionLookup = new Map(
-    classSessions
-      .filter((classSession) => classSession && classSession.id)
-      .map((classSession) => [String(classSession.id), classSession]),
-  )
-  const enrollmentLookup = new Map(
-    normalizeV22Enrollments(student?.recurringEnrollments)
-      .map((entry) => [entry.classSessionId, entry]),
-  )
-
-  return classSessionIds
-    .map((classSessionId) => {
-      const classSession = classSessionLookup.get(classSessionId)
-      if (!classSession) {
-        return 'Chưa có ca học hiện tại'
-      }
-
-      const label = classSession.displayLabel || classSession.name || 'Ca học'
-      const enrollment = enrollmentLookup.get(classSessionId)
-      const weekdayLabel = (enrollment?.weekdays || [])
-        .map((day) => V22_WEEKDAY_LABELS[day] || day)
-        .join(' · ')
-      const withDays = weekdayLabel
-        ? `${label} · ${weekdayLabel}`
-        : enrollment?.legacyReviewRequired
-          ? `${label} · Cần chọn ngày`
-          : label
-      return classSession.status === 'inactive' ? `${withDays} (Đã ngưng)` : withDays
-    })
-    .join(', ')
+  return formatStudentRecurringSchedule(student, classSessions)
 }
 
 function renderStudentScheduleOverview(student, classSessions = [], options = {}) {
-  const classSessionIds = Array.isArray(student?.classSessionIds)
-    ? Array.from(new Set(student.classSessionIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
-    : []
+  const classSessionIds = getStudentEnrollmentClassIds(student)
   const classSessionLookup = new Map(
     classSessions
       .filter((classSession) => classSession?.id)
@@ -552,7 +517,7 @@ function renderStudentScheduleOverview(student, classSessions = [], options = {}
 }
 
 function renderStudentProfileScheduleSlot(classSession, options = {}) {
-  const instructorName = String(resolveA3TeacherForDate(
+  const instructorName = String(classSession?.teacherDisplayName || resolveA3TeacherForDate(
     options.scheduleTeacherAssignments || [],
     classSession?.id,
     options.scheduleTeacherDate || '',
@@ -583,7 +548,7 @@ function formatStudentProfileScheduleTime(classSession = {}) {
   const startTime = String(classSession.startTime || '').trim()
   const endTime = String(classSession.endTime || '').trim()
   return startTime && endTime
-    ? `${startTime}–${endTime}`
+    ? `${startTime} - ${endTime}`
     : startTime || endTime || getStudentClassSessionDisplayLabel(classSession)
 }
 

@@ -12,7 +12,7 @@ function initialBaselineNotice(p) {
   const f = b.financialFacts, sourceMoney = value => value == null ? 'Chưa rõ' : money(value)
   const discount = f.discountKind === 'UNKNOWN' ? 'Chưa rõ ưu đãi' : f.discountKind === 'EXPLICIT_NONE' ? 'Nguồn ghi không ưu đãi'
     : `${f.percent}% · Giảm cố định ${money(f.fixedMinor)} · Voucher anh/chị/em ${money(f.siblingVoucherMinor)}`
-  return `<span>${b.baselineUsed} buổi tại mốc ${html(b.baselineCutoffDate)} · ${b.contributedSessions} buổi thực tế sau mốc. Chưa mở kỳ hoặc ghi nhận tiền.</span><details class="tuition-source-financial-facts"><summary>Thông tin tài chính nguồn · Chưa đối chiếu</summary><p>Giá niêm yết nguồn: ${html(sourceMoney(b.listedPriceMinor))}</p><p>Ưu đãi: ${html(discount)}</p><p>Phải thu theo nguồn: ${html(sourceMoney(f.sourceDueMinor))}</p><p>Đã thu theo nguồn: ${html(sourceMoney(f.collectedMinor))} · Còn lại theo nguồn: ${html(sourceMoney(f.remainingMinor))}</p><p>Thông tin lịch sử từ Excel; chưa tạo giao dịch hoặc Phiếu Thu trong iChess.</p></details>`
+  return `<span>${b.baselineUsed} buổi tại mốc ${html(b.baselineCutoffDate)} · ${b.contributedSessions} buổi thực tế sau mốc. Chưa mở kỳ hoặc ghi nhận tiền.</span><details class="tuition-source-financial-facts"><summary>Thông tin tài chính từ nguồn</summary><p>Giá niêm yết nguồn: ${html(sourceMoney(b.listedPriceMinor))}</p><p>Ưu đãi: ${html(discount)}</p><p>Phải thu theo nguồn: ${html(sourceMoney(f.sourceDueMinor))}</p><p>Đã thu theo nguồn: ${html(sourceMoney(f.collectedMinor))} · Còn lại theo nguồn: ${html(sourceMoney(f.remainingMinor))}</p><p>Thông tin lịch sử từ Excel; chưa tạo giao dịch hoặc Phiếu Thu trong iChess.</p></details>`
 }
 const text = (v) => String(v ?? '')
 const html = (v) =>
@@ -230,10 +230,10 @@ export function normalizeTuitionCyclePresentation({
       needsInitialSetup: false, noPackage: false, isPending: false, readFailed: false, unresolved: false,
       totalSessions: baseline.totalSessions, usedSessions: baseline.usedSessions, remainingSessions: baseline.remainingSessions,
       termLabel: 'Gói từ dữ liệu ban đầu · Chưa mở kỳ', progressLabel: `${baseline.usedSessions}/${baseline.totalSessions}`,
-      packageLabel: baseline.packageName, paymentLabel: `${sourceLabels[baseline.financialFacts.paymentState]} · Chờ đối chiếu tài chính`,
+      packageLabel: baseline.packageName, paymentLabel: sourceLabels[baseline.financialFacts.paymentState],
       paymentTone: 'muted', isPaid: false, outstandingAmount: null, paymentOutstanding: null, debtSessions: 0,
       canCollectPayment: false, canPrintTbhp: false, canPrintReceipt: false, canChangePackage: false,
-      canPrepareNext: false, canEndCycle: false, action: 'none', actionLabel: 'Chờ đối chiếu tài chính', reminderLabel: '',
+      canPrepareNext: false, canEndCycle: false, action: 'none', actionLabel: 'Chưa mở kỳ', reminderLabel: '',
       amounts: { tuitionAmount: null, discountAmount: null, materialFee: null, paidAmount: null, remainingDebt: null },
     })
   }
@@ -356,7 +356,7 @@ const pkgOptions = (catalog, value = '') =>
     )
     .join('')}`
 function documents(p, id) {
-  return `<section class="tuition-detail-section tuition-simple-documents" aria-label="Tài liệu"><h5>Tài liệu</h5><div class="tuition-simple-document-actions"><article class="tuition-simple-document-card"><strong>Thông báo học phí</strong>${p.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, p.cycleId) : `<span>${html(p.financialPending ? 'Chờ đối chiếu tài chính trước khi lập thông báo' : p.needsInitialSetup ? 'Chưa thiết lập học phí' : p.noPackage ? 'Chưa có gói' : 'Không tải được học phí.')}</span>`}</article><article class="tuition-simple-document-card"><strong>Phiếu Thu</strong>${p.canPrintReceipt ? p.receipts.map((r) => `<span>${html(r.receiptNumber)}</span>${btn('In / Xuất Phiếu Thu', 'receipt', id, p.cycleId, `data-tu-receipt-id="${html(r.id)}"`)}`).join('') : `<span>${html(p.receiptUnavailableLabel)}</span>`}</article></div></section>`
+  return `<section class="tuition-detail-section tuition-simple-documents" aria-label="Tài liệu"><h5>Tài liệu</h5><div class="tuition-simple-document-actions"><article class="tuition-simple-document-card"><strong>Thông báo học phí</strong>${p.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, p.cycleId) : `<span>${html(p.financialPending ? 'Chưa mở kỳ' : p.needsInitialSetup ? 'Chưa thiết lập học phí' : p.noPackage ? 'Chưa có gói' : 'Không tải được học phí.')}</span>`}</article><article class="tuition-simple-document-card"><strong>Phiếu Thu</strong>${p.canPrintReceipt ? p.receipts.map((r) => `<span>${html(r.receiptNumber)}</span>${btn('In / Xuất Phiếu Thu', 'receipt', id, p.cycleId, `data-tu-receipt-id="${html(r.id)}"`)}`).join('') : `<span>${html(p.receiptUnavailableLabel)}</span>`}</article></div></section>`
 }
 function cycleCard(p, label = 'Kỳ hiện tại') {
   return `<section class="tuition-detail-section" aria-label="${html(label)}"><h5>${html(label)}</h5><div class="tuition-simple-cycle-card"><div><strong>${html(p.termLabel)} · ${html(p.progressLabel)}</strong><span>${html(p.packageLabel)}</span>${p.ended ? `<span>Đã học: ${p.usedSessions}/${p.totalSessions} · Hết hiệu lực: ${p.expiredSessions} buổi</span>` : p.hasKnownPackage ? `<span>Còn ${p.remainingSessions} buổi</span>` : ''}</div></div></section>`
@@ -458,7 +458,7 @@ export function renderTuitionModule(context, state) {
           (f.status === 'debt' && r.presentation.outstandingAmount > 0) ||
           (f.status === 'no-package' && r.presentation.noPackage) ||
           (f.status === 'initial' && r.presentation.needsInitialSetup) ||
-          (f.status === 'financial-review' && r.presentation.financialPending) ||
+          (f.status === 'not-opened' && r.presentation.financialPending) ||
           (f.status === 'reminder' && !!r.presentation.reminderLabel)) &&
         (f.package === 'all' || r.packageKind === f.package),
     )
@@ -476,7 +476,7 @@ export function renderTuitionModule(context, state) {
     ['reminder', 'Sắp hết buổi'],
     ['no-package', 'Chưa có gói'],
     ['initial', 'Chưa thiết lập học phí'],
-    ['financial-review', 'Chờ đối chiếu tài chính'],
+    ['not-opened', 'Chưa mở kỳ'],
   ]
     .map(
       ([v, l]) =>
@@ -488,7 +488,7 @@ export function renderTuitionModule(context, state) {
     ['Tổng học viên', rows.length],
     ['Đã có gói', rows.filter((r) => r.presentation.hasKnownPackage).length],
     ['Chưa có gói', rows.filter((r) => r.presentation.noPackage).length],
-    ['Chờ đối chiếu tài chính', rows.filter((r) => r.presentation.financialPending).length],
+    ['Chưa mở kỳ', rows.filter((r) => r.presentation.financialPending).length],
     ['Kỳ đã kích hoạt', rows.filter((r) => r.presentation.cycle?.lifecycleStatus === 'ACTIVE').length],
     [
       'Chưa thiết lập',
