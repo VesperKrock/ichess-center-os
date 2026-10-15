@@ -69,6 +69,9 @@ export function normalizeOriginalExcel(workbook) {
   const find = (rows, second) => rows.find(r => fold(r.cells[0]) === 'stt' && fold(r.cells[1]) === fold(second))
   const centerHeader = find(settings.rows, 'Mã cơ sở'), caHeader = find(settings.rows, 'Tên Ca / Lớp'), packageHeader = find(settings.rows, 'Tên gói'), studentHeader = find(sheet.rows, 'Họ và tên học viên')
   if (!centerHeader || !caHeader || !packageHeader || !studentHeader) throw Error('Không nhận diện đủ các bảng của workbook gốc.')
+  const columns = ['STT','Họ và tên học viên','Tên ở nhà','Tên trường','Đang học lớp','Ngày sinh / Năm sinh','Giới tính','Ngày đăng ký','Bé đã biết về cờ vua chưa','Sở thích','Nhận xét của phụ huynh về tính cách của bé','Mong muốn của phụ huynh khi cho bé học cờ Vua tại IC','Tỉnh/Thành phố','Quốc tịch','Trạng thái hiện tại','Cấp độ học','Mốc bot đã vượt qua','Lịch học định kỳ','Họ và tên Ba','SĐT Ba','Họ và tên Mẹ','SĐT Mẹ','Nơi ở hiện tại','Gói học phí','Số buổi đã học','Ưu đãi','Chương trình ưu đãi','Ngày đóng học phí','Học phí kỳ hiện tại']
+  const header = value => fold(value).replace(/\s*\/\s*/g, '/')
+  if (columns.some((value, i) => header(studentHeader.cells[i]) !== header(value))) throw Error('Các cột Student đã đổi vị trí/tên; cần dùng đúng workbook gốc để tránh gán sai dữ kiện.')
   const question = (domain, ref, reason) => questions.push({ domain, ref, reason })
   const rows = (s, start, end, domain) => s.rows.filter(r => {
     if (r.number <= start || r.number >= end || r.cells.every(v => !excelText(v))) return false

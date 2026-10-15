@@ -68,6 +68,7 @@ export async function executeExcelImport({ manifest, approvedSha256, readTarget,
       if (command.domain === 'TUITION' && (!manifest.coverageConfirmed || !snapshot.serverCutoff || command.expected.cutoff > snapshot.serverCutoff)) { result.commands.push({ id: command.id, status: 'HELD', reason: 'SOURCE_COVERAGE_OR_SERVER_CUTOFF' }); continue }
       entry = { id: command.id, key: command.key, intentSha256: command.intentSha256, status: 'PENDING', readBack: false }
       ledger[command.id] = entry; await checkpoint(ledger); onProgress(command.id)
+      try { guard(snapshot) } catch (e) { entry.status = 'HELD'; entry.reason = 'CENTER_CHANGED_BEFORE_DISPATCH'; await checkpoint(ledger); throw e }
       let response
       try { response = await rpc(command.rpc, command.args) } catch { response = { error: { code: 'NETWORK_OUTCOME_UNKNOWN' } } }
       // Always read back before deciding whether a failed response may retry.

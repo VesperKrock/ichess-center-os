@@ -28,4 +28,7 @@ const delta = await createExcelImportManifest({ ...facts, sourceSha256: 'b'.repe
 const changed = structuredClone(facts); changed.students[0].values.schoolName = 'Changed school'
 const review = await createExcelImportManifest(changed, snapshot); assert(review.holds.some(h => h.domain === 'STUDENT')); assert(!review.commands.some(c => c.domain === 'STUDENT' && c.rpc))
 assert.equal(stableExcelJson({ b: 1, a: 2 }), stableExcelJson({ a: 2, b: 1 }))
+let switchedCenter = 'CENTER-A', forbiddenDispatch = false, interruptedLedger
+await assert.rejects(() => executeExcelImport({ manifest: first, approvedSha256: first.sha256, getCurrentCenterId: () => switchedCenter, readTarget: async () => empty, checkpoint: async ledger => { interruptedLedger = ledger; switchedCenter = 'CENTER-B' }, rpc: async () => { forbiddenDispatch = true } }), /CENTER_OR_ACTOR_CHANGED/)
+assert.equal(forbiddenDispatch, false); assert.equal(interruptedLedger['CA:CA-1'].status, 'HELD')
 console.log('Two-step importer: exact schedule/identity/stable intents/retry/readback/actor-center boundary/corrected-source delta PASS')

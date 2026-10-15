@@ -99,7 +99,7 @@ export async function createExcelImportManifest(facts, target, options = {}) {
   const sourceStudents = facts.students.filter(s => s.values).map(s => ({ ...s.values, id: studentMap.get(s.ref) || s.ref, centerId: target.centerId }))
   manifest.parentIdentities = aggregateStudentParentIdentities(sourceStudents, { centerId: target.centerId }).map(g => ({ id: g.id, status: g.identityStatus, students: g.relatedStudents.map(s => s.id), occurrences: g.occurrences.map(({ student, ...o }) => o) }))
   const ambiguous = manifest.parentIdentities.filter(g => g.status === 'QUESTION')
-  if (ambiguous.length) hold('PARENT', 'identity', `${ambiguous.length} danh tính cần đối chiếu tên/phone; không tự merge Contact.`)
+  manifest.parentIdentityQuestions = ambiguous.map(g => ({ id: g.id, status: 'QUESTION', reason: 'NAME_OR_PHONE_ONLY_NO_CONTACT_MUTATION' }))
   manifest.summary = { expectedStudents: facts.students.length, ca: facts.ca.length, packages: facts.packages.length, sourcePackageBaselines: facts.students.filter(s => s.tuition).length, parentOccurrences: manifest.parentIdentities.reduce((n, g) => n + g.occurrences.length, 0), parentIdentities: manifest.parentIdentities.length, writes: manifest.commands.filter(c => c.rpc).length, reuses: manifest.commands.filter(c => c.status === 'REUSE').length, held: manifest.holds.length, enrollmentPairs: sourceStudents.reduce((n, s) => n + s.recurringEnrollments.length, 0), weekdaySelections: sourceStudents.reduce((n, s) => n + s.recurringEnrollments.reduce((a, e) => a + e.weekdays.length, 0), 0) }
   manifest.sha256 = await excelSha256(stableExcelJson(manifest))
   return manifest

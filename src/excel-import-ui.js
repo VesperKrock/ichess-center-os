@@ -8,11 +8,12 @@ export function createExcelImportUi({ getContext, render, refresh }) {
   let state = null
   const readTarget = () => readExcelImportTarget(getContext())
   const scoped = target => `${target.actorId}|${target.centerId}`
-  const save = async () => {
-    if (!state?.manifest || !state.buffer) throw Error('Thiếu manifest hoặc bản gốc.')
-    const key = scoped(state.manifest.target), entry = { filename: state.filename, buffer: state.buffer, manifest: state.manifest, ledger: state.ledger || {}, result: state.result || null }
-    await saveExcelIntake(`${key}|${state.manifest.sourceSha256}`, entry)
-    await saveExcelIntake(`${key}|latest`, { sourceSha256: state.manifest.sourceSha256 })
+  const save = async (active = state) => {
+    if (!active?.manifest || !active.buffer) throw Error('Thiếu manifest hoặc bản gốc.')
+    const key = scoped(active.manifest.target), entry = { filename: active.filename, buffer: active.buffer, manifest: active.manifest, ledger: active.ledger || {}, result: active.result || null }
+    await saveExcelIntake(`${key}|${active.manifest.sourceSha256}`, entry)
+    await saveExcelIntake(`${key}|manifest|${active.manifest.sha256}`, entry)
+    await saveExcelIntake(`${key}|latest`, { sourceSha256: active.manifest.sourceSha256 })
   }
   const safe = async action => {
     if (!state || state.busy) return
@@ -26,21 +27,28 @@ export function createExcelImportUi({ getContext, render, refresh }) {
     const workbook = await readOriginalExcel(buffer), facts = normalizeOriginalExcel(workbook), target = await readTarget()
     if (target.centerId !== active.centerId || getContext().centerId !== active.centerId) throw Error('Cơ sở đã thay đổi; dừng Audit.')
     const key = scoped(target), latest = await loadExcelIntake(key + '|latest'), previous = latest ? await loadExcelIntake(`${key}|${latest.sourceSha256}`) : null
+    if (previous?.manifest) await saveExcelIntake(`${key}|manifest|${previous.manifest.sha256}`, previous)
     const same = previous?.manifest.sourceSha256 === facts.sourceSha256 ? previous : null
     active.buffer = buffer; active.filename = active.file?.name || active.filename
     active.manifest = await createExcelImportManifest(facts, target, { coverageConfirmed: active.coverageConfirmed, applyCenterSettings: active.applyCenterSettings, previous: previous?.manifest, createdAt: same?.manifest.createdAt })
-    active.ledger = same && same.manifest.sha256 === active.manifest.sha256 ? same.ledger : {}
-    active.approved = false; active.result = null; await save()
+    active.ledger = {}
+    for (const command of active.manifest.commands) {
+      const old = same?.ledger?.[command.id]
+      if (!old) continue
+      if (old.intentSha256 === command.intentSha256) active.ledger[command.id] = old
+      else if (['PENDING', 'UNKNOWN'].includes(old.status) && command.status !== 'REUSE') throw Error('Đợt trước có kết quả chưa rõ và intent đã đổi; cần đối chiếu dòng đó trước khi tiếp tục.')
+    }
+    active.approved = false; active.result = null; await save(active)
   }
   async function run(active) {
     if (!active.approved || !active.manifest) throw Error('Duyệt manifest ở bước Audit trước khi nhập.')
     if (await excelSha256(active.buffer) !== active.manifest.sourceSha256) throw Error('Bản gốc đã đổi; cần Audit lại.')
-    await save()
+    await save(active)
     const result = await executeExcelImport({ manifest: active.manifest, approvedSha256: active.manifest.sha256, readTarget,
       rpc: (name, args) => getContext().supabase.rpc(name, args), getCurrentCenterId: () => getContext().centerId,
-      ledger: active.ledger, checkpoint: async ledger => { active.ledger = ledger; await save() },
+      ledger: active.ledger, checkpoint: async ledger => { active.ledger = ledger; await save(active) },
       onProgress: id => { active.progress = id; render() } })
-    active.result = result; await save(); await refresh()
+    active.result = result; await save(active); await refresh()
   }
   async function restore(active) {
     const target = await readTarget(), key = scoped(target), latest = await loadExcelIntake(key + '|latest')
