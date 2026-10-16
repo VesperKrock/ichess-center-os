@@ -66,3 +66,17 @@ export function projectVerifiedInitialBaseline(row) {
     baselineCutoffDate: row.baseline_cutoff_date, financialFacts, version: integer(row.version, 'VERSION', 1),
     sourceKey: row.source_key, financialState: 'PENDING_FINANCIAL_REVIEW', fullyConfigured: false }
 }
+
+// One-time handover command for Codex/Owner through the existing V2.4 boundary.
+// No Admin import/setup UI. Omitted confirmation means missing input, not unpaid.
+export function buildV24AdoptInitialBaselineCommand({ studentId, baselineId, baselineVersion,
+  packageVersion, confirmedPaymentComplete, reviewNote } = {}) {
+  if (!String(studentId || '').trim() || !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(baselineId || '')
+    || String(reviewNote || '').trim().length < 8) throw new Error('INVALID_INITIAL_ADOPTION')
+  integer(baselineVersion, 'BASELINE_VERSION', 1); integer(packageVersion, 'PACKAGE_VERSION', 1)
+  if (confirmedPaymentComplete !== undefined && typeof confirmedPaymentComplete !== 'boolean') throw new Error('INVALID_PAYMENT_CONFIRMATION')
+  return { operation: 'ADOPT_INITIAL_BASELINE', student_id: studentId, baseline_id: baselineId,
+    expected_baseline_version: baselineVersion, expected_package_version: packageVersion,
+    ...(confirmedPaymentComplete === undefined ? {} : { confirmed_payment_complete: confirmedPaymentComplete }),
+    review_note: String(reviewNote).trim() }
+}

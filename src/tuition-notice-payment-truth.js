@@ -18,6 +18,8 @@ export function bindTuitionNoticePaymentTruth(document, operatorSnapshot, center
     || cycle.cycleNumber !== document.targetTermNumber
     || cycle.totalSessions !== document.totalSessions
     || !['PAID', 'UNPAID'].includes(cycle.paymentStatus)) throw invalid()
+  if (cycle.initialImport && (notice.money?.totalAmount !== cycle.amountDue
+    || cycle.initialImport.outstandingAmount == null)) throw invalid()
 
   return {
     ...document,
@@ -33,6 +35,9 @@ export function bindTuitionNoticePaymentTruth(document, operatorSnapshot, center
         status: cycle.paymentStatus,
         paidBeforeIChess: cycle.paymentStatus === 'PAID'
           && cycle.openingPaymentState === 'PAID_BEFORE_ICHESS',
+        ...(cycle.initialImport ? { currentTermTakenOver: true,
+          historicalCollectedMinor: cycle.initialImport.financialFacts.collectedMinor,
+          outstandingAmount: cycle.initialImport.outstandingAmount } : {}),
       },
     },
   }

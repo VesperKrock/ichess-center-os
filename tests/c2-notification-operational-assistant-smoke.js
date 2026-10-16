@@ -72,9 +72,9 @@ const tuition = { centerId, status: 'ready', students: [{ id: 'a', fullName: 'Gi
   cycleStates: [{ studentId: 'a', centerId, readiness: 'READY', currentCycle: cycle }] }
 const operations = { centerId, status: 'ready', reminders: [], tbhpCheckpoints: [] }
 const n2 = buildTuitionN2Candidates(tuition, operations, { centerId, now })
-check('one exact current-cycle N-2 item from frozen presentation', () => {
+check('current progress routes to next-term collection at two remaining sessions', () => {
   assert.equal(n2.length, 1); assert.equal(n2[0].title, 'Gia Hân · Kỳ 1 · 14/16')
-  assert.equal(n2[0].message, 'Còn 2 buổi — nên gửi TBHP')
+  assert.equal(n2[0].message, 'Còn 2 buổi — Theo dõi thu học phí kỳ tiếp theo nếu chưa thanh toán đủ')
 })
 check('N-2 does not gate payment, and does not alert after manual end', () => {
   const unpaid = structuredClone(tuition); unpaid.cycleStates[0].currentCycle.paymentStatus = 'UNPAID'
@@ -82,11 +82,15 @@ check('N-2 does not gate payment, and does not alert after manual end', () => {
   unpaid.cycleStates[0].currentCycle.manuallyEndedAt = now.toISOString()
   assert.equal(buildTuitionN2Candidates(unpaid, operations, { centerId, now }).length, 0)
 })
-check('valid canonical sent checkpoint resolves; printing is not a sent fact', () => {
+check('a sent current-term notice does not suppress next-term collection; printing is not a sent fact', () => {
   const printedOnly = { ...operations, printedAt: now.toISOString() }
   assert.equal(buildTuitionN2Candidates(tuition, printedOnly, { centerId, now }).length, 1)
   const sent = { ...operations, tbhpCheckpoints: [{ centerId, studentId: 'a', cycleId: cycle.id, sentAt: now.toISOString() }] }
-  assert.equal(buildTuitionN2Candidates(tuition, sent, { centerId, now }).length, 0)
+  assert.equal(buildTuitionN2Candidates(tuition, sent, { centerId, now }).length, 1)
+  const next = { ...cycle, id: 'next-term', cycleNumber: 2, usedSessions: 0, remainingSessions: 16, paymentStatus: 'UNPAID' }
+  const four = { ...tuition, cycleStates: [{ ...tuition.cycleStates[0], currentCycle: { ...cycle, remainingSessions: 4, usedSessions: 12 }, preparedNextCycle: next }] }
+  const nextSent = { ...operations, tbhpCheckpoints: [{ centerId, studentId: 'a', cycleId: next.id, sentAt: now.toISOString() }] }
+  assert.equal(buildTuitionN2Candidates(four, nextSent, { centerId, now }).length, 0)
 })
 check('V24/V28 duplicate is coalesced into one stable business key', () => {
   const old = [

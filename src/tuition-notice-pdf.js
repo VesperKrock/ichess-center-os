@@ -46,6 +46,9 @@ export function createTuitionNoticePdfProjection(notice = {}, options = {}) {
     termNumber: positiveInteger(tuition.termNumber ?? notice.targetTermNumber, 'Kỳ học phí'),
     paymentTo: optionalDate(snapshot.paymentWindow?.to, 'Hạn thanh toán'),
     paymentStatus: paymentTruth.status, paidBeforeIChess: paymentTruth.paidBeforeIChess,
+    currentTermTakenOver: paymentTruth.currentTermTakenOver === true,
+    historicalCollectedMinor: paymentTruth.currentTermTakenOver ? moneyValue(paymentTruth.historicalCollectedMinor, 'Đã thu theo nguồn') : null,
+    outstandingAmount: paymentTruth.currentTermTakenOver ? moneyValue(paymentTruth.outstandingAmount, 'Còn thiếu') : null,
     tuitionAmount: moneyValue(money.tuitionAmount, 'Học phí'), discountAmount: moneyValue(money.discountAmount, 'Ưu đãi'),
     materialFee: moneyValue(money.materialFee, 'Phí giáo trình'), totalAmount: moneyValue(money.totalAmount, 'Tổng cộng'),
     forecast: forecastTuitionNotice({ ...options.forecastFacts,
@@ -60,17 +63,20 @@ export function createTuitionNoticePdfProjection(notice = {}, options = {}) {
 export function buildTuitionNoticePaymentCopy(p) {
   const paid = p.paymentStatus === 'PAID'
   return {
-    request: paid ? (p.paidBeforeIChess ? 'Học phí kỳ này đã được thanh toán trước khi dùng iChess.' : 'Học phí kỳ này đã được thanh toán.')
+    request: paid ? (p.currentTermTakenOver ? 'Học phí kỳ hiện tại đã được thanh toán đủ theo dữ liệu bàn giao.' : p.paidBeforeIChess ? 'Học phí kỳ này đã được thanh toán trước khi dùng iChess.' : 'Học phí kỳ này đã được thanh toán.')
+      : p.currentTermTakenOver ? `Phần học phí còn thiếu của kỳ hiện tại: ${formatMoney(p.outstandingAmount)} VNĐ.`
       : `Quý phụ huynh vui lòng đóng học phí khóa mới${p.paymentTo ? `: trước ngày ${formatDate(p.paymentTo)}` : '.'}`,
     window: !paid && p.paymentTo ? `Hạn thanh toán: ${formatDate(p.paymentTo)}.` : [],
     showPaymentInstructions: !paid, title: paid ? 'Tình trạng thanh toán:' : 'Hình thức thanh toán:',
     footer: paid ? 'TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG xác nhận học phí kỳ này đã được thanh toán.'
+      : p.currentTermTakenOver ? 'TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG kính nhờ quý phụ huynh thanh toán phần còn thiếu của kỳ hiện tại.'
       : 'TRUNG TÂM CỜ VUA TRUYỀN CẢM HỨNG rất mong quý phụ huynh đóng học phí nêu trên đúng thời hạn.',
   }
 }
 export function buildTuitionNoticeNotes(p) {
   const makeup = 'Học viên được học bù trong khóa học nếu vắng học có thông báo (P).'
-  return { paragraphs: [makeup, ...buildTuitionNoticeForecastLines(p.forecast)] }
+  const source = p.currentTermTakenOver ? [`Kỳ hiện tại: đã thu ${formatMoney(p.historicalCollectedMinor)} VNĐ theo dữ liệu bàn giao; còn thiếu ${formatMoney(p.outstandingAmount)} VNĐ. Không phải Phiếu Thu.`] : []
+  return { paragraphs: [...source, makeup, ...buildTuitionNoticeForecastLines(p.forecast)] }
 }
 export async function generateTuitionNoticePdf(notice, options = {}) {
   const projection = createTuitionNoticePdfProjection(notice, options)

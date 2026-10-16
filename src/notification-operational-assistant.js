@@ -107,13 +107,14 @@ export function buildTuitionN2Candidates(source = {}, operations = {}, { centerI
     if (state.centerId !== centerId || state.readiness !== 'READY') return []
     const student = students.get(text(state.studentId))
     const p = normalizeTuitionCyclePresentation({ packageCycleState: state, packageCycleReady: true })
+    const nextKey = p.prepared?.cycleId || `next:${p.cycleId}`
     if (!student || !p.hasKnownPackage || p.ended || !p.reminderLabel
-      || sent.has(`${state.studentId}|${p.cycleId}`)) return []
+      || (p.reminderKind === 'NOTICE_NEXT' && sent.has(`${state.studentId}|${nextKey}`))) return []
     return [{
       dedupeKey: notificationBusinessKey(centerId, student.id, p.cycleId, 'tuition-n2'),
       sourceModule: 'hoc-phi', sourceLabel: 'Học phí', type: 'tuition', severity: p.remainingSessions <= 0 ? 'danger' : 'warning',
       title: `${student.fullName} · ${p.termLabel} · ${p.progressLabel}`,
-      message: `Còn ${p.remainingSessions} buổi — nên gửi TBHP`, entityId: student.id, entityType: 'student', entityLabel: student.fullName,
+      message: `Còn ${p.remainingSessions} buổi — ${p.reminderLabel}`, entityId: student.id, entityType: 'student', entityLabel: student.fullName,
       createdAt: now.toISOString(), updatedAt: now.toISOString(),
       meta: { centerId, providerId: 'tuition-n2', operational: true, signal: 'tuition-n2', studentId: student.id,
         cycleId: p.cycleId, cycleNumber: p.cycle.cycleNumber, remainingSessions: p.remainingSessions, actionLabel: 'Mở học phí' },
@@ -128,6 +129,9 @@ export function buildPaymentAttentionCandidates(operations = {}, tuition = {}, {
   return (operations.reminders || []).flatMap(reminder => {
     const student = students.get(text(reminder.studentId))
     if (reminder.centerId !== centerId || reminder.signal !== 'PAYMENT_CHECK_DUE' || !student) return []
+    const state = (tuition.cycleStates || []).find(s => s.studentId === reminder.studentId)
+    const target = [state?.currentCycle, state?.preparedNextCycle, ...(state?.cycles || [])].find(c => c?.id === reminder.cycleId)
+    if (target?.paymentStatus === 'PAID') return []
     return [{
       dedupeKey: notificationBusinessKey(centerId, reminder.studentId, reminder.cycleId, 'payment-check'),
       sourceModule: 'hoc-phi', sourceLabel: 'Học phí', type: 'attendance-operation', severity: 'danger',

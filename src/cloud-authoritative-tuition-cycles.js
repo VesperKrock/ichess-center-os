@@ -1,4 +1,4 @@
-import { projectVerifiedInitialBaseline } from './excel-initial-baseline.js'
+import { projectVerifiedInitialBaseline, validateInitialFinancialFacts } from './excel-initial-baseline.js'
 export { buildV24ImportInitialBaselineCommand } from './excel-initial-baseline.js'
 export const V24_PACKAGE_CYCLE_CONTRACT = 'v2.4-package-cycle-v1'
 
@@ -325,6 +325,8 @@ function projectStudentCycleState(row = {}, centerId = '') {
 }
 
 function projectCycle(row = {}, centerId = '', studentId = '') {
+  const initialImport = projectAdoptedInitialFacts(row)
+  if (row.initial_import != null && !initialImport) return null
   const version = Number(row.version)
   const cycleNumber = Number(row.cycle_number)
   const usedSessions = Number(row.used_sessions)
@@ -346,9 +348,9 @@ function projectCycle(row = {}, centerId = '', studentId = '') {
     programName: cleanText(row.program_name),
     totalSessions,
     price: row.price == null ? null : Number(row.price),
-    discountAmount: Number(row.discount_amount) || 0,
-    discountType: cleanText(row.discount_type) || 'none',
-    discountValue: Number(row.discount_value) || 0,
+    discountAmount: row.initial_import && row.discount_amount == null ? null : Number(row.discount_amount) || 0,
+    discountType: initialImport && row.discount_type == null ? null : cleanText(row.discount_type) || 'none',
+    discountValue: initialImport && row.discount_value == null ? null : Number(row.discount_value) || 0,
     materialFee: Number(row.material_fee) || 0,
     amountDue: row.amount_due == null ? null : Number(row.amount_due),
     baselineUsed: Number(row.baseline_used) || 0,
@@ -361,7 +363,8 @@ function projectCycle(row = {}, centerId = '', studentId = '') {
     lifecycleStatus: cleanText(row.lifecycle_status),
     paymentPeriodId: cleanText(row.payment_period_id),
     paymentStatus: cleanText(row.payment_status),
-    paidAmount: Number(row.paid_amount) || 0,
+    paidAmount: row.initial_import && row.paid_amount == null ? null : Number(row.paid_amount) || 0,
+    initialImport,
     openingContext: cleanText(row.opening_context) || 'NEW_ICHESS',
     openingPaymentState: cleanText(row.opening_payment_state) || 'UNPAID',
     manuallyEndedAt: cleanText(row.manually_ended_at),
@@ -413,6 +416,8 @@ function projectContribution(row = {}, centerId = '') {
 }
 
 function projectCycleHistory(row = {}, centerId = '', studentId = '') {
+  const initialImport = projectAdoptedInitialFacts(row)
+  if (row.initial_import != null && !initialImport) return null
   const version = Number(row.version)
   const cycleNumber = Number(row.cycle_number)
   if (!isUuid(row.id) || !Number.isSafeInteger(version) || version < 1
@@ -428,14 +433,15 @@ function projectCycleHistory(row = {}, centerId = '', studentId = '') {
     lifecycleStatus: cleanText(row.lifecycle_status),
     paymentPeriodId: cleanText(row.payment_period_id),
     paymentStatus: cleanText(row.payment_status),
-    paidAmount: Number(row.paid_amount) || 0,
+    paidAmount: row.initial_import && row.paid_amount == null ? null : Number(row.paid_amount) || 0,
+    initialImport,
     openingContext: cleanText(row.opening_context) || 'NEW_ICHESS',
     openingPaymentState: cleanText(row.opening_payment_state) || 'UNPAID',
     manuallyEndedAt: cleanText(row.manually_ended_at),
     expiredSessions: row.expired_sessions == null ? null : Number(row.expired_sessions),
     packageCatalogId: cleanText(row.package_catalog_id),
     price: row.price == null ? null : Number(row.price),
-    discountAmount: Number(row.discount_amount) || 0,
+    discountAmount: row.initial_import && row.discount_amount == null ? null : Number(row.discount_amount) || 0,
     materialFee: Number(row.material_fee) || 0,
     amountDue: row.amount_due == null ? null : Number(row.amount_due),
     baselineUsed: Number(row.baseline_used) || 0,
@@ -447,6 +453,19 @@ function projectCycleHistory(row = {}, centerId = '', studentId = '') {
     urgentRenewal: row.urgent_renewal === true,
     version,
   }
+}
+
+function projectAdoptedInitialFacts(row) {
+  const source = row.initial_import
+  if (source == null) return null
+  try {
+    if (!isUuid(source.baseline_id) || ![true, false, null].includes(source.payment_complete)
+      || (row.amount_outstanding != null && (!Number.isSafeInteger(Number(row.amount_outstanding)) || Number(row.amount_outstanding) < 0))) return null
+    return { baselineId: source.baseline_id,
+      financialFacts: validateInitialFinancialFacts(source.financial_facts, Number(row.price)),
+      paymentComplete: source.payment_complete,
+      outstandingAmount: row.amount_outstanding == null ? null : Number(row.amount_outstanding) }
+  } catch { return null }
 }
 
 function projectCatalogPackage(row = {}, centerId = '') {
