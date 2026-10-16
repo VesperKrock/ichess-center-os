@@ -1,4 +1,5 @@
-import { formatReportMoney, getReportAttendanceSegments, initialReportDraft, reportPendingTaskItems } from './report-module.js'
+import { formatReportMoney, getReportAttendanceSegments, initialReportDraft } from './report-module.js'
+import { getDailyChecklistTemplate } from './report-daily-checklist.js'
 
 export const REPORT_PDF_PAGE = Object.freeze({ width: 841.8898, height: 595.2756, label: 'A4 landscape' })
 const M = 24, BOTTOM = 554, SCALE = 3
@@ -20,7 +21,17 @@ export function createReportPdfProjection(snapshot = {}) {
     data.weeklyIncome, data.weeklyExpense, data.weeklyBalance].every(Number.isFinite)) {
     throw new Error('Số liệu báo cáo chưa hợp lệ. Vui lòng làm mới.')
   }
-  return structuredClone({ source: 'REPORT_UI_SNAPSHOT_WITH_A6_ATTENDANCE', viewMode, data,
+  const state = snapshot.checklistState
+  const template = getDailyChecklistTemplate(state?.templateKey)
+  const checklistReady = state?.status === 'ready' && !state.savingKey && template
+    && state.centerId === (snapshot.centerId || snapshot.centerInfo?.centerId)
+    && state.businessDate === data.filters.reportDate
+  const checklist = checklistReady ? { ready: true, templateLabel: template.label,
+    rows: template.items.map(item => ({ ...item,
+      completed: state.items?.find(row => row.item_key === item.key)?.completed === true,
+      completedBy: clean(state.items?.find(row => row.item_key === item.key)?.completed_by_name),
+    })) } : { ready: false, rows: [] }
+  return structuredClone({ source: 'REPORT_UI_SNAPSHOT_WITH_A6_ATTENDANCE', viewMode, data, checklist,
     draft: { ...initialReportDraft, ...snapshot.draft },
     centerName: clean(snapshot.centerInfo?.centerName || snapshot.centerInfo?.name || snapshot.centerInfo?.displayName || 'Cơ sở'),
     centerId: clean(snapshot.centerId || snapshot.centerInfo?.centerId || 'co-so') })
@@ -183,9 +194,16 @@ export async function generateReportPdf(snapshot, options = {}) {
     field(left, 'Công việc ngày', draft.dailyTasks, leftWidth, 'Chưa nhập công việc ngày.')
     field(left, 'Tình huống / vấn đề xảy ra trong ngày', draft.dailyIssues, leftWidth, 'Chưa ghi nhận tình huống / vấn đề.')
     field(left, 'Ghi chú vận hành', draft.operationNote, leftWidth, 'Chưa có ghi chú vận hành.')
-    for (const item of reportPendingTaskItems) right.push({ label: item.label, checked: Boolean(draft.pendingTasks?.[item.key]), kind: 'check', height: 23 })
-    field(right, 'Công việc khác', draft.otherPendingTasks, rightWidth, 'Chưa nhập công việc khác.')
-    field(right, 'Người phụ trách', draft.ownerName, rightWidth, 'Chưa nhập người phụ trách.')
+    if (projection.checklist.ready) {
+      const rows = projection.checklist.rows
+      right.push({ label: `${projection.checklist.templateLabel} · ${rows.filter(row => row.completed).length}/${rows.length} hoàn thành`, kind: 'heading', height: 23 })
+      for (const item of rows) {
+        wrap(`${item.timeline} · ${item.title}`, rightWidth - 48, 10).forEach((label, index) =>
+          right.push({ label, checked: item.completed, kind: index === 0 ? 'check' : 'check-continuation', height: 17 }))
+        if (item.completed && item.completedBy) right.push({ label: item.completedBy, kind: 'check-continuation', height: 17 })
+        right.push({ kind: 'gap', height: 6 })
+      }
+    } else right.push({ label: 'Chưa tải được checklist của ngày báo cáo.', kind: 'text', height: 20 })
     const take = (records, maxHeight) => {
       const taken = []
       let used = 0
@@ -206,7 +224,7 @@ export async function generateReportPdf(snapshot, options = {}) {
             ctx.beginPath(); ctx.moveTo(x + 16, top + 6); ctx.lineTo(x + 19, top + 9); ctx.lineTo(x + 23, top + 3); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke()
           }
           text(record.label, x + 31, top, 10, colors.secondary)
-        } else if (record.kind !== 'gap') text(record.label, x + 14, top, record.kind === 'heading' ? 9.5 : 10, record.kind === 'heading' ? colors.secondary : colors.ink, record.kind === 'heading' ? 600 : 400)
+        } else if (record.kind !== 'gap') text(record.label, x + (record.kind === 'check-continuation' ? 31 : 14), top, record.kind === 'heading' ? 9.5 : 10, record.kind === 'heading' ? colors.secondary : colors.ink, record.kind === 'heading' ? 600 : 400)
         top += record.height
       }
     }

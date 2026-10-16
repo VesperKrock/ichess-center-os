@@ -397,7 +397,7 @@ function projectContribution(row = {}, centerId = '') {
   if (!studentId || !scheduleSessionId || !/^\d{4}-\d{2}-\d{2}$/.test(occurrenceDate)
     || !Number.isSafeInteger(cycleNumber) || cycleNumber < 1
     || ![0, 1].includes(contributionUnits)
-    || (sessionNumber !== null && (!Number.isSafeInteger(sessionNumber) || sessionNumber < 1))
+    || (sessionNumber !== null && (!Number.isSafeInteger(sessionNumber) || sessionNumber < (contributionUnits === 0 ? 0 : 1)))
     || (remainingSessions !== null && (!Number.isSafeInteger(remainingSessions) || remainingSessions < 0))
     || (totalSessions !== null && (!Number.isSafeInteger(totalSessions) || totalSessions < 1))) return null
   return {

@@ -1125,6 +1125,7 @@ const v21CenterSettingsRetryCommands = new Map()
 let v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState()
 let v22StudentEnrollmentSets = []
 let v22StudentEnrollmentSyncRunId = 0
+let v22StudentEnrollmentWriteRunId = 0
 let v24PackageCycleCapabilityState = createV24PackageCycleCapabilityState()
 let v24PackageCycleStudentStates = []
 let v24PackageCycleCatalog = []
@@ -2576,6 +2577,7 @@ function resetV21CenterSettingsRuntimeForAccessBoundary(centerId = '') {
 
 function resetV22StudentEnrollmentRuntimeForAccessBoundary(centerId = '') {
   v22StudentEnrollmentSyncRunId += 1
+  v22StudentEnrollmentWriteRunId += 1
   v22StudentEnrollmentSets = []
   v22StudentEnrollmentCapabilityState = createV22StudentEnrollmentCapabilityState({ centerId })
   studentFormState = null
@@ -12979,7 +12981,8 @@ function renderWindowBody(windowItem) {
       attendanceLedger,
       exportReady,
       onData: data => {
-        reportPdfSnapshot = exportReady ? { data, viewMode: reportState.viewMode, centerInfo, centerId: centerInfo.centerId } : null
+        reportPdfSnapshot = exportReady ? { data, viewMode: reportState.viewMode, centerInfo, centerId: centerInfo.centerId,
+          checklistState: structuredClone(getReportChecklistController().getState()) } : null
       },
       sourceTransactionsState: reportTransactionDrilldownState,
       centerInfo,
@@ -19852,7 +19855,10 @@ async function commitV22StudentProjection(student, reason, idempotencyKey) {
   }
   const enrollments = normalizeV22Enrollments(student.recurringEnrollments)
   const commandIdempotencyKey = idempotencyKey || createCoreCommandIdempotencyKey()
-  const runId = ++v22StudentEnrollmentSyncRunId
+  // Same-center realtime reads can finish while the command is in flight.
+  // Only a newer write or an access-boundary reset invalidates its result.
+  const runId = ++v22StudentEnrollmentWriteRunId
+  v22StudentEnrollmentSyncRunId += 1
   v22StudentEnrollmentCapabilityState = {
     ...v22StudentEnrollmentCapabilityState,
     isSaving: true,
@@ -19868,7 +19874,7 @@ async function commitV22StudentProjection(student, reason, idempotencyKey) {
     expectedEnrollmentVersion: student.enrollmentVersion,
     idempotencyKey: commandIdempotencyKey,
   })
-  if (runId !== v22StudentEnrollmentSyncRunId
+  if (runId !== v22StudentEnrollmentWriteRunId
     || centerId !== getCurrentCanonicalCenterContext().centerId) {
     return { ...result, ok: false, committed: Boolean(result.ok), outcome_code: 'CENTER_CONTEXT_CHANGED', error: getV22EnrollmentOutcomeMessage('CENTER_CONTEXT_CHANGED') }
   }
@@ -19882,6 +19888,7 @@ async function commitV22StudentProjection(student, reason, idempotencyKey) {
     render()
     return result
   }
+  v22StudentEnrollmentSyncRunId += 1
   students = upsertCommittedCoreProjection(students, result.student)
   const withoutCurrent = v22StudentEnrollmentSets.filter((set) => set.studentId !== result.enrollmentSet.studentId)
   v22StudentEnrollmentSets = [...withoutCurrent, result.enrollmentSet]

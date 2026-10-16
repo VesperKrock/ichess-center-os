@@ -2213,7 +2213,7 @@ function renderScheduleForm(
         ${renderField('room', 'Phòng *', formState, 'text')}
         ${scheduleType === 'recurring'
           ? renderSlotInstructorNotice(
-              resolveA3TeacherForDate(
+              selectedClassSession?.teacherDisplayName || resolveA3TeacherForDate(
                 options.teacherAssignments,
                 displayValues.classSessionId,
                 options.teacherReferenceDate,
@@ -3881,7 +3881,7 @@ function applyClassSessionToScheduleValues(values, classSession) {
     groupName: String(values.groupName ?? '').trim(),
     room: String(values.room ?? '').trim() || String(classSession.room || '').trim(),
     teacherId: '',
-    teacherName: String(classSession.instructorName ?? '').trim(),
+    teacherName: String(classSession.teacherDisplayName || classSession.instructorName || '').trim(),
     level: scheduleLevels.includes(classSession.level) ? classSession.level : values.level,
   }
 }
@@ -3914,7 +3914,8 @@ function buildClassSessionScheduleSlot(classSession, assignment, dayOfWeek, occu
     endTime,
     room: String(classSession?.room ?? assignment?.room ?? '').trim(),
     teacherId: '',
-    teacherName: String(classSession?.instructorName ?? '').trim(),
+    teacherDisplayName: String(classSession?.teacherDisplayName || '').trim(),
+    teacherName: String(classSession?.teacherDisplayName || classSession?.instructorName || '').trim(),
     studentIds: normalizeIdArray(assignment?.studentIds),
     groupName: hasAssignment ? assignmentGroupName : '',
     level: scheduleLevels.includes(assignment?.level)

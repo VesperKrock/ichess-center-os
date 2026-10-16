@@ -217,15 +217,19 @@ export function buildCanonicalAttendanceLedger({
   const studentById = new Map(students.map(student => [text(student.id), student]))
   const cycleByStudentId = new Map(packageCycleStudentStates.map(state => [text(state.studentId), state]))
   const expectedIds = new Set(columns.flatMap(item => item.studentIds))
+  const visibleKeys = new Set(columns.map(item => item.key))
+  for (const record of canonicalRecords) {
+    if (visibleKeys.has(attendanceOccurrenceKey(record.scheduleSessionId, record.date))) expectedIds.add(text(record.studentId))
+  }
   const rows = [...expectedIds].map(studentId => {
     const student = studentById.get(studentId) || { id: studentId, fullName: 'Học viên lịch sử' }
     const cells = columns.map(occurrence => {
       const expected = occurrence.studentIds.includes(studentId)
-      const offRoster = monthlyProjection && !occurrence.regularStudentIds.includes(studentId)
-      const record = monthlyProjection || expected ? selectCurrentV23OccurrenceAttendanceRecord(
+      const offRoster = !(occurrence.regularStudentIds || occurrence.studentIds).includes(studentId)
+      const record = selectCurrentV23OccurrenceAttendanceRecord(
         recordsByOccurrence.get(occurrence.key) || [],
         { id: occurrence.scheduleSessionId, occurrenceDate: occurrence.date }, studentId,
-      ) : null
+      )
       const rawStatus = text(record?.attendanceStatus || record?.status)
       const recordedState = rawStatus === 'makeup' ? 'makeup' : rawStatus === 'present' ? 'present'
         : rawStatus === 'trial' ? 'historicalTrial'
@@ -233,7 +237,7 @@ export function buildCanonicalAttendanceLedger({
       const state = monthlyProjection ? occurrence.date > today ? 'future'
         : !expected && !record ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
           : recordedState || (offRoster ? 'notExpected' : occurrence.date === today ? 'today' : 'unmarked')
-        : !expected ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
+        : !expected && !record ? 'notExpected' : occurrence.lifecycleState === 'CANCELLED' ? 'cancelled'
         : isAttendanceLedgerOccurrenceFuture(occurrence, now) ? 'future'
           : rawStatus === 'makeup' ? 'makeup'
           : rawStatus === 'present' ? 'present'

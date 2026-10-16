@@ -99,7 +99,7 @@ export function projectA3ScheduleSessions(sessions = [], context = {}, sources =
     return [{
       ...session,
       teacherId: assignment?.teacher_id || null,
-      teacherName: assignment?.teacher_name || '',
+      teacherName: assignment?.teacher_name || text(sources.classSessions?.find(item => item.id === session.classSessionId)?.teacherDisplayName) || '',
     }]
   })
   const known = new Set(projected.map((item) => `${item.id}|${item.occurrenceDate}`))

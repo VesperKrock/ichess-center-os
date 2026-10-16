@@ -198,6 +198,14 @@ export function getReportPdfSnapshotFingerprint(snapshot) {
     dailyBalance: data.dailyBalance,
     dailySourceTotal: data.dailySourceTotal,
     dailyTransactions: data.dailyTransactions,
+    checklist: snapshot.checklistState && {
+      centerId: snapshot.checklistState.centerId,
+      businessDate: snapshot.checklistState.businessDate,
+      templateKey: snapshot.checklistState.templateKey,
+      status: snapshot.checklistState.status,
+      savingKey: snapshot.checklistState.savingKey,
+      items: snapshot.checklistState.items,
+    },
   })
 }
 
