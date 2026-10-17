@@ -1,3 +1,4 @@
+import { validateRecurringDiscountPolicy } from './excel-initial-baseline.js'
 // One operator model: frozen cycles and issued receipts, never old metadata.
 export const initialTuitionFilters = {
   query: '',
@@ -380,11 +381,44 @@ const pkgOptions = (catalog, value = '') =>
         `<option value="${html(p.id)}" ${p.id === value ? 'selected' : ''}>${html(p.packageName)} · ${p.totalSessions} buổi · ${money(p.defaultAmount)}</option>`,
     )
     .join('')}`
+export function getTuitionRecurringTarget(context, studentId, cycleId = '') {
+  if (context.readStatus !== 'ready') return null
+  const state = context.cycleStates.find(s => s.studentId === studentId)
+  const cycle = state?.currentCycle
+  if (!cycle || (cycleId && cycle.id !== cycleId) || cycle.manuallyEndedAt
+    || !['ACTIVE', 'PROVISIONAL_UNPAID'].includes(cycle.lifecycleStatus)) return null
+  const successor = state.preparedNextCycle || state.cycles?.find(c => c.cycleNumber === cycle.cycleNumber + 1) || null
+  const locked = !!successor && (!['PREPARED', 'PROVISIONAL_UNPAID', 'NEEDS_PACKAGE_SELECTION', 'SUPERSEDED'].includes(successor.lifecycleStatus)
+    || successor.usedSessions > 0 || successor.paidAmount > 0 || successor.paymentStatus === 'PAID'
+    || context.receipts?.some(r => r.targetCycleId === successor.id))
+  return { cycle, successor, locked }
+}
+export function parseTuitionRecurringValues(values) {
+  const number = value => /^\d+$/.test(String(value)) ? Number(value) : NaN
+  return validateRecurringDiscountPolicy({ schemaVersion: 1, discountKind: values.discountKind,
+    percent: values.discountKind === 'FIXED' ? 0 : number(values.percent),
+    fixedMinor: values.discountKind === 'FIXED' ? number(values.fixedMinor) : 0,
+    siblingVoucherMinor: values.discountKind === 'PERCENT_THEN_SIBLING_VOUCHER' ? 100000 : 0 })
+}
+function recurringControl(context, id, p, panel) {
+  const target = getTuitionRecurringTarget(context, id, p.cycleId)
+  const edit = panel.recurringEdit
+  if ((!target || !p.cycle?.recurringDiscountPolicy) && !edit) return ''
+  if (target?.locked && !edit?.pendingCommand) return '<section class="tuition-detail-section"><h5>Ưu đãi định kỳ</h5><p>Kỳ tiếp theo đã có thanh toán hoặc buổi học. Có thể sửa ưu đãi khi kỳ đó trở thành kỳ hiện tại.</p></section>'
+  const disabled = panel.busy || !!edit?.pendingCommand ? 'disabled' : ''
+  const controls = edit ? `<div class="tuition-form-grid"><label><span>Loại ưu đãi</span><select data-tu-recurring-field="discountKind" ${disabled}>${[['PERCENT', 'Giảm theo %'], ['FIXED', 'Giảm số tiền cố định'], ['PERCENT_THEN_SIBLING_VOUCHER', '% rồi voucher anh/chị/em 100.000đ']].map(([value, label]) => `<option value="${value}" ${edit.values.discountKind === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>${edit.values.discountKind === 'FIXED' ? `<label><span>Số tiền giảm (VNĐ)</span><input type="number" min="0" step="1" data-tu-recurring-field="fixedMinor" value="${html(edit.values.fixedMinor)}" ${disabled}></label>` : `<label><span>Tỷ lệ giảm (%)</span><input type="number" min="0" max="100" step="1" data-tu-recurring-field="percent" value="${html(edit.values.percent)}" ${disabled}></label>`}</div>${btn(edit.pendingCommand ? 'Thử lưu lại' : 'Lưu ưu đãi', 'recurring-save', id, p.cycleId, panel.busy ? 'disabled' : '')}${!edit.pendingCommand ? btn('Hủy sửa', 'recurring-cancel', id, p.cycleId) + btn('Dừng từ kỳ tiếp theo', 'recurring-stop', id, p.cycleId, panel.busy ? 'disabled' : '') : '<p>Lệnh đang chờ xác nhận. Thử lại để kiểm tra cùng thay đổi.</p>'}`
+    : btn('Sửa / Dừng ưu đãi định kỳ', 'recurring-edit', id, p.cycleId, panel.busy ? 'disabled' : '')
+  return `<section class="tuition-detail-section"><h5>Ưu đãi định kỳ</h5><p>Kỳ mới mặc định kế thừa ưu đãi. Thay đổi áp dụng từ kỳ tiếp theo${target?.successor ? ', gồm kỳ đã chuẩn bị chưa thanh toán/chưa học' : ''}; giữ nguyên học phí kỳ hiện tại.</p>${controls}</section>`
+}
 function documents(p, id) {
   return `<section class="tuition-detail-section tuition-simple-documents" aria-label="Tài liệu"><h5>Tài liệu</h5><div class="tuition-simple-document-actions"><article class="tuition-simple-document-card"><strong>Thông báo học phí</strong>${p.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, p.cycleId) : `<span>${html(p.sourceFinancialMissing ? 'Thiếu dữ liệu giá/ưu đãi từ nguồn' : p.financialPending ? 'Chưa mở kỳ' : p.needsInitialSetup ? 'Chưa thiết lập học phí' : p.noPackage ? 'Chưa có gói' : 'Không tải được học phí.')}</span>`}</article><article class="tuition-simple-document-card"><strong>Phiếu Thu</strong>${p.canPrintReceipt ? p.receipts.map((r) => `<span>${html(r.receiptNumber)}</span>${btn('In / Xuất Phiếu Thu', 'receipt', id, p.cycleId, `data-tu-receipt-id="${html(r.id)}"`)}`).join('') : `<span>${html(p.receiptUnavailableLabel)}</span>`}</article></div></section>`
 }
 function cycleCard(p, label = 'Kỳ hiện tại') {
-  return `<section class="tuition-detail-section" aria-label="${html(label)}"><h5>${html(label)}</h5><div class="tuition-simple-cycle-card"><div><strong>${html(p.termLabel)} · ${html(p.progressLabel)}</strong><span>${html(p.packageLabel)}</span>${p.ended ? `<span>Đã học: ${p.usedSessions}/${p.totalSessions} · Hết hiệu lực: ${p.expiredSessions} buổi</span>` : p.hasKnownPackage ? `<span>Còn ${p.remainingSessions} buổi</span>` : ''}</div></div></section>`
+  const policy = p.cycle?.recurringDiscountPolicy
+  const recurringLabel = policy ? policy.discountKind === 'FIXED'
+    ? `Giảm ${money(policy.fixedMinor)}`
+    : `Giảm ${policy.percent}%${policy.siblingVoucherMinor ? `, sau đó voucher ${money(policy.siblingVoucherMinor)}` : ''}` : ''
+  return `<section class="tuition-detail-section" aria-label="${html(label)}"><h5>${html(label)}</h5><div class="tuition-simple-cycle-card"><div><strong>${html(p.termLabel)} · ${html(p.progressLabel)}</strong><span>${html(p.packageLabel)}</span>${p.ended ? `<span>Đã học: ${p.usedSessions}/${p.totalSessions} · Hết hiệu lực: ${p.expiredSessions} buổi</span>` : p.hasKnownPackage ? `<span>Còn ${p.remainingSessions} buổi</span>` : ''}${recurringLabel ? `<span>Ưu đãi định kỳ: ${html(recurringLabel)}</span>` : ''}</div></div></section>`
 }
 function detail(context, row, panel) {
   const p = normalizeTuitionCyclePresentation({
@@ -405,7 +439,7 @@ function detail(context, row, panel) {
       : btn(p.actionLabel, p.action, id, p.cycleId)
   const packageControl = (action, label) =>
     `<details class="tuition-simple-package-change" data-tu-package-action><summary>${label}</summary><div class="tuition-cycle-panel tuition-cycle-package-selection"><select aria-label="${label}">${pkgOptions(context.catalog)}</select>${btn('Xác nhận', action, id, p.cycleId, panel.busy ? 'disabled' : '')}</div></details>`
-  return `${cycleCard(p, panel.cycleId ? 'Kỳ đã chọn' : 'Kỳ hiện tại')}${documents(p, id)}<section class="tuition-detail-section"><h5>Thanh toán</h5>${badge(p)}${!p.initialCycleAdopted && p.cycle?.openingPaymentState === 'PAID_BEFORE_ICHESS' ? '<span>Đã thanh toán trước khi dùng iChess · Không có Phiếu Thu trong iChess</span>' : ''}${!p.initialCycleAdopted && p.cycle?.openingContext === 'LEGACY_BEFORE_ICHESS' ? `<span>${p.cycle.baselineUsed} buổi trước khi dùng iChess · ${p.cycle.contributedSessions} buổi do iChess ghi nhận</span>` : ''}${initialBaselineNotice(p)}${p.debtSessions > 0 ? `<span>Đã học nợ ${p.debtSessions} buổi</span>` : ''}</section>${p.prepared ? `${cycleCard(p.prepared, 'Kỳ tiếp theo')}${badge(p.prepared)}${p.prepared.canPrintTbhp ? btn('In / Xuất TBHP kỳ tiếp theo', 'tbhp', id, p.prepared.cycleId) : ''}` : ''}<section class="tuition-detail-section tuition-simple-next-action"><h5>Việc cần làm</h5><div class="tuition-simple-primary-work">${primary}</div>${p.reminderLabel ? `<span>${html(p.reminderLabel)}</span>` : ''}${p.canChangePackage ? packageControl('change', 'Đổi gói trước buổi học đầu tiên') : ''}${p.canPrepareNext ? packageControl('prepare', 'Thanh toán sớm kỳ tiếp theo') : ''}${p.canEndCycle ? btn('Kết thúc kỳ', 'end', id, p.cycleId, `class="tuition-stop-secondary" ${panel.busy ? 'disabled' : ''}`) : ''}</section><section class="tuition-detail-section"><details class="tuition-simple-history"><summary>Xem lịch sử</summary>${p.history.length ? p.history.map((h) => `<article class="tuition-simple-history-cycle"><div><strong>${h.termLabel} · ${h.progressLabel}</strong><span>${html(h.packageLabel)}</span>${h.ended ? `<span>Đã học: ${h.usedSessions}/${h.totalSessions} · Hết hiệu lực: ${h.expiredSessions} buổi</span>` : ''}${badge(h)}</div><div>${btn('Chi tiết', 'detail', id, h.cycleId)}${h.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, h.cycleId) : ''}${h.canCollectPayment ? btn('Ghi nhận thanh toán', 'payment', id, h.cycleId) : ''}</div></article>`).join('') : '<span>Chưa có kỳ trước</span>'}</details></section>`
+  return `${cycleCard(p, panel.cycleId ? 'Kỳ đã chọn' : 'Kỳ hiện tại')}${recurringControl(context, id, p, panel)}${documents(p, id)}<section class="tuition-detail-section"><h5>Thanh toán</h5>${badge(p)}${!p.initialCycleAdopted && p.cycle?.openingPaymentState === 'PAID_BEFORE_ICHESS' ? '<span>Đã thanh toán trước khi dùng iChess · Không có Phiếu Thu trong iChess</span>' : ''}${!p.initialCycleAdopted && p.cycle?.openingContext === 'LEGACY_BEFORE_ICHESS' ? `<span>${p.cycle.baselineUsed} buổi trước khi dùng iChess · ${p.cycle.contributedSessions} buổi do iChess ghi nhận</span>` : ''}${initialBaselineNotice(p)}${p.debtSessions > 0 ? `<span>Đã học nợ ${p.debtSessions} buổi</span>` : ''}</section>${p.prepared ? `${cycleCard(p.prepared, 'Kỳ tiếp theo')}${badge(p.prepared)}${p.prepared.canPrintTbhp ? btn('In / Xuất TBHP kỳ tiếp theo', 'tbhp', id, p.prepared.cycleId) : ''}` : ''}<section class="tuition-detail-section tuition-simple-next-action"><h5>Việc cần làm</h5><div class="tuition-simple-primary-work">${primary}</div>${p.reminderLabel ? `<span>${html(p.reminderLabel)}</span>` : ''}${p.canChangePackage ? packageControl('change', 'Đổi gói trước buổi học đầu tiên') : ''}${p.canPrepareNext ? packageControl('prepare', 'Thanh toán sớm kỳ tiếp theo') : ''}${p.canEndCycle ? btn('Kết thúc kỳ', 'end', id, p.cycleId, `class="tuition-stop-secondary" ${panel.busy ? 'disabled' : ''}`) : ''}</section><section class="tuition-detail-section"><details class="tuition-simple-history"><summary>Xem lịch sử</summary>${p.history.length ? p.history.map((h) => `<article class="tuition-simple-history-cycle"><div><strong>${h.termLabel} · ${h.progressLabel}</strong><span>${html(h.packageLabel)}</span>${h.ended ? `<span>Đã học: ${h.usedSessions}/${h.totalSessions} · Hết hiệu lực: ${h.expiredSessions} buổi</span>` : ''}${badge(h)}</div><div>${btn('Chi tiết', 'detail', id, h.cycleId)}${h.canPrintTbhp ? btn('In / Xuất TBHP', 'tbhp', id, h.cycleId) : ''}${h.canCollectPayment ? btn('Ghi nhận thanh toán', 'payment', id, h.cycleId) : ''}</div></article>`).join('') : '<span>Chưa có kỳ trước</span>'}</details></section>`
 }
 function successNotice(state) {
   return state.success

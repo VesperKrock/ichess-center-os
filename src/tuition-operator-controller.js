@@ -2,12 +2,15 @@ import {
   buildTuitionFinalEndCycleCommand,
   buildV24PrepareNextCycleCommand,
   buildV24SelectProvisionalPackageCommand,
+  buildV24SetRecurringDiscountPolicyCommand,
 } from './cloud-authoritative-tuition-cycles.js'
 import {
   normalizeTuitionCyclePresentation,
   validateInitialTuitionSetup,
   validateFullTuitionPayment,
   isTuitionPaymentSnapshotCurrent,
+  getTuitionRecurringTarget,
+  parseTuitionRecurringValues,
 } from './tuition-module.js'
 
 // UI drafts contain no business truth. Every command targets the exact cycle
@@ -304,6 +307,77 @@ export function createTuitionOperatorController({
     }
     render()
   }
+  const recurringStale = 'Ưu đãi hoặc kỳ học phí vừa thay đổi. Vui lòng hủy sửa, làm mới và mở lại Chi tiết học phí.'
+  const openRecurring = async (studentId, cycleId) => {
+    const panel = state.panel, centerId = getContext().centerId
+    if (!panel || panel.kind !== 'detail' || panel.studentId !== studentId || panel.busy || panel.recurringEdit?.pendingCommand) return
+    panel.busy = true
+    panel.error = ''
+    render()
+    try {
+      const result = await refresh()
+      if (state.panel !== panel) return
+      if (!result.ok || centerId !== getContext().centerId) return showError('Không tải được học phí đúng cơ sở. Vui lòng mở lại Chi tiết học phí.')
+      const target = getTuitionRecurringTarget(getContext(), studentId, cycleId)
+      if (!target || target.locked || !target.cycle.recurringDiscountPolicy) return showError(recurringStale)
+      const policy = target.cycle.recurringDiscountPolicy
+      panel.recurringEdit = { centerId, cycleId, version: target.cycle.version,
+        successorId: target.successor?.id || '', successorVersion: target.successor?.version,
+        key: uuid(), values: { discountKind: policy.discountKind, percent: String(policy.percent), fixedMinor: String(policy.fixedMinor) } }
+    } finally {
+      if (state.panel === panel) { panel.busy = false; render() }
+    }
+  }
+  const saveRecurring = async (stop = false) => {
+    const panel = state.panel, edit = panel?.recurringEdit
+    if (!edit || panel.busy) return
+    if (edit.centerId !== getContext().centerId) return showError('Cơ sở đã thay đổi. Vui lòng mở lại Chi tiết học phí.')
+    let policy
+    try { policy = stop ? null : parseTuitionRecurringValues(edit.values) }
+    catch { return showError('Nhập tỷ lệ từ 0 đến 100 hoặc số tiền giảm nguyên không âm.') }
+    panel.busy = true
+    panel.error = ''
+    state.success = null
+    render()
+    try {
+      if (!edit.pendingCommand) {
+        const fresh = await refresh()
+        if (state.panel !== panel) return
+        if (!fresh.ok || edit.centerId !== getContext().centerId) return showError('Không tải được học phí đúng cơ sở. Vui lòng mở lại Chi tiết học phí.')
+        const target = getTuitionRecurringTarget(getContext(), panel.studentId, edit.cycleId)
+        if (!target || target.locked || target.cycle.version !== edit.version
+          || (target.successor?.id || '') !== edit.successorId || target.successor?.version !== edit.successorVersion) return showError(recurringStale)
+        edit.pendingCommand = buildV24SetRecurringDiscountPolicyCommand(target.cycle, policy, target.successor)
+      }
+      const result = await writeCycle(edit.pendingCommand, edit.key)
+      if (state.panel !== panel || edit.centerId !== getContext().centerId) return
+      if (!result.ok) {
+        const terminal = ['STALE_VERSION', 'RECURRING_POLICY_SUCCESSOR_VERSION_CONFLICT', 'RECURRING_POLICY_SUCCESSOR_LOCKED',
+          'RECURRING_DISCOUNT_AMOUNT_INVALID', 'INVALID_RECURRING_DISCOUNT_POLICY', 'CENTER_ACCESS_DENIED', 'IDEMPOTENCY_CONFLICT']
+        if (terminal.includes(result.outcome_code)) {
+          edit.pendingCommand = null
+          edit.key = uuid()
+          return showError(result.outcome_code === 'RECURRING_DISCOUNT_AMOUNT_INVALID'
+            ? 'Ưu đãi không phù hợp giá gói của kỳ tiếp theo. Vui lòng kiểm tra số tiền giảm.' : recurringStale)
+        }
+        return showError('Chưa xác nhận được thay đổi. Bấm Thử lưu lại để kiểm tra cùng lệnh.')
+      }
+      const savedPolicy = edit.pendingCommand.recurring_discount_policy
+      const readback = await refresh()
+      if (state.panel !== panel || edit.centerId !== getContext().centerId) return
+      const target = getTuitionRecurringTarget(getContext(), panel.studentId, edit.cycleId)
+      const samePolicy = c => JSON.stringify(c?.recurringDiscountPolicy || null) === JSON.stringify(savedPolicy)
+      if (!readback.ok || !target || !samePolicy(target.cycle) || (target.successor && !samePolicy(target.successor))) {
+        return showError('Lệnh đã được tiếp nhận nhưng chưa xác minh được ưu đãi. Bấm Thử lưu lại để đọc lại kết quả.')
+      }
+      panel.recurringEdit = null
+      state.success = { text: savedPolicy ? 'Đã sửa ưu đãi định kỳ từ kỳ tiếp theo.' : 'Đã dừng ưu đãi từ kỳ tiếp theo.' }
+    } catch {
+      if (state.panel === panel) showError('Chưa xác nhận được thay đổi. Bấm Thử lưu lại để kiểm tra cùng lệnh.')
+    } finally {
+      if (state.panel === panel) { panel.busy = false; render() }
+    }
+  }
   const bind = (root) => {
     root?.querySelectorAll('[data-tu-action]').forEach((button) =>
       button.addEventListener('click', async (event) => {
@@ -318,6 +392,17 @@ export function createTuitionOperatorController({
           const action = button.dataset.tuAction,
             id = button.dataset.tuStudentId,
             cycle = button.dataset.tuCycleId || ''
+          if (action === 'recurring-edit') { await openRecurring(id, cycle); return }
+          if (action === 'recurring-save' || action === 'recurring-stop') { await saveRecurring(action === 'recurring-stop'); return }
+          if (action === 'recurring-cancel') {
+            if (state.panel && !state.panel.busy && !state.panel.recurringEdit?.pendingCommand) {
+              state.panel.recurringEdit = null
+              state.panel.error = ''
+              render()
+            }
+            return
+          }
+          if (state.panel?.recurringEdit?.pendingCommand && !['close', 'refresh', 'dismiss-success', 'tbhp', 'receipt'].includes(action)) return
           if (action === 'close') {
             if (!state.panel?.busy) state.panel = null
             render()
@@ -362,6 +447,14 @@ export function createTuitionOperatorController({
         }
       }),
     )
+    root?.querySelectorAll('[data-tu-recurring-field]').forEach(control =>
+      control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'input', () => {
+        const edit = state.panel?.recurringEdit
+        if (!edit || state.panel.busy || edit.pendingCommand) return
+        edit.values[control.dataset.tuRecurringField] = control.value
+        if (control.tagName === 'SELECT') render()
+      }),
+    )
     root?.querySelectorAll('[data-tu-field]').forEach((control) =>
       control.addEventListener('input', () => {
         if (!state.panel || state.panel.pendingCommand) return
@@ -393,5 +486,5 @@ export function createTuitionOperatorController({
         })
       })
   }
-  return { bind, open, submit }
+  return { bind, open, submit, openRecurring, saveRecurring }
 }

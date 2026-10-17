@@ -1,4 +1,4 @@
-import { projectVerifiedInitialBaseline, validateInitialFinancialFacts } from './excel-initial-baseline.js'
+import { projectVerifiedInitialBaseline, validateInitialFinancialFacts, validateRecurringDiscountPolicy } from './excel-initial-baseline.js'
 export { buildV24ImportInitialBaselineCommand } from './excel-initial-baseline.js'
 export const V24_PACKAGE_CYCLE_CONTRACT = 'v2.4-package-cycle-v1'
 
@@ -224,6 +224,23 @@ export function buildV24PrepareNextCycleCommand(cycle = {}, packageCatalogId = '
   }
 }
 
+export function buildV24SetRecurringDiscountPolicyCommand(cycle = {}, policy, successor = null) {
+  if (successor && (successor.studentId !== cycle.studentId || successor.centerId !== cycle.centerId)) {
+    throw new Error('RECURRING_SUCCESSOR_SCOPE_CONFLICT')
+  }
+  return {
+    operation: 'SET_RECURRING_DISCOUNT_POLICY',
+    student_id: requireText(cycle.studentId, 'Không xác định được học viên.'),
+    cycle_id: requireUuid(cycle.id, 'Không xác định được chu kỳ học phí.'),
+    expected_version: requirePositiveInteger(cycle.version, 'Dữ liệu chu kỳ chưa đủ mới.'),
+    recurring_discount_policy: validateRecurringDiscountPolicy(policy),
+    ...(successor ? {
+      successor_cycle_id: requireUuid(successor.id, 'Không xác định được kỳ tiếp theo.'),
+      expected_successor_version: requirePositiveInteger(successor.version, 'Dữ liệu kỳ tiếp theo chưa đủ mới.'),
+    } : {}),
+  }
+}
+
 export function buildV24SelectProvisionalPackageCommand(cycle = {}, packageCatalogId = '') {
   return {
     operation: 'SELECT_PROVISIONAL_PACKAGE',
@@ -327,6 +344,8 @@ function projectStudentCycleState(row = {}, centerId = '') {
 function projectCycle(row = {}, centerId = '', studentId = '') {
   const initialImport = projectAdoptedInitialFacts(row)
   if (row.initial_import != null && !initialImport) return null
+  let recurringPolicy
+  try { if (row.recurring_discount_policy != null) recurringPolicy = validateRecurringDiscountPolicy(row.recurring_discount_policy) } catch { return null }
   const version = Number(row.version)
   const cycleNumber = Number(row.cycle_number)
   const usedSessions = Number(row.used_sessions)
@@ -365,6 +384,7 @@ function projectCycle(row = {}, centerId = '', studentId = '') {
     paymentStatus: cleanText(row.payment_status),
     paidAmount: row.initial_import && row.paid_amount == null ? null : Number(row.paid_amount) || 0,
     initialImport,
+    ...(recurringPolicy ? { recurringDiscountPolicy: recurringPolicy } : {}),
     openingContext: cleanText(row.opening_context) || 'NEW_ICHESS',
     openingPaymentState: cleanText(row.opening_payment_state) || 'UNPAID',
     manuallyEndedAt: cleanText(row.manually_ended_at),
@@ -418,6 +438,8 @@ function projectContribution(row = {}, centerId = '') {
 function projectCycleHistory(row = {}, centerId = '', studentId = '') {
   const initialImport = projectAdoptedInitialFacts(row)
   if (row.initial_import != null && !initialImport) return null
+  let recurringPolicy
+  try { if (row.recurring_discount_policy != null) recurringPolicy = validateRecurringDiscountPolicy(row.recurring_discount_policy) } catch { return null }
   const version = Number(row.version)
   const cycleNumber = Number(row.cycle_number)
   if (!isUuid(row.id) || !Number.isSafeInteger(version) || version < 1
@@ -435,6 +457,7 @@ function projectCycleHistory(row = {}, centerId = '', studentId = '') {
     paymentStatus: cleanText(row.payment_status),
     paidAmount: row.initial_import && row.paid_amount == null ? null : Number(row.paid_amount) || 0,
     initialImport,
+    ...(recurringPolicy ? { recurringDiscountPolicy: recurringPolicy } : {}),
     openingContext: cleanText(row.opening_context) || 'NEW_ICHESS',
     openingPaymentState: cleanText(row.opening_payment_state) || 'UNPAID',
     manuallyEndedAt: cleanText(row.manually_ended_at),
@@ -497,6 +520,8 @@ function rpcFailure(error = {}, fallback, idempotencyKey = '') {
 function mapRpcError(error = {}) {
   const message = cleanText(error.message).toLowerCase()
   const mapping = [
+    ...['RECURRING_POLICY_SUCCESSOR_VERSION_CONFLICT', 'RECURRING_POLICY_SUCCESSOR_LOCKED',
+      'RECURRING_DISCOUNT_AMOUNT_INVALID', 'INVALID_RECURRING_DISCOUNT_POLICY'].map(code => [code.toLowerCase(), code]),
     ['v2_4_center_access_denied', 'CENTER_ACCESS_DENIED'],
     ['v2_4_student_not_found', 'STUDENT_NOT_FOUND'],
     ['v2_4_tuition_not_found', 'TUITION_NOT_FOUND'],

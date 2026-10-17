@@ -6,6 +6,27 @@ const integer = (value, name, min = 0) => {
 }
 const paymentStates = new Set(['PAID_BEFORE_ICHESS', 'UNPAID', 'PARTIAL', 'UNKNOWN'])
 const discountKinds = new Set(['EXPLICIT_NONE', 'PERCENT', 'FIXED', 'PERCENT_THEN_SIBLING_VOUCHER', 'UNKNOWN'])
+// A future-term entitlement is separate from this term's financial snapshot.
+// Omission means legacy contract; explicit null ends a recurring entitlement.
+export function validateRecurringDiscountPolicy(policy) {
+  if (policy === null) return null
+  const keys = ['schemaVersion', 'discountKind', 'percent', 'fixedMinor', 'siblingVoucherMinor']
+  if (!policy || Array.isArray(policy) || typeof policy !== 'object'
+    || Object.keys(policy).length !== keys.length || keys.some(key => !Object.hasOwn(policy, key))
+    || policy.schemaVersion !== 1
+    || !['PERCENT', 'FIXED', 'PERCENT_THEN_SIBLING_VOUCHER'].includes(policy.discountKind)) {
+    throw new Error('INVALID_RECURRING_DISCOUNT_POLICY')
+  }
+  integer(policy.percent, 'RECURRING_PERCENT')
+  integer(policy.fixedMinor, 'RECURRING_FIXED')
+  integer(policy.siblingVoucherMinor, 'RECURRING_VOUCHER')
+  const valid = policy.percent <= 100 && (policy.discountKind === 'PERCENT'
+    ? policy.fixedMinor === 0 && policy.siblingVoucherMinor === 0
+    : policy.discountKind === 'FIXED' ? policy.percent === 0 && policy.siblingVoucherMinor === 0
+      : policy.fixedMinor === 0 && policy.siblingVoucherMinor === 100000)
+  if (!valid) throw new Error('INVALID_RECURRING_DISCOUNT_POLICY')
+  return Object.fromEntries(keys.map(key => [key, policy[key]]))
+}
 export function validateInitialFinancialFacts(facts = {}, listedPrice) {
   integer(listedPrice, 'LISTED_PRICE')
   const keys = ['discountKind', 'percent', 'fixedMinor', 'siblingVoucherMinor', 'paymentState', 'sourceDueMinor', 'collectedMinor', 'remainingMinor']
@@ -70,7 +91,7 @@ export function projectVerifiedInitialBaseline(row) {
 // One-time handover command for Codex/Owner through the existing V2.4 boundary.
 // No Admin import/setup UI. Omitted confirmation means missing input, not unpaid.
 export function buildV24AdoptInitialBaselineCommand({ studentId, baselineId, baselineVersion,
-  packageVersion, confirmedPaymentComplete, reviewNote } = {}) {
+  packageVersion, confirmedPaymentComplete, recurringDiscountPolicy, reviewNote } = {}) {
   if (!String(studentId || '').trim() || !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(baselineId || '')
     || String(reviewNote || '').trim().length < 8) throw new Error('INVALID_INITIAL_ADOPTION')
   integer(baselineVersion, 'BASELINE_VERSION', 1); integer(packageVersion, 'PACKAGE_VERSION', 1)
@@ -78,5 +99,6 @@ export function buildV24AdoptInitialBaselineCommand({ studentId, baselineId, bas
   return { operation: 'ADOPT_INITIAL_BASELINE', student_id: studentId, baseline_id: baselineId,
     expected_baseline_version: baselineVersion, expected_package_version: packageVersion,
     ...(confirmedPaymentComplete === undefined ? {} : { confirmed_payment_complete: confirmedPaymentComplete }),
+    ...(recurringDiscountPolicy === undefined ? {} : { recurring_discount_policy: validateRecurringDiscountPolicy(recurringDiscountPolicy) }),
     review_note: String(reviewNote).trim() }
 }
