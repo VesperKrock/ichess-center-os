@@ -428,7 +428,8 @@ export function validateStudentForm(values, classSessions = [], context = {}) {
     }
   }
 
-  if (!hasFatherRoute && !hasMotherRoute && !hasLegacyRoute) {
+  const hasContactInfo = Boolean(fatherName || motherName || legacyParentName || fatherPhoneDigits || motherPhoneDigits || legacyPhoneDigits)
+  if (hasContactInfo && !hasFatherRoute && !hasMotherRoute && !hasLegacyRoute) {
     errors.motherPhone = 'Cần ít nhất một liên hệ đủ họ tên và SĐT ba hoặc mẹ.'
   }
   if (hasLegacyRoute && (legacyPhoneDigits || fatherPhoneDigits || motherPhoneDigits).length !== 10) {
@@ -490,7 +491,8 @@ export function isStudentParentCareInfoIncomplete(values) {
   const hasMotherPhone = String(values.motherPhone ?? '').replace(/\D/g, '')
   const hasLegacyPhone = String(values.parentPhone ?? '').replace(/\D/g, '')
 
-  return !(
+  const hasContactInfo = Boolean(fatherName || motherName || legacyParentName || hasFatherPhone || hasMotherPhone || hasLegacyPhone)
+  return hasContactInfo && !(
     (fatherName && hasFatherPhone)
     || (motherName && hasMotherPhone)
     || (legacyParentName && !fatherName && !motherName && (hasLegacyPhone || hasFatherPhone || hasMotherPhone))
@@ -693,7 +695,7 @@ function renderStudentForm(
                 ])}
               `
               : `
-                ${renderFormSection('B. Thông tin phụ huynh', [
+                ${renderFormSection('B. Thông tin phụ huynh (có thể bổ sung sau)', [
                   renderField('fatherName', 'Họ và tên ba', formState, 'text'),
                   renderField('fatherPhone', 'SĐT ba', formState, 'tel', {
                     placeholder: '0901 001 001',

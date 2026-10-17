@@ -133,6 +133,7 @@ export function normalizeTuitionCyclePresentation({
                 : 'none'
     return {
       cycle: c,
+      ...(source?.sourceOverageSessions ? { sourceOverageSessions: source.sourceOverageSessions } : {}),
       cycleId: c?.id || '',
       hasKnownPackage: known,
       needsInitialSetup: initial,
@@ -235,6 +236,7 @@ export function normalizeTuitionCyclePresentation({
   if (baseline) {
     const sourceLabels = { PAID_BEFORE_ICHESS: 'Nguồn: đã thanh toán trước iChess', UNPAID: 'Nguồn: chưa thanh toán', PARTIAL: 'Nguồn: thanh toán một phần', UNKNOWN: 'Nguồn: chưa rõ thanh toán' }
     Object.assign(p, { verifiedInitialBaseline: baseline, financialPending: true, hasKnownPackage: true,
+      ...(baseline.sourceOverageSessions ? { sourceOverageSessions: baseline.sourceOverageSessions } : {}),
       needsInitialSetup: false, noPackage: false, isPending: false, readFailed: false, unresolved: false,
       totalSessions: baseline.totalSessions, usedSessions: baseline.usedSessions, remainingSessions: baseline.remainingSessions,
       termLabel: 'Gói từ dữ liệu ban đầu · Chưa mở kỳ', progressLabel: `${baseline.usedSessions}/${baseline.totalSessions}`,
@@ -418,7 +420,7 @@ function cycleCard(p, label = 'Kỳ hiện tại') {
   const recurringLabel = policy ? policy.discountKind === 'FIXED'
     ? `Giảm ${money(policy.fixedMinor)}`
     : `Giảm ${policy.percent}%${policy.siblingVoucherMinor ? `, sau đó voucher ${money(policy.siblingVoucherMinor)}` : ''}` : ''
-  return `<section class="tuition-detail-section" aria-label="${html(label)}"><h5>${html(label)}</h5><div class="tuition-simple-cycle-card"><div><strong>${html(p.termLabel)} · ${html(p.progressLabel)}</strong><span>${html(p.packageLabel)}</span>${p.ended ? `<span>Đã học: ${p.usedSessions}/${p.totalSessions} · Hết hiệu lực: ${p.expiredSessions} buổi</span>` : p.hasKnownPackage ? `<span>Còn ${p.remainingSessions} buổi</span>` : ''}${recurringLabel ? `<span>Ưu đãi định kỳ: ${html(recurringLabel)}</span>` : ''}</div></div></section>`
+  return `<section class="tuition-detail-section" aria-label="${html(label)}"><h5>${html(label)}</h5><div class="tuition-simple-cycle-card"><div><strong>${html(p.termLabel)} · ${html(p.progressLabel)}</strong><span>${html(p.packageLabel)}</span>${p.ended ? `<span>Đã học: ${p.usedSessions}/${p.totalSessions} · Hết hiệu lực: ${p.expiredSessions} buổi</span>` : p.hasKnownPackage ? `<span>Còn ${p.remainingSessions} buổi</span>` : ''}${p.sourceOverageSessions ? `<span class="tuition-source-overage" role="status">Nguồn vượt ${p.sourceOverageSessions} buổi: cần rà soát gia hạn / thu học phí; chưa tính thành tiền cho buổi vượt.</span>` : ''}${recurringLabel ? `<span>Ưu đãi định kỳ: ${html(recurringLabel)}</span>` : ''}</div></div></section>`
 }
 function detail(context, row, panel) {
   const p = normalizeTuitionCyclePresentation({

@@ -482,12 +482,16 @@ function projectAdoptedInitialFacts(row) {
   const source = row.initial_import
   if (source == null) return null
   try {
+    const sourceOverage = Object.hasOwn(source, 'source_overage_sessions') ? source.source_overage_sessions : 0
+    if (!Number.isSafeInteger(sourceOverage) || sourceOverage < 0
+      || sourceOverage !== Math.max(Number(row.baseline_used || 0) - Number(row.total_sessions), 0)) return null
     if (!isUuid(source.baseline_id) || ![true, false, null].includes(source.payment_complete)
       || (row.amount_outstanding != null && (!Number.isSafeInteger(Number(row.amount_outstanding)) || Number(row.amount_outstanding) < 0))) return null
     return { baselineId: source.baseline_id,
       financialFacts: validateInitialFinancialFacts(source.financial_facts, Number(row.price)),
       paymentComplete: source.payment_complete,
-      outstandingAmount: row.amount_outstanding == null ? null : Number(row.amount_outstanding) }
+      outstandingAmount: row.amount_outstanding == null ? null : Number(row.amount_outstanding),
+      ...(sourceOverage ? { sourceOverageSessions: sourceOverage } : {}) }
   } catch { return null }
 }
 

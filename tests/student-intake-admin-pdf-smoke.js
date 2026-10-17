@@ -157,7 +157,7 @@ assert.deepEqual(
   }),
   {},
 )
-assert.ok(validateStudentForm(validBase).motherPhone)
+assert.deepEqual(validateStudentForm(validBase), {})
 assert.ok(validateStudentForm({ ...validBase, fatherPhone: '0901001001' }).fatherName)
 assert.ok(validateStudentForm({ ...validBase, motherName: 'Mẹ Bảo' }).motherPhone)
 

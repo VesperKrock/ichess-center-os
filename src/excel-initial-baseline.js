@@ -59,19 +59,21 @@ export function validateInitialFinancialFacts(facts = {}, listedPrice) {
 }
 
 export function buildV24ImportInitialBaselineCommand({ studentId, packageCatalog, used, total,
-  cutoff, sourceSha256, sourceKey, reviewNote, financialFacts } = {}) {
+  cutoff, sourceSha256, sourceKey, reviewNote, financialFacts, sourceOverageSessions = 0 } = {}) {
   if (!String(studentId || '').trim() || !/^[a-f\d-]{36}$/i.test(packageCatalog?.id || '')
     || !/^[a-f\d]{64}$/i.test(sourceSha256 || '') || !/^[a-f\d]{64}$/i.test(sourceKey || '')
     || !/^\d{4}-\d{2}-\d{2}$/.test(cutoff || '') || String(reviewNote || '').trim().length < 8) throw new Error('INVALID_INITIAL_IMPORT_IDENTITY')
   integer(used, 'USED'); integer(total, 'TOTAL', 1)
-  if (used > total || total !== packageCatalog.totalSessions) throw new Error('PACKAGE_AB_MISMATCH')
+  integer(sourceOverageSessions, 'SOURCE_OVERAGE')
+  if (sourceOverageSessions !== Math.max(used - total, 0) || total !== packageCatalog.totalSessions) throw new Error('PACKAGE_AB_MISMATCH')
   integer(packageCatalog.version, 'PACKAGE_VERSION', 1)
   const facts = validateInitialFinancialFacts(financialFacts, packageCatalog.defaultAmount)
   return { operation: 'IMPORT_INITIAL_BASELINE', student_id: studentId, package_catalog_id: packageCatalog.id,
     expected_package_version: packageCatalog.version, total_sessions: total, baseline_used_sessions: used,
     baseline_cutoff_date: cutoff, listed_price_minor: packageCatalog.defaultAmount,
     source_sha256: sourceSha256.toLowerCase(), source_key: sourceKey.toLowerCase(),
-    review_note: String(reviewNote).trim(), financial_facts: facts }
+    review_note: String(reviewNote).trim(), financial_facts: facts,
+    ...(sourceOverageSessions ? { source_overage_sessions: sourceOverageSessions } : {}) }
 }
 
 export function projectVerifiedInitialBaseline(row) {
@@ -79,13 +81,15 @@ export function projectVerifiedInitialBaseline(row) {
   if (row.state !== 'PENDING_FINANCIAL_REVIEW' || !/^[a-f\d-]{36}$/i.test(row.id || '')) throw new Error('INVALID_IMPORT_BASELINE')
   const total = integer(row.total_sessions, 'TOTAL', 1), baseline = integer(row.baseline_used_sessions, 'BASELINE')
   const contributed = integer(row.contributed_sessions, 'CONTRIBUTED')
-  if (baseline > total || row.used_sessions !== baseline + contributed || row.remaining_sessions !== Math.max(total - baseline - contributed, 0)) throw new Error('INVALID_IMPORT_PROGRESS')
+  const sourceOverage = integer(Object.hasOwn(row, 'source_overage_sessions') ? row.source_overage_sessions : 0, 'SOURCE_OVERAGE')
+  if (sourceOverage !== Math.max(baseline - total, 0) || row.used_sessions !== baseline + contributed || row.remaining_sessions !== Math.max(total - baseline - contributed, 0)) throw new Error('INVALID_IMPORT_PROGRESS')
   const financialFacts = validateInitialFinancialFacts(row.financial_facts, row.listed_price_minor)
   return { id: row.id, packageCatalogId: row.package_catalog_id, packageName: row.package_name,
     totalSessions: total, baselineUsed: baseline, contributedSessions: contributed, listedPriceMinor: row.listed_price_minor,
     usedSessions: row.used_sessions, remainingSessions: row.remaining_sessions,
     baselineCutoffDate: row.baseline_cutoff_date, financialFacts, version: integer(row.version, 'VERSION', 1),
-    sourceKey: row.source_key, financialState: 'PENDING_FINANCIAL_REVIEW', fullyConfigured: false }
+    sourceKey: row.source_key, financialState: 'PENDING_FINANCIAL_REVIEW', fullyConfigured: false,
+    ...(sourceOverage ? { sourceOverageSessions: sourceOverage } : {}) }
 }
 
 // One-time handover command for Codex/Owner through the existing V2.4 boundary.

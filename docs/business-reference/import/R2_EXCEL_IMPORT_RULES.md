@@ -16,6 +16,14 @@ Policy không mở rộng frozen backend. Facts nghiệp vụ hợp lệ nhưng 
 
 Đây là tài liệu contract, không phải importer/lệnh import. Commit/push policy không cho phép business write, migration hoặc deploy.
 
+**R3C addendum — 17/10/2026, local candidate chờ manifest release được duyệt.** Các mô tả “frozen” bên dưới giữ mốc audit v1; khi dùng phiên bản mới phải kiểm tra authority thực tế theo addendum này và [SOP một lần duyệt](EXCEL_ONE_SHOT_ONBOARDING.md). Addendum không tự cho phép release/import hoặc coi local capability là đã có trên production.
+
+- Student/V2.2 hiện nhận hồ sơ không có phụ huynh. Sau release R3C, form hiện có cho phép cả sáu trường tên/SĐT liên hệ cùng trống; liên hệ được nhập vẫn phải đủ cặp và đúng định dạng. Không tạo Contact/PH1/CRM hoặc phone giả. School/level optional theo current direct form; họ tên và ít nhất năm sinh vẫn phải hợp lệ khi tạo mới. Existing unknown birth chỉ giữ theo legacy edit context. Route CRM/F4B có contract riêng; không dùng thay direct Student để ép dữ liệu.
+- Verified opening dùng canonical `IMPORT_INITIAL_BASELINE` → readback → `ADOPT_INITIAL_BASELINE` khi live capability và facts đầy đủ. Package/giá nguồn, A/B, cutoff thật, discount và paid-before-iChess phải qua typed validation. `SETUP_INITIAL_CYCLE` là nhánh legacy khác; các giới hạn cutoff/discount của nhánh frozen ở mục 23 không được áp nhầm sang verified import. Không đổi cutoff của các batch đã nghiệm thu.
+- A=B là hết buổi, vẫn bảo toàn A/B. A>B chỉ được nhập sau khi live trả `initial_import_overage_capability=verified-source-overage-v1`, migration và frontend R3C đã được kiểm chứng; bắt buộc `source_overage_sessions=A−B` là số nguyên tường minh. Giữ nguyên A/B, cảnh báo vượt, không clamp/reset, không tự tạo kỳ tiếp theo, chuyển buổi vượt, tính tiền hoặc dựng Attendance. Chưa có capability thì HOLD riêng Tuition; Student độc lập vẫn có thể nhập.
+- Ưu đãi một lần chỉ thuộc financial facts kỳ nguồn; recurring policy là typed policy riêng với bằng chứng nguồn rõ. “Đã thanh toán đủ” không chứng minh có gói/giá/A-B. Không đủ nguồn thì giữ chưa gán gói; không mặc định 0 hoặc suy gói từ payment label. Opening financial facts không là Finance/Receipt mới.
+- R3A preview/questions/plan có thể là các phụ lục cùng checksum của **một manifest tổng hợp** để Owner duyệt một lần. Release (nếu cần) và import là hai phạm vi riêng trong quyết định đó. Thiếu facts gom một lần; HOLD theo dòng/domain, không chặn dòng độc lập. SHA/identity/target/capability/versions sai lệch phải dừng phạm vi phụ thuộc và báo rõ.
+
 ## 0. Purpose
 
 Đây là canonical contract cho mọi lần dùng Excel để đưa dữ liệu một cơ sở vào iChess.
