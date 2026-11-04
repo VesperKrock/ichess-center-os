@@ -8,6 +8,7 @@ import {
 import { renderAppAuthEntry } from './app-auth.js'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
+import { dashboardModuleIcons } from './dashboard-module-icons.js'
 import {
   initialAttendanceBoardFilters,
   renderAttendanceBoardModule,
@@ -881,6 +882,7 @@ const lastKnownPreservedScrollPositions = new Map()
 
 let currentViewMode = getViewMode()
 let currentUiTheme = getUiTheme()
+let dashboardTaskbarObserver = null
 let isStartMenuOpen = false
 let isWindowOverflowOpen = false
 let isNotificationCenterOpen = false
@@ -8650,6 +8652,7 @@ function render() {
     </div>
   `
 
+  observeDashboardTaskbar()
   bindEvents()
   restoreScheduleReportScrollState(scheduleReportScrollState)
   restoreScheduleFormScrollState(scheduleFormScrollState)
@@ -8663,6 +8666,20 @@ function render() {
   restorePendingStaffDocumentViewerReturnContextAfterRender()
   skipNextParentContactScrollCapture = false
   updateClock()
+}
+
+function observeDashboardTaskbar() {
+  dashboardTaskbarObserver?.disconnect()
+  const dashboard = document.querySelector('.dashboard')
+  const taskbar = document.querySelector('.taskbar')
+  if (!dashboard || !taskbar) return
+
+  const update = () => dashboard.style.setProperty(
+    '--dashboard-taskbar-height', `${Math.ceil(taskbar.getBoundingClientRect().height)}px`,
+  )
+  update()
+  dashboardTaskbarObserver = new ResizeObserver(update)
+  dashboardTaskbarObserver.observe(taskbar)
 }
 
 function focusPendingInternalAccountCard() {
@@ -12081,15 +12098,17 @@ function renderDashboard() {
                   : 'data-module-capability-pending="true" aria-disabled="true" tabindex="-1" disabled'
             }
           >
-            <span class="module-card-icon-slot designer-image-slot" aria-hidden="true"></span>
+            <span class="module-card-icon-slot designer-image-slot">
+              <img class="module-card-icon" src="${dashboardModuleIcons[moduleItem.id]}" alt="" width="84" height="84" draggable="false" />
+              ${
+                canOpen && unreadCount
+                  ? `<span class="module-notification-badge" aria-label="${unreadCount} thông báo chưa đọc">${unreadCount}</span>`
+                  : ''
+              }
+            </span>
             <span class="module-card-label">${moduleItem.name}</span>
             <span class="module-card-visual-slot module-visual-placeholder" aria-hidden="true"></span>
             ${presentation.label ? `<span class="module-availability-label">${presentation.label}</span>` : ''}
-            ${
-              canOpen && unreadCount
-                ? `<span class="module-notification-badge" aria-label="${unreadCount} thông báo chưa đọc">${unreadCount}</span>`
-                : ''
-            }
           </button>
         `
       },
@@ -31877,9 +31896,17 @@ function renderParentStudentPickerSelection(student) {
 
 function bindShortcutDragging() {
   document.querySelectorAll('[data-shortcut-id]').forEach((shortcut) => {
+    // Touch browsers can defer :active until release; show feedback on contact.
+    for (const type of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture']) {
+      shortcut.addEventListener(type, () => shortcut.classList.remove('is-pressed'))
+    }
     shortcut.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) {
         return
+      }
+
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+        shortcut.classList.add('is-pressed')
       }
 
       shortcutDragState = {
