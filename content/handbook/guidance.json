@@ -1,0 +1,308 @@
+{
+  "HV-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "CD-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HP-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HV-002": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "DD-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HP-002": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HV-003": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HV-004": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HV-005": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HV-006": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Đổi ảnh đại diện học viên thế nào?"
+      },
+      {
+        "question": "In hồ sơ học viên ở đâu?"
+      },
+      {
+        "question": "Xóa hồ sơ có xóa học phí không?"
+      }
+    ]
+  },
+  "KH-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "KH-002": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "KH-003": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "KH-004": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Chuyển khách hàng thành học viên thế nào?"
+      },
+      {
+        "question": "Khách đã có học viên thì ghép ở đâu?"
+      }
+    ]
+  },
+  "KH-005": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Liên kết phụ huynh với học viên có sẵn thế nào?"
+      },
+      {
+        "question": "Sửa số điện thoại phụ huynh ở đâu?"
+      },
+      {
+        "question": "Ngắt liên kết nhầm có xóa học viên không?"
+      }
+    ]
+  },
+  "HP-003": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "HP-004": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Đổi gói học phí đã gán được không?"
+      },
+      {
+        "question": "Kết thúc kỳ học phí có giống gia hạn không?"
+      }
+    ]
+  },
+  "HP-005": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "In thông báo học phí ở đâu?"
+      },
+      {
+        "question": "In lại Phiếu Thu sau thanh toán thế nào?"
+      },
+      {
+        "question": "Tại sao không có Phiếu Thu dù đã trả trước khi dùng iChess?"
+      }
+    ]
+  },
+  "HP-006": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Nhập số buổi đã học trước khi dùng iChess ở đâu?"
+      },
+      {
+        "question": "Đã thu tiền trước iChess có ghi thanh toán lại không?"
+      }
+    ]
+  },
+  "DD-002": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "DD-003": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Xếp học bù cho buổi vắng thế nào?"
+      },
+      {
+        "question": "Đổi hoặc hủy lịch học bù ở đâu?"
+      },
+      {
+        "question": "Vì sao không chọn được Học bù?"
+      },
+      {
+        "question": "Điểm danh bị xung đột hoặc chưa rõ đã lưu thì làm gì?"
+      }
+    ]
+  },
+  "LK-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "LK-002": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Hoạt động trùng lịch thì xử lý thế nào?"
+      }
+    ]
+  },
+  "LK-003": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Tạo hoặc lưu trữ nhãn hoạt động thế nào?"
+      },
+      {
+        "question": "Đặt hoạt động lặp hằng tuần thế nào?"
+      }
+    ]
+  },
+  "LK-004": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Xóa buổi học có xóa ca trong Cài đặt không?"
+      }
+    ]
+  },
+  "LK-005": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Đổi giáo viên chính từ một ngày thế nào?"
+      },
+      {
+        "question": "Đổi giáo viên dạy thay một buổi ở đâu?"
+      }
+    ]
+  },
+  "TC-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "TC-002": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "TC-003": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Thêm hoặc ngưng dùng danh mục Thu chi ở đâu?"
+      },
+      {
+        "question": "Đính kèm ảnh chứng từ giao dịch thế nào?"
+      },
+      {
+        "question": "Xem hoặc in chứng từ giao dịch ở đâu?"
+      }
+    ]
+  },
+  "TC-004": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "TC-005": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Sửa giao dịch đồng bộ từ Học phí được không?"
+      },
+      {
+        "question": "Hủy thanh toán học phí ghi nhầm ở đâu?"
+      }
+    ]
+  },
+  "BC-001": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Đối chiếu báo cáo với giao dịch Thu chi thế nào?"
+      }
+    ]
+  },
+  "BC-002": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "BC-003": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "KO-001": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "KO-002": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Xem lịch sử nhập xuất ở đâu?"
+      }
+    ]
+  },
+  "KO-003": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Theo dõi và đổi trạng thái đề xuất vật tư thế nào?"
+      }
+    ]
+  },
+  "KO-004": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Bắt đầu kiểm kê kho ở đâu?"
+      },
+      {
+        "question": "Gửi kết quả đếm và xử lý chênh lệch thế nào?"
+      },
+      {
+        "question": "Hủy phiên kiểm kê khác đóng cửa sổ thế nào?"
+      }
+    ]
+  },
+  "CD-002": {
+    "mode": "GUIDE",
+    "held": []
+  },
+  "CD-003": {
+    "mode": "REFERENCE_ONLY",
+    "held": [
+      {
+        "question": "Sửa tên địa chỉ cơ sở ở đâu?"
+      },
+      {
+        "question": "Đổi mã Phiếu Thu hoặc người thu mặc định thế nào?"
+      },
+      {
+        "question": "Bật nhập dữ liệu học viên ban đầu ở đâu?"
+      }
+    ]
+  },
+  "CD-004": {
+    "mode": "PARTIAL",
+    "held": [
+      {
+        "question": "Đặt hình nền riêng có ảnh hưởng người khác không?"
+      },
+      {
+        "question": "Ai xem được nhật ký điểm danh?"
+      }
+    ]
+  }
+}

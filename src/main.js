@@ -9,6 +9,10 @@ import { renderAppAuthEntry } from './app-auth.js'
 import { resolveAppCenterBinding } from './app-center-binding.js'
 import { isDashboardUnlockedByCenter } from './app-login-gate.js'
 import { dashboardModuleIcons } from './dashboard-module-icons.js'
+import { HANDBOOK_TITLE, bookIcon, createHandbookState, renderHandbook, bindHandbook } from './handbook/view.js'
+import { parseHandbookHash } from './handbook/content.js'
+import { getHandbookTheme } from './handbook/theme.js'
+import './handbook/handbook.css'
 import {
   initialAttendanceBoardFilters,
   renderAttendanceBoardModule,
@@ -890,6 +894,8 @@ let isCenterProfilePopoverOpen = false
 const centerSwitchDraftTracker = createCenterSwitchDraftTracker()
 let notificationPanelPosition = { right: 12, bottom: 56 }
 let openWindows = []
+const handbookState = createHandbookState()
+let pendingHandbookRoute = parseHandbookHash(window.location.hash)
 let nextWindowNumber = 1
 let topZIndex = 20
 const moduleRefreshRunIds = new Map()
@@ -8622,6 +8628,11 @@ function render() {
   const isLoginGateOpen = !isDashboardUnlockedByCenter(cloudStatus, currentCenterBinding)
   const isInternalCentersRoute = isInternalCenterConsoleRoute()
   const isFinanceShellOpen = !isLoginGateOpen && !isInternalCentersRoute && isActiveFinanceWindowOpen()
+  if (pendingHandbookRoute && !isLoginGateOpen && !isInternalCentersRoute) {
+    const route = pendingHandbookRoute
+    pendingHandbookRoute = null
+    openHandbookWindow({ route, renderNow: false })
+  }
 
   if (
     parentConsultationFormState &&
@@ -8635,7 +8646,7 @@ function render() {
   }
 
   app.innerHTML = `
-    <div class="app-shell ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''} ${isFinanceShellOpen ? 'is-finance-shell' : ''}">
+    <div class="app-shell ${openWindows.some(item => item.type === 'handbook' && item.id === getActiveWindowId()) ? 'is-handbook-shell' : ''} ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''} ${isFinanceShellOpen ? 'is-finance-shell' : ''}">
       <main class="desktop-area ${isLoginGateOpen ? 'is-login-gated' : ''} ${isInternalCentersRoute ? 'is-internal-console-route' : ''}">
         ${isLoginGateOpen
           ? cloudStatus.credentialChangeRequired
@@ -12229,10 +12240,11 @@ function renderModuleWindow(windowItem) {
 
   return `
     <section
-      class="desktop-window designer-theme-hook ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${isInventoryWindow ? 'is-inventory-window' : ''} ${isParentConsultationWindow ? 'is-parent-consultation-window' : ''} ${isSettingsWindow ? 'is-settings-window' : ''} ${financeSurfaceClasses}"
+      class="desktop-window designer-theme-hook ${windowItem.type === 'handbook' ? 'is-handbook-window' : ''} ${windowItem.maximized ? 'maximized' : ''} ${windowItem.type === 'staff-administrative-profile' ? 'is-staff-administrative-profile' : ''} ${studentSurface ? `is-student-window is-student-${studentSurface}-window` : ''} ${isScheduleWindow ? 'is-schedule-window' : ''} ${isReportWindow ? 'is-report-window' : ''} ${isTuitionWindow ? 'is-tuition-window' : ''} ${isAttendanceWindow ? 'is-attendance-window' : ''} ${isInventoryWindow ? 'is-inventory-window' : ''} ${isParentConsultationWindow ? 'is-parent-consultation-window' : ''} ${isSettingsWindow ? 'is-settings-window' : ''} ${financeSurfaceClasses}"
       style="${style}"
       data-window-id="${windowItem.id}"
       data-module-id="${escapeAttribute(windowItem.moduleId || '')}"
+      ${windowItem.type === 'handbook' ? `data-handbook-theme="${getHandbookTheme(handbookState)}"` : ''}
       ${studentSurface ? `data-student-surface="${studentSurface}"` : ''}
       data-module-title="${escapeAttribute(headerTitle)}"
       data-designer-hook="module-window"
@@ -12530,6 +12542,7 @@ function renderCurrentStaffModule() {
 }
 
 function renderWindowBody(windowItem) {
+  if (windowItem.type === 'handbook') return renderHandbook(handbookState)
   if (windowItem.type === 'staff-administrative-profile') {
     const access = getStaffAdministrativeProfileAccessContext()
 
@@ -13180,6 +13193,7 @@ function getStudentOverviewOptions() {
 }
 
 function getWindowTitle(windowItem) {
+  if (windowItem.type === 'handbook') return HANDBOOK_TITLE
   if (windowItem.type === 'staff-administrative-profile') {
     const staffMember = getUniqueCurrentCenterStaffMember(
       windowItem.staffMemberId,
@@ -13558,6 +13572,7 @@ function renderTaskbar() {
         }
       </div>
       <div class="taskbar-right">
+        <button type="button" class="handbook-taskbar-button" data-action="open-handbook" aria-label="Mở Sổ tay iChess — Trung tâm trợ giúp" title="Sổ tay iChess — Trung tâm trợ giúp">${bookIcon}<span>Sổ tay</span></button>
         <div class="view-toggle taskbar-view-toggle" aria-label="Chọn chế độ hiển thị">
           <button
             class="${currentViewMode === 'grid' ? 'active' : ''}"
@@ -14288,6 +14303,31 @@ function selectFinanceWorkspaceViewForModule(moduleId) {
   } else if (moduleId === 'thu-chi') {
     financeWorkspaceView = FINANCE_WORKSPACE_VIEWS.TRANSACTIONS
   }
+}
+
+// System utility: shares the existing window lifecycle without becoming a module.
+function openHandbookWindow({ route = null, renderNow = true } = {}) {
+  if (!isDashboardUnlockedByCenter(cloudStatus, resolveAppCenterBinding(cloudStatus))) return false
+  if (!confirmAttendanceBoardNavigation()) return false
+  if (route) {
+    handbookState.route = route
+    if (route.view === 'search') { handbookState.query = route.query; handbookState.searchQuery = route.query }
+    handbookState.focus = true
+  }
+  let item = openWindows.find(windowItem => windowItem.type === 'handbook')
+  if (!item) {
+    item = { id: `window-${nextWindowNumber++}`, type: 'handbook',
+      x: 54, y: 32, width: 1000, height: 680, zIndex: ++topZIndex,
+      minimized: false, maximized: true, restoreBounds: { x: 54, y: 32, width: 1000, height: 680 } }
+    openWindows.push(item)
+    handbookState.focus = true
+  }
+  focusWindow(item.id)
+  isStartMenuOpen = false
+  isWindowOverflowOpen = false
+  isNotificationCenterOpen = false
+  if (renderNow) render()
+  return true
 }
 
 function openModuleWindow(moduleId, { refresh = true, preserveCurrentness = false } = {}) {
@@ -23204,6 +23244,8 @@ function bindStaffAdministrativeProfileActionDelegates(root = document) {
 }
 
 function bindEvents() {
+  document.querySelector('[data-action="open-handbook"]')?.addEventListener('click', () => openHandbookWindow())
+  bindHandbook(document.querySelector('.is-handbook-window > .window-body'), handbookState)
   bindStaffDocumentAttachmentViewer()
   bindStartMenuOutsidePointer()
   bindWindowOverflowOutsidePointer()
@@ -32309,6 +32351,7 @@ window.addEventListener('beforeunload', event => {
 })
 
 window.addEventListener('hashchange', () => {
+  pendingHandbookRoute = parseHandbookHash(window.location.hash)
   render()
 })
 

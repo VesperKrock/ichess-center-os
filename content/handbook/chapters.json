@@ -1,0 +1,57 @@
+{
+  "featured": ["HV-001", "CD-001", "HP-001", "HV-002", "DD-001", "HP-002"],
+  "workflows": [
+    {"title": "Đón học viên mới", "steps": [{"article": "CD-001", "label": "Kiểm tra ca"}, {"article": "HV-001", "label": "Tạo học viên"}, {"article": "HP-001", "label": "Gán gói"}]},
+    {"title": "Đổi lịch và kiểm tra điểm danh", "steps": [{"article": "HV-002", "label": "Đổi lịch định kỳ"}, {"article": "DD-002", "label": "Kiểm tra đúng buổi"}]},
+    {"title": "Điểm danh và số buổi học phí", "steps": [{"article": "DD-001", "label": "Lưu điểm danh"}, {"article": "HP-003", "label": "Đọc số buổi của kỳ"}]},
+    {"title": "Chuẩn bị kỳ tiếp theo", "steps": [{"article": "HP-002", "label": "Ưu đãi, chuẩn bị kỳ và thanh toán"}, {"article": "HP-005", "label": "Kiểm tra chứng từ · Chờ xác minh"}]},
+    {"title": "Đối chiếu khoản thu với báo cáo", "steps": [{"article": "TC-001", "label": "Tìm giao dịch thực"}, {"article": "BC-001", "label": "Đối chiếu kỳ báo cáo"}]}
+  ],
+  "chapters": {
+    "hoc-vien": {
+      "purpose": "Quản lý hồ sơ, thông tin liên hệ, trạng thái học và ngày học định kỳ của từng học viên.",
+      "access": "Xem tại cơ sở được cấp quyền. Thêm/sửa cần quyền ghi và dữ liệu học viên, ca học đã tải thành công.",
+      "availability": "Bắt đầu bằng tìm hồ sơ để tránh trùng. Đổi lịch định kỳ khác xếp học bù; ảnh, bản in và xóa hồ sơ còn giới hạn xác minh nêu trong HV-006."
+    },
+    "khach-hang-tu-van": {
+      "purpose": "Theo dõi khách mới, tư vấn, chăm sóc, lịch hẹn và quan hệ với học viên.",
+      "access": "Khả năng sử dụng CRM và nguồn cùng cơ sở phải sẵn sàng. Tư vấn phụ trách được chọn từ người đang hoạt động hợp lệ; quyền xem không tự bao gồm quyền ghi.",
+      "availability": "Tạo khách không tự nhập học hay thu tiền. Chuyển đổi, danh tính và liên kết chưa có hướng dẫn hoàn chỉnh trong KH-004/KH-005; chỉ dùng phần tra cứu, chưa xác nhận thay đổi theo các phần này."
+    },
+    "hoc-phi": {
+      "purpose": "Tra gói, kỳ học, số buổi, ưu đãi, khoản thanh toán và chứng từ của học viên.",
+      "access": "Các lệnh ghi phụ thuộc quyền, dữ liệu kỳ hiện hành và trạng thái đã học/đã thu. Chỉ ghi thanh toán khi thực nhận tiền.",
+      "availability": "Chuẩn bị kỳ, sửa ưu đãi và nhận tiền là ba thao tác riêng. Đổi/kết thúc kỳ, xuất chứng từ và tiếp quản số liệu đầu kỳ chưa có hướng dẫn hoàn chỉnh; không ghi lại tiền đã thu trước iChess."
+    },
+    "bang-diem-danh": {
+      "purpose": "Xem từng buổi, chọn và lưu trạng thái tham gia, đối chiếu số buổi của kỳ học phí.",
+      "access": "Cần đúng tháng/cơ sở, dữ liệu buổi hiện hành và quyền ghi; ngày tương lai hoặc buổi không hợp lệ có thể chỉ xem.",
+      "availability": "Chọn dấu là nháp, cần Lưu điểm danh. Hủy thay đổi không hoàn tác bản đã lưu. Học bù và xử lý xung đột chưa có hướng dẫn vận hành được duyệt trong DD-003."
+    },
+    "thoi-khoa-bieu": {
+      "purpose": "Xem lịch tuần của cơ sở, phân biệt Hoạt động với Ca học và các buổi học riêng lẻ.",
+      "access": "Đọc theo nguồn đã tải. Thêm/sửa cần quyền ghi; Hoạt động và lịch sử giáo viên có điều kiện sẵn sàng riêng.",
+      "availability": "Không dùng Hoạt động để thay điểm danh hoặc đăng ký lịch học viên. Chuỗi lặp, trường hợp ngoại lệ và đổi giáo viên chưa có hướng dẫn hoàn chỉnh; nút đang tải/chưa khả dụng không chứng minh cơ sở không có lịch."
+    },
+    "nhom-tai-chinh": {
+      "purpose": "Tra giao dịch thu/chi, ghi khoản thủ công, quản lý chứng từ và kiểm quỹ tiền mặt.",
+      "access": "Ghi tiền, sửa/xóa, danh mục và kiểm quỹ cần quyền cùng cơ sở và nguồn hiện hành. Giao dịch học phí có ràng buộc nguồn riêng.",
+      "availability": "Không nhập trùng tiền đã ghi tại Học phí. Ảnh/chứng từ và hủy khoản thu chưa có hướng dẫn hoàn chỉnh. Kiểm quỹ thực tế chỉ tính tiền mặt; chốt sổ không khóa cứng mọi giao dịch."
+    },
+    "bao-cao": {
+      "purpose": "Đọc tổng hợp ngày/tuần, đối chiếu nguồn, chuẩn bị ghi nhận vận hành và xem checklist công việc.",
+      "access": "Nguồn báo cáo phải tải đầy đủ. Checklist cần quyền ghi và không cho sửa ngày tương lai; mở chi tiết một mục chỉ là xem.",
+      "availability": "Ghi chú báo cáo là bản nháp trong phiên; ô đánh dấu công việc lưu riêng từng mục. Phần đọc chứng từ nguồn chưa có hướng dẫn hoàn chỉnh; không cộng tiền nguồn ban đầu thành doanh thu mới."
+    },
+    "kho-hang": {
+      "purpose": "Theo dõi sản phẩm, tồn kho, nhập/xuất, đề xuất dụng cụ và kiểm kê.",
+      "access": "Kho hàng cần khả năng sử dụng cùng cơ sở và dữ liệu đã tải. Lệnh ghi kiểm tra quyền và phiên bản vật tư.",
+      "availability": "Đề xuất không tự trừ tồn; chi phí nhập kho không tự vào Sổ quỹ. Lịch sử, trạng thái đề xuất và kiểm kê chưa có hướng dẫn hoàn chỉnh; đọc giới hạn từng bài trước khi thao tác."
+    },
+    "cai-dat-co-so": {
+      "purpose": "Chuẩn bị danh mục ca/gói, thông tin cơ sở và các mặc định phục vụ vận hành.",
+      "access": "Chỉ sửa trong cơ sở được cấp quyền. Nền dùng chung và nhật ký có điều kiện Owner riêng; danh mục nhập liệu hiện chỉ đọc.",
+      "availability": "Ca có lịch sử không được xóa tùy ý. Nhãn mẫu Danh mục nhập liệu khác form Học viên; dùng lựa chọn trên form thật. Tóm tắt tên cơ sở, nền chung và nhật ký còn cần xác minh."
+    }
+  }
+}

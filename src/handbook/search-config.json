@@ -1,0 +1,18 @@
+{
+  "stopwords": ["lam", "sao", "the", "nao", "o", "dau", "toi", "muon", "can", "cach", "de", "duoc", "mot", "cho", "cua", "voi", "va", "co", "khong", "a", "giup", "xin", "hoi", "thi", "cho", "xong", "roi", "luon", "tung", "ma", "vao", "trong"],
+  "synonyms": {
+    "học viên": ["bé", "học sinh"],
+    "phụ huynh": ["ba má", "bố mẹ", "ba mẹ", "cha mẹ"],
+    "lịch học": ["ngày học"],
+    "quỹ tiền mặt": ["tiền trong két", "tiền két"],
+    "gửi": ["nộp"],
+    "ngưng học": ["nghỉ học", "thôi học"],
+    "thêm học viên": ["tạo học viên", "nhập học viên", "thêm học sinh", "đăng ký học viên", "tao ho so hoc sinh"],
+    "ca học": ["ca lớp", "khung giờ", "lớp học"],
+    "đổi lịch": ["chuyển lịch", "chuyển lớp", "chuyen ca", "thay đổi lịch", "sửa lịch"],
+    "gán gói": ["gan goi hoc phi", "đăng ký gói", "chọn gói", "thiet lap goi hoc phi"],
+    "điểm danh": ["ghi nhận có mặt", "chấm công học viên", "diem danh buoi hoc"],
+    "ưu đãi": ["giảm giá", "chiết khấu", "discount", "khuyến mãi"],
+    "gia hạn": ["tái phí", "tái tục", "đóng kỳ tiếp theo", "renew"]
+  }
+}
